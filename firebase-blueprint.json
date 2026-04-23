@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user account information and roles.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "member"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "username", "role", "createdAt"]
+    },
+    "Complaint": {
+      "title": "Complaint",
+      "description": "Information about a customer complaint submitted by a member.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "memberId": { "type": "string" },
+        "memberName": { "type": "string" },
+        "customerName": { "type": "string" },
+        "area": { "type": "string" },
+        "description": { "type": "string" },
+        "number": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in process", "complete", "important"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "memberId", "memberName", "customerName", "status", "createdAt"]
+    },
+    "AdminConfig": {
+      "title": "Admin Config",
+      "description": "Global settings for the application reachable only by admins.",
+      "type": "object",
+      "properties": {
+        "spreadsheetId": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Profiles for admins and members."
+    },
+    "complaints/{complaintId}": {
+      "schema": "Complaint",
+      "description": "All customer complaints logged in the system."
+    },
+    "config/settings": {
+      "schema": "AdminConfig",
+      "description": "System settings like Google Spreadsheet ID."
+    }
+  }
+}
