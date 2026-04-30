@@ -21,59 +21,62 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
     await onLogin(username, password);
   };
 
+  const inputClasses = "w-full pl-10 pr-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600 font-medium";
+
   return (
-    <div className="relative min-h-[calc(100vh-16rem)] flex items-center justify-center">
+    <div className="relative min-h-[calc(100vh-16rem)] flex items-center justify-center py-12 px-4">
       <NetworkBackground />
       
       <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="relative z-10 w-full max-w-md mx-auto glass p-8 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10"
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="relative z-10 w-full max-w-md mx-auto business-card p-10 bg-white dark:bg-slate-950 shadow-2xl"
       >
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
-            <span className="text-white font-bold text-2xl tracking-tighter">GTS</span>
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-slate-950 dark:bg-brand-accent rounded-2xl flex items-center justify-center mx-auto shadow-xl mb-6">
+            <span className="text-white font-black text-2xl tracking-tighter">GTS</span>
           </div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Welcome Back</h2>
-          <p className="text-slate-500 dark:text-white/60 text-sm mt-1">
-            Access your ISP Management Panel
+          <h2 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white uppercase leading-none">GTS TEAM</h2>
+          <p className="text-slate-600 dark:text-slate-400 text-xs uppercase font-black tracking-[0.2em] mt-3">
+            Secure System
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-[11px] font-bold mb-1.5 ml-1 text-slate-600 dark:text-white uppercase tracking-wide">Username</label>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <label className="block text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Identity</label>
             <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/40" size={18} />
+              <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input
                 id="username-input"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter username"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-slate-400 dark:placeholder:text-white/50"
+                placeholder="Username"
+                className={inputClasses}
                 required
               />
             </div>
           </div>
 
-          <div>
-            <label className="block text-[11px] font-bold mb-1.5 ml-1 text-slate-600 dark:text-white uppercase tracking-wide">Password</label>
+          <div className="space-y-2">
+            <label className="block text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Passkey</label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/40" size={18} />
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input
                 id="password-input"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-10 pr-12 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-slate-400 dark:placeholder:text-white/50"
+                className={inputClasses}
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-white transition-colors"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-brand-accent transition-colors"
+                title={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
@@ -81,35 +84,40 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
           </div>
 
           {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium text-center"
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="text-center p-4 rounded-xl bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 shadow-sm shadow-red-500/5 transition-all"
             >
-              {error}
+              <p className="text-sm font-bold text-red-600 dark:text-red-400">{error}</p>
             </motion.div>
           )}
 
-          <button
+          <motion.button
             id="login-button"
             type="submit"
             disabled={isLoading}
-            className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-lg shadow-lg shadow-blue-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            whileHover={{ scale: 1.02, y: -2 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full py-4 rounded-xl bg-slate-950 dark:bg-brand-accent text-white font-black uppercase tracking-[0.2em] text-xs shadow-lg transition-all hover:bg-black dark:hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-3"
           >
             {isLoading ? (
               <>
-                <Loader2 size={20} className="animate-spin" />
-                Signing in...
+                <Loader2 size={16} className="animate-spin" />
+                Validating Authorization...
               </>
             ) : (
-              'Sign In'
+              'Log In'
             )}
-          </button>
+          </motion.button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-white/5 text-center">
-          <p className="text-xs text-blue-400 uppercase tracking-widest font-bold">
-            Proprietor -- Yaseen Tahir
+        <div className="mt-10 pt-8 border-t border-slate-100 dark:border-slate-800 text-center">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 uppercase tracking-[0.4em] font-black leading-none italic">
+            Green Tech Services Operations
+          </p>
+          <p className="text-xs text-brand-accent font-black mt-3 uppercase tracking-tight">
+            Proprietor: Yaseen Tahir
           </p>
         </div>
       </motion.div>

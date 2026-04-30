@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { google } from "googleapis";
+import fs from "fs";
 
 dotenv.config();
 
@@ -16,39 +17,73 @@ async function startServer() {
 
   app.use(express.json());
 
-  // --- Google Sheets Integration ---
+  // --- Google Drive & Sheets Integration ---
   
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    '' // Redirect URI will be set dynamically
-  );
+  const SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive.file'
+  ];
 
-  const SCOPES = ['https://www.googleapis.com/auth/spreadsheets'];
+  const getBaseUrl = (req: express.Request) => {
+    if (process.env.APP_URL) {
+      return process.env.APP_URL.replace(/\/$/, "");
+    }
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers.host;
+    const baseUrl = req.headers.origin || (host ? `${protocol}://${host}` : 'http://localhost:3000');
+    return baseUrl.replace(/\/$/, "");
+  };
+
+  const getRedirectUri = (req: express.Request) => {
+    return `${getBaseUrl(req)}/auth/google/callback`;
+  };
 
   app.get("/api/auth/google/url", (req, res) => {
-    const origin = req.headers.origin || `https://${req.headers.host}`;
-    const redirectUri = `${origin}/auth/google/callback`;
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(400).json({ 
+        error: "Google OAuth credentials missing. Please add your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the project Settings." 
+      });
+    }
+
+    const redirectUri = getRedirectUri(req);
+    console.log(`Generating Auth URL with redirectUri: ${redirectUri}`);
     
-    const url = oauth2Client.generateAuthUrl({
+    const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    
+    const url = client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
-      redirect_uri: redirectUri,
       prompt: 'consent'
     });
     res.json({ url });
   });
 
+  app.get("/api/auth/google/config", (req, res) => {
+    res.json({
+      redirectUri: getRedirectUri(req),
+      origin: getBaseUrl(req)
+    });
+  });
+
   app.get("/auth/google/callback", async (req, res) => {
     const { code } = req.query;
-    const origin = `https://${req.headers.host}`;
-    const redirectUri = `${origin}/auth/google/callback`;
+    const redirectUri = getRedirectUri(req);
+
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return res.status(500).send("Server configuration error: GOOGLE_CLIENT_ID missing");
+    }
 
     try {
-      const { tokens } = await oauth2Client.getToken({
-        code: code as string,
-        redirect_uri: redirectUri
-      });
+      const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+      const { tokens } = await client.getToken(code as string);
+      
+      console.log('Google Auth success, tokens received');
       
       // In a real app, we would save these tokens to a database associated with the user/app
       // For now, we'll return a success page that posts a message back to the opener
@@ -61,7 +96,9 @@ async function startServer() {
                   type: 'GOOGLE_AUTH_SUCCESS', 
                   tokens: ${JSON.stringify(tokens)} 
                 }, '*');
-                window.close();
+                setTimeout(() => {
+                  window.close();
+                }, 1000);
               } else {
                 window.location.href = '/';
               }
@@ -84,10 +121,14 @@ async function startServer() {
     }
 
     try {
-      const auth = new google.auth.OAuth2(
-        process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET
-      );
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+      if (!clientId || !clientSecret) {
+        throw new Error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not set in environment");
+      }
+
+      const auth = new google.auth.OAuth2(clientId, clientSecret);
       auth.setCredentials(tokens);
 
       const sheets = google.sheets({ version: 'v4', auth });
@@ -102,12 +143,118 @@ async function startServer() {
 
       res.json(response.data);
     } catch (error: any) {
-      console.error('Error appending to sheet:', error);
-      res.status(500).json({ error: error.message });
+      console.error('Error appending to sheet:', error.response?.data || error);
+      res.status(500).json({ error: error.message, details: error.response?.data });
     }
   });
 
-  // --- End Google Sheets Integration ---
+  app.post("/api/sheets/update", async (req, res) => {
+    const { tokens, spreadsheetId, range, values } = req.body;
+    
+    if (!tokens || !spreadsheetId) {
+      return res.status(400).json({ error: "Missing tokens or spreadsheetId" });
+    }
+
+    try {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+      if (!clientId || !clientSecret) {
+        throw new Error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not set in environment");
+      }
+
+      const auth = new google.auth.OAuth2(clientId, clientSecret);
+      auth.setCredentials(tokens);
+
+      const sheets = google.sheets({ version: 'v4', auth });
+      
+      console.log(`Updating sheet ${spreadsheetId} at range ${range}`);
+      
+      const response = await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: range || 'Sheet1!A1',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: values
+        },
+      });
+
+      res.json(response.data);
+    } catch (error: any) {
+      console.error('Error updating sheet:', error.response?.data || error);
+      res.status(500).json({ error: error.message, details: error.response?.data });
+    }
+  });
+
+  app.post("/api/drive/backup", async (req, res) => {
+    const { tokens, filename, content } = req.body;
+    
+    if (!tokens || !content) {
+      return res.status(400).json({ error: "Missing tokens or content" });
+    }
+
+    try {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+      if (!clientId || !clientSecret) {
+        throw new Error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not set in environment");
+      }
+
+      const auth = new google.auth.OAuth2(clientId, clientSecret);
+      auth.setCredentials(tokens);
+
+      const drive = google.drive({ version: 'v3', auth });
+      
+      // 1. Find or create folder "GreenTech_Backups"
+      const folderName = "GreenTech_Backups";
+      let folderId: string;
+      
+      const folderSearch = await drive.files.list({
+        q: `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: 'files(id)',
+        spaces: 'drive',
+      });
+
+      if (folderSearch.data.files && folderSearch.data.files.length > 0) {
+        folderId = folderSearch.data.files[0].id!;
+      } else {
+        const folderMetadata = {
+          name: folderName,
+          mimeType: 'application/vnd.google-apps.folder',
+        };
+        const folder = await drive.files.create({
+          requestBody: folderMetadata,
+          fields: 'id',
+        });
+        folderId = folder.data.id!;
+      }
+
+      // 2. Upload file
+      const fileMetadata = {
+        name: filename || `backup_${new Date().toISOString()}.csv`,
+        parents: [folderId]
+      };
+      
+      const media = {
+        mimeType: 'text/csv',
+        body: content
+      };
+
+      const file = await drive.files.create({
+        requestBody: fileMetadata,
+        media: media,
+        fields: 'id, name, webViewLink'
+      });
+
+      res.json(file.data);
+    } catch (error: any) {
+      console.error('Error backing up to Drive:', error.response?.data || error);
+      res.status(500).json({ error: error.message, details: error.response?.data });
+    }
+  });
+
+  // --- End Google Drive & Sheets Integration ---
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
@@ -117,7 +264,19 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // In production, the server might be bundled into /dist/ or run from the root
+    let distPath = path.join(process.cwd(), "dist");
+    
+    // If we're running from inside dist/ already (bundled server.js), 
+    // or if the dist folder isn't where we expect, try to find it relative to this file
+    if (!fs.existsSync(path.join(distPath, "index.html"))) {
+      distPath = __dirname;
+      if (!fs.existsSync(path.join(distPath, "index.html"))) {
+        // Fallback or log error
+        console.warn("Could not find index.html in dist paths. Static serving might fail.");
+      }
+    }
+    
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

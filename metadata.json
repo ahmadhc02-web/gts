@@ -1,6 +1,6 @@
 {
-  "name": "GTS ISP Management",
-  "description": "Comprehensive customer complaint management system for GTS Internet WiFi service, featuring member registration and admin oversight.",
-  "requestFramePermissions": [],
+  "name": "Green Tech Services ISP Management",
+  "description": "Comprehensive customer complaint management system for Green Tech Services Internet WiFi service, featuring member registration and admin oversight.",
+  "requestFramePermissions": ["microphone", "screen-wake-lock"],
   "majorCapabilities": []
 }

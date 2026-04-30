@@ -25,7 +25,11 @@
         "area": { "type": "string" },
         "description": { "type": "string" },
         "number": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending", "in process", "complete", "important"] },
+        "status": { "type": "string", "enum": ["pending", "in process", "complete"] },
+        "category": { "type": "string" },
+        "priority": { "type": "string" },
+        "pkgDetails": { "type": "string" },
+        "userNearby": { "type": "string" },
         "createdAt": { "type": "number" }
       },
       "required": ["id", "memberId", "memberName", "customerName", "status", "createdAt"]
@@ -37,6 +41,77 @@
       "properties": {
         "spreadsheetId": { "type": "string" }
       }
+    },
+    "AppConfig": {
+      "title": "App Configuration",
+      "description": "Dynamic categories, statuses, zones and priorities for the workflow.",
+      "type": "object",
+      "properties": {
+        "categories": { "type": "array", "items": { "type": "string" } },
+        "statuses": { "type": "array", "items": { "type": "string" } },
+        "priorities": { "type": "array", "items": { "type": "string" } },
+        "zones": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["categories", "statuses", "priorities", "zones"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A single chat message sent by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "type": { "type": "string", "enum": ["text", "voice"] },
+        "duration": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "senderId", "senderName", "createdAt"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Stored client details for automatic form population.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "username": { "type": "string" },
+        "number": { "type": "string" },
+        "mobileNumber": { "type": "string" },
+        "seriesNumber": { "type": "string" },
+        "area": { "type": "string" },
+        "pkgDetails": { "type": "string" },
+        "userNearby": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "username", "name", "createdBy"]
+    },
+    "Alarm": {
+      "title": "Emergency Alarm",
+      "description": "State of the system-wide emergency alarm.",
+      "type": "object",
+      "properties": {
+        "active": { "type": "boolean" },
+        "triggeredAt": { "type": "string", "format": "date-time" },
+        "triggeredBy": { "type": "string" }
+      },
+      "required": ["active", "triggeredAt", "triggeredBy"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Activity alerts for users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "authorName": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "type", "message", "authorName", "createdAt"]
     }
   },
   "firestore": {
@@ -48,9 +123,29 @@
       "schema": "Complaint",
       "description": "All customer complaints logged in the system."
     },
+    "clients/{clientId}": {
+      "schema": "Client",
+      "description": "Database of registered clients for easy lookups."
+    },
     "config/settings": {
       "schema": "AdminConfig",
       "description": "System settings like Google Spreadsheet ID."
+    },
+    "config/app": {
+      "schema": "AppConfig",
+      "description": "Workflow categories, statuses and priorities."
+    },
+    "chat/{messageId}": {
+      "schema": "Message",
+      "description": "Real-time team communication."
+    },
+    "system/alarm": {
+      "schema": "Alarm",
+      "description": "Global emergency signal state."
+    },
+    "notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Activity broadcast notifications."
     }
   }
 }

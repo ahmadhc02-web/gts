@@ -26,9 +26,9 @@ export default function NetworkBackground() {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-[#020617]">
-      {/* Deep Space Atmosphere */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-950 to-black" />
+    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-slate-50 dark:bg-[#020617] transition-colors duration-500">
+      {/* Atmosphere */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-500/5 dark:from-blue-900/20 via-transparent dark:via-slate-950 to-transparent dark:to-black" />
       
       {/* Grid Pattern */}
       <div 

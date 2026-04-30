@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload } from 'lucide-react';
-import { Complaint, ComplaintStatus, UserProfile } from '../types';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, Activity, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut } from 'lucide-react';
+import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory } from '../types';
 import ComplaintList from './ComplaintList';
+import ComplaintForm from './ComplaintForm';
+import ClientManagement from './ClientManagement';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
+import { AppConfig } from '../constants';
+import MicVisualizer from './MicVisualizer';
 
 interface AdminPanelProps {
   complaints: Complaint[];
@@ -12,9 +17,36 @@ interface AdminPanelProps {
   currentUserId: string;
   onDeleteComplaint: (id: string) => Promise<void>;
   onUpdateComplaintStatus: (id: string, status: ComplaintStatus) => Promise<void>;
+  onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
   onCreateUser: (username: string, pass: string, role: 'admin' | 'member') => Promise<void>;
   onDeleteUser: (uid: string) => Promise<void>;
+  onUpdateUser: (uid: string, username: string, pass: string) => Promise<void>;
+  onRegisterComplaint: (data: {
+    customerName: string;
+    customerUsername: string;
+    area: string;
+    description: string;
+    number: string;
+    status: ComplaintStatus;
+    category: ComplaintCategory;
+    priority: ComplaintPriority;
+    pkgDetails?: string;
+    userNearby?: string;
+  }) => Promise<void>;
   onChangeAdminPass: (newPass: string) => Promise<void>;
+  appConfig: AppConfig;
+  onUpdateConfig: (newConfig: AppConfig) => void;
+  isLoading?: boolean;
+  alertAuthorized: boolean;
+  onAuthorizeAlerts: () => Promise<void>;
+  onSoundTest: () => void;
+  isAudioMuted: boolean;
+  onToggleAudio: () => void;
+  onLogout: () => void;
+  micAuthorized: boolean;
+  onAuthorizeMic: () => Promise<void>;
+  isMicMuted: boolean;
+  onToggleMic: () => void;
 }
 
 export default function AdminPanel({
@@ -23,41 +55,140 @@ export default function AdminPanel({
   currentUserId,
   onDeleteComplaint,
   onUpdateComplaintStatus,
+  onUpdateComplaint,
   onCreateUser,
   onDeleteUser,
-  onChangeAdminPass
+  onUpdateUser,
+  onRegisterComplaint,
+  onChangeAdminPass,
+  appConfig,
+  onUpdateConfig,
+  isLoading,
+  alertAuthorized,
+  onAuthorizeAlerts,
+  onSoundTest,
+  isAudioMuted,
+  onToggleAudio,
+  onLogout,
+  micAuthorized,
+  onAuthorizeMic,
+  isMicMuted,
+  onToggleMic
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations'>('complaints');
+  const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients'>('complaints');
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'member'>('member');
   const [isCreating, setIsCreating] = useState(false);
+  
+  // User editing state
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
+
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [adminNewPass, setAdminNewPass] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
-  // Google Sheets state
+  // Filter state controlled by status tiles
+  const [forcedStatus, setForcedStatus] = useState<ComplaintStatus | 'all'>('all');
+  const [forcedPriority, setForcedPriority] = useState<ComplaintPriority | 'all'>('all');
+  const [forcedCategory, setForcedCategory] = useState<ComplaintCategory | 'all'>('all');
+
+  const stats = [
+    { label: 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
+    { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Activity size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
+    { label: 'New Connection', value: complaints.filter(c => c.category === 'New Connection').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'all', priority: 'all', category: 'New Connection' } },
+    { label: 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <Activity size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
+    { label: 'Finalized', value: complaints.filter(c => c.status === 'complete').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
+    { label: 'Critical Alerts', value: complaints.filter(c => c.priority === 'Critical').length, tooltip: 'Operational crises requiring immediate high-tier intervention.', color: 'border-rose-600', textColor: 'text-rose-600', icon: <ShieldAlert size={18} />, filter: { status: 'all', priority: 'Critical', category: 'all' } },
+  ];
+
+  const handleTileClick = (filter: any) => {
+    setForcedStatus(filter.status || 'all');
+    setForcedPriority(filter.priority || 'all');
+    setForcedCategory(filter.category || 'all');
+    setActiveTab('complaints');
+    // Smooth scroll to list
+    const listElement = document.getElementById('operations-registry');
+    if (listElement) {
+      listElement.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const [googleTokens, setGoogleTokens] = useState(googleSheetsService.getTokens());
+  
+  useEffect(() => {
+    const handleAuthChange = (e: any) => {
+      setGoogleTokens(e.detail);
+    };
+    window.addEventListener('google-auth-changed', handleAuthChange);
+    return () => window.removeEventListener('google-auth-changed', handleAuthChange);
+  }, []);
+
   const [spreadsheetId, setSpreadsheetId] = useState(googleSheetsService.getSpreadsheetId() || '');
+  const [sheetName, setSheetName] = useState(googleSheetsService.getSheetName());
+  const [sheetRange, setSheetRange] = useState(googleSheetsService.getSheetRange());
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [config, setConfig] = useState<{ redirectUri: string, origin: string } | null>(null);
+
+  useEffect(() => {
+    if (activeTab === 'integrations') {
+      fetch('/api/auth/google/config')
+        .then(res => res.json())
+        .then(data => setConfig(data))
+        .catch(err => console.error('Failed to fetch Google config', err));
+    }
+  }, [activeTab]);
 
   const handleGoogleConnect = async () => {
     setIsConnecting(true);
     try {
       const tokens = await googleSheetsService.initiateAuth();
       setGoogleTokens(tokens);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to connect to Google Account.');
+      if (err.message === 'Auth window closed') {
+        toast.error('Authentication cancelled', {
+          description: 'Please keep the window open until the process completes.'
+        });
+      } else {
+        toast.error(err.message || 'Failed to connect to Google Account.');
+      }
     } finally {
       setIsConnecting(false);
     }
   };
 
+  const handleBulkExport = async () => {
+    if (!complaints.length) {
+      toast.error('No operational logs found in the registry to export.');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      await googleSheetsService.exportAllComplaintsToSheets(complaints);
+      toast.success('Operational logs successfully synchronized to Google Enterprise Cloud.');
+    } catch (err: any) {
+      toast.error(err.message || 'Synchronization failed.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleSaveSpreadsheetId = () => {
     googleSheetsService.saveSpreadsheetId(spreadsheetId);
-    alert('Spreadsheet ID saved successfully!');
+    toast.success('Spreadsheet ID saved successfully!');
+  };
+
+  const handleSaveRangeSettings = () => {
+    googleSheetsService.saveSheetName(sheetName);
+    googleSheetsService.saveSheetRange(sheetRange);
+    toast.success('Sheet range settings saved successfully!');
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -88,11 +219,40 @@ export default function AdminPanel({
       setNewUsername('');
       setNewPassword('');
       setNewUserRole('member');
-      setTimeout(() => setFormSuccess(null), 5000); // Clear success after 5s
+      setTimeout(() => setFormSuccess(null), 5000); 
     } catch (err) {
       setFormError('Critical Error: Could not save account.');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleStartEditUser = (user: UserProfile) => {
+    setEditingUserId(user.uid);
+    setEditUsername(user.username);
+    setEditPassword(user.password);
+  };
+
+  const handleCancelEditUser = () => {
+    setEditingUserId(null);
+    setEditUsername('');
+    setEditPassword('');
+  };
+
+  const handleUpdateUser = async (uid: string) => {
+    if (!editUsername.trim() || !editPassword.trim()) {
+      toast.error('Username and password are required');
+      return;
+    }
+    
+    setIsUpdating(true);
+    try {
+      await onUpdateUser(uid, editUsername.trim(), editPassword.trim());
+      setEditingUserId(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -110,239 +270,311 @@ export default function AdminPanel({
     setAdminNewPass('');
   };
 
+  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400";
+  const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
+
   return (
     <div className="space-y-8">
-      {/* Stats Overview - Global for Admin */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass p-5 rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl">
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-white/60 mb-1">Total Registry</p>
-          <p className="text-3xl font-black text-blue-600 dark:text-blue-400">{complaints.length}</p>
-        </div>
-        <div className="glass p-5 rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl">
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-white/60 mb-1">Pending</p>
-          <p className="text-3xl font-black text-red-500">{complaints.filter(c => c.status === 'pending').length}</p>
-        </div>
-        <div className="glass p-5 rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl">
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-white/60 mb-1">In Process</p>
-          <p className="text-3xl font-black text-amber-500">{complaints.filter(c => c.status === 'in process').length}</p>
-        </div>
-        <div className="glass p-5 rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl">
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-white/60 mb-1">Completed</p>
-          <p className="text-3xl font-black text-emerald-500">{complaints.filter(c => c.status === 'complete').length}</p>
-        </div>
+      {/* Stats Overview */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+        {stats.map((stat, idx) => (
+          <motion.div
+            key={idx}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.1, duration: 0.5, ease: "easeOut" }}
+            whileHover={{ y: -5, transition: { duration: 0.2 } }}
+            onClick={() => handleTileClick(stat.filter)}
+            title={stat.tooltip}
+            className={cn(
+              "p-6 bg-white dark:bg-slate-950 rounded-2xl border-l-4 shadow-xl shadow-slate-200/20 dark:shadow-none flex flex-col justify-between transition-all group cursor-pointer active:scale-95",
+              stat.color,
+              (forcedStatus === stat.filter.status && forcedPriority === stat.filter.priority && stat.label !== 'Total Registry') ? "ring-2 ring-brand-accent scale-105" : ""
+            )}
+          >
+            <div className="flex justify-between items-start mb-4">
+              <span className="text-xs font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-100 transition-colors">
+                {stat.label}
+              </span>
+              <div className={cn("p-2 rounded-lg transition-colors", 
+                stat.textColor === 'text-rose-500' ? "bg-rose-500/10" :
+                stat.textColor === 'text-blue-600' ? "bg-blue-600/10" :
+                stat.textColor === 'text-emerald-500' ? "bg-emerald-500/10" :
+                "bg-slate-100 dark:bg-slate-900"
+              )}>
+                {stat.icon}
+              </div>
+            </div>
+            <div className={cn("text-4xl font-black tracking-tighter", stat.textColor)}>
+              {stat.value.toString().padStart(2, '0')}
+            </div>
+          </motion.div>
+        ))}
       </div>
 
       {/* Admin Nav */}
-      <div className="flex flex-wrap gap-2 p-1 bg-slate-200/50 dark:bg-black/20 backdrop-blur-lg rounded-2xl w-fit border border-slate-300/50 dark:border-white/5">
-        <button
-          onClick={() => setActiveTab('complaints')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-            activeTab === 'complaints' ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-500 dark:text-white/60 hover:text-slate-700 dark:hover:text-white"
-          )}
-        >
-          <ClipboardList size={18} />
-          Complaints
-        </button>
-        <button
-          onClick={() => setActiveTab('users')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-            activeTab === 'users' ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-500 dark:text-white/60 hover:text-slate-700 dark:hover:text-white"
-          )}
-        >
-          <Users size={18} />
-          Members Management
-        </button>
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-            activeTab === 'settings' ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-500 dark:text-white/60 hover:text-slate-700 dark:hover:text-white"
-          )}
-        >
-          <Settings size={18} />
-          Admin Settings
-        </button>
-        <button
-          onClick={() => setActiveTab('integrations')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-            activeTab === 'integrations' ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" : "text-slate-500 dark:text-white/60 hover:text-slate-700 dark:hover:text-white"
-          )}
-        >
-          <FileSpreadsheet size={18} />
-          Integrations
-        </button>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl w-full lg:w-fit border border-slate-200 dark:border-slate-800">
+          {[
+            { id: 'complaints', label: 'Operations', icon: ClipboardList },
+            { id: 'submit', label: 'Complain Reg', icon: PlusSquare },
+            { id: 'clients', label: 'User Details', icon: Contact },
+            { id: 'users', label: 'Link Access', icon: Users },
+            { id: 'config', label: 'Workflow Config', icon: Settings },
+            { id: 'settings', label: 'Security', icon: Shield },
+            { id: 'integrations', label: 'Cloud Connection', icon: CloudUpload },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+              }}
+              className={cn(
+                "flex items-center gap-2.5 px-6 py-3 rounded-lg text-sm font-bold uppercase tracking-widest transition-all",
+                (activeTab === tab.id)
+                  ? "bg-slate-950 dark:bg-brand-accent text-white shadow-lg" 
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800"
+              )}
+            >
+              <tab.icon size={16} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+        </div>
       </div>
 
       <motion.div
         key={activeTab}
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 5 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2 }}
+        id="operations-registry"
       >
         {activeTab === 'complaints' && (
           <ComplaintList
             complaints={complaints}
             onDelete={onDeleteComplaint}
             onStatusChange={onUpdateComplaintStatus}
+            onEdit={onUpdateComplaint}
             isAdmin={true}
+            currentUserId={currentUserId}
+            forcedStatusFilter={forcedStatus}
+            forcedPriorityFilter={forcedPriority}
+            forcedCategoryFilter={forcedCategory}
+            appConfig={appConfig}
           />
+        )}
+
+        {activeTab === 'submit' && (
+          <div className="max-w-4xl mx-auto">
+            <ComplaintForm 
+              onSubmit={async (data) => {
+                await onRegisterComplaint(data);
+                setActiveTab('complaints');
+              }} 
+              isLoading={isLoading || false} 
+              appConfig={appConfig}
+            />
+          </div>
+        )}
+
+        {activeTab === 'clients' && (
+          <ClientManagement appConfig={appConfig} isAdmin={true} currentUserId={currentUserId} currentUserName={users.find(u => u.uid === currentUserId)?.username || 'Admin'} />
         )}
 
         {activeTab === 'users' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Create User Form */}
-            <div className="lg:col-span-1 space-y-6">
-              <div className="glass p-6 rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl">
-                <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-slate-900 dark:text-white">
-                  <UserPlus size={20} className="text-blue-500 dark:text-blue-400" />
-                  Create New Account
+            <div className="lg:col-span-1">
+              <div className="business-card p-8 bg-white dark:bg-slate-950">
+                <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3">
+                  <UserPlus size={20} className="text-brand-accent" />
+                  Link Access
                 </h3>
                 {formError && (
-                  <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold animate-pulse">
+                  <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold">
                     {formError}
                   </div>
                 )}
                 {formSuccess && (
-                  <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-bold">
+                  <div className="mb-6 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
                     {formSuccess}
                   </div>
                 )}
-                <form onSubmit={handleCreateUser} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 dark:text-white/50 mb-1 tracking-widest ml-1">Username</label>
+                <form onSubmit={handleCreateUser} className="space-y-6">
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>Employee Username</label>
                     <input
                       type="text"
                       value={newUsername}
                       onChange={(e) => setNewUsername(e.target.value)}
-                      placeholder="account_name"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      placeholder="e.g. john_doe"
+                      className={inputClasses}
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 dark:text-white/50 mb-1 tracking-widest ml-1">Initial Password</label>
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>Access Password</label>
                     <input
                       type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                      className={inputClasses}
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-slate-400 dark:text-white/50 mb-1 tracking-widest ml-1">Account Role</label>
-                    <div className="grid grid-cols-2 gap-2 mt-1">
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>Clearance Level</label>
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         onClick={() => setNewUserRole('member')}
                         className={cn(
-                          "py-2 rounded-lg text-xs font-bold transition-all border",
+                          "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                           newUserRole === 'member' 
-                            ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/20" 
-                            : "bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 dark:text-white/60 hover:border-blue-500/50"
+                            ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent" 
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
                         )}
                       >
-                        Member
+                        Field Agent
                       </button>
                       <button
                         type="button"
                         onClick={() => setNewUserRole('admin')}
                         className={cn(
-                          "py-2 rounded-lg text-xs font-bold transition-all border",
+                          "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                           newUserRole === 'admin' 
-                            ? "bg-violet-600 border-violet-600 text-white shadow-md shadow-violet-500/20" 
-                            : "bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 dark:text-white/60 hover:border-violet-500/50"
+                            ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20" 
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
                         )}
                       >
-                        Admin
+                        Supervisor
                       </button>
                     </div>
                   </div>
                   <button
                     type="submit"
                     disabled={isCreating}
-                    className="w-full py-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black transition-all shadow-lg hover:bg-black dark:hover:bg-slate-100 mt-2 disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full py-4 rounded-lg bg-slate-900 dark:bg-brand-accent text-white font-bold uppercase tracking-widest text-[11px] shadow-lg hover:bg-black dark:hover:bg-blue-700 disabled:opacity-50 transition-all"
                   >
-                    {isCreating ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Registering...
-                      </>
-                    ) : (
-                      'Register Account'
-                    )}
+                    {isCreating ? 'Processing Reg...' : 'Initialize Link Access Member'}
                   </button>
                 </form>
               </div>
             </div>
 
-            {/* Users List */}
             <div className="lg:col-span-2">
-              <div className="glass rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden">
+              <div className="business-card overflow-hidden bg-white dark:bg-slate-950">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+                   <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Link Access Directory</h4>
+                </div>
                 <table className="w-full text-left">
-                  <thead className="bg-slate-100 dark:bg-white/5">
-                    <tr className="border-b border-slate-200 dark:border-white/10">
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-white/60">Username</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-white/60">Role</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-white/60">Joined</th>
-                      <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-white/60 text-right">Actions</th>
+                  <thead className="bg-slate-50 dark:bg-slate-900/50">
+                    <tr className="border-b border-slate-100 dark:border-slate-800">
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Clearance</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Registry Date</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Protocol</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
                     {users.map((user) => (
-                      <tr key={user.uid} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group">
-                        <td className="px-6 py-4 font-bold text-slate-800 dark:text-white">{user.username}</td>
+                      <tr key={user.uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
+                        <td className="px-6 py-4">
+                          {editingUserId === user.uid ? (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={editUsername}
+                                onChange={(e) => setEditUsername(e.target.value)}
+                                className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
+                              />
+                              <input
+                                type="password"
+                                value={editPassword}
+                                onChange={(e) => setEditPassword(e.target.value)}
+                                placeholder="New Password"
+                                className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
+                              />
+                            </div>
+                          ) : (
+                            <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.username}</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4">
                           <span className={cn(
-                            "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border",
-                            user.role === 'admin' ? "bg-violet-500/10 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 border-violet-500/20 dark:border-violet-500/30" : "bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/20 dark:border-blue-500/30"
+                            "px-2.5 py-1 rounded text-xs font-black uppercase tracking-widest border",
+                            user.role === 'admin' ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/30" : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800"
                           )}>
                             {user.role}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">{new Date(user.createdAt).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 text-[11px] font-medium text-slate-400 uppercase tracking-tighter">{new Date(user.createdAt).toLocaleDateString()}</td>
                         <td className="px-6 py-4 text-right">
-                          {user.uid !== currentUserId ? (
-                            <div className="flex justify-end gap-2">
-                              {deletingId === user.uid ? (
-                                <>
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await onDeleteUser(user.uid);
-                                        setDeletingId(null);
-                                      } catch (err) {
-                                        alert('Failed to delete user account.');
-                                      }
-                                    }}
-                                    className="px-3 py-1.5 text-[10px] font-black text-white bg-red-600 rounded-lg hover:bg-red-700 transition-all shadow-md shadow-red-500/20 uppercase"
-                                  >
-                                    Confirm?
-                                  </button>
-                                  <button
-                                    onClick={() => setDeletingId(null)}
-                                    className="px-3 py-1.5 text-[10px] font-black text-slate-500 dark:text-white/50 hover:text-slate-700 dark:hover:text-white uppercase"
-                                  >
-                                    Cancel
-                                  </button>
-                                </>
-                              ) : (
+                          <div className="flex justify-end gap-2">
+                            {editingUserId === user.uid ? (
+                              <>
                                 <button
-                                  onClick={() => setDeletingId(user.uid)}
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-500 hover:text-white bg-red-500/10 hover:bg-red-500 rounded-lg transition-all border border-red-500/20"
-                                  title="Delete Account"
+                                  onClick={() => handleUpdateUser(user.uid)}
+                                  disabled={isUpdating}
+                                  className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all"
+                                  title="Save Changes"
                                 >
-                                  <Trash2 size={14} />
-                                  Delete
+                                  <Check size={16} />
                                 </button>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 px-3">Current User</span>
-                          )}
+                                <button
+                                  onClick={handleCancelEditUser}
+                                  className="p-2 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/50 rounded-lg transition-all"
+                                  title="Cancel"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => handleStartEditUser(user)}
+                                  className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all"
+                                  title="Edit Credentials"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                                {user.uid !== currentUserId ? (
+                                  deletingId === user.uid ? (
+                                    <>
+                                      <button
+                                        onClick={async () => {
+                                          try { await onDeleteUser(user.uid); setDeletingId(null); } catch (err) { toast.error('Unauthorized action'); }
+                                        }}
+                                        className="px-3 py-1.5 text-[9px] font-black text-white bg-red-600 rounded-md hover:bg-red-700 shadow-md shadow-red-500/20 uppercase tracking-widest"
+                                      >
+                                        Confirm
+                                      </button>
+                                      <button
+                                        onClick={() => setDeletingId(null)}
+                                        className="px-3 py-1.5 text-[9px] font-bold text-slate-400 hover:text-slate-900 uppercase tracking-widest"
+                                      >
+                                        No
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      onClick={() => setDeletingId(user.uid)}
+                                      className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
+                                      title="Revoke Access"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  )
+                                ) : (
+                                  <span className="text-[9px] uppercase font-black text-brand-accent tracking-widest bg-brand-accent/10 px-3 py-1 rounded">Self</span>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -354,165 +586,517 @@ export default function AdminPanel({
         )}
 
         {activeTab === 'settings' && (
-          <div className="max-w-xl">
-            <div className="glass p-8 rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 dark:text-amber-400">
-                  <Shield size={24} />
+          <div className="max-w-2xl space-y-8">
+            <div className="business-card p-10 bg-white dark:bg-slate-950">
+              <div className="flex items-center gap-5 mb-10">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-sm">
+                  <Activity size={28} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">Security Settings</h3>
-                  <p className="text-slate-500 dark:text-white/60 text-sm">Manage your administrative access</p>
+                  <h3 className="text-xl font-black uppercase tracking-tight">System Audio & Matrix</h3>
+                  <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">Notification Matrix & Hardware Control</p>
                 </div>
               </div>
 
-              <form onSubmit={handleChangeAdminPass} className="space-y-6">
+              <div className="space-y-8">
+                {/* Audio Matrix Section */}
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Audio & Speaker Hub</h4>
+                  {!alertAuthorized ? (
+                    <div className="p-6 rounded-2xl bg-amber-500/5 border border-amber-500/20">
+                      <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mb-4 leading-relaxed uppercase tracking-widest text-center">
+                        Synthesizer and alert speakers are restricted by current policy.
+                      </p>
+                      <button
+                        onClick={onAuthorizeAlerts}
+                        className="w-full py-4 rounded-xl bg-amber-500 text-white font-black uppercase tracking-widest text-xs shadow-lg hover:bg-amber-600 transition-all"
+                      >
+                        Initialize Speaker Matrix
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center gap-3">
+                          {isAudioMuted ? <VolumeX className="text-rose-500" size={18} /> : <Volume2 className="text-emerald-500" size={18} />}
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Alert Audio</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{isAudioMuted ? 'Notifications Suspended' : 'Notifications Active'}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={onToggleAudio}
+                          className={cn(
+                            "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                            isAudioMuted ? "bg-emerald-500 text-white shadow-lg" : "bg-rose-500 text-white shadow-lg"
+                          )}
+                        >
+                          {isAudioMuted ? 'Turn On' : 'Turn Off'}
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={onSoundTest}
+                        className="w-full py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all flex items-center justify-center gap-3"
+                      >
+                        <Zap size={14} className="text-amber-500" />
+                        Execute Speaker Sync Test
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Microphone Section */}
+                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tactical Voice Input</h4>
+                  {!micAuthorized ? (
+                    <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20">
+                      <p className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-4 leading-relaxed uppercase tracking-widest text-center">
+                        Microphone capture protocols are currently offline.
+                      </p>
+                      <button
+                        onClick={onAuthorizeMic}
+                        className="w-full py-4 rounded-xl bg-blue-600 text-white font-black uppercase tracking-widest text-xs shadow-lg hover:bg-blue-700 transition-all"
+                      >
+                        Authorize Mic Input
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center gap-3">
+                          {isMicMuted ? <VolumeX className="text-rose-500" size={18} /> : <Activity className="text-blue-500" size={18} />}
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Tactical Mic</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{isMicMuted ? 'Capture Suppressed' : 'Capture Active'}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={onToggleMic}
+                          className={cn(
+                            "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                            isMicMuted ? "bg-emerald-500 text-white shadow-lg" : "bg-rose-500 text-white shadow-lg"
+                          )}
+                        >
+                          {isMicMuted ? 'Turn On' : 'Turn Off'}
+                        </button>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                        <MicVisualizer isMuted={isMicMuted} isAuthorized={micAuthorized} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={onLogout}
+                    className="w-full py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-xs shadow-lg flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
+                  >
+                    <LogOut size={16} />
+                    Sign Out Session
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="business-card p-10 bg-white dark:bg-slate-950">
+              <div className="flex items-center gap-5 mb-10">
+                <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-900 dark:text-brand-accent shadow-sm">
+                  <Shield size={28} />
+                </div>
                 <div>
-                  <label className="block text-sm font-bold mb-2 text-slate-700 dark:text-white/80">Change Administrator Password</label>
+                  <h3 className="text-xl font-black uppercase tracking-tight">Security Hardening</h3>
+                  <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">Personnel Authorization Management</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleChangeAdminPass} className="space-y-8">
+                <div className="space-y-2">
+                  <label className={labelClasses}>New Supervisor Passkey</label>
                   <div className="relative">
-                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-white/40" size={18} />
+                    <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input
                       type="password"
                       value={adminNewPass}
                       onChange={(e) => setAdminNewPass(e.target.value)}
-                      placeholder="Enter new admin password"
-                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/20"
+                      placeholder="Initialize secure passkey replacement"
+                      className={inputClasses}
                       required
                     />
                   </div>
                 </div>
                 <button
                   type="submit"
-                  className="px-6 py-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold hover:bg-black dark:hover:bg-slate-100 transition-all shadow-lg"
+                  className="px-8 py-4 rounded-lg bg-slate-900 dark:bg-brand-accent text-white font-bold uppercase tracking-widest text-xs shadow-lg hover:bg-black dark:hover:bg-blue-700 transition-all"
                 >
-                  Update Admin Password
+                  Confirm Passkey Revision
                 </button>
               </form>
             </div>
 
-            <div className="glass p-8 rounded-2xl border border-red-500/10 dark:border-red-500/20 shadow-2xl mt-8">
-              <h3 className="text-xl font-bold text-red-500 mb-2">Danger Zone</h3>
-              <p className="text-slate-500 dark:text-white/60 text-sm mb-6">Reset all application data (Accounts & Complaints)</p>
+            <div className="p-8 business-card bg-rose-50/50 dark:bg-rose-950/10 border-rose-100 dark:border-rose-900/30">
+              <h3 className="text-lg font-black uppercase tracking-tight text-rose-600 mb-2">Protocol Reset</h3>
+              <p className="text-slate-500 font-medium text-sm mb-8 leading-relaxed">WARNING: Initiating a factory reset will terminate all existing operations, registries, and login accounts. This action is final and non-reversible.</p>
               <button
                 onClick={handleResetAppData}
-                className="px-6 py-3 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-600 hover:text-white border border-red-500/30 font-bold transition-all"
+                className="px-6 py-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] uppercase font-black tracking-widest transition-all shadow-xl shadow-rose-500/20"
               >
-                Reset App Data (Factory Reset)
+                Execute Global Purge
               </button>
             </div>
           </div>
         )}
 
+        {activeTab === 'config' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
+              {/* Category Management */}
+              <div className="business-card p-6 bg-white dark:bg-slate-950">
+                <div className="flex items-center justify-between mb-6">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Service Categories</h4>
+                  <Layers size={16} className="text-blue-500" />
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Add Category..." 
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = e.currentTarget.value.trim();
+                          if (val && !appConfig.categories.includes(val)) {
+                            onUpdateConfig({ ...appConfig, categories: [...appConfig.categories, val] });
+                            e.currentTarget.value = '';
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
+                    {appConfig.categories.map((cat, i) => (
+                      <div key={i} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                        <span className="text-slate-700 dark:text-slate-300 uppercase">{cat}</span>
+                        <button 
+                          onClick={() => {
+                            if (appConfig.categories.length > 1) {
+                              onUpdateConfig({ ...appConfig, categories: appConfig.categories.filter(c => c !== cat) });
+                            } else {
+                              toast.error('At least one category is required.');
+                            }
+                          }}
+                          className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Management */}
+              <div className="business-card p-6 bg-white dark:bg-slate-950">
+                <div className="flex items-center justify-between mb-6">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Workflow Statuses</h4>
+                  <Activity size={16} className="text-amber-500" />
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Add Status..." 
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = e.currentTarget.value.trim();
+                          if (val && !appConfig.statuses.includes(val)) {
+                            onUpdateConfig({ ...appConfig, statuses: [...appConfig.statuses, val] });
+                            e.currentTarget.value = '';
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {appConfig.statuses.map((stat, i) => (
+                      <div key={i} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                        <span className="text-slate-700 dark:text-slate-300">{stat}</span>
+                        <button 
+                          onClick={() => {
+                            if (appConfig.statuses.length > 1) {
+                              onUpdateConfig({ ...appConfig, statuses: appConfig.statuses.filter(s => s !== stat) });
+                            } else {
+                              toast.error('At least one status is required.');
+                            }
+                          }}
+                          className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Priority Management */}
+              <div className="business-card p-6 bg-white dark:bg-slate-950">
+                <div className="flex items-center justify-between mb-6">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Priority Levels</h4>
+                  <ShieldAlert size={16} className="text-rose-500" />
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Add Priority..." 
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = e.currentTarget.value.trim();
+                          if (val && !appConfig.priorities.includes(val)) {
+                            onUpdateConfig({ ...appConfig, priorities: [...appConfig.priorities, val] });
+                            e.currentTarget.value = '';
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {appConfig.priorities.map((pri, i) => (
+                      <div key={i} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                        <span className="text-slate-700 dark:text-slate-300">{pri}</span>
+                        <button 
+                          onClick={() => {
+                            if (appConfig.priorities.length > 1) {
+                              onUpdateConfig({ ...appConfig, priorities: appConfig.priorities.filter(p => p !== pri) });
+                            } else {
+                              toast.error('At least one priority level is required.');
+                            }
+                          }}
+                          className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Zone Management */}
+              <div className="business-card p-6 bg-white dark:bg-slate-950">
+                <div className="flex items-center justify-between mb-6">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Operation Zones</h4>
+                  <MapPin size={16} className="text-emerald-500" />
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Add Zone..." 
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = e.currentTarget.value.trim();
+                          if (val && !appConfig.zones?.includes(val)) {
+                            onUpdateConfig({ ...appConfig, zones: [...(appConfig.zones || []), val] });
+                            e.currentTarget.value = '';
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
+                    {appConfig.zones?.map((zone, i) => (
+                      <div key={i} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                        <span className="text-slate-700 dark:text-slate-300">{zone}</span>
+                        <button 
+                          onClick={() => {
+                            if (appConfig.zones.length > 1) {
+                              onUpdateConfig({ ...appConfig, zones: appConfig.zones.filter(z => z !== zone) });
+                            } else {
+                              toast.error('At least one zone is required.');
+                            }
+                          }}
+                          className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 flex items-start gap-4">
+              <Info className="text-blue-600 mt-0.5" size={16} />
+              <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed uppercase tracking-widest">
+                System configuration shifts are propagated in real-time to all members. Changes to categories, statuses, and zones will immediately reflect in the submission and auditing forms.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cloud Sync Tab */}
         {activeTab === 'integrations' && (
-          <div className="max-w-2xl space-y-8">
-            <div className="glass p-8 rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 dark:text-emerald-400">
-                  <FileSpreadsheet size={24} />
+          <div className="max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="business-card p-10 bg-white dark:bg-slate-950 flex flex-col h-full">
+              <div className="flex items-center gap-5 mb-10">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 flex items-center justify-center text-blue-600">
+                  <CloudUpload size={28} />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">Google Sheets Integration</h3>
-                  <p className="text-slate-500 dark:text-white/60 text-sm">Automatically log complaints to a spreadsheet</p>
+                  <h3 className="text-xl font-black uppercase tracking-tight">Google Drive & Sheets</h3>
+                  <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">Enterprise Cloud Authorization</p>
                 </div>
               </div>
 
               {!googleTokens ? (
-                <div className="p-6 rounded-2xl bg-slate-100 dark:bg-white/5 border border-dashed border-slate-300 dark:border-white/10 text-center">
-                  <p className="text-slate-600 dark:text-white/70 mb-4">You need to connect your Google account to enable Sheets integration.</p>
+                <div className="flex-1 flex flex-col justify-between">
+                  <div className="space-y-6">
+                    <p className="text-slate-500 font-medium text-sm leading-relaxed">
+                      Authorize access to your Google account to enable real-time operational backups and cloud spreadsheet synchronization.
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <CheckCircle size={12} className="text-emerald-500" />
+                        Automatic CSV Backups
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <CheckCircle size={12} className="text-emerald-500" />
+                        Live Spreadsheet Mirroring
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <CheckCircle size={12} className="text-emerald-500" />
+                        Secure Enterprise Data Storage
+                      </div>
+                    </div>
+                  </div>
+
                   <button
                     onClick={handleGoogleConnect}
                     disabled={isConnecting}
-                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50"
+                    className="mt-10 inline-flex items-center justify-center gap-3 px-8 py-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs transition-all shadow-xl shadow-blue-600/30 active:scale-95 disabled:opacity-50"
                   >
-                    {isConnecting ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        <ExternalLink size={18} />
-                        Connect Google Sheets
-                      </>
-                    )}
+                    {isConnecting ? 'Linking Service...' : 'Link Google Account'}
+                    <ExternalLink size={16} />
                   </button>
                 </div>
               ) : (
-                <div className="space-y-6">
-                  <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm">Google Account Connected</span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        googleSheetsService.clearAuth();
-                        setGoogleTokens(null);
-                      }}
-                      className="text-xs text-red-500 hover:underline font-bold"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-bold mb-2 text-slate-700 dark:text-white/80">Google Spreadsheet ID</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={spreadsheetId}
-                        onChange={(e) => setSpreadsheetId(e.target.value)}
-                        placeholder="Enter the ID from your sheet's URL"
-                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-black/20 text-slate-900 dark:text-white"
-                      />
-                      <button
-                        onClick={handleSaveSpreadsheetId}
-                        className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all shadow-lg shadow-emerald-500/20"
-                      >
-                        Save ID
-                      </button>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-500 dark:text-white/40">
-                      The ID is the long string in your browser's address bar: spreadshet/d/<span className="text-blue-500">SPREADSHEET_ID</span>/edit
-                    </p>
-                  </div>
-
-                  <div className="pt-6 border-t border-slate-200 dark:border-white/10">
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-4">Export Status</h4>
-                    <div className="flex items-center gap-4 text-xs">
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                        <HardDriveDownload size={14} />
-                        Auto-sync enabled
+                <div className="flex-1 flex flex-col justify-between">
+                  <div className="space-y-8">
+                    <div className="p-6 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/50">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-[11px] font-black uppercase tracking-widest text-emerald-600">Primary Channel Secure</span>
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                       </div>
-                      <p className="text-slate-500 dark:text-white/40">
-                        All new complaints will be added as new rows.
-                      </p>
+                      <div className="flex items-center gap-3 text-slate-900 dark:text-white">
+                        <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 flex items-center justify-center font-black text-blue-600 shadow-sm border border-slate-100 dark:border-slate-800">
+                          G
+                        </div>
+                        <div className="text-xs font-bold uppercase tracking-widest truncate">
+                          Enterprise Account Active
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Infrastructure Status</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                          <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Drive Access</div>
+                          <div className="text-[10px] font-bold text-emerald-500 uppercase">Verified</div>
+                        </div>
+                        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                          <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Sheets Sync</div>
+                          <div className="text-[10px] font-bold text-emerald-500 uppercase">Verified</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
+
+                  <button 
+                    onClick={() => { googleSheetsService.clearAuth(); setGoogleTokens(null); }} 
+                    className="mt-10 w-full py-4 rounded-xl border-2 border-rose-500/20 text-rose-500 font-bold text-[10px] uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all"
+                  >
+                    Disconnect Enterprise Protocol
+                  </button>
                 </div>
               )}
             </div>
 
-            <div className="glass p-8 rounded-2xl border border-blue-500/10 dark:border-blue-500/20 shadow-2xl">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Instructions</h3>
-              <ul className="space-y-3 text-sm text-slate-600 dark:text-white/60">
-                <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">1</span>
-                  Connect your Google account and grant spreadsheet permissions.
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">2</span>
-                  Create a new Google Sheet (or use an existing one).
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">3</span>
-                  Copy the ID from the URL and paste it above.
-                </li>
-                <li className="flex gap-3">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">4</span>
-                  Every new complaint will now be saved in "Sheet1" of your spreadsheet.
-                </li>
-              </ul>
+            <div className="space-y-8">
+              {googleTokens && (
+                <div className="business-card p-10 bg-white dark:bg-slate-950">
+                  <div className="flex items-center gap-4 mb-8">
+                    <FileSpreadsheet size={20} className="text-emerald-500" />
+                    <h4 className="text-sm font-black uppercase tracking-widest">Mirroring Parameters</h4>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                       <label className={labelClasses}>Spreadsheet Identity</label>
+                       <div className="flex gap-3">
+                         <input type="text" value={spreadsheetId} onChange={(e) => setSpreadsheetId(e.target.value)} className={inputClasses} placeholder="SPREADSHEET_ID" />
+                         <button onClick={handleSaveSpreadsheetId} className="px-5 py-2.5 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-[10px] uppercase tracking-widest hover:bg-black transition-colors">Save</button>
+                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-2">
+                          <label className={labelClasses}>Target Sheet</label>
+                          <input type="text" value={sheetName} onChange={(e) => setSheetName(e.target.value)} className={inputClasses} placeholder="Sheet1" />
+                       </div>
+                       <div className="space-y-2">
+                          <label className={labelClasses}>Point Range</label>
+                          <input type="text" value={sheetRange} onChange={(e) => setSheetRange(e.target.value)} className={inputClasses} placeholder="A1" />
+                       </div>
+                    </div>
+                    
+                    <button onClick={handleSaveRangeSettings} className="w-full py-4 rounded-lg border-2 border-slate-900 dark:border-brand-accent text-slate-900 dark:text-brand-accent font-black uppercase tracking-widest text-[11px] hover:bg-slate-900 dark:hover:bg-brand-accent hover:text-white transition-all">Submit Mapping</button>
+                  </div>
+                </div>
+              )}
+
+              {config && !googleTokens && (
+                <div className="business-card p-8 bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/30">
+                  <div className="flex items-center gap-3 mb-6">
+                    <Settings size={18} className="text-blue-600" />
+                    <h4 className="text-xs font-black uppercase tracking-widest text-blue-600">Enterprise Credentials</h4>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Redirect Origin</label>
+                      <div className="flex items-center gap-2 p-3 bg-white dark:bg-slate-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <code className="text-[10px] font-mono text-slate-600 dark:text-slate-400 break-all flex-1">{config.origin}</code>
+                        <button onClick={() => { navigator.clipboard.writeText(config.origin); toast.success('Copied to clipboard'); }} className="text-blue-600 p-1"><Copy size={12} /></button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Redirect Endpoint</label>
+                      <div className="flex items-center gap-2 p-3 bg-white dark:bg-slate-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <code className="text-[10px] font-mono text-slate-600 dark:text-slate-400 break-all flex-1">{config.redirectUri}</code>
+                        <button onClick={() => { navigator.clipboard.writeText(config.redirectUri); toast.success('Copied to clipboard'); }} className="text-blue-600 p-1"><Copy size={12} /></button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

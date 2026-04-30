@@ -3,17 +3,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type ComplaintStatus = 'pending' | 'in process' | 'complete' | 'important';
+export type ComplaintStatus = string;
+
+export type ComplaintCategory = string;
+
+export type ComplaintPriority = string;
 
 export interface Complaint {
   id: string;
   memberId: string;
   memberName: string;
   customerName: string;
+  customerUsername: string;
   area: string;
   description: string;
   number: string;
   status: ComplaintStatus;
+  category: ComplaintCategory;
+  priority: ComplaintPriority;
+  pkgDetails?: string;
+  userNearby?: string;
   createdAt: number;
 }
 
@@ -22,5 +31,45 @@ export interface UserProfile {
   username: string;
   password?: string; // Added for simplified demo auth
   role: 'admin' | 'member';
+  createdAt: number;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  username: string;
+  number: string;
+  mobileNumber: string;
+  seriesNumber: string;
+  area: string;
+  pkgDetails: string;
+  userNearby: string;
+  createdBy: string;
+  createdAt: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text?: string;
+  audioUrl?: string;
+  type?: 'text' | 'voice';
+  duration?: number;
+  replyTo?: {
+    id: string;
+    text?: string;
+    senderName: string;
+    type?: 'text' | 'voice';
+  };
+  createdAt: number;
+  seenBy?: Record<string, { username: string; time: number }>;
+}
+
+export interface Notification {
+  id: string;
+  type: 'complaint_created' | 'complaint_updated' | 'complaint_deleted' | 'client_added' | 'client_updated' | 'client_deleted' | 'config_updated' | 'user_created' | 'user_updated' | 'user_deleted';
+  message: string;
+  authorName: string;
   createdAt: number;
 }
