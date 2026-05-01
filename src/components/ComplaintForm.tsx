@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned } from 'lucide-react';
+import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned, Layers } from 'lucide-react';
 import { ComplaintStatus, ComplaintCategory, ComplaintPriority, Client } from '../types';
 import { cn } from '../lib/utils';
 import { Network, Wifi, ShieldAlert, Zap, Search } from 'lucide-react';
@@ -16,6 +16,7 @@ interface ComplaintFormProps {
     number: string;
     pkgDetails?: string;
     userNearby?: string;
+    panelDetails?: string;
     status: ComplaintStatus;
     category: ComplaintCategory;
     priority: ComplaintPriority;
@@ -32,6 +33,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
   const [number, setNumber] = useState('');
   const [pkgDetails, setPkgDetails] = useState('');
   const [userNearby, setUserNearby] = useState('');
+  const [panelDetails, setPanelDetails] = useState('');
   const [status, setStatus] = useState<ComplaintStatus>('');
   const [category, setCategory] = useState<ComplaintCategory>('');
   const [priority, setPriority] = useState<ComplaintPriority>('');
@@ -85,6 +87,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
     setNumber(client.mobileNumber || client.number || '');
     setPkgDetails(client.pkgDetails || '');
     setUserNearby(client.userNearby || '');
+    setPanelDetails(client.panelDetails || '');
     setShowClientList(false);
   };
 
@@ -103,6 +106,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
       number,
       pkgDetails,
       userNearby,
+      panelDetails,
       status: status || appConfig.statuses[0],
       category: category || appConfig.categories[0],
       priority: priority || appConfig.priorities[0]
@@ -115,6 +119,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
     setNumber('');
     setPkgDetails('');
     setUserNearby('');
+    setPanelDetails('');
     setStatus(appConfig.statuses[0]);
     setCategory(appConfig.categories[0]);
     setPriority(appConfig.priorities[0]);
@@ -292,6 +297,22 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
                     value={userNearby}
                     onChange={(e) => setUserNearby(e.target.value)}
                     placeholder="Ex: Near City Garden Gate"
+                    className={inputClasses}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-1">
+                <label className={labelClasses}>Pannal Details</label>
+                <div className="relative">
+                  <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
+                  <input
+                    type="text"
+                    value={panelDetails}
+                    onChange={(e) => setPanelDetails(e.target.value)}
+                    placeholder="Ex: DP-04 / Box-02 / Port-08"
                     className={inputClasses}
                   />
                 </div>

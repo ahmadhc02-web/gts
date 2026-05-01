@@ -23,6 +23,7 @@ export interface Complaint {
   priority: ComplaintPriority;
   pkgDetails?: string;
   userNearby?: string;
+  panelDetails?: string;
   createdAt: number;
 }
 
@@ -44,6 +45,7 @@ export interface Client {
   area: string;
   pkgDetails: string;
   userNearby: string;
+  panelDetails?: string;
   createdBy: string;
   createdAt: number;
 }

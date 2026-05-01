@@ -30,6 +30,7 @@
         "priority": { "type": "string" },
         "pkgDetails": { "type": "string" },
         "userNearby": { "type": "string" },
+        "panelDetails": { "type": "string" },
         "createdAt": { "type": "number" }
       },
       "required": ["id", "memberId", "memberName", "customerName", "status", "createdAt"]
@@ -84,6 +85,7 @@
         "area": { "type": "string" },
         "pkgDetails": { "type": "string" },
         "userNearby": { "type": "string" },
+        "panelDetails": { "type": "string" },
         "createdBy": { "type": "string" },
         "createdAt": { "type": "number" }
       },

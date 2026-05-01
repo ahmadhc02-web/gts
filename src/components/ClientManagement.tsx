@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import { Client } from '../types';
 import { firebaseService } from '../lib/firebaseService';
 import { toast } from 'sonner';
@@ -32,6 +32,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
   const [seriesNumber, setSeriesNumber] = useState('');
   const [pkgDetails, setPkgDetails] = useState('');
   const [userNearby, setUserNearby] = useState('');
+  const [panelDetails, setPanelDetails] = useState('');
   const [area, setArea] = useState(appConfig.zones[0] || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -59,6 +60,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
     setSeriesNumber('');
     setPkgDetails('');
     setUserNearby('');
+    setPanelDetails('');
     setArea(appConfig.zones[0] || '');
   };
 
@@ -71,6 +73,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
     setSeriesNumber(client.seriesNumber);
     setPkgDetails(client.pkgDetails || '');
     setUserNearby(client.userNearby || '');
+    setPanelDetails(client.panelDetails || '');
     setArea(client.area);
     
     // Scroll to form if on mobile
@@ -95,6 +98,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
           seriesNumber: seriesNumber.trim(),
           pkgDetails: pkgDetails.trim(),
           userNearby: userNearby.trim(),
+          panelDetails: panelDetails.trim(),
           area: area,
         }, currentUserName);
         toast.success('Client record updated');
@@ -107,6 +111,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
           seriesNumber: seriesNumber.trim(),
           pkgDetails: pkgDetails.trim(),
           userNearby: userNearby.trim(),
+          panelDetails: panelDetails.trim(),
           area: area,
           createdBy: currentUserId
         }, currentUserName);
@@ -270,6 +275,20 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
                     value={userNearby}
                     onChange={(e) => setUserNearby(e.target.value)}
                     placeholder="Ex: Near City Garden Gate"
+                    className={inputClasses}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className={labelClasses}>Pannal Details</label>
+                <div className="relative">
+                  <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    type="text"
+                    value={panelDetails}
+                    onChange={(e) => setPanelDetails(e.target.value)}
+                    placeholder="Ex: DP-04 / Box-02 / Port-08"
                     className={inputClasses}
                   />
                 </div>
@@ -667,6 +686,16 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
                           <div className="flex-1">
                             <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Landmark Intel</p>
                             <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed uppercase">{viewingClient.userNearby || 'No geo-landmarks registered'}</p>
+                          </div>
+                       </div>
+
+                       <div className="flex gap-3">
+                          <div className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
+                             <Layers size={14} className="text-brand-accent/60" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Pannal Intel</p>
+                            <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed uppercase">{viewingClient.panelDetails || 'No panel details registered'}</p>
                           </div>
                        </div>
                     </div>

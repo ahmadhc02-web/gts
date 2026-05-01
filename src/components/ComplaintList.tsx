@@ -83,6 +83,7 @@ export default function ComplaintList({
         c.area.toLowerCase().includes(q) ||
         (c.pkgDetails && c.pkgDetails.toLowerCase().includes(q)) ||
         (c.userNearby && c.userNearby.toLowerCase().includes(q)) ||
+        (c.panelDetails && c.panelDetails.toLowerCase().includes(q)) ||
         (c.memberName && c.memberName.toLowerCase().includes(q)) ||
         c.description.toLowerCase().includes(q)
       );
@@ -1060,6 +1061,13 @@ export default function ComplaintList({
                         <span className="uppercase tracking-tight text-lg">{selectedComplaint.userNearby || 'N/A'}</span>
                       </div>
                     </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pannal Details</p>
+                      <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
+                        <Layers size={16} className="text-brand-accent/60" />
+                        <span className="uppercase tracking-tight text-lg">{selectedComplaint.panelDetails || 'N/A'}</span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-6">
@@ -1272,6 +1280,15 @@ function EditModal({
                 type="text"
                 value={data.userNearby || ''}
                 onChange={(e) => setData({ ...data, userNearby: e.target.value })}
+                className={inputClasses}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className={labelClasses}>Pannal Details</label>
+              <input
+                type="text"
+                value={data.panelDetails || ''}
+                onChange={(e) => setData({ ...data, panelDetails: e.target.value })}
                 className={inputClasses}
               />
             </div>
