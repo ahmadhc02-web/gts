@@ -143,7 +143,6 @@ export default function AdminPanel({
   // WhatsApp Bridge State
   const [waStatus, setWaStatus] = useState<{ status: string, qrCodeUrl: string | null }>({ status: 'disconnected', qrCodeUrl: null });
   const [isRefreshingWA, setIsRefreshingWA] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // WhatsApp Template Local State
   const [regTemplate, setRegTemplate] = useState('');
@@ -189,79 +188,41 @@ export default function AdminPanel({
   const fetchWAStatus = async () => {
     try {
       const res = await fetch('/api/whatsapp/status');
-      if (res.status === 429) return null;
+      if (res.status === 429) return;
       
       const contentType = res.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
         const data = await res.json();
         setWaStatus(data);
-        return data;
       }
     } catch (err) {
       // Silently handle expected dev-server restarts or network blips
     }
-    return null;
   };
 
   useEffect(() => {
     let interval: any;
     if (activeTab === 'whatsapp') {
       fetchWAStatus();
-      interval = setInterval(fetchWAStatus, 3000); 
+      interval = setInterval(fetchWAStatus, 5000); // Poll every 5 seconds to avoid background rate limits
     }
     return () => clearInterval(interval);
   }, [activeTab]);
 
-  const handleWARefresh = async () => {
-    setIsRefreshingWA(true);
-    try {
-      await fetchWAStatus();
-      toast.info('WhatsApp Bridge status synchronized');
-    } catch (err) {
-      toast.error('Failed to refresh status');
-    } finally {
-      setTimeout(() => setIsRefreshingWA(false), 1000);
-    }
-  };
-
   const handleWALogout = async () => {
-    if (!confirm('TERMINATE LINK: This will disconnect your WhatsApp and generate a NEW QR code. Are you sure?')) return;
+    if (!confirm('TERMINATE LINK: Are you sure you want to disconnect WhatsApp? This will clear the current session and generate a NEW QR Code for re-linking.')) return;
     
-    // Immediate UI feedback
-    toast.info('Initiating session termination...', { duration: 3000 });
-    setWaStatus(prev => ({ ...prev, status: 'disconnected', qrCodeUrl: null }));
-    setIsLoggingOut(true);
+    // Set immediate loading state for better UX
+    setWaStatus({ status: 'disconnected', qrCodeUrl: null });
     
     try {
-      console.log('[AdminPanel] Calling WhatsApp logout API...');
-      const res = await fetch('/api/whatsapp/logout', { method: 'POST' });
-      
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Logout failed');
-      }
-      
-      toast.success('WhatsApp session terminated. Waiting for new QR code...', { 
-        duration: 5000,
-        description: 'Generating a fresh link protocol...' 
-      });
-      
-      // Intensive polling for 60 seconds to catch the new QR code as early as possible
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
-        const currentData = await fetchWAStatus();
-        if (attempts >= 30 || (currentData && currentData.qrCodeUrl)) {
-          clearInterval(poll);
-        }
-      }, 2000);
-      
-    } catch (err: any) {
-      console.error('[AdminPanel] Logout error:', err);
-      toast.error('Reset Failed: ' + (err.message || 'Unknown error'));
-      await fetchWAStatus(); 
-    } finally {
-      setIsLoggingOut(false);
+      await fetch('/api/whatsapp/logout', { method: 'POST' });
+      // Short delay to give Baileys time to re-initialize before first poll
+      setTimeout(fetchWAStatus, 1500); 
+      toast.success('WhatsApp session terminated. New QR code generating...');
+    } catch (err) {
+      toast.error('Failed to logout WhatsApp');
+      fetchWAStatus(); // Recover status if failed
     }
   };
 
@@ -489,29 +450,18 @@ export default function AdminPanel({
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="business-card p-10 bg-white dark:bg-slate-950 overflow-hidden relative">
               <div className="absolute top-0 right-0 p-8">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleWARefresh}
-                    className="p-2 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-brand-accent transition-all"
-                    title="Manual Status Refresh"
-                  >
-                    <RefreshCw size={14} className={cn(isRefreshingWA && "animate-spin")} />
-                  </button>
-                  <div className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest",
-                    waStatus.status === 'connected' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : 
-                    waStatus.status === 'connecting' ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                    waStatus.status === 'error' ? "bg-rose-500/10 text-rose-500 border-rose-500/20" :
-                    "bg-slate-500/10 text-slate-500 border-slate-500/20"
-                  )}>
-                    <div className={cn("w-1.5 h-1.5 rounded-full", 
-                      waStatus.status === 'connected' ? "bg-emerald-500 animate-pulse" :
-                      waStatus.status === 'connecting' ? "bg-amber-500 animate-pulse" : 
-                      waStatus.status === 'error' ? "bg-rose-500" : "bg-slate-400"
-                    )} />
-                    {waStatus.status}
-                  </div>
-                </div>
+                 <div className={cn(
+                   "flex items-center gap-2 px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest",
+                   waStatus.status === 'connected' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : 
+                   waStatus.status === 'connecting' ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
+                   "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                 )}>
+                   <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", 
+                     waStatus.status === 'connected' ? "bg-emerald-500" :
+                     waStatus.status === 'connecting' ? "bg-amber-500" : "bg-rose-500"
+                   )} />
+                   {waStatus.status}
+                 </div>
               </div>
 
               <div className="flex items-center gap-5 mb-10">
@@ -545,18 +495,15 @@ export default function AdminPanel({
                        ))}
                     </ul>
 
-                    <button
-                      onClick={handleWALogout}
-                      disabled={isLoggingOut}
-                      className="flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-900 dark:bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:scale-[1.02] transition-all disabled:opacity-50"
-                    >
-                      {isLoggingOut ? (
-                         <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      ) : (
+                    {(waStatus.status === 'connected' || waStatus.status === 'connecting' || waStatus.status === 'error') && (
+                      <button
+                        onClick={handleWALogout}
+                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-all"
+                      >
                         <Unlink size={14} />
-                      )}
-                      {isLoggingOut ? 'Resetting Bridge...' : 'Terminate / Reset Link'}
-                    </button>
+                        Terminate Link
+                      </button>
+                    )}
                  </div>
 
                  <div className="flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 relative min-h-[350px]">
@@ -583,31 +530,10 @@ export default function AdminPanel({
                           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-2">Initialize link via WhatsApp Mobile Application</p>
                         </div>
                       </div>
-                    ) : waStatus.status === 'error' ? (
-                      <div className="text-center space-y-4">
-                        <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center mx-auto border-2 border-rose-500/30">
-                           <ShieldAlert size={32} className="text-rose-500" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black uppercase text-rose-500 tracking-widest">Bridge Error</h4>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-2">Failed to initialize. Check server logs or try resetting the link.</p>
-                        </div>
-                        <button 
-                          onClick={handleWARefresh}
-                          className="px-6 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-brand-accent transition-all"
-                        >
-                          Retry Initialization
-                        </button>
-                      </div>
                     ) : (
                       <div className="text-center space-y-4">
                         <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                          {waStatus.status === 'disconnected' ? 'Generating QR Protocol...' : 'Initializing Bridge Module...'}
-                        </p>
-                        {waStatus.status === 'disconnected' && (
-                           <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">This may take up to 30 seconds on initial startup</p>
-                        )}
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Initializing Bridge Module...</p>
                       </div>
                     )}
                  </div>
