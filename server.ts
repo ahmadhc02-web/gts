@@ -8,8 +8,25 @@ import { whatsappBridge } from "./whatsapp-bridge.ts";
 
 dotenv.config();
 
+console.log('[Server] SERVER STARTING UP...');
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function safeStringify(obj: any): string {
+  try {
+    const cache = new Set();
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (cache.has(value)) return '[Circular]';
+        cache.add(value);
+      }
+      return value;
+    });
+  } catch (e) {
+    return 'null';
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -94,7 +111,7 @@ async function startServer() {
               if (window.opener) {
                 window.opener.postMessage({ 
                   type: 'GOOGLE_AUTH_SUCCESS', 
-                  tokens: ${JSON.stringify(tokens)} 
+                  tokens: ${safeStringify(tokens)} 
                 }, '*');
                 setTimeout(() => {
                   window.close();
@@ -255,7 +272,13 @@ async function startServer() {
   // --- WhatsApp Automation Routes ---
 
   app.get("/api/whatsapp/status", (req, res) => {
-    res.json(whatsappBridge.getStatus());
+    const status = whatsappBridge.getStatus();
+    if (status.qrCodeUrl) {
+      console.log(`[Server] Serving status: ${status.status} (QR Code available)`);
+    } else {
+      console.log(`[Server] Serving status: ${status.status} (No QR Code)`);
+    }
+    res.json(status);
   });
 
   app.post("/api/whatsapp/send", async (req, res) => {
@@ -274,10 +297,13 @@ async function startServer() {
   });
 
   app.post("/api/whatsapp/logout", async (req, res) => {
+    console.log('[Server] Received WhatsApp LOGOUT request');
     try {
-      await whatsappBridge.logout();
-      res.json({ success: true });
+      const result = await whatsappBridge.logout();
+      console.log('[Server] WhatsApp logout successful');
+      res.json(result);
     } catch (error: any) {
+      console.error('[Server] WhatsApp logout FAILED:', error);
       res.status(500).json({ error: error.message });
     }
   });

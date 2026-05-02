@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification, WhatsAppConfig } from '../types';
+import { safeStringify } from './utils';
 
 enum OperationType {
   CREATE = 'create',
@@ -43,8 +44,9 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -58,9 +60,12 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     },
     operationType,
     path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  };
+  
+  // Use console.dir with depth for safer object inspection without standard JSON.stringify risks
+  console.error('Firestore Operational Error:', errInfo);
+  
+  throw new Error(safeStringify(errInfo));
 }
 
 // Identity Integrity check helper
