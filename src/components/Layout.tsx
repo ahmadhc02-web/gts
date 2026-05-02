@@ -22,6 +22,8 @@ interface LayoutProps {
   onResetBanner?: () => void;
 }
 
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
+
 export default function Layout({ 
   children, 
   user, 
@@ -38,25 +40,16 @@ export default function Layout({
 }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const [isChatOpen, setIsChatOpen] = React.useState(false);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const isOnline = useOnlineStatus();
   const [showSyncStatus, setShowSyncStatus] = useState(false);
 
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
+    if (isOnline) {
       setShowSyncStatus(true);
-      setTimeout(() => setShowSyncStatus(false), 5000);
-    };
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
+      const timer = setTimeout(() => setShowSyncStatus(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOnline]);
 
   return (
     <div className="min-h-screen transition-colors duration-500 overflow-x-hidden">
@@ -200,9 +193,22 @@ export default function Layout({
               </div>
             )}
 
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-900 opacity-60">
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Live</span>
+            <div className={cn(
+              "hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all",
+              isOnline 
+                ? "border-emerald-500/20 bg-emerald-500/5 opacity-100" 
+                : "border-amber-500/20 bg-amber-500/5 opacity-100"
+            )}>
+              <div className={cn(
+                "w-2 h-2 rounded-full animate-pulse",
+                isOnline ? "bg-emerald-500" : "bg-amber-500"
+              )} />
+              <span className={cn(
+                "text-[10px] uppercase font-black tracking-widest",
+                isOnline ? "text-emerald-600 dark:text-emerald-500" : "text-amber-600 dark:text-amber-500"
+              )}>
+                {isOnline ? 'Live Relay' : 'Offline Access'}
+              </span>
             </div>
 
             {user && (

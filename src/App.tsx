@@ -6,14 +6,43 @@ import LoginForm from './components/LoginForm';
 import AdminPanel from './components/AdminPanel';
 import MemberPanel from './components/MemberPanel';
 import WelcomeOverlay from './components/WelcomeOverlay';
+import WhatsAppNotificationModal from './components/WhatsAppNotificationModal';
 import { Complaint, UserProfile, ComplaintStatus } from './types';
 import { firebaseService } from './lib/firebaseService';
 import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
+import { WhatsAppNotification, sendWhatsAppViaServer } from './lib/whatsapp';
+import { WhatsAppConfig } from './types';
+
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 export default function App() {
+  const isOnline = useOnlineStatus();
+
+  // WhatsApp Notification State
+  const [whatsappData, setWhatsappData] = useState<WhatsAppNotification | null>(null);
+  const [isWhatsappModalOpen, setIsWhatsappModalOpen] = useState(false);
+  const [waConfig, setWaConfig] = useState<WhatsAppConfig | null>(null);
+
+  // Watch for connection changes
+  useEffect(() => {
+    if (isOnline) {
+      toast.success('Connection Restored', {
+        description: 'Synchronizing local operational data with server relay...',
+        duration: 3000
+      });
+      // Process pending Google Sheets syncs
+      googleSheetsService.syncQueue.process().catch(console.error);
+    } else {
+      toast.error('Connection Severed', {
+        description: 'Switching to Local Access Mode. Data will be cached locally.',
+        duration: 5000
+      });
+    }
+  }, [isOnline]);
+
   const [user, setUser] = useState<UserProfile | null>(() => {
     const savedUser = localStorage.getItem('complaint_app_user');
     return savedUser ? JSON.parse(savedUser) : null;
@@ -269,8 +298,8 @@ export default function App() {
       try {
         // Attempt to establish a Firebase session
         try {
-          await signInAnonymously(auth);
-          console.log('Connected to Firebase as anonymous user');
+          const userCred = await signInAnonymously(auth);
+          console.log('Connected to Firebase as anonymous user:', userCred.user.uid);
         } catch (authErr) {
           console.warn("Auth initialization restricted:", authErr);
         }
@@ -286,7 +315,6 @@ export default function App() {
             });
           } else {
             console.log('No app config found, initializing with defaults...');
-            // First time initialization
             firebaseService.updateConfig({
               categories: DEFAULT_CATEGORIES,
               statuses: DEFAULT_STATUSES,
@@ -296,6 +324,11 @@ export default function App() {
               console.error('Failed to bootstrap config:', err);
             });
           }
+        });
+
+        // WhatsApp Bridge config
+        firebaseService.subscribeWhatsAppConfig((config) => {
+          setWaConfig(config);
         });
         
         // Fetch users for login/bootstrap
@@ -484,11 +517,38 @@ export default function App() {
       const newComplaint = await firebaseService.createComplaint(data, user);
       toast.success('Complaint submitted successfully!');
       
+      // WhatsApp Trigger - Unified Automated Protocol
+      const waData: WhatsAppNotification = {
+        type: 'registered',
+        customerName: newComplaint.customerName,
+        complaintId: newComplaint.id,
+        category: newComplaint.category,
+        phoneNumber: newComplaint.number,
+        description: newComplaint.description,
+        template: waConfig?.registrationTemplate
+      };
+
+      // Try background dispatch first
+      const serverResult = await sendWhatsAppViaServer(waData);
+      if (!serverResult.success) {
+        // Fallback to manual if bridge is offline
+        setWhatsappData(waData);
+        setIsWhatsappModalOpen(true);
+      } else {
+        toast.info('Automated WhatsApp dispatch successful');
+      }
+
       // Auto-sync to Google Sheets if configured
       try {
-        await googleSheetsService.appendComplaint(newComplaint);
+        if (navigator.onLine) {
+          await googleSheetsService.appendComplaint(newComplaint);
+        } else {
+          console.warn('Offline: Queueing sheet sync for reconnection.');
+          googleSheetsService.syncQueue.add(newComplaint);
+        }
       } catch (err) {
-        console.error('Failed to sync with Google Sheets:', err);
+        console.error('Failed to sync with Google Sheets, queuing...', err);
+        googleSheetsService.syncQueue.add(newComplaint);
       }
     } catch (e) {
       console.error(e);
@@ -513,6 +573,29 @@ export default function App() {
     try {
       await firebaseService.updateComplaintStatus(id, status, user.username);
       toast.success(`Status updated to ${status}`);
+
+      // WhatsApp Trigger if complete
+      if (status === 'complete') {
+        const compl = complaints.find(c => c.id === id);
+        if (compl) {
+          const waData: WhatsAppNotification = {
+            type: 'completed',
+            customerName: compl.customerName,
+            complaintId: compl.id,
+            category: compl.category,
+            phoneNumber: compl.number,
+            template: waConfig?.completionTemplate
+          };
+          
+          const serverResult = await sendWhatsAppViaServer(waData);
+          if (!serverResult.success) {
+            setWhatsappData(waData);
+            setIsWhatsappModalOpen(true);
+          } else {
+            toast.info('Automated completion notify sent');
+          }
+        }
+      }
     } catch (e) {
       console.error(e);
       toast.error('Failed to update status.');
@@ -524,6 +607,29 @@ export default function App() {
     try {
       await firebaseService.updateComplaint(id, data, user.username);
       toast.success('Log record updated successfully');
+
+      // WhatsApp Trigger if complete
+      if (data.status === 'complete') {
+        const compl = complaints.find(c => c.id === id);
+        if (compl) {
+          const waData: WhatsAppNotification = {
+            type: 'completed',
+            customerName: compl.customerName,
+            complaintId: compl.id,
+            category: compl.category,
+            phoneNumber: compl.number,
+            template: waConfig?.completionTemplate
+          };
+
+          const serverResult = await sendWhatsAppViaServer(waData);
+          if (!serverResult.success) {
+            setWhatsappData(waData);
+            setIsWhatsappModalOpen(true);
+          } else {
+            toast.info('Automated completion notify sent');
+          }
+        }
+      }
     } catch (e) {
       console.error(e);
       toast.error('Failed to update record.');
@@ -630,9 +736,24 @@ export default function App() {
     toast.success('System configuration updated');
   };
 
+  const handleUpdateWhatsAppConfig = async (config: WhatsAppConfig) => {
+    if (!user) return;
+    try {
+      await firebaseService.updateWhatsAppConfig(config, user.username);
+    } catch (err) {
+      console.error(err);
+      throw err;
+    }
+  };
+
   return (
     <>
       <Toaster position="top-right" richColors />
+      <WhatsAppNotificationModal 
+        isOpen={isWhatsappModalOpen} 
+        onClose={() => setIsWhatsappModalOpen(false)} 
+        data={whatsappData} 
+      />
       <AnimatePresence>
         {showWelcome && user && (
           <WelcomeOverlay 
@@ -680,6 +801,8 @@ export default function App() {
           onAuthorizeMic={handleAuthorizeMic}
           isMicMuted={isMicMuted}
           onToggleMic={handleToggleMic}
+          waConfig={waConfig}
+          onUpdateWhatsAppConfig={handleUpdateWhatsAppConfig}
         />
       ) : (
         <MemberPanel

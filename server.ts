@@ -1,10 +1,10 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { google } from "googleapis";
 import fs from "fs";
+import { whatsappBridge } from "./whatsapp-bridge.ts";
 
 dotenv.config();
 
@@ -206,7 +206,6 @@ async function startServer() {
 
       const drive = google.drive({ version: 'v3', auth });
       
-      // 1. Find or create folder "GreenTech_Backups"
       const folderName = "GreenTech_Backups";
       let folderId: string;
       
@@ -230,7 +229,6 @@ async function startServer() {
         folderId = folder.data.id!;
       }
 
-      // 2. Upload file
       const fileMetadata = {
         name: filename || `backup_${new Date().toISOString()}.csv`,
         parents: [folderId]
@@ -254,10 +252,41 @@ async function startServer() {
     }
   });
 
-  // --- End Google Drive & Sheets Integration ---
+  // --- WhatsApp Automation Routes ---
+
+  app.get("/api/whatsapp/status", (req, res) => {
+    res.json(whatsappBridge.getStatus());
+  });
+
+  app.post("/api/whatsapp/send", async (req, res) => {
+    const { phoneNumber, text } = req.body;
+    if (!phoneNumber || !text) {
+      return res.status(400).json({ error: "Missing phoneNumber or text" });
+    }
+
+    try {
+      const result = await whatsappBridge.sendMessage(phoneNumber, text);
+      res.json(result);
+    } catch (error: any) {
+      console.error('WhatsApp Send Error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/whatsapp/logout", async (req, res) => {
+    try {
+      await whatsappBridge.logout();
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // --- End WhatsApp Automation Routes ---
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity } from 'lucide-react';
-import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory } from '../types';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, RefreshCw, Unlink, QrCode, FileEdit, Save, RotateCcw } from 'lucide-react';
+import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, WhatsAppConfig } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
 import ClientManagement from './ClientManagement';
@@ -48,6 +48,8 @@ interface AdminPanelProps {
   onAuthorizeMic: () => Promise<void>;
   isMicMuted: boolean;
   onToggleMic: () => void;
+  waConfig: WhatsAppConfig | null;
+  onUpdateWhatsAppConfig: (config: WhatsAppConfig) => Promise<void>;
 }
 
 export default function AdminPanel({
@@ -74,7 +76,9 @@ export default function AdminPanel({
   micAuthorized,
   onAuthorizeMic,
   isMicMuted,
-  onToggleMic
+  onToggleMic,
+  waConfig,
+  onUpdateWhatsAppConfig
 }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor'>('complaints');
   const [newUsername, setNewUsername] = useState('');
@@ -101,10 +105,10 @@ export default function AdminPanel({
   const stats = [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
-    { label: 'New Connection', value: complaints.filter(c => c.category === 'New Connection').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'all', priority: 'all', category: 'New Connection' } },
+    { label: 'New Connection', value: complaints.filter(c => c.category === 'New Connection' && c.status === 'pending').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
     { label: 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
-    { label: 'Finalized', value: complaints.filter(c => c.status === 'complete').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
-    { label: 'Critical Alerts', value: complaints.filter(c => c.priority === 'Critical').length, tooltip: 'Operational crises requiring immediate high-tier intervention.', color: 'border-rose-600', textColor: 'text-rose-600', icon: <ShieldAlert size={18} />, filter: { status: 'all', priority: 'Critical', category: 'all' } },
+    { label: 'Finalized', value: complaints.filter(c => c.status === 'complete' && c.category !== 'New Connection').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
+    { label: 'Connection Complete', value: complaints.filter(c => c.category === 'New Connection' && c.status === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
   ];
 
   const handleTileClick = (filter: any) => {
@@ -135,6 +139,102 @@ export default function AdminPanel({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [config, setConfig] = useState<{ redirectUri: string, origin: string } | null>(null);
+
+  // WhatsApp Bridge State
+  const [waStatus, setWaStatus] = useState<{ status: string, qrCodeUrl: string | null }>({ status: 'disconnected', qrCodeUrl: null });
+  const [isRefreshingWA, setIsRefreshingWA] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // WhatsApp Template Local State
+  const [regTemplate, setRegTemplate] = useState('');
+  const [compTemplate, setCompTemplate] = useState('');
+  const [isUpdatingTemplates, setIsUpdatingTemplates] = useState(false);
+
+  const DEFAULT_REG_TEMPLATE = `*ISP SERVICE UPDATE: COMPLAINT REGISTERED* ✅\n\nDear *{customerName}*,\n\nYour service request has been successfully registered in our operational relay.\n\n🎫 *Complaint ID:* {complaintId}\n📂 *Category:* {category}\n{description}\n🕒 *Status:* PENDING_DISPATCH\n\nOur field technician will be assigned to your zone shortly. Thank you for your patience.\n\n_GTS Network Operations Control_`;
+  const DEFAULT_COMP_TEMPLATE = `*ISP SERVICE UPDATE: COMPLAINT RESOLVED* 🎉\n\nDear *{customerName}*,\n\nWe are pleased to inform you that your complaint (ID: *{complaintId}*) has been marked as *COMPLETE*.\n\nYour service should now be fully restored. Please verify the connection. If you're still facing issues, contact our support line immediately.\n\n✨ *Thank you for choosing our fiber service!*\n\n_GTS Network Operations Control_`;
+
+  useEffect(() => {
+    if (waConfig) {
+      setRegTemplate(waConfig.registrationTemplate);
+      setCompTemplate(waConfig.completionTemplate);
+    } else {
+      setRegTemplate(DEFAULT_REG_TEMPLATE);
+      setCompTemplate(DEFAULT_COMP_TEMPLATE);
+    }
+  }, [waConfig]);
+
+  const restoreDefaults = () => {
+    if (confirm('Restore templates to professional defaults? Your current modifications will be overwritten.')) {
+      setRegTemplate(DEFAULT_REG_TEMPLATE);
+      setCompTemplate(DEFAULT_COMP_TEMPLATE);
+      toast.info('Templates reset to system defaults');
+    }
+  };
+
+  const handleUpdateWAConfig = async () => {
+    setIsUpdatingTemplates(true);
+    try {
+      await onUpdateWhatsAppConfig({
+        registrationTemplate: regTemplate,
+        completionTemplate: compTemplate
+      });
+      toast.success('WhatsApp templates updated successfully');
+    } catch (err) {
+      toast.error('Failed to update templates');
+    } finally {
+      setIsUpdatingTemplates(false);
+    }
+  };
+
+  const fetchWAStatus = async () => {
+    try {
+      const res = await fetch('/api/whatsapp/status');
+      if (res.status === 429) return;
+      
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        setWaStatus(data);
+      }
+    } catch (err) {
+      // Silently handle expected dev-server restarts or network blips
+    }
+  };
+
+  useEffect(() => {
+    let interval: any;
+    if (activeTab === 'whatsapp') {
+      fetchWAStatus();
+      interval = setInterval(fetchWAStatus, 5000); // Poll every 5 seconds to avoid background rate limits
+    }
+    return () => clearInterval(interval);
+  }, [activeTab]);
+
+  const handleWALogout = async () => {
+    if (!confirm('TERMINATE LINK: Are you sure you want to disconnect WhatsApp? This will clear the current session and generate a NEW QR Code for re-linking.')) return;
+    
+    // Set immediate loading state for better UX
+    setWaStatus(prev => ({ ...prev, status: 'disconnected', qrCodeUrl: null }));
+    setIsLoggingOut(true);
+    
+    try {
+      const res = await fetch('/api/whatsapp/logout', { method: 'POST' });
+      if (!res.ok) throw new Error('Logout request failed');
+      
+      toast.success('WhatsApp session terminated successfully');
+      
+      // Wait a bit and then refresh status multiple times to catch the new QR code
+      setTimeout(fetchWAStatus, 1500);
+      setTimeout(fetchWAStatus, 4000);
+      setTimeout(fetchWAStatus, 8000);
+    } catch (err) {
+      console.error('Logout error:', err);
+      toast.error('Failed to logout WhatsApp session');
+      fetchWAStatus(); // Try to recover UI state
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'integrations') {
@@ -324,6 +424,7 @@ export default function AdminPanel({
             { id: 'users', label: 'Link Access', icon: Users },
             { id: 'config', label: 'Workflow Config', icon: Settings },
             { id: 'settings', label: 'Security', icon: Shield },
+            { id: 'whatsapp', label: 'WhatsApp Bridge', icon: MessageSquare },
             { id: 'integrations', label: 'Cloud Connection', icon: CloudUpload },
           ].map((tab) => (
             <button
@@ -355,6 +456,203 @@ export default function AdminPanel({
         transition={{ duration: 0.2 }}
         id="operations-registry"
       >
+        {activeTab === 'whatsapp' && (
+          <div className="max-w-4xl mx-auto space-y-8">
+            <div className="business-card p-10 bg-white dark:bg-slate-950 overflow-hidden relative">
+              <div className="absolute top-0 right-0 p-8">
+                 <div className={cn(
+                   "flex items-center gap-2 px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest",
+                   waStatus.status === 'connected' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : 
+                   waStatus.status === 'connecting' ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
+                   "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                 )}>
+                   <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", 
+                     waStatus.status === 'connected' ? "bg-emerald-500" :
+                     waStatus.status === 'connecting' ? "bg-amber-500" : "bg-rose-500"
+                   )} />
+                   {waStatus.status}
+                 </div>
+              </div>
+
+              <div className="flex items-center gap-5 mb-10">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm">
+                  <MessageSquare size={28} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight">WhatsApp Backend Bridge</h3>
+                  <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">Automatic Dispatch & Notification Synchronization</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                 <div className="space-y-6">
+                    <p className="text-sm text-slate-600 dark:text-slate-400 font-medium leading-relaxed uppercase">
+                      Link your WhatsApp business account to enable <span className="text-emerald-500 font-black">Autonomous Dispatch Protocol</span>. 
+                      Once linked, the system will automatically send updates directly to customers without manual intervention.
+                    </p>
+                    
+                    <ul className="space-y-4">
+                       {[
+                         { icon: Zap, text: 'Instant Registration Notify' },
+                         { icon: CheckCircle, text: 'Automatic Resolution Alerts' },
+                         { icon: Shield, text: 'Secure Session Encryption' },
+                         { icon: RefreshCw, text: 'Background Connection Management' }
+                       ].map((item, i) => (
+                         <li key={i} className="flex items-center gap-3 text-[11px] font-black uppercase tracking-widest text-slate-500">
+                           <item.icon size={14} className="text-emerald-500" />
+                           {item.text}
+                         </li>
+                       ))}
+                    </ul>
+
+                    {(waStatus.status === 'connected' || waStatus.status === 'connecting' || waStatus.status === 'error') && (
+                      <button
+                        onClick={handleWALogout}
+                        disabled={isLoggingOut}
+                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-all disabled:opacity-50"
+                      >
+                        {isLoggingOut ? (
+                           <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <Unlink size={14} />
+                        )}
+                        {isLoggingOut ? 'Terminating...' : 'Terminate Link'}
+                      </button>
+                    )}
+                 </div>
+
+                 <div className="flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 relative min-h-[350px]">
+                    {waStatus.status === 'connected' ? (
+                      <div className="text-center space-y-4">
+                        <div className="w-24 h-24 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto border-2 border-emerald-500/30">
+                           <Shield size={48} className="text-emerald-500" />
+                        </div>
+                        <div>
+                          <h4 className="text-lg font-black uppercase text-emerald-500 tracking-tight">Active Connection</h4>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Operational Relay is ONLINE</p>
+                        </div>
+                      </div>
+                    ) : waStatus.qrCodeUrl ? (
+                      <div className="text-center space-y-6">
+                        <div className="relative p-4 bg-white rounded-3xl shadow-2xl border border-slate-200">
+                           <img src={waStatus.qrCodeUrl} alt="WhatsApp QR Code" className="w-48 h-48 sm:w-64 sm:h-64" />
+                           <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-white/40 backdrop-blur-[2px] rounded-3xl pointer-events-none">
+                              <QrCode size={48} className="text-slate-900" />
+                           </div>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black uppercase text-slate-900 dark:text-white tracking-widest">Scan QR Code</h4>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-2">Initialize link via WhatsApp Mobile Application</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center space-y-4">
+                        <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Initializing Bridge Module...</p>
+                      </div>
+                    )}
+                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Template Management Section */}
+        {activeTab === 'whatsapp' && (
+          <div className="max-w-4xl mx-auto mt-8 space-y-8 pb-20">
+            <div className="business-card p-10 bg-white dark:bg-slate-950 overflow-hidden relative">
+               <div className="flex items-center gap-5 mb-10">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-sm">
+                    <FileEdit size={28} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black uppercase tracking-tight">Message Protocols</h3>
+                    <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">Configure automated dispatch text matrix</p>
+                  </div>
+               </div>
+
+               <div className="space-y-10">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                     {/* Registration Template */}
+                     <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                           <label className="text-[11px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                              <PlusSquare size={14} className="text-emerald-500" />
+                              Registration Text
+                           </label>
+                           <span className="text-[8px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest">Auto-Dispatch on Create</span>
+                        </div>
+                        <textarea
+                          value={regTemplate}
+                          onChange={(e) => setRegTemplate(e.target.value)}
+                          className="w-full h-80 rounded-3xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 text-sm font-medium text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none font-mono"
+                          placeholder="Type registration message template..."
+                        />
+                     </div>
+
+                     {/* Completion Template */}
+                     <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                           <label className="text-[11px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                              <CheckCircle size={14} className="text-blue-500" />
+                              Completion Text
+                           </label>
+                           <span className="text-[8px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest">Auto-Dispatch on Resolution</span>
+                        </div>
+                        <textarea
+                          value={compTemplate}
+                          onChange={(e) => setCompTemplate(e.target.value)}
+                          className="w-full h-80 rounded-3xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 text-sm font-medium text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all resize-none font-mono"
+                          placeholder="Type completion message template..."
+                        />
+                     </div>
+                  </div>
+
+                  <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-wrap gap-4 items-center justify-center">
+                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Available Placeholders:</span>
+                     {['{customerName}', '{complaintId}', '{category}', '{description}'].map(tag => (
+                       <code key={tag} className="px-3 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-black text-brand-accent tracking-widest uppercase">{tag}</code>
+                     ))}
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <button
+                      onClick={restoreDefaults}
+                      className="px-6 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-brand-accent transition-all flex items-center gap-2"
+                    >
+                       <RotateCcw size={14} />
+                       Restore Defaults
+                    </button>
+                    <div className="flex gap-4">
+                       <button
+                         onClick={() => {
+                           setRegTemplate(waConfig?.registrationTemplate || DEFAULT_REG_TEMPLATE);
+                           setCompTemplate(waConfig?.completionTemplate || DEFAULT_COMP_TEMPLATE);
+                            toast.info('Template changes reverted');
+                         }}
+                         className="px-8 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-sm font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-3"
+                       >
+                          Cancel
+                       </button>
+                       <button
+                         onClick={handleUpdateWAConfig}
+                         disabled={isUpdatingTemplates}
+                         className="px-10 py-4 rounded-2xl bg-slate-900 dark:bg-brand-accent text-white dark:text-slate-900 text-sm font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-xl shadow-brand-accent/20 flex items-center gap-3 disabled:opacity-50"
+                       >
+                          {isUpdatingTemplates ? (
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : (
+                            <Save size={18} />
+                          )}
+                          Save Templates
+                       </button>
+                    </div>
+                  </div>
+               </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'monitor' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <RealTimeMonitor complaints={complaints} />

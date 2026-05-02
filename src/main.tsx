@@ -3,20 +3,17 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Register Service Worker for background notifications
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .then(registration => {
-        console.log('SW registered:', registration);
-        // Ensure the SW is updated promptly
-        registration.update();
-      })
-      .catch(err => {
-        console.error('ServiceWorker registration failed: ', err);
-      });
-  });
-}
+import { registerSW } from 'virtual:pwa-register';
+
+// Register Service Worker with automatic updates
+const updateSW = registerSW({
+  onNeedRefresh() {
+    console.log('New content available, please refresh.');
+  },
+  onOfflineReady() {
+    console.log('Application ready for offline use.');
+  },
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

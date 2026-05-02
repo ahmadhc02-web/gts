@@ -114,6 +114,18 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "type", "message", "authorName", "createdAt"]
+    },
+    "WhatsAppConfig": {
+      "title": "WhatsApp Configuration",
+      "description": "Templates for automated WhatsApp dispatch messages.",
+      "type": "object",
+      "properties": {
+        "registrationTemplate": { "type": "string" },
+        "completionTemplate": { "type": "string" },
+        "updatedAt": { "type": "number" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["registrationTemplate", "completionTemplate"]
     }
   },
   "firestore": {
@@ -136,6 +148,10 @@
     "config/app": {
       "schema": "AppConfig",
       "description": "Workflow categories, statuses and priorities."
+    },
+    "config/whatsapp": {
+      "schema": "WhatsAppConfig",
+      "description": "Custom message templates for WhatsApp dispatch."
     },
     "chat/{messageId}": {
       "schema": "Message",

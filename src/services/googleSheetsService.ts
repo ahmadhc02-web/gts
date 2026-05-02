@@ -255,5 +255,44 @@ export const googleSheetsService = {
       console.error('Error backing up to Google Drive:', error);
       throw error;
     }
+  },
+
+  // Offline Sync Queue for Sheets
+  syncQueue: {
+    add: (complaint: any) => {
+      const queue = JSON.parse(localStorage.getItem('gts_sheet_sync_queue') || '[]');
+      queue.push(complaint);
+      localStorage.setItem('gts_sheet_sync_queue', JSON.stringify(queue));
+    },
+    get: () => {
+      return JSON.parse(localStorage.getItem('gts_sheet_sync_queue') || '[]');
+    },
+    clear: () => {
+      localStorage.removeItem('gts_sheet_sync_queue');
+    },
+    process: async () => {
+      if (!navigator.onLine) return;
+      
+      const queue = googleSheetsService.syncQueue.get();
+      if (queue.length === 0) return;
+
+      console.log(`Processing ${queue.length} queued records for Google Sheets...`);
+      
+      const remaining: any[] = [];
+      for (const item of queue) {
+        try {
+          await googleSheetsService.appendComplaint(item);
+        } catch (err) {
+          console.error('Failed to sync queued item:', err);
+          remaining.push(item);
+        }
+      }
+
+      if (remaining.length > 0) {
+        localStorage.setItem('gts_sheet_sync_queue', JSON.stringify(remaining));
+      } else {
+        googleSheetsService.syncQueue.clear();
+      }
+    }
   }
 };
