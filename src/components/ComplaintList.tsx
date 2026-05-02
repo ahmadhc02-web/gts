@@ -5,7 +5,7 @@ import autoTable from 'jspdf-autotable';
 import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority } from '../types';
 import { cn } from '../lib/utils';
-import { Network, ShieldAlert, Zap, Layers, Activity } from 'lucide-react';
+import { Network, ShieldAlert, Zap, Layers } from 'lucide-react';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
@@ -1081,7 +1081,7 @@ export default function ComplaintList({
                     <div className="space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Urgency Level</p>
                       <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                        <Activity size={16} className="text-brand-accent/60" />
+                        <Zap size={16} className="text-brand-accent/60" />
                         <div className={cn(
                           "px-3 py-0.5 rounded text-sm uppercase tracking-widest border",
                           getPriorityColor(selectedComplaint.priority || 'Medium')

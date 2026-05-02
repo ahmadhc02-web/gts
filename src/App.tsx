@@ -12,7 +12,6 @@ import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
-import { Activity } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(() => {

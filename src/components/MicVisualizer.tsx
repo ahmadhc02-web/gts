@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Activity } from 'lucide-react';
 
 interface MicVisualizerProps {
   isMuted: boolean;

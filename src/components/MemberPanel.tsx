@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Layers, ShieldAlert, Activity, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut } from 'lucide-react';
+import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile } from '../types';
 import ComplaintForm from './ComplaintForm';
 import ComplaintList from './ComplaintList';
 import ClientManagement from './ClientManagement';
+import RealTimeMonitor from './RealTimeMonitor';
 import { cn } from '../lib/utils';
 import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
@@ -66,12 +67,12 @@ export default function MemberPanel({
   const [newUsername, setNewUsername] = useState(currentUser.username);
   const [newPassword, setNewPassword] = useState(currentUser.password);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ops' | 'clients' | 'profile'>('ops');
+  const [activeTab, setActiveTab] = useState<'ops' | 'clients' | 'profile' | 'monitor'>('ops');
   const stats = [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Global volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
-    { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Activity size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
+    { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
     { label: 'New Connection', value: complaints.filter(c => c.category === 'New Connection').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'all', priority: 'all', category: 'New Connection' } },
-    { label: 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Tasks currently under execution by on-site field technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <Activity size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
+    { label: 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Tasks currently under execution by on-site field technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
     { label: 'Finalized', value: complaints.filter(c => c.status === 'complete').length, tooltip: 'Service successfully restored and verified from the enterprise logs.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
     { label: 'Critical Alerts', value: complaints.filter(c => c.priority === 'Critical').length, tooltip: 'Operational crises requiring immediate high-priority attention.', color: 'border-rose-600', textColor: 'text-rose-600', icon: <ShieldAlert size={18} />, filter: { status: 'all', priority: 'Critical', category: 'all' } },
   ];
@@ -153,7 +154,8 @@ export default function MemberPanel({
       {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl w-fit border border-slate-200 dark:border-slate-800">
         {[
-          { id: 'ops', label: 'Operations', icon: Activity },
+          { id: 'ops', label: 'Operations', icon: ClipboardList },
+          { id: 'monitor', label: 'Pulse Monitor', icon: BarChart3 },
           { id: 'clients', label: 'User Details', icon: Contact },
           { id: 'profile', label: 'Security', icon: Shield },
         ].map((tab) => (
@@ -180,6 +182,18 @@ export default function MemberPanel({
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.2 }}
       >
+        {activeTab === 'monitor' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <RealTimeMonitor complaints={complaints} />
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+               <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white mb-4">Tactical Awareness</h3>
+               <p className="text-xs text-slate-500 font-medium leading-relaxed uppercase">
+                 Field monitor for real-time infrastructure pulses. Spikes indicate high-priority broadcasts or remote registry mutations within your zone of operation.
+               </p>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'ops' && (
           <div className="space-y-12">
             <section>
@@ -322,7 +336,7 @@ export default function MemberPanel({
 
                   <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-slate-800">
                     <div className="flex items-center gap-3 mb-6">
-                      <Activity className="text-blue-500" size={20} />
+                      <Mic className="text-blue-500" size={20} />
                       <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Voice Input Protocol</h4>
                     </div>
 

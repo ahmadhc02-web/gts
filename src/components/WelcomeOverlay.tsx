@@ -23,12 +23,12 @@ export default function WelcomeOverlay({ username, onComplete }: WelcomeOverlayP
     >
         <div className="text-center space-y-4">
           <motion.div
-            initial={{ scale: 0.8, opacity: 0, y: 20 }}
+            initial={{ scale: 0.5, opacity: 0, y: 40 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             transition={{ 
               type: "spring",
-              stiffness: 100,
-              damping: 15,
+              stiffness: 80,
+              damping: 12,
               delay: 0.2 
             }}
           >
@@ -38,9 +38,13 @@ export default function WelcomeOverlay({ username, onComplete }: WelcomeOverlayP
           </motion.div>
           
           <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.5, duration: 0.5 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ 
+              delay: 0.6, 
+              duration: 0.8,
+              ease: "easeOut"
+            }}
             className="flex items-center justify-center gap-4"
           >
             <div className="h-[2px] w-12 bg-emerald-500/50" />

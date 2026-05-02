@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Activity } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { UserProfile } from '../types';
@@ -38,9 +38,57 @@ export default function Layout({
 }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const [isChatOpen, setIsChatOpen] = React.useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showSyncStatus, setShowSyncStatus] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setShowSyncStatus(true);
+      setTimeout(() => setShowSyncStatus(false), 5000);
+    };
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen transition-colors duration-500 overflow-x-hidden">
+      {/* Network Status Banner */}
+      <AnimatePresence>
+        {!isOnline && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-amber-500 text-white py-1.5 px-4 flex items-center justify-center gap-2 overflow-hidden sticky top-0 z-[100] shadow-md"
+          >
+            <WifiOff size={14} className="animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-widest">
+              Offline Mode — Work will be saved locally and synced automatically when connected.
+            </span>
+          </motion.div>
+        )}
+        {showSyncStatus && isOnline && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-emerald-600 text-white py-1.5 px-4 flex items-center justify-center gap-2 overflow-hidden sticky top-0 z-[100] shadow-md"
+          >
+            <Wifi size={14} />
+            <span className="text-[10px] font-black uppercase tracking-widest">
+              Connection Restored — Synchronizing data with server...
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Global Loading Indicator */}
       <AnimatePresence>
         {isLoading && (
@@ -121,20 +169,6 @@ export default function Layout({
                   {isAudioMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                 </button>
 
-                <button
-                  onClick={onToggleMic}
-                  className={cn(
-                    "p-2 rounded-lg transition-all [&>svg>path:nth-of-type(1)]:[background-color:#2fd347] [&>svg>path:nth-of-type(1)]:[color:#85d282]",
-                    !micAuthorized ? "text-slate-200 bg-slate-100" :
-                    isMicMuted ? "text-slate-400 hover:text-blue-500" : "text-blue-500"
-                  )}
-                  style={{ backgroundColor: '#f9fff9' }}
-                  disabled={!micAuthorized}
-                  title={!micAuthorized ? "Mic Not Authorized" : isMicMuted ? "Unmute Tactical Mic" : "Mute Tactical Mic"}
-                >
-                  {isMicMuted ? <VolumeX size={18} /> : <Activity size={18} />}
-                </button>
-                
                 <button
                   onClick={onResetBanner}
                   className={cn(

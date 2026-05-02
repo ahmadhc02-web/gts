@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, Activity, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
 import ClientManagement from './ClientManagement';
+import RealTimeMonitor from './RealTimeMonitor';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
@@ -75,7 +76,7 @@ export default function AdminPanel({
   isMicMuted,
   onToggleMic
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients'>('complaints');
+  const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor'>('complaints');
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'member'>('member');
@@ -99,9 +100,9 @@ export default function AdminPanel({
 
   const stats = [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
-    { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Activity size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
+    { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
     { label: 'New Connection', value: complaints.filter(c => c.category === 'New Connection').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'all', priority: 'all', category: 'New Connection' } },
-    { label: 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <Activity size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
+    { label: 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
     { label: 'Finalized', value: complaints.filter(c => c.status === 'complete').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
     { label: 'Critical Alerts', value: complaints.filter(c => c.priority === 'Critical').length, tooltip: 'Operational crises requiring immediate high-tier intervention.', color: 'border-rose-600', textColor: 'text-rose-600', icon: <ShieldAlert size={18} />, filter: { status: 'all', priority: 'Critical', category: 'all' } },
   ];
@@ -317,6 +318,7 @@ export default function AdminPanel({
         <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl w-full lg:w-fit border border-slate-200 dark:border-slate-800">
           {[
             { id: 'complaints', label: 'Operations', icon: ClipboardList },
+            { id: 'monitor', label: 'Status Monitor', icon: BarChart3 },
             { id: 'submit', label: 'Complain Reg', icon: PlusSquare },
             { id: 'clients', label: 'User Details', icon: Contact },
             { id: 'users', label: 'Link Access', icon: Users },
@@ -353,6 +355,18 @@ export default function AdminPanel({
         transition={{ duration: 0.2 }}
         id="operations-registry"
       >
+        {activeTab === 'monitor' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <RealTimeMonitor complaints={complaints} />
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+               <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white mb-4">Pulse Analysis</h3>
+               <p className="text-xs text-slate-500 font-medium leading-relaxed uppercase">
+                 The Real-Time Pulse monitor visualizes network orchestration and operational flow within the GTS Infrastructure. Every heartbeat represents a synchronized node state or high-tier priority broadcast.
+               </p>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'complaints' && (
           <ComplaintList
             complaints={complaints}
@@ -590,7 +604,7 @@ export default function AdminPanel({
             <div className="business-card p-10 bg-white dark:bg-slate-950">
               <div className="flex items-center gap-5 mb-10">
                 <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-sm">
-                  <Activity size={28} />
+                  <Volume2 size={28} />
                 </div>
                 <div>
                   <h3 className="text-xl font-black uppercase tracking-tight">System Audio & Matrix</h3>
@@ -665,7 +679,7 @@ export default function AdminPanel({
                     <div className="space-y-4">
                       <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
                         <div className="flex items-center gap-3">
-                          {isMicMuted ? <VolumeX className="text-rose-500" size={18} /> : <Activity className="text-blue-500" size={18} />}
+                          {isMicMuted ? <VolumeX className="text-rose-500" size={18} /> : <Mic className="text-blue-500" size={18} />}
                           <div>
                             <p className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Tactical Mic</p>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{isMicMuted ? 'Capture Suppressed' : 'Capture Active'}</p>
