@@ -75,10 +75,3 @@ export interface Notification {
   authorName: string;
   createdAt: number;
 }
-
-export interface WhatsAppConfig {
-  registrationTemplate: string;
-  completionTemplate: string;
-  updatedAt?: number;
-  updatedBy?: string;
-}

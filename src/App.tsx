@@ -14,7 +14,6 @@ import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
 import { WhatsAppNotification, sendWhatsAppViaServer } from './lib/whatsapp';
-import { WhatsAppConfig } from './types';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
@@ -24,7 +23,6 @@ export default function App() {
   // WhatsApp Notification State
   const [whatsappData, setWhatsappData] = useState<WhatsAppNotification | null>(null);
   const [isWhatsappModalOpen, setIsWhatsappModalOpen] = useState(false);
-  const [waConfig, setWaConfig] = useState<WhatsAppConfig | null>(null);
 
   // Watch for connection changes
   useEffect(() => {
@@ -298,8 +296,8 @@ export default function App() {
       try {
         // Attempt to establish a Firebase session
         try {
-          const userCred = await signInAnonymously(auth);
-          console.log('Connected to Firebase as anonymous user:', userCred.user.uid);
+          await signInAnonymously(auth);
+          console.log('Connected to Firebase as anonymous user');
         } catch (authErr) {
           console.warn("Auth initialization restricted:", authErr);
         }
@@ -315,6 +313,7 @@ export default function App() {
             });
           } else {
             console.log('No app config found, initializing with defaults...');
+            // First time initialization
             firebaseService.updateConfig({
               categories: DEFAULT_CATEGORIES,
               statuses: DEFAULT_STATUSES,
@@ -324,11 +323,6 @@ export default function App() {
               console.error('Failed to bootstrap config:', err);
             });
           }
-        });
-
-        // WhatsApp Bridge config
-        firebaseService.subscribeWhatsAppConfig((config) => {
-          setWaConfig(config);
         });
         
         // Fetch users for login/bootstrap
@@ -524,8 +518,7 @@ export default function App() {
         complaintId: newComplaint.id,
         category: newComplaint.category,
         phoneNumber: newComplaint.number,
-        description: newComplaint.description,
-        template: waConfig?.registrationTemplate
+        description: newComplaint.description
       };
 
       // Try background dispatch first
@@ -583,8 +576,7 @@ export default function App() {
             customerName: compl.customerName,
             complaintId: compl.id,
             category: compl.category,
-            phoneNumber: compl.number,
-            template: waConfig?.completionTemplate
+            phoneNumber: compl.number
           };
           
           const serverResult = await sendWhatsAppViaServer(waData);
@@ -617,8 +609,7 @@ export default function App() {
             customerName: compl.customerName,
             complaintId: compl.id,
             category: compl.category,
-            phoneNumber: compl.number,
-            template: waConfig?.completionTemplate
+            phoneNumber: compl.number
           };
 
           const serverResult = await sendWhatsAppViaServer(waData);
@@ -736,16 +727,6 @@ export default function App() {
     toast.success('System configuration updated');
   };
 
-  const handleUpdateWhatsAppConfig = async (config: WhatsAppConfig) => {
-    if (!user) return;
-    try {
-      await firebaseService.updateWhatsAppConfig(config, user.username);
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
   return (
     <>
       <Toaster position="top-right" richColors />
@@ -801,8 +782,6 @@ export default function App() {
           onAuthorizeMic={handleAuthorizeMic}
           isMicMuted={isMicMuted}
           onToggleMic={handleToggleMic}
-          waConfig={waConfig}
-          onUpdateWhatsAppConfig={handleUpdateWhatsAppConfig}
         />
       ) : (
         <MemberPanel

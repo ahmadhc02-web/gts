@@ -14,7 +14,7 @@ import {
   getDocFromServer
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification, WhatsAppConfig } from '../types';
+import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification } from '../types';
 
 enum OperationType {
   CREATE = 'create',
@@ -321,47 +321,6 @@ export const firebaseService = {
       await firebaseService.createNotification({
         type: 'config_updated',
         message: `System matrix configuration updated`,
-        authorName
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-    }
-  },
-
-  // --- WhatsApp Templates ---
-  getWhatsAppConfig: async (): Promise<WhatsAppConfig | null> => {
-    const path = 'config/whatsapp';
-    try {
-      const docRef = doc(db, 'config', 'whatsapp');
-      const snapshot = await getDoc(docRef);
-      return snapshot.exists() ? snapshot.data() as WhatsAppConfig : null;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.GET, path);
-      return null;
-    }
-  },
-
-  subscribeWhatsAppConfig: (callback: (config: WhatsAppConfig | null) => void) => {
-    const path = 'config/whatsapp';
-    const docRef = doc(db, 'config', 'whatsapp');
-    return onSnapshot(docRef, (snapshot) => {
-      callback(snapshot.exists() ? snapshot.data() as WhatsAppConfig : null);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
-    });
-  },
-
-  updateWhatsAppConfig: async (config: WhatsAppConfig, authorName: string) => {
-    const path = 'config/whatsapp';
-    try {
-      await setDoc(doc(db, 'config', 'whatsapp'), {
-        ...config,
-        updatedAt: Date.now(),
-        updatedBy: authorName
-      });
-      await firebaseService.createNotification({
-        type: 'config_updated',
-        message: `WhatsApp dispatch templates synchronized`,
         authorName
       });
     } catch (error) {

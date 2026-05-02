@@ -25,16 +25,6 @@ export class WhatsAppBridge {
   }
 
   private async init() {
-    if (this.socket) {
-      try {
-        this.socket.ev.removeAllListeners('connection.update');
-        this.socket.ev.removeAllListeners('creds.update');
-        this.socket.end(undefined);
-      } catch (e) {
-        console.error('Error closing existing socket:', e);
-      }
-    }
-
     const { state, saveCreds } = await useMultiFileAuthState(this.authStateDir);
     const { version, isLatest } = await fetchLatestBaileysVersion();
     
