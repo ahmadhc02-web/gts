@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, RefreshCw, Unlink, QrCode, FileEdit, Save, RotateCcw } from 'lucide-react';
-import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, WhatsAppConfig } from '../types';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity } from 'lucide-react';
+import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
 import ClientManagement from './ClientManagement';
@@ -37,8 +37,6 @@ interface AdminPanelProps {
   onChangeAdminPass: (newPass: string) => Promise<void>;
   appConfig: AppConfig;
   onUpdateConfig: (newConfig: AppConfig) => void;
-  adminSettings: any;
-  onUpdateSettings: (settings: any) => void;
   isLoading?: boolean;
   alertAuthorized: boolean;
   onAuthorizeAlerts: () => Promise<void>;
@@ -50,8 +48,6 @@ interface AdminPanelProps {
   onAuthorizeMic: () => Promise<void>;
   isMicMuted: boolean;
   onToggleMic: () => void;
-  waConfig: WhatsAppConfig | null;
-  onUpdateWhatsAppConfig: (config: WhatsAppConfig) => Promise<void>;
 }
 
 export default function AdminPanel({
@@ -68,8 +64,6 @@ export default function AdminPanel({
   onChangeAdminPass,
   appConfig,
   onUpdateConfig,
-  adminSettings,
-  onUpdateSettings,
   isLoading,
   alertAuthorized,
   onAuthorizeAlerts,
@@ -80,9 +74,7 @@ export default function AdminPanel({
   micAuthorized,
   onAuthorizeMic,
   isMicMuted,
-  onToggleMic,
-  waConfig,
-  onUpdateWhatsAppConfig
+  onToggleMic
 }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor'>('complaints');
   const [newUsername, setNewUsername] = useState('');
@@ -137,191 +129,12 @@ export default function AdminPanel({
     return () => window.removeEventListener('google-auth-changed', handleAuthChange);
   }, []);
 
-  const [spreadsheetId, setSpreadsheetId] = useState('');
-  const [aiBotUrl, setAiBotUrl] = useState('https://mahmad995-my-ai-bot.hf.space');
-  const [sheetName, setSheetName] = useState('Sheet1');
-  const [sheetRange, setSheetRange] = useState('A1');
-
-  useEffect(() => {
-    if (adminSettings) {
-      setSpreadsheetId(adminSettings.spreadsheetId || '');
-      setAiBotUrl(adminSettings.aiBotUrl || 'https://mahmad995-my-ai-bot.hf.space');
-      setSheetName(adminSettings.sheetName || 'Sheet1');
-      setSheetRange(adminSettings.sheetRange || 'A1');
-    }
-  }, [adminSettings]);
+  const [spreadsheetId, setSpreadsheetId] = useState(googleSheetsService.getSpreadsheetId() || '');
+  const [sheetName, setSheetName] = useState(googleSheetsService.getSheetName());
+  const [sheetRange, setSheetRange] = useState(googleSheetsService.getSheetRange());
   const [isConnecting, setIsConnecting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [config, setConfig] = useState<{ redirectUri: string, origin: string } | null>(null);
-
-  // WhatsApp Bridge State
-  const [waStatus, setWaStatus] = useState<{ status: string, qrCodeUrl: string | null, pairingCode?: string | null }>({ status: 'disconnected', qrCodeUrl: null });
-  const [isRefreshingWA, setIsRefreshingWA] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  
-  const [linkMethod, setLinkMethod] = useState<'qr' | 'pairing'>('qr');
-  const [pairingPhone, setPairingPhone] = useState('');
-  const [isRequestingCode, setIsRequestingCode] = useState(false);
-
-  // WhatsApp Template Local State
-  const [regTemplate, setRegTemplate] = useState('');
-  const [compTemplate, setCompTemplate] = useState('');
-  const [isUpdatingTemplates, setIsUpdatingTemplates] = useState(false);
-
-  const DEFAULT_REG_TEMPLATE = `*ISP SERVICE UPDATE: COMPLAINT REGISTERED* ✅\n\nDear *{customerName}*,\n\nYour service request has been successfully registered in our operational relay.\n\n🎫 *Complaint ID:* {complaintId}\n📂 *Category:* {category}\n{description}\n🕒 *Status:* PENDING_DISPATCH\n\nOur field technician will be assigned to your zone shortly. Thank you for your patience.\n\n_GTS Network Operations Control_`;
-  const DEFAULT_COMP_TEMPLATE = `*ISP SERVICE UPDATE: COMPLAINT RESOLVED* 🎉\n\nDear *{customerName}*,\n\nWe are pleased to inform you that your complaint (ID: *{complaintId}*) has been marked as *COMPLETE*.\n\nYour service should now be fully restored. Please verify the connection. If you're still facing issues, contact our support line immediately.\n\n✨ *Thank you for choosing our fiber service!*\n\n_GTS Network Operations Control_`;
-
-  useEffect(() => {
-    if (waConfig) {
-      setRegTemplate(waConfig.registrationTemplate);
-      setCompTemplate(waConfig.completionTemplate);
-    } else {
-      setRegTemplate(DEFAULT_REG_TEMPLATE);
-      setCompTemplate(DEFAULT_COMP_TEMPLATE);
-    }
-  }, [waConfig]);
-
-  const restoreDefaults = () => {
-    if (confirm('Restore templates to professional defaults? Your current modifications will be overwritten.')) {
-      setRegTemplate(DEFAULT_REG_TEMPLATE);
-      setCompTemplate(DEFAULT_COMP_TEMPLATE);
-      toast.info('Templates reset to system defaults');
-    }
-  };
-
-  const handleUpdateWAConfig = async () => {
-    setIsUpdatingTemplates(true);
-    try {
-      await onUpdateWhatsAppConfig({
-        registrationTemplate: regTemplate,
-        completionTemplate: compTemplate
-      });
-      toast.success('WhatsApp templates updated successfully');
-    } catch (err) {
-      toast.error('Failed to update templates');
-    } finally {
-      setIsUpdatingTemplates(false);
-    }
-  };
-
-  const fetchWAStatus = async () => {
-    try {
-      const res = await fetch('/api/whatsapp/status');
-      if (res.status === 429) return null;
-      
-      const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        const data = await res.json();
-        setWaStatus(data);
-        return data;
-      }
-    } catch (err) {
-      // Silently handle expected dev-server restarts or network blips
-    }
-    return null;
-  };
-
-  useEffect(() => {
-    let interval: any;
-    if (activeTab === 'whatsapp') {
-      fetchWAStatus();
-      interval = setInterval(fetchWAStatus, 3000); 
-    }
-    return () => clearInterval(interval);
-  }, [activeTab]);
-
-  const handleWARefresh = async () => {
-    setIsRefreshingWA(true);
-    try {
-      await fetchWAStatus();
-      toast.info('WhatsApp Bridge status synchronized');
-    } catch (err) {
-      toast.error('Failed to refresh status');
-    } finally {
-      setTimeout(() => setIsRefreshingWA(false), 1000);
-    }
-  };
-
-  const handleWALogout = async () => {
-    if (!confirm('TERMINATE LINK: This will disconnect your WhatsApp and generate a NEW QR code. Are you sure?')) return;
-    
-    // Immediate UI feedback
-    toast.info('Initiating session termination...', { duration: 3000 });
-    setWaStatus(prev => ({ ...prev, status: 'disconnected', qrCodeUrl: null }));
-    setIsLoggingOut(true);
-    
-    try {
-      console.log('[AdminPanel] Calling WhatsApp logout API...');
-      const res = await fetch('/api/whatsapp/logout', { method: 'POST' });
-      
-      if (!res.ok) {
-        let errDesc = 'Logout failed';
-        try {
-          const errorData = await res.json();
-          errDesc = errorData.error || errDesc;
-        } catch (e) {
-          errDesc = await res.text() || errDesc;
-        }
-        throw new Error(errDesc);
-      }
-      
-      toast.success('WhatsApp session terminated successfully');
-      
-      // Intensive polling for 60 seconds to catch the new QR code as early as possible
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
-        const currentData = await fetchWAStatus();
-        if (attempts >= 30 || (currentData && currentData.qrCodeUrl)) {
-          clearInterval(poll);
-        }
-      }, 2000);
-      
-    } catch (err: any) {
-      console.error('[AdminPanel] Logout failure:', err);
-      toast.error('Reset Failed: ' + (err.message || 'Unknown error'));
-      await fetchWAStatus(); 
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
-
-  const handleRequestPairingCode = async () => {
-    // Basic phone validation
-    const digits = pairingPhone.replace(/\D/g, '');
-    if (digits.length < 10) {
-      toast.error('Invalid phone number. Please enter at least 10 digits.');
-      return;
-    }
-    
-    setIsRequestingCode(true);
-    // Optimistic UI: clear old code
-    setWaStatus(prev => ({ ...prev, pairingCode: null }));
-
-    try {
-      console.log('[AdminPanel] Requesting pairing code for:', pairingPhone);
-      const res = await fetch('/api/whatsapp/pairing-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: pairingPhone })
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to request pairing code');
-      }
-      
-      toast.success('Pairing code received!');
-      console.log('[AdminPanel] Received code:', data.code);
-      setWaStatus(prev => ({ ...prev, pairingCode: data.code }));
-    } catch (err: any) {
-      console.error('[AdminPanel] Pairing code error:', err);
-      toast.error(err.message || 'Error requesting pairing code');
-    } finally {
-      setIsRequestingCode(false);
-    }
-  };
 
   useEffect(() => {
     if (activeTab === 'integrations') {
@@ -370,15 +183,13 @@ export default function AdminPanel({
 
   const handleSaveSpreadsheetId = () => {
     googleSheetsService.saveSpreadsheetId(spreadsheetId);
-    onUpdateSettings({ ...adminSettings, spreadsheetId, aiBotUrl });
-    toast.success('System identity parameters synchronized!');
+    toast.success('Spreadsheet ID saved successfully!');
   };
 
   const handleSaveRangeSettings = () => {
     googleSheetsService.saveSheetName(sheetName);
     googleSheetsService.saveSheetRange(sheetRange);
-    onUpdateSettings({ ...adminSettings, sheetName, sheetRange });
-    toast.success('Sheet range settings saved and synchronized!');
+    toast.success('Sheet range settings saved successfully!');
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -513,7 +324,6 @@ export default function AdminPanel({
             { id: 'users', label: 'Link Access', icon: Users },
             { id: 'config', label: 'Workflow Config', icon: Settings },
             { id: 'settings', label: 'Security', icon: Shield },
-            { id: 'whatsapp', label: 'WhatsApp Bridge', icon: MessageSquare },
             { id: 'integrations', label: 'Cloud Connection', icon: CloudUpload },
           ].map((tab) => (
             <button
@@ -545,309 +355,6 @@ export default function AdminPanel({
         transition={{ duration: 0.2 }}
         id="operations-registry"
       >
-        {activeTab === 'whatsapp' && (
-          <div className="max-w-4xl mx-auto space-y-8">
-            <div className="business-card p-10 bg-white dark:bg-slate-950 overflow-hidden relative">
-              <div className="absolute top-0 right-0 p-8">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleWARefresh}
-                    className="p-2 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-brand-accent transition-all"
-                    title="Manual Status Refresh"
-                  >
-                    <RefreshCw size={14} className={cn(isRefreshingWA && "animate-spin")} />
-                  </button>
-                  <div className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest",
-                    waStatus.status === 'connected' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : 
-                    waStatus.status === 'connecting' ? "bg-amber-500/10 text-amber-500 border-amber-500/20" :
-                    waStatus.status === 'error' ? "bg-rose-500/10 text-rose-500 border-rose-500/20" :
-                    "bg-slate-500/10 text-slate-500 border-slate-500/20"
-                  )}>
-                    <div className={cn("w-1.5 h-1.5 rounded-full", 
-                      waStatus.status === 'connected' ? "bg-emerald-500 animate-pulse" :
-                      waStatus.status === 'connecting' ? "bg-amber-500 animate-pulse" : 
-                      waStatus.status === 'error' ? "bg-rose-500" : "bg-slate-400"
-                    )} />
-                    {waStatus.status}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-5 mb-10">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm">
-                  <MessageSquare size={28} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black uppercase tracking-tight">WhatsApp Backend Bridge</h3>
-                  <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">Automatic Dispatch & Notification Synchronization</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-                 <div className="space-y-6">
-                    <p className="text-sm text-slate-600 dark:text-slate-400 font-medium leading-relaxed uppercase">
-                      Link your WhatsApp business account to enable <span className="text-emerald-500 font-black">Autonomous Dispatch Protocol</span>. 
-                      Once linked, the system will automatically send updates directly to customers without manual intervention.
-                    </p>
-                    
-                    <ul className="space-y-4">
-                       {[
-                         { icon: Zap, text: 'Instant Registration Notify' },
-                         { icon: CheckCircle, text: 'Automatic Resolution Alerts' },
-                         { icon: Shield, text: 'Secure Session Encryption' },
-                         { icon: RefreshCw, text: 'Background Connection Management' }
-                       ].map((item, i) => (
-                         <li key={i} className="flex items-center gap-3 text-[11px] font-black uppercase tracking-widest text-slate-500">
-                           <item.icon size={14} className="text-emerald-500" />
-                           {item.text}
-                         </li>
-                       ))}
-                    </ul>
-
-                    <button
-                      onClick={handleWALogout}
-                      disabled={isLoggingOut}
-                      className="flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-900 dark:bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20 hover:scale-[1.02] transition-all disabled:opacity-50"
-                    >
-                      {isLoggingOut ? (
-                         <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <Unlink size={14} />
-                      )}
-                      {isLoggingOut ? 'Resetting Bridge...' : 'Terminate / Reset Link'}
-                    </button>
-                 </div>
-
-                 <div className="flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 relative min-h-[350px]">
-                    {waStatus.status === 'connected' ? (
-                      <div className="text-center space-y-4">
-                        <div className="w-24 h-24 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto border-2 border-emerald-500/30">
-                           <Shield size={48} className="text-emerald-500" />
-                        </div>
-                        <div>
-                          <h4 className="text-lg font-black uppercase text-emerald-500 tracking-tight">Active Connection</h4>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Operational Relay is ONLINE</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-full space-y-6">
-                        <div className="flex p-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-                          <button 
-                            onClick={() => setLinkMethod('qr')}
-                            className={cn(
-                              "flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                              linkMethod === 'qr' ? "bg-slate-900 dark:bg-brand-accent text-white dark:text-slate-900" : "text-slate-400"
-                            )}
-                          >
-                            QR Code
-                          </button>
-                          <button 
-                            onClick={() => setLinkMethod('pairing')}
-                            className={cn(
-                              "flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                              linkMethod === 'pairing' ? "bg-slate-900 dark:bg-brand-accent text-white dark:text-slate-900" : "text-slate-400"
-                            )}
-                          >
-                            Phone Pairing
-                          </button>
-                        </div>
-
-                        {linkMethod === 'qr' ? (
-                          waStatus.qrCodeUrl ? (
-                            <div className="text-center space-y-6">
-                              <div className="relative p-4 bg-white rounded-3xl shadow-2xl border border-slate-200 mx-auto w-fit">
-                                 <img src={waStatus.qrCodeUrl} alt="WhatsApp QR Code" className="w-48 h-48 sm:w-64 sm:h-64" />
-                                 <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-white/40 backdrop-blur-[2px] rounded-3xl pointer-events-none">
-                                    <QrCode size={48} className="text-slate-900" />
-                                 </div>
-                              </div>
-                              <div>
-                                <h4 className="text-sm font-black uppercase text-slate-900 dark:text-white tracking-widest">Scan QR Code</h4>
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-2">Initialize link via WhatsApp Mobile Application</p>
-                              </div>
-                            </div>
-                          ) : waStatus.status === 'error' ? (
-                            <div className="text-center space-y-4">
-                              <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center mx-auto border-2 border-rose-500/30">
-                                 <ShieldAlert size={32} className="text-rose-500" />
-                              </div>
-                              <div>
-                                <h4 className="text-sm font-black uppercase text-rose-500 tracking-widest">Bridge Error</h4>
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-2">Failed to initialize. Check server logs or try resetting the link.</p>
-                              </div>
-                              <button 
-                                onClick={handleWARefresh}
-                                className="px-6 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-brand-accent transition-all"
-                              >
-                                Retry Initialization
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="text-center space-y-4">
-                              <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                                {waStatus.status === 'disconnected' ? 'Generating QR Protocol...' : 'Initializing Bridge Module...'}
-                              </p>
-                            </div>
-                          )
-                        ) : (
-                          <div className="text-center space-y-6">
-                            {waStatus.pairingCode ? (
-                              <div className="space-y-6">
-                                <div className="p-8 bg-white dark:bg-slate-800 rounded-3xl border-2 border-dashed border-emerald-500/30 shadow-xl">
-                                  <div className="text-5xl font-black tracking-[0.5em] text-emerald-500 font-mono">
-                                    {waStatus.pairingCode}
-                                  </div>
-                                </div>
-                                <div>
-                                  <h4 className="text-xs font-black uppercase text-slate-900 dark:text-white tracking-widest">Your Pairing Code</h4>
-                                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tight mt-2">Enter this on your phone: Settings {'>'} Linked Devices {'>'} Link with Phone Number</p>
-                                </div>
-                                <button 
-                                  onClick={() => {
-                                    setWaStatus(prev => ({ ...prev, pairingCode: null }));
-                                    setPairingPhone('');
-                                  }}
-                                  className="text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-brand-accent transition-all"
-                                >
-                                  Request New Code
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="space-y-4">
-                                <div className="space-y-2 text-left">
-                                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Phone Number (with Country Code)</label>
-                                  <input 
-                                    type="text"
-                                    value={pairingPhone}
-                                    onChange={(e) => setPairingPhone(e.target.value)}
-                                    placeholder="e.g. 923001234567"
-                                    className="w-full px-6 py-4 rounded-2xl bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 focus:border-brand-accent outline-none font-bold text-center tracking-widest"
-                                  />
-                                </div>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase leading-relaxed text-left px-2">
-                                  Linking via phone number allows you to connect without scanning a QR code. Useful for remote setups or damaged cameras.
-                                </p>
-                                <button 
-                                  onClick={handleRequestPairingCode}
-                                  disabled={isRequestingCode}
-                                  className="w-full py-4 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
-                                >
-                                  {isRequestingCode ? (
-                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
-                                  ) : (
-                                    'Get Pairing Code'
-                                  )}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                 </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Template Management Section */}
-        {activeTab === 'whatsapp' && (
-          <div className="max-w-4xl mx-auto mt-8 space-y-8 pb-20">
-            <div className="business-card p-10 bg-white dark:bg-slate-950 overflow-hidden relative">
-               <div className="flex items-center gap-5 mb-10">
-                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-sm">
-                    <FileEdit size={28} />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-black uppercase tracking-tight">Message Protocols</h3>
-                    <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">Configure automated dispatch text matrix</p>
-                  </div>
-               </div>
-
-               <div className="space-y-10">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                     {/* Registration Template */}
-                     <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                           <label className="text-[11px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
-                              <PlusSquare size={14} className="text-emerald-500" />
-                              Registration Text
-                           </label>
-                           <span className="text-[8px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest">Auto-Dispatch on Create</span>
-                        </div>
-                        <textarea
-                          value={regTemplate}
-                          onChange={(e) => setRegTemplate(e.target.value)}
-                          className="w-full h-80 rounded-3xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 text-sm font-medium text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all resize-none font-mono"
-                          placeholder="Type registration message template..."
-                        />
-                     </div>
-
-                     {/* Completion Template */}
-                     <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                           <label className="text-[11px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
-                              <CheckCircle size={14} className="text-blue-500" />
-                              Completion Text
-                           </label>
-                           <span className="text-[8px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest">Auto-Dispatch on Resolution</span>
-                        </div>
-                        <textarea
-                          value={compTemplate}
-                          onChange={(e) => setCompTemplate(e.target.value)}
-                          className="w-full h-80 rounded-3xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 text-sm font-medium text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all resize-none font-mono"
-                          placeholder="Type completion message template..."
-                        />
-                     </div>
-                  </div>
-
-                  <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-wrap gap-4 items-center justify-center">
-                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Available Placeholders:</span>
-                     {['{customerName}', '{complaintId}', '{category}', '{description}'].map(tag => (
-                       <code key={tag} className="px-3 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-black text-brand-accent tracking-widest uppercase">{tag}</code>
-                     ))}
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <button
-                      onClick={restoreDefaults}
-                      className="px-6 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-brand-accent transition-all flex items-center gap-2"
-                    >
-                       <RotateCcw size={14} />
-                       Restore Defaults
-                    </button>
-                    <div className="flex gap-4">
-                       <button
-                         onClick={() => {
-                           setRegTemplate(waConfig?.registrationTemplate || DEFAULT_REG_TEMPLATE);
-                           setCompTemplate(waConfig?.completionTemplate || DEFAULT_COMP_TEMPLATE);
-                            toast.info('Template changes reverted');
-                         }}
-                         className="px-8 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-sm font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all flex items-center gap-3"
-                       >
-                          Cancel
-                       </button>
-                       <button
-                         onClick={handleUpdateWAConfig}
-                         disabled={isUpdatingTemplates}
-                         className="px-10 py-4 rounded-2xl bg-slate-900 dark:bg-brand-accent text-white dark:text-slate-900 text-sm font-black uppercase tracking-widest hover:scale-[1.02] transition-all shadow-xl shadow-brand-accent/20 flex items-center gap-3 disabled:opacity-50"
-                       >
-                          {isUpdatingTemplates ? (
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          ) : (
-                            <Save size={18} />
-                          )}
-                          Save Templates
-                       </button>
-                    </div>
-                  </div>
-               </div>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'monitor' && (
           <div className="max-w-4xl mx-auto space-y-6">
             <RealTimeMonitor complaints={complaints} />
@@ -1555,18 +1062,10 @@ export default function AdminPanel({
 
                   <div className="space-y-6">
                     <div className="space-y-2">
-                       <label className={labelClasses}>External AI Bot Server (HuggingFace)</label>
-                       <div className="flex gap-3">
-                         <input type="text" value={aiBotUrl} onChange={(e) => setAiBotUrl(e.target.value)} className={inputClasses} placeholder="https://..." />
-                       </div>
-                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter ml-1">Universal dispatch logic for automated WhatsApp messaging via HuggingFace</p>
-                    </div>
-
-                    <div className="space-y-2">
                        <label className={labelClasses}>Spreadsheet Identity</label>
                        <div className="flex gap-3">
                          <input type="text" value={spreadsheetId} onChange={(e) => setSpreadsheetId(e.target.value)} className={inputClasses} placeholder="SPREADSHEET_ID" />
-                         <button onClick={handleSaveSpreadsheetId} className="px-5 py-2.5 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-[10px] uppercase tracking-widest hover:bg-black transition-colors">Save Identity</button>
+                         <button onClick={handleSaveSpreadsheetId} className="px-5 py-2.5 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-bold text-[10px] uppercase tracking-widest hover:bg-black transition-colors">Save</button>
                        </div>
                     </div>
 

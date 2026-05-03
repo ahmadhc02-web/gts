@@ -40,14 +40,7 @@
       "description": "Global settings for the application reachable only by admins.",
       "type": "object",
       "properties": {
-        "spreadsheetId": { "type": "string" },
-        "aiBotUrl": { "type": "string" },
-        "sheetName": { "type": "string" },
-        "sheetRange": { "type": "string" },
-        "alertAuthorized": { "type": "boolean" },
-        "audioMuted": { "type": "boolean" },
-        "micMuted": { "type": "boolean" },
-        "micAuthorized": { "type": "boolean" }
+        "spreadsheetId": { "type": "string" }
       }
     },
     "AppConfig": {
@@ -121,18 +114,6 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "type", "message", "authorName", "createdAt"]
-    },
-    "WhatsAppConfig": {
-      "title": "WhatsApp Configuration",
-      "description": "Templates for automated WhatsApp dispatch messages.",
-      "type": "object",
-      "properties": {
-        "registrationTemplate": { "type": "string" },
-        "completionTemplate": { "type": "string" },
-        "updatedAt": { "type": "number" },
-        "updatedBy": { "type": "string" }
-      },
-      "required": ["registrationTemplate", "completionTemplate"]
     }
   },
   "firestore": {
@@ -155,10 +136,6 @@
     "config/app": {
       "schema": "AppConfig",
       "description": "Workflow categories, statuses and priorities."
-    },
-    "config/whatsapp": {
-      "schema": "WhatsAppConfig",
-      "description": "Custom message templates for WhatsApp dispatch."
     },
     "chat/{messageId}": {
       "schema": "Message",

@@ -1,5 +1,4 @@
 import { Complaint, UserProfile, ComplaintStatus } from '../types';
-import { safeStringify } from './utils';
 
 // Simple persistence helper for mock environment
 const storage = {
@@ -8,7 +7,7 @@ const storage = {
     return val ? JSON.parse(val) : fallback;
   },
   set: (key: string, val: any) => {
-    localStorage.setItem(key, safeStringify(val));
+    localStorage.setItem(key, JSON.stringify(val));
   }
 };
 
