@@ -6,10 +6,19 @@ export interface WhatsAppNotification {
   category: string;
   phoneNumber: string;
   description?: string;
+  template?: string;
 }
 
 export const generateWhatsAppMessage = (data: WhatsAppNotification): string => {
-  const { type, customerName, complaintId, category, description } = data;
+  const { type, customerName, complaintId, category, description, template } = data;
+  
+  if (template) {
+    return template
+      .replace(/{customerName}/g, customerName)
+      .replace(/{complaintId}/g, complaintId)
+      .replace(/{category}/g, category)
+      .replace(/{description}/g, description || '');
+  }
   
   if (type === 'registered') {
     return `*ISP SERVICE UPDATE: COMPLAINT REGISTERED* ✅\n\n` +

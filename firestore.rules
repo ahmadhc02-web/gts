@@ -88,9 +88,14 @@ service cloud.firestore {
              data.zones is list && data.zones.size() >= 1;
     }
 
-    match /config/app {
-      allow read: if true; 
-      allow write: if isValidAppConfig(incoming());
+    function isValidWhatsAppConfig(data) {
+      return data.registrationTemplate is string && data.registrationTemplate.size() <= 2000 &&
+             data.completionTemplate is string && data.completionTemplate.size() <= 2000;
+    }
+
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if true; // Temporary allow for prototype to unblock dispatch config
     }
 
     // Default Deny

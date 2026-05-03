@@ -1,16 +1,32 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { google } from "googleapis";
 import fs from "fs";
-import { whatsappBridge } from "./whatsapp-bridge.js";
+import { whatsappBridge } from "./whatsapp-bridge.ts";
 
 dotenv.config();
 
+console.log('[Server] SERVER STARTING UP...');
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function safeStringify(obj: any): string {
+  try {
+    const cache = new Set();
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (cache.has(value)) return '[Circular]';
+        cache.add(value);
+      }
+      return value;
+    });
+  } catch (e) {
+    return 'null';
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -95,7 +111,7 @@ async function startServer() {
               if (window.opener) {
                 window.opener.postMessage({ 
                   type: 'GOOGLE_AUTH_SUCCESS', 
-                  tokens: ${JSON.stringify(tokens)} 
+                  tokens: ${safeStringify(tokens)} 
                 }, '*');
                 setTimeout(() => {
                   window.close();
@@ -256,7 +272,32 @@ async function startServer() {
   // --- WhatsApp Automation Routes ---
 
   app.get("/api/whatsapp/status", (req, res) => {
-    res.json(whatsappBridge.getStatus());
+    const status = whatsappBridge.getStatus();
+    if (status.qrCodeUrl) {
+      console.log(`[Server] Serving status: ${status.status} (QR Code available)`);
+    } else {
+      console.log(`[Server] Serving status: ${status.status} (No QR Code)`);
+    }
+    res.json(status);
+  });
+
+  app.post("/api/whatsapp/pairing-code", async (req, res) => {
+    const { phoneNumber } = req.body;
+    console.log(`[Server] Received pairing code request for: ${phoneNumber}`);
+    if (!phoneNumber) {
+      console.error('[Server] Pairing code request failed: No phone number provided');
+      return res.status(400).json({ error: "Missing phoneNumber" });
+    }
+
+    try {
+      console.log(`[Server] Calling bridge.requestPairingCode...`);
+      const result = await whatsappBridge.requestPairingCode(phoneNumber);
+      console.log(`[Server] Bridge returned pairing code: ${result.code}`);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[Server] WhatsApp Pairing Code Error:', error.message);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.post("/api/whatsapp/send", async (req, res) => {
@@ -275,10 +316,13 @@ async function startServer() {
   });
 
   app.post("/api/whatsapp/logout", async (req, res) => {
+    console.log('[Server] Received WhatsApp LOGOUT request');
     try {
-      await whatsappBridge.logout();
-      res.json({ success: true });
+      const result = await whatsappBridge.logout();
+      console.log('[Server] WhatsApp logout successful');
+      res.json(result);
     } catch (error: any) {
+      console.error('[Server] WhatsApp logout FAILED:', error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -287,6 +331,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

@@ -14,6 +14,7 @@ import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
 import { WhatsAppNotification, sendWhatsAppViaServer } from './lib/whatsapp';
+import { WhatsAppConfig } from './types';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
@@ -23,6 +24,8 @@ export default function App() {
   // WhatsApp Notification State
   const [whatsappData, setWhatsappData] = useState<WhatsAppNotification | null>(null);
   const [isWhatsappModalOpen, setIsWhatsappModalOpen] = useState(false);
+  const [waConfig, setWaConfig] = useState<WhatsAppConfig | null>(null);
+  const [aiBotUrl, setAiBotUrl] = useState<string>('https://mahmad995-my-ai-bot.hf.space');
 
   // Watch for connection changes
   useEffect(() => {
@@ -48,34 +51,35 @@ export default function App() {
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({
-    categories: DEFAULT_CATEGORIES,
-    statuses: DEFAULT_STATUSES,
-    priorities: DEFAULT_PRIORITIES,
-    zones: DEFAULT_ZONES
+    categories: [],
+    statuses: [],
+    priorities: [],
+    zones: []
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [adminSettings, setAdminSettings] = useState<any>({
+    spreadsheetId: '',
+    sheetName: 'Sheet1',
+    sheetRange: 'A1',
+    alertAuthorized: false,
+    audioMuted: false,
+    micMuted: false,
+    micAuthorized: false
+  });
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
-  const [alertAuthorized, setAlertAuthorized] = useState(() => {
-    return localStorage.getItem('gts_alerts_authorized') === 'true';
-  });
+  const [alertAuthorized, setAlertAuthorized] = useState(false);
   const [showTimedAlertHub, setShowTimedAlertHub] = useState(false);
 
   const [hideBanner, setHideBanner] = useState(() => {
     return localStorage.getItem('gts_banner_hidden') === 'true';
   });
 
-  const [isAudioMuted, setIsAudioMuted] = useState(() => {
-    return localStorage.getItem('gts_audio_muted') === 'true';
-  });
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
 
-  const [isMicMuted, setIsMicMuted] = useState(() => {
-    return localStorage.getItem('gts_mic_muted') === 'true';
-  });
+  const [isMicMuted, setIsMicMuted] = useState(false);
 
-  const [micAuthorized, setMicAuthorized] = useState(() => {
-    return localStorage.getItem('gts_mic_authorized') === 'true';
-  });
+  const [micAuthorized, setMicAuthorized] = useState(false);
 
   // Global Audio Objects to prevent garbage collection issues
   const [notificationAudio] = useState(new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'));
@@ -116,7 +120,10 @@ export default function App() {
   const handleToggleAudio = () => {
     const newState = !isAudioMuted;
     setIsAudioMuted(newState);
-    localStorage.setItem('gts_audio_muted', newState.toString());
+    
+    if (user && user.role === 'admin') {
+      firebaseService.updateSettings({ ...adminSettings, audioMuted: newState }, user.username);
+    }
     
     // Explicitly update muted state on global audio objects
     notificationAudio.muted = newState;
@@ -130,7 +137,11 @@ export default function App() {
   const handleToggleMic = () => {
     const newState = !isMicMuted;
     setIsMicMuted(newState);
-    localStorage.setItem('gts_mic_muted', newState.toString());
+    
+    if (user && user.role === 'admin') {
+      firebaseService.updateSettings({ ...adminSettings, micMuted: newState }, user.username);
+    }
+
     toast.info(newState ? "Microphone Deactivated" : "Microphone Activated", {
       icon: newState ? '🎙️' : '🎤'
     });
@@ -179,9 +190,16 @@ export default function App() {
       }
       
       setAlertAuthorized(true);
-      localStorage.setItem('gts_alerts_authorized', 'true');
       setIsAudioMuted(false);
-      localStorage.setItem('gts_audio_muted', 'false');
+      
+      if (user && user.role === 'admin') {
+        firebaseService.updateSettings({ 
+          ...adminSettings, 
+          alertAuthorized: true,
+          audioMuted: false 
+        }, user.username);
+      }
+
       toast.success("System Alerts Enabled", { description: "You will now receive sound and background notifications." });
     } catch (err) {
       console.error("Authorization failed:", err);
@@ -206,9 +224,16 @@ export default function App() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach(track => track.stop()); // Stop immediately
       setMicAuthorized(true);
-      localStorage.setItem('gts_mic_authorized', 'true');
       setIsMicMuted(false);
-      localStorage.setItem('gts_mic_muted', 'false');
+      
+      if (user && user.role === 'admin') {
+        firebaseService.updateSettings({ 
+          ...adminSettings, 
+          micAuthorized: true,
+          micMuted: false 
+        }, user.username);
+      }
+
       toast.success("Microphone Authorized", { description: "Tactical voice transmission is now unlocked." });
     } catch (err: any) {
       console.error("Mic Auth Logic Failure:", err);
@@ -296,15 +321,15 @@ export default function App() {
       try {
         // Attempt to establish a Firebase session
         try {
-          await signInAnonymously(auth);
-          console.log('Connected to Firebase as anonymous user');
+          const userCred = await signInAnonymously(auth);
+          console.log('Connected to Firebase as anonymous user:', userCred.user.uid);
         } catch (authErr) {
           console.warn("Auth initialization restricted:", authErr);
         }
 
         // Subscribe to app config after auth attempt
         firebaseService.subscribeConfig((data) => {
-          if (data) {
+          if (data && (data.categories?.length || data.statuses?.length || data.priorities?.length || data.zones?.length)) {
             setAppConfig({
               categories: data.categories || DEFAULT_CATEGORIES,
               statuses: data.statuses || DEFAULT_STATUSES,
@@ -312,8 +337,7 @@ export default function App() {
               zones: data.zones || DEFAULT_ZONES,
             });
           } else {
-            console.log('No app config found, initializing with defaults...');
-            // First time initialization
+            console.log('No valid app config found, bootstrapping with defaults...');
             firebaseService.updateConfig({
               categories: DEFAULT_CATEGORIES,
               statuses: DEFAULT_STATUSES,
@@ -323,6 +347,30 @@ export default function App() {
               console.error('Failed to bootstrap config:', err);
             });
           }
+        });
+
+        // Subscribe to Admin Settings
+        firebaseService.subscribeSettings((settings) => {
+          if (settings) {
+            setAdminSettings(settings);
+            setAlertAuthorized(settings.alertAuthorized ?? false);
+            setIsAudioMuted(settings.audioMuted ?? false);
+            setIsMicMuted(settings.micMuted ?? false);
+            setMicAuthorized(settings.micAuthorized ?? false);
+            
+            if (settings.micAuthorized !== undefined) setMicAuthorized(settings.micAuthorized);
+            
+            if (settings.aiBotUrl) setAiBotUrl(settings.aiBotUrl);
+            
+            if (settings.spreadsheetId) googleSheetsService.saveSpreadsheetId(settings.spreadsheetId);
+            if (settings.sheetName) googleSheetsService.saveSheetName(settings.sheetName);
+            if (settings.sheetRange) googleSheetsService.saveSheetRange(settings.sheetRange);
+          }
+        });
+
+        // WhatsApp Bridge config
+        firebaseService.subscribeWhatsAppConfig((config) => {
+          setWaConfig(config);
         });
         
         // Fetch users for login/bootstrap
@@ -334,6 +382,10 @@ export default function App() {
           setUsers([admin]);
         } else {
           setUsers(initialUsers);
+        }
+
+        if (!localStorage.getItem('complaint_app_user')) {
+          setIsLoading(false);
         }
       } catch (err) {
         console.error("Initialization error:", err);
@@ -352,6 +404,7 @@ export default function App() {
     
     const unsubscribe = firebaseService.subscribeComplaints((data) => {
       setComplaints(data);
+      setIsLoading(false);
     });
 
     return () => unsubscribe();
@@ -511,24 +564,48 @@ export default function App() {
       const newComplaint = await firebaseService.createComplaint(data, user);
       toast.success('Complaint submitted successfully!');
       
-      // WhatsApp Trigger - Unified Automated Protocol
+      // Step 2: Unified AI Bot Dispatch
       const waData: WhatsAppNotification = {
         type: 'registered',
         customerName: newComplaint.customerName,
         complaintId: newComplaint.id,
         category: newComplaint.category,
         phoneNumber: newComplaint.number,
-        description: newComplaint.description
+        description: newComplaint.description,
+        template: waConfig?.registrationTemplate
       };
 
-      // Try background dispatch first
-      const serverResult = await sendWhatsAppViaServer(waData);
-      if (!serverResult.success) {
-        // Fallback to manual if bridge is offline
-        setWhatsappData(waData);
-        setIsWhatsappModalOpen(true);
-      } else {
-        toast.info('Automated WhatsApp dispatch successful');
+      // Dispatch to HuggingFace AI Bot as requested
+      try {
+        const cleanPhone = waData.phoneNumber.replace(/\D/g, '');
+        const finalPhone = cleanPhone.length === 11 ? `92${cleanPhone.substring(1)}` : cleanPhone;
+        const message = generateWhatsAppMessage(waData);
+
+        const aiResponse = await fetch(`${aiBotUrl}/send-now`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            number: finalPhone,
+            message: message
+          })
+        });
+
+        if (aiResponse.ok) {
+          toast.success("AI Dispatch Successful", { description: "WhatsApp registration alert sent via HuggingFace." });
+        } else {
+          throw new Error('AI Bot rejected request');
+        }
+      } catch (aiErr) {
+        console.warn("AI Bot failed, trying internal server bridge...", aiErr);
+        // Fallback to internal server bridge
+        const serverResult = await sendWhatsAppViaServer(waData);
+        if (!serverResult.success) {
+          // Fallback to manual if both AI and server bridge are offline
+          setWhatsappData(waData);
+          setIsWhatsappModalOpen(true);
+        } else {
+          toast.info('Automated WhatsApp dispatch successful (via internal bridge)');
+        }
       }
 
       // Auto-sync to Google Sheets if configured
@@ -576,15 +653,39 @@ export default function App() {
             customerName: compl.customerName,
             complaintId: compl.id,
             category: compl.category,
-            phoneNumber: compl.number
+            phoneNumber: compl.number,
+            template: waConfig?.completionTemplate
           };
           
-          const serverResult = await sendWhatsAppViaServer(waData);
-          if (!serverResult.success) {
-            setWhatsappData(waData);
-            setIsWhatsappModalOpen(true);
-          } else {
-            toast.info('Automated completion notify sent');
+          // Unified AI Bot Dispatch for Completion
+          try {
+            const cleanPhone = waData.phoneNumber.replace(/\D/g, '');
+            const finalPhone = cleanPhone.length === 11 ? `92${cleanPhone.substring(1)}` : cleanPhone;
+            const message = generateWhatsAppMessage(waData);
+
+            const aiResponse = await fetch(`${aiBotUrl}/send-now`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                number: finalPhone,
+                message: message
+              })
+            });
+
+            if (aiResponse.ok) {
+              toast.success("AI Completion Alert Sent", { description: "Resolution dispatched via HuggingFace Bot." });
+            } else {
+              throw new Error('AI Bot rejected completion request');
+            }
+          } catch (aiErr) {
+            console.warn("AI Bot failed, trying internal server bridge...", aiErr);
+            const serverResult = await sendWhatsAppViaServer(waData);
+            if (!serverResult.success) {
+              setWhatsappData(waData);
+              setIsWhatsappModalOpen(true);
+            } else {
+              toast.info('Automated completion notify sent (via internal bridge)');
+            }
           }
         }
       }
@@ -609,15 +710,39 @@ export default function App() {
             customerName: compl.customerName,
             complaintId: compl.id,
             category: compl.category,
-            phoneNumber: compl.number
+            phoneNumber: compl.number,
+            template: waConfig?.completionTemplate
           };
 
-          const serverResult = await sendWhatsAppViaServer(waData);
-          if (!serverResult.success) {
-            setWhatsappData(waData);
-            setIsWhatsappModalOpen(true);
-          } else {
-            toast.info('Automated completion notify sent');
+          // Unified AI Bot Dispatch for Completion (Update action)
+          try {
+            const cleanPhone = waData.phoneNumber.replace(/\D/g, '');
+            const finalPhone = cleanPhone.length === 11 ? `92${cleanPhone.substring(1)}` : cleanPhone;
+            const message = generateWhatsAppMessage(waData);
+
+            const aiResponse = await fetch(`${aiBotUrl}/send-now`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                number: finalPhone,
+                message: message
+              })
+            });
+
+            if (aiResponse.ok) {
+              toast.success("AI Completion Alert Sent", { description: "Resolution dispatched via HuggingFace Bot." });
+            } else {
+              throw new Error('AI Bot rejected completion request');
+            }
+          } catch (aiErr) {
+            console.warn("AI Bot failed, trying internal server bridge...", aiErr);
+            const serverResult = await sendWhatsAppViaServer(waData);
+            if (!serverResult.success) {
+              setWhatsappData(waData);
+              setIsWhatsappModalOpen(true);
+            } else {
+              toast.info('Automated completion notify sent (via internal bridge)');
+            }
           }
         }
       }
@@ -727,6 +852,16 @@ export default function App() {
     toast.success('System configuration updated');
   };
 
+  const handleUpdateWhatsAppConfig = async (config: WhatsAppConfig) => {
+    if (!user) return;
+    try {
+      await firebaseService.updateWhatsAppConfig(config, user.username);
+    } catch (err) {
+      console.error(err);
+      throw err;
+    }
+  };
+
   return (
     <>
       <Toaster position="top-right" richColors />
@@ -771,6 +906,8 @@ export default function App() {
           onChangeAdminPass={handleChangeAdminPass}
           appConfig={appConfig}
           onUpdateConfig={handleUpdateConfig}
+          adminSettings={adminSettings}
+          onUpdateSettings={(settings: any) => firebaseService.updateSettings(settings, user.username)}
           isLoading={isLoading}
           alertAuthorized={alertAuthorized}
           onAuthorizeAlerts={handleAuthorizeAlerts}
@@ -782,6 +919,8 @@ export default function App() {
           onAuthorizeMic={handleAuthorizeMic}
           isMicMuted={isMicMuted}
           onToggleMic={handleToggleMic}
+          waConfig={waConfig}
+          onUpdateWhatsAppConfig={handleUpdateWhatsAppConfig}
         />
       ) : (
         <MemberPanel
