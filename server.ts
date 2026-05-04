@@ -8,8 +8,14 @@ import fs from "fs";
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+let _filename = "";
+let _dirname = "";
+try {
+  _filename = typeof __filename !== "undefined" ? __filename : fileURLToPath(import.meta.url);
+  _dirname = typeof __dirname !== "undefined" ? __dirname : path.dirname(_filename);
+} catch (e) {
+  _dirname = process.cwd();
+}
 
 async function startServer() {
   const app = express();
@@ -270,7 +276,7 @@ async function startServer() {
     // If we're running from inside dist/ already (bundled server.js), 
     // or if the dist folder isn't where we expect, try to find it relative to this file
     if (!fs.existsSync(path.join(distPath, "index.html"))) {
-      distPath = __dirname;
+      distPath = _dirname;
       if (!fs.existsSync(path.join(distPath, "index.html"))) {
         // Fallback or log error
         console.warn("Could not find index.html in dist paths. Static serving might fail.");

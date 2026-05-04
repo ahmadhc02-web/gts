@@ -10,6 +10,7 @@ import RefreshControl from './RefreshControl';
 interface LayoutProps {
   children: React.ReactNode;
   user?: UserProfile | null;
+  users?: UserProfile[];
   onLogout?: () => void;
   onRefresh?: () => void;
   isLoading?: boolean;
@@ -27,6 +28,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 export default function Layout({ 
   children, 
   user, 
+  users = [],
   onLogout, 
   onRefresh, 
   isLoading,
@@ -50,6 +52,12 @@ export default function Layout({
       return () => clearTimeout(timer);
     }
   }, [isOnline]);
+
+  useEffect(() => {
+    const handleOpenChat = () => setIsChatOpen(true);
+    window.addEventListener('openChat', handleOpenChat);
+    return () => window.removeEventListener('openChat', handleOpenChat);
+  }, []);
 
   return (
     <div className="min-h-screen transition-colors duration-500 overflow-x-hidden">
@@ -100,6 +108,7 @@ export default function Layout({
         {isChatOpen && user && (
           <Chat 
             currentUser={user} 
+            users={users}
             onClose={() => setIsChatOpen(false)} 
             isAudioMuted={isAudioMuted} 
             isMicMuted={isMicMuted} 

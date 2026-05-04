@@ -57,6 +57,7 @@ export interface ChatMessage {
   text?: string;
   audioUrl?: string;
   type?: 'text' | 'voice';
+  recipientId?: string;
   duration?: number;
   replyTo?: {
     id: string;

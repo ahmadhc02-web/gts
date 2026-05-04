@@ -13,12 +13,13 @@ import { toast } from 'sonner';
 
 interface ChatProps {
   currentUser: UserProfile;
+  users?: UserProfile[];
   onClose: () => void;
   isAudioMuted?: boolean;
   isMicMuted?: boolean;
 }
 
-export default function Chat({ currentUser, onClose, isAudioMuted = false, isMicMuted = false }: ChatProps) {
+export default function Chat({ currentUser, users = [], onClose, isAudioMuted = false, isMicMuted = false }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -26,6 +27,7 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
   const [isRecording, setIsRecording] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [selectedScope, setSelectedScope] = useState<string>('global');
   const { theme } = useTheme();
   const isOnline = useOnlineStatus();
 
@@ -40,6 +42,16 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
     "Critical alarm! 🚨"
   ];
   
+  useEffect(() => {
+    const handleOpenChatEvent = (e: any) => {
+      if (e.detail?.uid) {
+        setSelectedScope(e.detail.uid);
+      }
+    };
+    window.addEventListener('openChat', handleOpenChatEvent);
+    return () => window.removeEventListener('openChat', handleOpenChatEvent);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeMessages((msgs) => {
       setMessages(msgs);
@@ -57,7 +69,7 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isRecording, replyTo]);
+  }, [messages, isRecording, replyTo, selectedScope]);
 
   // Handle clicking outside emoji picker to close it
   useEffect(() => {
@@ -83,7 +95,8 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
         ...(replyTo.type && { type: replyTo.type })
       } : undefined;
 
-      await firebaseService.sendMessage(currentUser, trimmed, replyData);
+      const recipientId = selectedScope === 'global' ? undefined : selectedScope;
+      await firebaseService.sendMessage(currentUser, trimmed, replyData, recipientId);
       setNewMessage('');
       setShowEmojiPicker(false);
       setReplyTo(null);
@@ -105,7 +118,8 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
         ...(replyTo.type && { type: replyTo.type })
       } : undefined;
 
-      await firebaseService.sendVoiceMessage(currentUser, base64, duration, replyData);
+      const recipientId = selectedScope === 'global' ? undefined : selectedScope;
+      await firebaseService.sendVoiceMessage(currentUser, base64, duration, replyData, recipientId);
       setIsRecording(false);
       setReplyTo(null);
     } catch (err) {
@@ -144,6 +158,22 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const visibleMessages = messages.filter(msg => {
+    if (!msg.recipientId) return true;
+    if (msg.senderId === currentUser.uid || msg.recipientId === currentUser.uid) return true;
+    return false;
+  });
+
+  const displayedMessages = visibleMessages.filter(msg => {
+    if (selectedScope === 'global') {
+      return !msg.recipientId;
+    }
+    return !!msg.recipientId && (
+      (msg.recipientId === selectedScope && msg.senderId === currentUser.uid) || 
+      (msg.senderId === selectedScope && msg.recipientId === currentUser.uid)
+    );
+  });
+
   return (
     <motion.div
       initial={{ x: -400, opacity: 0 }}
@@ -153,43 +183,66 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
       className="fixed left-0 top-0 bottom-0 w-80 sm:w-96 bg-white dark:bg-slate-950 shadow-2xl z-[150] border-r border-slate-200 dark:border-slate-800 flex flex-col"
     >
       {/* Header */}
-      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex justify-between items-center shrink-0 z-[160]">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600/10 dark:bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-600/20 shadow-inner">
-              <MessageSquare size={20} />
+      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex flex-col gap-3 shrink-0 z-[160]">
+        <div className="flex justify-between items-center w-full">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-10 h-10 rounded-2xl bg-blue-600/10 dark:bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-600/20 shadow-inner">
+                <MessageSquare size={20} />
+              </div>
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full animate-pulse" />
             </div>
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full animate-pulse" />
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white leading-tight font-display">Communication Node</h3>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className={cn(
+                  "w-1.5 h-1.5 rounded-full animate-pulse",
+                  isOnline ? "bg-emerald-500" : "bg-amber-500"
+                )} />
+                <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">
+                  {isOnline ? 'Encrypted • Live Relay' : 'Offline • Local Access'}
+                </p>
+              </div>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white leading-tight font-display">Communication Node</h3>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <div className={cn(
-                "w-1.5 h-1.5 rounded-full animate-pulse",
-                isOnline ? "bg-emerald-500" : "bg-amber-500"
-              )} />
-              <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">
-                {isOnline ? 'Encrypted • Live Relay' : 'Offline • Local Access'}
-              </p>
-            </div>
+          <div className="flex items-center gap-1">
+            {currentUser.role === 'admin' && (
+              <button 
+                onClick={handleClearChat}
+                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
+                title="Clear Logs"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+            <button 
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+            >
+              <X size={20} />
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          {currentUser.role === 'admin' && (
-            <button 
-              onClick={handleClearChat}
-              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
-              title="Clear Logs"
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
-          <button 
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+
+        {/* Channel Selector */}
+        <div className="w-full relative mt-1">
+          <select
+            value={selectedScope}
+            onChange={(e) => setSelectedScope(e.target.value)}
+            className="w-full px-3 py-2 text-[11px] font-black uppercase tracking-widest rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600/30 appearance-none shadow-sm"
           >
-            <X size={20} />
-          </button>
+            <option value="global">GLOBAL RELAY (ALL)</option>
+            {users.filter(u => currentUser.role === 'admin' ? u.uid !== currentUser.uid : u.role === 'admin').map(user => (
+              <option key={user.uid} value={user.uid}>
+                PRIVATE: {user.username} {user.role === 'admin' ? '(ADMIN)' : ''}
+              </option>
+            ))}
+          </select>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
         </div>
       </div>
 
@@ -198,15 +251,15 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800"
       >
-        {messages.length === 0 ? (
+        {displayedMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
             <MessageSquare size={48} className="text-slate-300 mb-4" />
             <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Secure link established<br/>Awaiting tactical transmission</p>
           </div>
         ) : (
-          messages.map((msg, index) => {
+          displayedMessages.map((msg, index) => {
             const isMe = msg.senderId === currentUser.uid;
-            const prevMsg = messages[index - 1];
+            const prevMsg = displayedMessages[index - 1];
             const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.createdAt - prevMsg.createdAt < 60000);
             
             const seenList = Object.values(msg.seenBy || {}) as { username: string; time: number }[];
@@ -343,7 +396,7 @@ export default function Chat({ currentUser, onClose, isAudioMuted = false, isMic
                         <span className="tracking-tight antialiased">{msg.text}</span>
                       )}
                       
-                      {isMe && index === messages.length - 1 && (
+                      {isMe && index === displayedMessages.length - 1 && (
                         <div className="absolute -right-5 bottom-1">
                            <div className={cn("text-blue-500 transition-all transform", filteredSeen.length > 0 ? "opacity-100 scale-110" : "opacity-30 scale-100")}>
                              <CheckCheck size={12} />

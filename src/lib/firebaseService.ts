@@ -329,7 +329,7 @@ export const firebaseService = {
   },
 
   // --- Chat ---
-  sendMessage: async (sender: UserProfile, text: string, replyTo?: ChatMessage['replyTo']): Promise<ChatMessage> => {
+  sendMessage: async (sender: UserProfile, text: string, replyTo?: ChatMessage['replyTo'], recipientId?: string): Promise<ChatMessage> => {
     const id = `msg_${Math.random().toString(36).substr(2, 12)}`;
     const path = `chat/${id}`;
     const now = Date.now();
@@ -342,7 +342,8 @@ export const firebaseService = {
       seenBy: {
         [sender.uid]: { username: sender.username, time: now }
       },
-      ...(replyTo && { replyTo })
+      ...(replyTo && { replyTo }),
+      ...(recipientId && { recipientId })
     };
     try {
       await setDoc(doc(db, 'chat', id), newMessage);
@@ -353,7 +354,7 @@ export const firebaseService = {
     }
   },
 
-  sendVoiceMessage: async (sender: UserProfile, audioBase64: string, duration: number, replyTo?: ChatMessage['replyTo']): Promise<ChatMessage> => {
+  sendVoiceMessage: async (sender: UserProfile, audioBase64: string, duration: number, replyTo?: ChatMessage['replyTo'], recipientId?: string): Promise<ChatMessage> => {
     const id = `msg_${Math.random().toString(36).substr(2, 12)}`;
     const path = `chat/${id}`;
     const now = Date.now();
@@ -368,7 +369,8 @@ export const firebaseService = {
       seenBy: {
         [sender.uid]: { username: sender.username, time: now }
       },
-      ...(replyTo && { replyTo })
+      ...(replyTo && { replyTo }),
+      ...(recipientId && { recipientId })
     };
     try {
       await setDoc(doc(db, 'chat', id), newMessage);

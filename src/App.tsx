@@ -421,8 +421,10 @@ export default function App() {
     let lastMessageId = '';
 
     const unsubscribe = firebaseService.subscribeMessages((data) => {
-      if (data.length > 0) {
-        const latest = data[data.length - 1];
+      // Filter out private messages not meant for user
+      const visibleData = data.filter(msg => !msg.recipientId || msg.senderId === user.uid || msg.recipientId === user.uid);
+      if (visibleData.length > 0) {
+        const latest = visibleData[visibleData.length - 1];
         
         // Only notify if not self and after initial load
         if (!isInitialLoad && latest.id !== lastMessageId && latest.senderId !== user.uid) {
@@ -670,6 +672,7 @@ export default function App() {
       </AnimatePresence>
       <Layout 
         user={user} 
+        users={users}
         onLogout={handleLogout} 
         onRefresh={handleRefresh} 
         isLoading={isLoading}

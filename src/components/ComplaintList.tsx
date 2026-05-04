@@ -263,6 +263,7 @@ export default function ComplaintList({
       c.priority,
       c.status.toUpperCase(),
       c.area,
+      c.panelDetails || 'N/A',
       c.pkgDetails || 'N/A',
       c.userNearby || 'N/A',
       c.description,
@@ -270,7 +271,7 @@ export default function ComplaintList({
     ]);
     autoTable(doc, {
       startY: 45,
-      head: [['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Package', 'Nearby', 'Dispatch Details', 'Date']],
+      head: [['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Date']],
       body: tableRows,
       theme: 'grid',
       headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] },
@@ -286,7 +287,7 @@ export default function ComplaintList({
       return;
     }
 
-    const headers = ['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Package', 'Nearby', 'Dispatch Details', 'Date'];
+    const headers = ['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Date'];
     const rows = filtered.map(c => [
       c.customerName,
       c.customerUsername || 'N/A',
@@ -294,6 +295,7 @@ export default function ComplaintList({
       c.priority,
       c.status.toUpperCase(),
       c.area,
+      c.panelDetails || 'N/A',
       c.pkgDetails || 'N/A',
       c.userNearby || 'N/A',
       `"${c.description.replace(/"/g, '""')}"`,
@@ -358,7 +360,7 @@ export default function ComplaintList({
     // Now proceed with tokens (tokens should be available here if connected)
     setIsBackingUp(true);
     try {
-      const headers = ['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Package', 'Nearby', 'Dispatch Details', 'Date'];
+      const headers = ['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Date'];
       const rows = filtered.map(c => [
         c.customerName,
         c.customerUsername || 'N/A',
@@ -366,6 +368,7 @@ export default function ComplaintList({
         c.priority || 'Medium',
         c.status.toUpperCase(),
         c.area,
+        c.panelDetails || 'N/A',
         c.pkgDetails || 'N/A',
         c.userNearby || 'N/A',
         `"${c.description.replace(/"/g, '""')}"`,
@@ -723,6 +726,17 @@ export default function ComplaintList({
                 </th>
                 <th 
                   className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
+                  onClick={() => handleSort('panelDetails' as keyof Complaint)}
+                >
+                  <div className="flex items-center gap-2">
+                    Panel Details
+                    {sortConfig.key === 'panelDetails' && (
+                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('description')}
                 >
                   <div className="flex items-center gap-2">
@@ -772,7 +786,7 @@ export default function ComplaintList({
               <AnimatePresence mode="popLayout">
                 {paginatedComplaints.length === 0 ? (
                    <tr>
-                     <td colSpan={8} className="py-24 text-center">
+                     <td colSpan={9} className="py-24 text-center">
                        <Clock size={40} className="text-slate-200 mx-auto mb-4" />
                        <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No records meet current parameters</p>
                     </td>
@@ -819,6 +833,11 @@ export default function ComplaintList({
                           )}
                           <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{complaint.number}</span>
                         </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+                          {complaint.panelDetails || 'N/A'}
+                        </span>
                       </td>
                       <td className="px-6 py-5">
                         <span className="text-sm text-slate-700 dark:text-slate-300 font-medium line-clamp-2 max-w-[200px]">
