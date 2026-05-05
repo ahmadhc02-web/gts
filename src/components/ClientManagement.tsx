@@ -399,6 +399,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Contacts</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Package Details</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Details Pannal</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Navigation / Nearby</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">S/N</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Operations</th>
@@ -408,12 +409,12 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
                 {isLoading ? (
                   Array(5).fill(0).map((_, i) => (
                     <tr key={i} className="animate-pulse">
-                      <td colSpan={6} className="px-6 py-6 h-12 bg-slate-50/50 dark:bg-slate-900/10"></td>
+                      <td colSpan={7} className="px-6 py-6 h-12 bg-slate-50/50 dark:bg-slate-900/10"></td>
                     </tr>
                   ))
                 ) : paginatedClients.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">No client records found matching search parameters</td>
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">No client records found matching search parameters</td>
                   </tr>
                 ) : paginatedClients.map((client) => (
                   <tr key={client.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors group">
@@ -441,6 +442,12 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
                            <Package size={10} />
                            {client.pkgDetails || '---'}
                         </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+                        <Layers size={10} className="text-brand-accent/60" />
+                        <span className="text-[10px] font-bold uppercase tracking-widest">{client.panelDetails || '---'}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">

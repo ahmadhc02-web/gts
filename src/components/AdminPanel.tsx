@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
 import ClientManagement from './ClientManagement';
 import RealTimeMonitor from './RealTimeMonitor';
+import DistributionList from './DistributionList';
+import HighFrequencyNodes from './HighFrequencyNodes';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
@@ -313,14 +315,24 @@ export default function AdminPanel({
         ))}
       </div>
 
+      {/* Analytics Dashboards - Below Stat Boxes */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="h-[340px] shadow-sm rounded-2xl">
+          <RealTimeMonitor complaints={complaints} />
+        </div>
+        <div className="h-[340px] shadow-sm rounded-2xl">
+          <DistributionList complaints={complaints} />
+        </div>
+      </div>
+
       {/* Admin Nav */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl w-full lg:w-fit border border-slate-200 dark:border-slate-800">
           {[
             { id: 'complaints', label: 'Operations', icon: ClipboardList },
-            { id: 'monitor', label: 'Status Monitor', icon: BarChart3 },
             { id: 'submit', label: 'Complain Reg', icon: PlusSquare },
             { id: 'clients', label: 'User Details', icon: Contact },
+            { id: 'nodes', label: 'Active Nodes', icon: Flame },
             { id: 'users', label: 'Link Access', icon: Users },
             { id: 'config', label: 'Workflow Config', icon: Settings },
             { id: 'settings', label: 'Security', icon: Shield },
@@ -355,18 +367,6 @@ export default function AdminPanel({
         transition={{ duration: 0.2 }}
         id="operations-registry"
       >
-        {activeTab === 'monitor' && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <RealTimeMonitor complaints={complaints} />
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-               <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white mb-4">Pulse Analysis</h3>
-               <p className="text-xs text-slate-500 font-medium leading-relaxed uppercase">
-                 The Real-Time Pulse monitor visualizes network orchestration and operational flow within the GTS Infrastructure. Every heartbeat represents a synchronized node state or high-tier priority broadcast.
-               </p>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'complaints' && (
           <ComplaintList
             complaints={complaints}
@@ -397,6 +397,12 @@ export default function AdminPanel({
 
         {activeTab === 'clients' && (
           <ClientManagement appConfig={appConfig} isAdmin={true} currentUserId={currentUserId} currentUserName={users.find(u => u.uid === currentUserId)?.username || 'Admin'} />
+        )}
+
+        {activeTab === 'nodes' && (
+          <div className="max-w-4xl mx-auto">
+            <HighFrequencyNodes complaints={complaints} />
+          </div>
         )}
 
         {activeTab === 'users' && (

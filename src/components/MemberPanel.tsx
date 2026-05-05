@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity } from 'lucide-react';
+import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity, Flame } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile } from '../types';
 import ComplaintForm from './ComplaintForm';
 import ComplaintList from './ComplaintList';
 import ClientManagement from './ClientManagement';
 import RealTimeMonitor from './RealTimeMonitor';
+import DistributionList from './DistributionList';
+import HighFrequencyNodes from './HighFrequencyNodes';
 import { cn } from '../lib/utils';
 import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
@@ -151,12 +153,22 @@ export default function MemberPanel({
         ))}
       </div>
 
+      {/* Analytics Dashboards - Below Stat Boxes */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="h-[340px] shadow-sm rounded-2xl">
+          <RealTimeMonitor complaints={complaints} />
+        </div>
+        <div className="h-[340px] shadow-sm rounded-2xl">
+          <DistributionList complaints={complaints} />
+        </div>
+      </div>
+
       {/* Navigation Tabs */}
       <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl w-fit border border-slate-200 dark:border-slate-800">
         {[
           { id: 'ops', label: 'Operations', icon: ClipboardList },
-          { id: 'monitor', label: 'Pulse Monitor', icon: BarChart3 },
           { id: 'clients', label: 'User Details', icon: Contact },
+          { id: 'nodes', label: 'Active Nodes', icon: Flame },
           { id: 'profile', label: 'Security', icon: Shield },
         ].map((tab) => (
           <button
@@ -182,18 +194,6 @@ export default function MemberPanel({
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.2 }}
       >
-        {activeTab === 'monitor' && (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <RealTimeMonitor complaints={complaints} />
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-               <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white mb-4">Tactical Awareness</h3>
-               <p className="text-xs text-slate-500 font-medium leading-relaxed uppercase">
-                 Field monitor for real-time infrastructure pulses. Spikes indicate high-priority broadcasts or remote registry mutations within your zone of operation.
-               </p>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'ops' && (
           <div className="space-y-12">
             <section>
@@ -222,6 +222,12 @@ export default function MemberPanel({
                 appConfig={appConfig}
               />
             </section>
+          </div>
+        )}
+
+        {activeTab === 'nodes' && (
+          <div className="max-w-4xl mx-auto">
+            <HighFrequencyNodes complaints={complaints} />
           </div>
         )}
 
