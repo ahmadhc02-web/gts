@@ -157,7 +157,7 @@ export const googleSheetsService = {
 
       return await response.json();
     } catch (error) {
-      console.error('Error syncing to Google Sheets:', error);
+      console.error('Error syncing to Google Sheets:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   },
@@ -222,7 +222,7 @@ export const googleSheetsService = {
 
       return await response.json();
     } catch (error) {
-      console.error('Error exporting to Google Sheets:', error);
+      console.error('Error exporting to Google Sheets:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   },
@@ -252,7 +252,7 @@ export const googleSheetsService = {
 
       return await response.json();
     } catch (error) {
-      console.error('Error backing up to Google Drive:', error);
+      console.error('Error backing up to Google Drive:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   },
@@ -283,7 +283,7 @@ export const googleSheetsService = {
         try {
           await googleSheetsService.appendComplaint(item);
         } catch (err) {
-          console.error('Failed to sync queued item:', err);
+          console.error('Failed to sync queued item:', err instanceof Error ? err.message : String(err));
           remaining.push(item);
         }
       }

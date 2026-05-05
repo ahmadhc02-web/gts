@@ -143,7 +143,7 @@ export default function AdminPanel({
       fetch('/api/auth/google/config')
         .then(res => res.json())
         .then(data => setConfig(data))
-        .catch(err => console.error('Failed to fetch Google config', err));
+        .catch(err => console.error('Failed to fetch Google config', err instanceof Error ? err.message : String(err)));
     }
   }, [activeTab]);
 
@@ -153,7 +153,7 @@ export default function AdminPanel({
       const tokens = await googleSheetsService.initiateAuth();
       setGoogleTokens(tokens);
     } catch (err: any) {
-      console.error(err);
+      console.error(err instanceof Error ? err.message : String(err));
       if (err.message === 'Auth window closed') {
         toast.error('Authentication cancelled', {
           description: 'Please keep the window open until the process completes.'
@@ -253,7 +253,7 @@ export default function AdminPanel({
       await onUpdateUser(uid, editUsername.trim(), editPassword.trim());
       setEditingUserId(null);
     } catch (err) {
-      console.error(err);
+      console.error(err instanceof Error ? err.message : String(err));
     } finally {
       setIsUpdating(false);
     }
@@ -316,12 +316,15 @@ export default function AdminPanel({
       </div>
 
       {/* Analytics Dashboards - Below Stat Boxes */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="h-[340px] shadow-sm rounded-2xl">
+      <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-6 mb-6">
+        <div className="h-[400px] shadow-sm rounded-2xl">
+          <DistributionList complaints={complaints} chartType="area" />
+        </div>
+        <div className="h-[400px] shadow-sm rounded-2xl md:col-span-1 lg:col-span-2 xl:col-span-1">
           <RealTimeMonitor complaints={complaints} />
         </div>
-        <div className="h-[340px] shadow-sm rounded-2xl">
-          <DistributionList complaints={complaints} />
+        <div className="h-[400px] shadow-sm rounded-2xl">
+          <DistributionList complaints={complaints} chartType="category" />
         </div>
       </div>
 

@@ -101,7 +101,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       setShowEmojiPicker(false);
       setReplyTo(null);
     } catch (err) {
-      console.error('Failed to send message:', err);
+      console.error('Failed to send message:', err instanceof Error ? err.message : String(err));
       toast.error('Failed to send message. Please check your connection.');
     } finally {
       setIsSending(false);
@@ -123,7 +123,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       setIsRecording(false);
       setReplyTo(null);
     } catch (err) {
-      console.error('Failed to send voice message:', err);
+      console.error('Failed to send voice message:', err instanceof Error ? err.message : String(err));
       toast.error('Failed to send voice message. It might be too large or your connection is weak.');
     } finally {
       setIsSending(false);
@@ -140,7 +140,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       await firebaseService.deleteMessage(messageId);
       toast.success('Message deleted');
     } catch (err) {
-      console.error('Failed to delete message:', err);
+      console.error('Failed to delete message:', err instanceof Error ? err.message : String(err));
       toast.error('Failed to delete message');
     }
   };
@@ -150,7 +150,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     try {
       await firebaseService.clearAllMessages();
     } catch (err) {
-      console.error('Failed to clear chat:', err);
+      console.error('Failed to clear chat:', err instanceof Error ? err.message : String(err));
     }
   };
 

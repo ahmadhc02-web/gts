@@ -26,7 +26,7 @@ export default function App() {
         duration: 3000
       });
       // Process pending Google Sheets syncs
-      googleSheetsService.syncQueue.process().catch(console.error);
+      googleSheetsService.syncQueue.process().catch(e => console.error(e instanceof Error ? e.message : String(e)));
     } else {
       toast.error('Connection Severed', {
         description: 'Switching to Local Access Mode. Data will be cached locally.',
@@ -178,7 +178,7 @@ export default function App() {
       localStorage.setItem('gts_audio_muted', 'false');
       toast.success("System Alerts Enabled", { description: "You will now receive sound and background notifications." });
     } catch (err) {
-      console.error("Authorization failed:", err);
+      console.error("Authorization failed:", err instanceof Error ? err.message : String(err));
       toast.error("Failed to unlock system alerts. Please check browser permissions.");
     }
   };
@@ -205,7 +205,7 @@ export default function App() {
       localStorage.setItem('gts_mic_muted', 'false');
       toast.success("Microphone Authorized", { description: "Tactical voice transmission is now unlocked." });
     } catch (err: any) {
-      console.error("Mic Auth Logic Failure:", err);
+      console.error("Mic Auth Logic Failure:", err instanceof Error ? err.message : String(err));
       let errorMessage = "Microphone access denied. Check your hardware permissions.";
       
       const errorName = err.name || '';
@@ -314,7 +314,7 @@ export default function App() {
               priorities: DEFAULT_PRIORITIES,
               zones: DEFAULT_ZONES,
             }, 'System Bootstrap').catch(err => {
-              console.error('Failed to bootstrap config:', err);
+              console.error('Failed to bootstrap config:', err instanceof Error ? err.message : String(err));
             });
           }
         });
@@ -330,7 +330,7 @@ export default function App() {
           setUsers(initialUsers);
         }
       } catch (err) {
-        console.error("Initialization error:", err);
+        console.error("Initialization error:", err instanceof Error ? err.message : String(err));
         setError("System initialization failed. Please refresh.");
       }
     };
@@ -516,11 +516,11 @@ export default function App() {
           googleSheetsService.syncQueue.add(newComplaint);
         }
       } catch (err) {
-        console.error('Failed to sync with Google Sheets, queuing...', err);
+        console.error('Failed to sync with Google Sheets, queuing...', err instanceof Error ? err.message : String(err));
         googleSheetsService.syncQueue.add(newComplaint);
       }
     } catch (e) {
-      console.error(e);
+      console.error(e instanceof Error ? e.message : String(e));
     } finally {
       setIsLoading(false);
     }
@@ -532,7 +532,7 @@ export default function App() {
       await firebaseService.deleteComplaint(id, user.username);
       toast.success('Complaint deleted successfully!');
     } catch (e) {
-      console.error(e);
+      console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to delete complaint.');
     }
   };
@@ -543,7 +543,7 @@ export default function App() {
       await firebaseService.updateComplaintStatus(id, status, user.username);
       toast.success(`Status updated to ${status}`);
     } catch (e) {
-      console.error(e);
+      console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update status.');
     }
   };
@@ -554,7 +554,7 @@ export default function App() {
       await firebaseService.updateComplaint(id, data, user.username);
       toast.success('Log record updated successfully');
     } catch (e) {
-      console.error(e);
+      console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update record.');
     }
   };
@@ -583,7 +583,7 @@ export default function App() {
       setUsers(prev => [...prev, newUser]);
       toast.success(`User ${trimmedName} created successfully!`);
     } catch (e) {
-      console.error(e);
+      console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to create user.');
       throw e;
     }
@@ -596,7 +596,7 @@ export default function App() {
       setUsers(prev => prev.filter(u => u.uid !== uid));
       toast.success('User deleted successfully');
     } catch (e) {
-      console.error(e);
+      console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to delete user.');
     }
   };
@@ -617,7 +617,7 @@ export default function App() {
       
       toast.success('User details updated successfully!');
     } catch (e) {
-      console.error(e);
+      console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update user details.');
     }
   };
@@ -636,7 +636,7 @@ export default function App() {
       
       toast.success(`Admin password changed successfully!`);
     } catch (e) {
-      console.error(e);
+      console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to change password.');
     }
   };
@@ -647,7 +647,7 @@ export default function App() {
       const updatedUsers = await firebaseService.getUsers();
       setUsers(updatedUsers);
     } catch (err) {
-      console.error("Refresh failed:", err);
+      console.error("Refresh failed:", err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }

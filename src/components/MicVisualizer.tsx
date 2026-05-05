@@ -56,7 +56,7 @@ export default function MicVisualizer({ isMuted, isAuthorized }: MicVisualizerPr
       
       updateVolume();
     } catch (err) {
-      console.error("Visualizer failed:", err);
+      console.error("Visualizer failed:", err instanceof Error ? err.message : String(err));
     }
   };
 

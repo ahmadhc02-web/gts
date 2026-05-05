@@ -154,12 +154,15 @@ export default function MemberPanel({
       </div>
 
       {/* Analytics Dashboards - Below Stat Boxes */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="h-[340px] shadow-sm rounded-2xl">
+      <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-6 mb-6">
+        <div className="h-[400px] shadow-sm rounded-2xl">
+          <DistributionList complaints={complaints} chartType="area" />
+        </div>
+        <div className="h-[400px] shadow-sm rounded-2xl md:col-span-1 lg:col-span-2 xl:col-span-1">
           <RealTimeMonitor complaints={complaints} />
         </div>
-        <div className="h-[340px] shadow-sm rounded-2xl">
-          <DistributionList complaints={complaints} />
+        <div className="h-[400px] shadow-sm rounded-2xl">
+          <DistributionList complaints={complaints} chartType="category" />
         </div>
       </div>
 

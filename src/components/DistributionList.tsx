@@ -1,135 +1,142 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Tag, ChevronDown, BarChart2, X, Info, User, Calendar, Clock } from 'lucide-react';
+import { MapPin, Tag, ChevronDown, BarChart2, X, Info, User, Calendar, Clock, PieChart as PieChartIcon } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { Complaint } from '../types';
 
 interface DistributionListProps {
   complaints: Complaint[];
+  chartType?: 'area' | 'category';
 }
 
-export default function DistributionList({ complaints }: DistributionListProps) {
+const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316'];
+
+export default function DistributionList({ complaints, chartType = 'area' }: DistributionListProps) {
   const [viewBy, setViewBy] = useState<'area' | 'category'>('area');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
   const data = useMemo(() => {
     const counts: Record<string, number> = {};
     complaints.forEach(c => {
-      const key = viewBy === 'area' ? (c.area || 'Unknown Area') : (c.category || 'Unknown Category');
+      const key = chartType === 'area' ? (c.area || 'Unknown Area') : (c.category || 'Unknown Category');
       if (!counts[key]) counts[key] = 0;
       counts[key]++;
     });
-
     return Object.entries(counts)
       .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count); // sort descending by count
-  }, [complaints, viewBy]);
+      .sort((a, b) => b.count - a.count);
+  }, [complaints, chartType]);
 
   const total = complaints.length;
-
+  
+  const iconColor = chartType === 'area' ? 'emerald' : 'blue';
+  
   return (
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100">
       <div className="flex-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm flex flex-col relative overflow-hidden">
         {/* Decorative background elements */}
-        <div className="absolute -top-16 -right-16 w-64 h-64 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none" />
-        <div className="absolute -bottom-16 -left-16 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none" />
-
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4 relative z-20">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/20 flex items-center justify-center text-white">
-              <BarChart2 size={20} />
-            </div>
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Distribution Analysis</h3>
-              <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest opacity-80">
-                Breakdown by {viewBy === 'area' ? 'Deployment Zones' : 'Category'}
-              </p>
-            </div>
-          </div>
-
-          <div className="relative z-50">
-            <button 
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm"
-            >
-              {viewBy === 'area' ? 'Deployment Zones' : 'Category'}
-              <ChevronDown size={14} className={`transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            <AnimatePresence>
-              {isDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden backdrop-blur-xl"
-                >
-                  <button
-                    onClick={() => { setViewBy('area'); setIsDropdownOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-colors ${viewBy === 'area' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                  >
-                    <MapPin size={14} />
-                    Deployment Zones
-                  </button>
-                  <button
-                    onClick={() => { setViewBy('category'); setIsDropdownOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black uppercase tracking-widest transition-colors ${viewBy === 'category' ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                  >
-                    <Tag size={14} />
-                    Category
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+        <div className={`absolute -top-16 -right-16 w-64 h-64 bg-${iconColor}-500/5 blur-[80px] rounded-full pointer-events-none`} />
+        
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-2 relative z-20">
+          <div className="flex items-center">
+            <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">
+              {chartType === 'area' ? 'Zone Analysis' : 'Category Analysis'}
+            </h3>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2 space-y-3 relative z-10 custom-scrollbar">
-          {data.length > 0 ? (
-            data.map((item, idx) => (
-              <motion.button 
-                key={item.name}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                onClick={() => setSelectedItem(item.name)}
-                className="w-full flex items-center justify-between p-4 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/50 hover:border-emerald-500/30 transition-colors group cursor-pointer"
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-black tracking-widest transition-transform group-hover:scale-105 ${
-                    idx < 3 ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
-                  }`}>
-                    #{idx + 1}
+        <div className="flex-1 flex gap-2 w-full mt-2 h-full min-h-[160px] pb-2 relative z-10">
+           {/* Dynamic Pie */}
+           <div className={`w-full flex items-center relative h-full bg-gradient-to-br from-slate-50/50 to-slate-100/30 dark:from-slate-800/30 dark:to-slate-800/10 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 hover:border-${iconColor}-500/30 transition-colors shadow-sm overflow-hidden p-2`}>
+              {data.length > 0 ? (
+                <div className="flex w-full h-full items-center">
+                  <div className="w-[60%] h-[240px] relative -left-3">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                         <defs>
+                            <filter id="pieShadow" x="-20%" y="-20%" width="140%" height="140%">
+                              <feDropShadow dx="-2" dy="4" stdDeviation="3" floodOpacity="0.25" />
+                            </filter>
+                         </defs>
+                         <Pie 
+                           data={data.slice(0, 5)} 
+                           cx="50%" cy="50%" 
+                           innerRadius="40%" outerRadius="95%" 
+                           paddingAngle={4}
+                           cornerRadius={6}
+                           dataKey="count"
+                           nameKey="name"
+                           stroke="none"
+                           onClick={(entry) => {
+                             setViewBy(chartType);
+                             setSelectedItem(entry.name);
+                           }}
+                           className="cursor-pointer focus:outline-none"
+                           animationBegin={chartType === 'category' ? 200 : 0}
+                           animationDuration={1500}
+                           animationEasing="ease-out"
+                         >
+                           {data.slice(0, 5).map((entry, index) => {
+                             const colorIndex = chartType === 'category' ? (index + 3) : index;
+                             return (
+                               <Cell 
+                                 key={`cell-${index}`} 
+                                 fill={COLORS[colorIndex % COLORS.length]} 
+                                 className="hover:opacity-90 hover:scale-[1.08] transition-all duration-300 origin-center cursor-pointer" 
+                                 style={{ filter: 'url(#pieShadow)' }}
+                               />
+                             );
+                           })}
+                         </Pie>
+                         <RechartsTooltip 
+                           contentStyle={{
+                              backgroundColor: 'rgba(15, 23, 42, 0.95)', 
+                              backdropFilter: 'blur(8px)',
+                              border: '1px solid rgba(51, 65, 85, 0.5)', 
+                              borderRadius: '12px',
+                              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)',
+                              fontSize: '11px',
+                              fontWeight: '900',
+                              color: '#fff',
+                              textTransform: 'uppercase',
+                              padding: '8px 12px'
+                           }}
+                           itemStyle={{ color: '#fff', fontWeight: '900' }}
+                           cursor={false}
+                         />
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                  <p className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight truncate max-w-[200px]">{item.name}</p>
+                  
+                  {/* Right side list */}
+                  <div className="w-[40%] flex flex-col justify-center gap-2 pr-2">
+                    {data.slice(0, 5).map((item, idx) => {
+                       const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
+                       const colorIndex = chartType === 'category' ? (idx + 3) : idx;
+                       return (
+                         <div key={item.name} className="flex flex-col">
+                            <div className="flex items-center justify-between text-[10px] sm:text-xs font-black leading-tight mb-1">
+                               <span className="truncate pr-1 text-slate-700 dark:text-slate-300 saturate-150" style={{ color: COLORS[colorIndex % COLORS.length] }}>
+                                 {item.name}
+                               </span>
+                               <span className="text-slate-900 dark:text-white shrink-0">
+                                 {percentage}%
+                               </span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-200/50 dark:bg-slate-700/50 rounded-full overflow-hidden">
+                               <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percentage}%`, backgroundColor: COLORS[colorIndex % COLORS.length] }} />
+                            </div>
+                         </div>
+                       );
+                    })}
+                  </div>
                 </div>
-                <div className="flex items-center gap-6">
-                  <div className="flex flex-col items-end">
-                    <span className="text-base font-black text-slate-900 dark:text-white leading-none">{item.count}</span>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                      {total > 0 ? Math.round((item.count / total) * 100) : 0}% Share
-                    </span>
-                  </div>
-                  <div className="hidden sm:block w-20 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
-                    <div 
-                      className="h-full bg-emerald-500 rounded-full relative" 
-                      style={{ width: `${total > 0 ? (item.count / total) * 100 : 0}%` }}
-                    >
-                      <div className="absolute inset-0 bg-white/20" />
-                    </div>
-                  </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-[9px] font-black text-slate-400 uppercase">No Data</p>
                 </div>
-              </motion.button>
-            ))
-          ) : (
-            <div className="p-8 text-center flex flex-col items-center justify-center h-full">
-               <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-                 <BarChart2 size={24} className="text-slate-400 dark:text-slate-500" />
-               </div>
-               <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">No Data Available</p>
-               <p className="text-[10px] text-slate-400 uppercase tracking-widest">Awaiting registry entries</p>
-            </div>
-          )}
+              )}
+           </div>
         </div>
       </div>
 
@@ -234,3 +241,4 @@ export default function DistributionList({ complaints }: DistributionListProps) 
     </div>
   );
 }
+

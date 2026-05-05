@@ -125,7 +125,7 @@ export default function VoiceRecorder({ onSend, onCancel, isAudioMuted = false, 
         setRecordingTime(prev => prev + 1);
       }, 1000);
     } catch (err: any) {
-      console.error('Failed to start recording:', err);
+      console.error('Failed to start recording:', err instanceof Error ? err.message : String(err));
       let msg = 'Microphone access denied or hardware not found.';
       
       const errorString = err.toString().toLowerCase();

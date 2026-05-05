@@ -386,7 +386,7 @@ export default function ComplaintList({
       await googleSheetsService.backupToDrive(filename, csvContent);
       toast.success('SUCCESS! Operations backup has been securely archived in your "GreenTech_Backups" folder on Google Drive.');
     } catch (error: any) {
-      console.error('Critical Backup Error:', error);
+      console.error('Critical Backup Error:', error instanceof Error ? error.message : String(error));
       const errorMessage = error.message || '';
       
       if (errorMessage.includes('insufficient permissions') || errorMessage.includes('403') || errorMessage.includes('401')) {
@@ -396,7 +396,7 @@ export default function ComplaintList({
             setIsGoogleConnected(true);
             toast.success('Security clearance granted! Please try the backup again.');
           } catch (authError) {
-            console.error('Re-auth failed:', authError);
+            console.error('Re-auth failed:', authError instanceof Error ? authError.message : String(authError));
           }
         }
       } else if (errorMessage.toLowerCase().includes('account not connected')) {

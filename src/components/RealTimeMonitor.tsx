@@ -95,21 +95,15 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none" />
         <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none" />
         
-        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-4 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20 flex items-center justify-center text-white">
-              <BarChart3 size={20} />
-            </div>
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">
-                {reportType === 'monthly' ? 'Monthly' : 'Daily'} Ops Report
-              </h3>
-              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest opacity-80">Volume & Trend Analysis</p>
-            </div>
+        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-2 relative z-10">
+          <div className="flex items-center">
+            <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">
+              {reportType === 'monthly' ? 'Monthly' : 'Daily'} Ops Report
+            </h3>
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2 p-1.5 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl">
+            <div className="flex items-center gap-2 p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl">
               <button
                 onClick={() => setReportType('daily')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
@@ -133,30 +127,10 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                 Monthly
               </button>
             </div>
-            
-            <div className="flex gap-6 items-center px-4 py-2 bg-slate-50/80 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800/80">
-              <div className="hidden sm:block text-right pr-6 border-r border-slate-200 dark:border-slate-700">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Network</p>
-                  <div className="flex items-center gap-2 justify-end">
-                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500'}`} />
-                    <span className={`text-[11px] font-black uppercase tracking-widest ${isOnline ? 'text-emerald-600' : 'text-amber-600'}`}>
-                      {isOnline ? 'Online' : 'Cached'}
-                    </span>
-                  </div>
-              </div>
-              <div className="text-right pr-6 border-r border-slate-200 dark:border-slate-700 hidden sm:block">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Resolution</p>
-                  <p className="text-sm font-black text-slate-900 dark:text-white">{resolutionRate}%</p>
-              </div>
-              <div className="text-right">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Total Vol</p>
-                  <p className="text-lg leading-none font-black text-blue-600 dark:text-blue-500">{totalComplaints}</p>
-              </div>
-            </div>
           </div>
         </div>
 
-        <div className="flex-1 min-h-[150px] w-full mt-2 relative z-10">
+        <div className="flex-1 min-h-[260px] w-full mt-2 relative z-10 -ml-4">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>

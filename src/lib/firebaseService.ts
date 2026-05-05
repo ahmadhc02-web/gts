@@ -190,7 +190,7 @@ export const firebaseService = {
       const notifications = snapshot.docs.map(doc => doc.data() as Notification);
       callback(notifications);
     }, (error) => {
-      console.error('Subscription error for notifications:', error);
+      console.error('Subscription error for notifications:', error instanceof Error ? error.message : String(error));
       handleFirestoreError(error, OperationType.LIST, path);
     });
   },
