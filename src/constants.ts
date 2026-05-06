@@ -1,18 +1,11 @@
 export const DEFAULT_CATEGORIES = [
-  'Fiber Break', 
+  'SPEED ISSUE', 
+  'Offline', 
+  'New Connection', 
   'Router Configuration', 
-  'Slow Connection', 
   'WiFi Issue', 
-  'Billing', 
-  'Installation Request',
-  'New User Setup',
-  'Offline',
-  'New Connection',
-  'Disconnecting',
-  'Shifting',
-  'Networking',
-  'Redlight',
-  'Upgrading'
+  'Fiber Break',
+  'Slow Connection'
 ];
 
 export const DEFAULT_STATUSES = ['pending', 'in process', 'complete', 'important'];

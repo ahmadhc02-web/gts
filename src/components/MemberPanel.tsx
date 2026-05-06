@@ -205,7 +205,7 @@ export default function MemberPanel({
                 <p className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Capture and process enterprise support requests.</p>
               </div>
               
-              <div className="max-w-4xl">
+              <div className="max-w-4xl mx-auto">
                 <ComplaintForm onSubmit={onRegisterComplaint} isLoading={isLoading} appConfig={appConfig} />
               </div>
             </section>

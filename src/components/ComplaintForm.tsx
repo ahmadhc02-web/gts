@@ -125,62 +125,65 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
     setPriority(appConfig.priorities[0]);
   };
 
-  const inputClasses = "w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all duration-200 font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm";
-  const labelClasses = "block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.15em] ml-1 mb-2";
+  const inputClasses = "w-full px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-brand-accent/10 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm text-center [text-align-last:center]";
+  const labelClasses = "block text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-2 text-center group-focus-within/field:text-brand-accent transition-colors duration-300";
 
   return (
     <motion.div layout className="relative group max-w-5xl mx-auto w-full">
       {/* Decorative background element */}
-      <div className="absolute -inset-1 bg-gradient-to-r from-brand-accent/20 to-blue-600/20 rounded-[2rem] blur-xl opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+      <div className="absolute -inset-2 bg-gradient-to-r from-brand-accent/10 via-blue-500/10 to-brand-accent/10 rounded-[2.5rem] blur-2xl opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-500"></div>
       
-      <motion.div layout className="relative p-6 sm:p-8 md:p-10 bg-white dark:bg-slate-950 rounded-[1.5rem] border border-slate-200/60 dark:border-slate-800 shadow-2xl overflow-hidden">
-        <motion.div layout className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
-          <div>
-            <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tight flex items-center gap-4 text-slate-900 dark:text-white">
-              <div className="p-3 rounded-2xl bg-brand-accent/10 text-brand-accent ring-1 ring-brand-accent/20">
-                <Send size={24} strokeWidth={2.5} />
-              </div>
-              Service Request
-            </h3>
-            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-2 ml-1">
-              Terminal: Operational Log Entry
+      <motion.div layout className="relative p-7 sm:p-9 md:p-11 bg-white dark:bg-slate-950 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/80 shadow-[0_20px_50px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden">
+        <motion.div layout className="flex flex-col items-center justify-center text-center mb-10">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="p-3.5 rounded-3xl bg-brand-accent/10 text-brand-accent ring-1 ring-brand-accent/20 mb-5"
+          >
+            <Send size={28} strokeWidth={2.5} />
+          </motion.div>
+          
+          <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tighter text-slate-900 dark:text-white mb-2">
+            Service Request
+          </h3>
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-[9px] font-black text-brand-accent uppercase tracking-[0.3em]">
+              Operational Terminal Portal
             </p>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[.2em] shadow-sm">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Live Sync: Active
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Secure Network Link: Active
+            </div>
           </div>
         </motion.div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col xl:flex-row gap-8">
+        <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row gap-10 lg:items-start">
           {/* Section 1: Client Information */}
-          <motion.div layout className="space-y-5 xl:w-[60%] flex-shrink-0">
-            <motion.div layout className="flex items-center gap-3 mb-2">
-              <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800" />
-              <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-[.3em]">Client Identity</span>
-              <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800" />
-            </motion.div>
+          <motion.div layout className="space-y-6 lg:w-1/2">
+            <div className="flex items-center gap-4 justify-center">
+              <div className="h-px w-8 bg-gradient-to-r from-transparent to-slate-200 dark:to-slate-800" />
+              <span className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-[0.4em]">Col 01 / Identity</span>
+              <div className="h-px w-8 bg-gradient-to-l from-transparent to-slate-200 dark:to-slate-800" />
+            </div>
 
             <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <motion.div layout className="space-y-1">
-                <label className={labelClasses}>Full Name</label>
+              <motion.div layout className="space-y-1 group/field">
+                <label className={labelClasses}>Full Legal Name</label>
                 <div className="relative">
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
                   <input
                     type="text"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Ex: John Doe"
+                    placeholder="ENTER FULL NAME"
                     className={inputClasses}
                     required
                   />
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1">
-                <label className={labelClasses}>Log Username</label>
+              <motion.div layout className="space-y-1 group/field">
+                <label className={labelClasses}>System Username</label>
                 <div className="relative" ref={clientListRef}>
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
                   <input
                     type="text"
                     value={customerUsername}
@@ -189,17 +192,16 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
                       setShowClientList(true);
                     }}
                     onFocus={() => setShowClientList(true)}
-                    placeholder="johndoe_hq"
+                    placeholder="ENTER USERNAME"
                     className={inputClasses}
                     required
                   />
                   
                   {showClientList && customerUsername && filteredClients.length > 0 && (
-                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden max-h-64 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-                      <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                          <Search size={10} />
-                          Matching Client Identity
+                    <div className="absolute z-50 w-full mt-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 text-center">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                          Database Matches Found
                         </span>
                       </div>
                       {filteredClients.map(client => (
@@ -207,36 +209,23 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
                           key={client.id}
                           type="button"
                           onClick={() => handleSelectClient(client)}
-                          className="w-full px-4 py-3 flex flex-col items-start hover:bg-brand-accent/5 dark:hover:bg-brand-accent/10 border-b border-slate-50 dark:border-slate-800/50 last:border-0 transition-colors"
+                          className="w-full px-6 py-4 flex flex-col items-center hover:bg-brand-accent text-center group/item transition-all"
                         >
-                          <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight">{client.name}</span>
-                          <div className="flex items-center gap-3 mt-1">
-                            <span className="text-[10px] font-bold text-brand-accent uppercase">@{client.username}</span>
-                            <span className="text-[9px] font-medium text-slate-400 uppercase tracking-widest border-l border-slate-200 dark:border-slate-800 pl-3">{client.area}</span>
+                          <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight group-hover/item:text-white">{client.name}</span>
+                          <div className="flex items-center gap-3 mt-1 justify-center">
+                            <span className="text-[10px] font-bold text-brand-accent group-hover/item:text-white/80 uppercase">@{client.username}</span>
+                            <span className="text-[9px] font-medium text-slate-400 group-hover/item:text-white/60 uppercase tracking-widest border-l border-slate-200 dark:border-slate-800 group-hover/item:border-white/20 pl-3">{client.area}</span>
                           </div>
                         </button>
                       ))}
                     </div>
                   )}
-                  {showClientList && customerUsername && filteredClients.length === 0 && (
-                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-4 text-center animate-in fade-in zoom-in-95 duration-200">
-                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No matching profile in database</p>
-                       <button 
-                         type="button"
-                         onClick={() => setShowClientList(false)}
-                         className="mt-2 text-[9px] font-black text-brand-accent uppercase tracking-widest hover:underline"
-                       >
-                         Dismiss
-                       </button>
-                    </div>
-                  )}
                 </div>
               </motion.div>
               
-              <motion.div layout className="space-y-1">
-                <label className={labelClasses}>Primary Contact</label>
+              <motion.div layout className="space-y-1 group/field">
+                <label className={labelClasses}>Contact Number</label>
                 <div className="relative">
-                  <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
                   <input
                     type="tel"
                     value={number}
@@ -248,65 +237,56 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1">
+              <motion.div layout className="space-y-1 group/field">
                 <label className={labelClasses}>Deployment Zone</label>
                 <div className="relative">
-                  <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
                   <select
                     value={area}
                     onChange={(e) => setArea(e.target.value)}
-                    className={cn(inputClasses, "appearance-none bg-no-repeat")}
-                    style={{ 
-                      backgroundPosition: 'right 1rem center', 
-                      backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
-                      backgroundSize: '1rem' 
-                    }}
+                    className={cn(inputClasses, "appearance-none cursor-pointer")}
                     required
                   >
                     {appConfig.zones?.map(zone => (
-                      <option key={zone} value={zone}>{zone}</option>
+                      <option key={zone} value={zone}>{zone.toUpperCase()}</option>
                     ))}
                   </select>
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1">
-                <label className={labelClasses}>Package Details</label>
+              <motion.div layout className="space-y-1 group/field sm:col-span-2">
+                <label className={labelClasses}>Distribution Node / Panel</label>
                 <div className="relative">
-                  <Package className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
-                  <input
-                    type="text"
-                    value={pkgDetails}
-                    onChange={(e) => setPkgDetails(e.target.value)}
-                    placeholder="Ex: 50Mbps Fiber"
-                    className={inputClasses}
-                  />
-                </div>
-              </motion.div>
-
-              <motion.div layout className="space-y-1">
-                <label className={labelClasses}>User Nearby / Landmark</label>
-                <div className="relative">
-                  <MapPinned className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
-                  <input
-                    type="text"
-                    value={userNearby}
-                    onChange={(e) => setUserNearby(e.target.value)}
-                    placeholder="Ex: Near City Garden Gate"
-                    className={inputClasses}
-                  />
-                </div>
-              </motion.div>
-
-              <motion.div layout className="space-y-1 sm:col-span-2">
-                <label className={labelClasses}>Pannal Details</label>
-                <div className="relative">
-                  <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
                   <input
                     type="text"
                     value={panelDetails}
                     onChange={(e) => setPanelDetails(e.target.value)}
-                    placeholder="Ex: DP-04 / Box-02 / Port-08"
+                    placeholder="BOX / PORT DETAILS"
+                    className={inputClasses}
+                  />
+                </div>
+              </motion.div>
+              
+              <motion.div layout className="space-y-1 group/field">
+                <label className={labelClasses}>Package Protocol</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={pkgDetails}
+                    onChange={(e) => setPkgDetails(e.target.value)}
+                    placeholder="EX: 50MB FIBER"
+                    className={inputClasses}
+                  />
+                </div>
+              </motion.div>
+
+              <motion.div layout className="space-y-1 group/field">
+                <label className={labelClasses}>Locality Landmark</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={userNearby}
+                    onChange={(e) => setUserNearby(e.target.value)}
+                    placeholder="NEARBY REFERENCE"
                     className={inputClasses}
                   />
                 </div>
@@ -314,118 +294,96 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
             </motion.div>
           </motion.div>
 
-          <div className="flex flex-col gap-6 xl:w-[40%] flex-shrink-0 xl:border-l xl:border-slate-100 dark:xl:border-slate-800/50 xl:pl-8">
-            {/* Section 2: Service Classification */}
-            <motion.div layout className="space-y-5">
-              <motion.div layout className="flex items-center gap-3 mb-2">
-                <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 xl:hidden" />
-                <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-[.3em]">Operational Metrics</span>
-                <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800" />
+          <motion.div layout className="space-y-6 lg:w-1/2 lg:border-l lg:border-slate-100 dark:lg:border-slate-800 lg:pl-10">
+            <div className="flex items-center gap-4 justify-center">
+              <div className="h-px w-8 bg-gradient-to-r from-transparent to-slate-200 dark:to-slate-800" />
+              <span className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-[0.4em]">Col 02 / Operations</span>
+              <div className="h-px w-8 bg-gradient-to-l from-transparent to-slate-200 dark:to-slate-800" />
+            </div>
+
+            <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <motion.div layout className="space-y-1 group/field">
+                <label className={labelClasses}>Category</label>
+                <div className="relative">
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
+                    className={cn(inputClasses, "appearance-none cursor-pointer")}
+                  >
+                    {appConfig.categories.map(cat => (
+                      <option key={cat} value={cat}>{cat.toUpperCase()}</option>
+                    ))}
+                  </select>
+                </div>
               </motion.div>
 
-              <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <motion.div layout className="space-y-1">
-                  <label className={labelClasses}>Category</label>
-                  <div className="relative">
-                    <Network className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
-                    <select
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
-                      className={cn(inputClasses, "appearance-none bg-no-repeat")}
-                      style={{ 
-                        backgroundPosition: 'right 1rem center', 
-                        backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
-                        backgroundSize: '1rem' 
-                      }}
-                    >
-                      {appConfig.categories.map(cat => (
-                        <option key={cat} value={cat}>{cat.toUpperCase()}</option>
-                      ))}
-                    </select>
-                  </div>
-                </motion.div>
-
-                <motion.div layout className="space-y-1">
-                  <label className={labelClasses}>Priority</label>
-                  <div className="relative">
-                    <ShieldAlert className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
-                    <select
-                      value={priority}
-                      onChange={(e) => setPriority(e.target.value as ComplaintPriority)}
-                      className={cn(inputClasses, "appearance-none bg-no-repeat")}
-                      style={{ 
-                        backgroundPosition: 'right 1rem center', 
-                        backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
-                        backgroundSize: '1rem' 
-                      }}
-                    >
-                      {appConfig.priorities.map(pri => (
-                        <option key={pri} value={pri}>{pri}</option>
-                      ))}
-                    </select>
-                  </div>
-                </motion.div>
-
-                <motion.div layout className="space-y-1 sm:col-span-2">
-                  <label className={labelClasses}>Status</label>
-                  <div className="relative">
-                    <Zap className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
-                    <select
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value as ComplaintStatus)}
-                      className={cn(inputClasses, "appearance-none bg-no-repeat")}
-                      style={{ 
-                        backgroundPosition: 'right 1rem center', 
-                        backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
-                        backgroundSize: '1rem' 
-                      }}
-                    >
-                      {appConfig.statuses.map(stat => (
-                        <option key={stat} value={stat}>{stat}</option>
-                      ))}
-                    </select>
-                  </div>
-                </motion.div>
+              <motion.div layout className="space-y-1 group/field">
+                <label className={labelClasses}>Security Priority</label>
+                <div className="relative">
+                  <select
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as ComplaintPriority)}
+                    className={cn(inputClasses, "appearance-none cursor-pointer")}
+                  >
+                    {appConfig.priorities.map(pri => (
+                      <option key={pri} value={pri}>{pri.toUpperCase()}</option>
+                    ))}
+                  </select>
+                </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1">
-                <label className={labelClasses}>Technical Briefing</label>
-                <div className="relative group/text">
-                  <FileText className="absolute left-3.5 top-4 text-slate-400 dark:text-slate-500 group-focus-within/text:text-brand-accent transition-colors" size={18} />
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Comprehensive situation summary for technician guidance..."
-                    rows={4}
-                    className={cn(inputClasses, "resize-none h-32 xl:h-40 py-4")}
-                    required
-                  />
+              <motion.div layout className="space-y-1 sm:col-span-2 group/field">
+                <label className={labelClasses}>Current Status</label>
+                <div className="relative">
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as ComplaintStatus)}
+                    className={cn(inputClasses, "appearance-none cursor-pointer")}
+                  >
+                    {appConfig.statuses.map(stat => (
+                      <option key={stat} value={stat}>{stat.toUpperCase()}</option>
+                    ))}
+                  </select>
                 </div>
               </motion.div>
             </motion.div>
 
-            <motion.div layout className="mt-auto">
+            <motion.div layout className="space-y-1 group/field">
+              <label className={labelClasses}>Mission Objectives / Details</label>
+              <div className="relative">
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="DESCRIBE THE TECHNICAL ISSUE IN DETAIL..."
+                  rows={4}
+                  className={cn(inputClasses, "resize-none h-[11.5rem] py-4 rounded-3xl")}
+                  required
+                />
+              </div>
+            </motion.div>
+
+            <motion.div layout className="pt-2">
               <button
                 type="submit"
                 disabled={isLoading}
-                className="group relative w-full overflow-hidden rounded-2xl bg-slate-950 dark:bg-brand-accent p-px font-bold transition-all hover:scale-[1.01] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100"
+                className="group relative w-full overflow-hidden rounded-[1.5rem] bg-slate-950 dark:bg-brand-accent p-px font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 shadow-lg"
               >
-                <div className="relative flex items-center justify-center gap-3 rounded-[0.9375rem] bg-slate-950 dark:bg-brand-accent px-8 py-5 xl:py-4 text-white transition-all group-hover:bg-transparent dark:group-hover:bg-blue-700">
+                <div className="relative flex items-center justify-center gap-3 rounded-[1.4375rem] bg-slate-950 dark:bg-brand-accent px-6 py-4.5 text-white transition-all group-hover:bg-transparent dark:group-hover:bg-blue-700">
                   {isLoading ? (
                     <>
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                      <span className="text-xs uppercase tracking-[.3em]">Processing Dispatch...</span>
+                      <span className="text-[10px] uppercase tracking-[0.4em]">Syncing...</span>
                     </>
                   ) : (
                     <>
-                      <span className="text-xs uppercase tracking-[.3em]">REG COMPLAIN</span>
-                      <Send size={16} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
+                      <span className="text-[10px] uppercase tracking-[0.4em] font-black">Register Operations Log</span>
+                      <Send size={15} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
                     </>
                   )}
                 </div>
               </button>
             </motion.div>
-          </div>
+          </motion.div>
         </form>
       </motion.div>
     </motion.div>

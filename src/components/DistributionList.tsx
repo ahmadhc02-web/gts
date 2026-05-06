@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Tag, ChevronDown, BarChart2, X, Info, User, Calendar, Clock, PieChart as PieChartIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { Complaint } from '../types';
+import { cn } from '../lib/utils';
 
 interface DistributionListProps {
   complaints: Complaint[];
@@ -46,24 +47,58 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
         </div>
 
         <div className="flex-1 flex gap-2 w-full mt-2 h-full min-h-[160px] pb-2 relative z-10">
-           {/* Dynamic Pie */}
-           <div className={`w-full flex items-center relative h-full bg-gradient-to-br from-slate-50/50 to-slate-100/30 dark:from-slate-800/30 dark:to-slate-800/10 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 hover:border-${iconColor}-500/30 transition-colors shadow-sm overflow-hidden p-2`}>
+           {/* Dynamic Pie and List Swapped */}
+           <div className={cn(
+             "w-full flex items-center relative h-full bg-gradient-to-br from-slate-50/50 to-slate-100/30 dark:from-slate-800/30 dark:to-slate-800/10 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 transition-colors shadow-sm overflow-hidden p-2",
+             chartType === 'category' ? "hover:border-blue-500/30" : "hover:border-emerald-500/30"
+           )}>
               {data.length > 0 ? (
-                <div className="flex w-full h-full items-center">
-                  <div className="w-[60%] h-[240px] relative -left-3">
+                <div className={cn(
+                  "flex w-full h-full items-center",
+                  chartType === 'area' ? "flex-row-reverse" : "flex-row"
+                )}>
+                  {/* List Container */}
+                  <div className={cn(
+                    "w-[45%] flex flex-col justify-center gap-3",
+                    chartType === 'area' ? "pr-4 border-l ml-2" : "pl-4 border-r mr-2",
+                    "border-slate-100 dark:border-slate-800/50"
+                  )}>
+                    {data.slice(0, 5).map((item, idx) => {
+                       const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
+                       const colorIndex = chartType === 'category' ? (idx + 3) : idx;
+                       return (
+                         <div key={item.name} className="flex flex-col group/item cursor-pointer">
+                            <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-black leading-tight mb-1.5 px-1 uppercase tracking-tighter">
+                               <span className="truncate pr-2 text-slate-500 dark:text-slate-400 group-hover/item:text-slate-900 dark:group-hover/item:text-white transition-colors" style={{ color: COLORS[colorIndex % COLORS.length] }}>
+                                 {item.name}
+                               </span>
+                               <span className="text-slate-950 dark:text-white font-black shrink-0 ml-auto">
+                                 {percentage}%
+                               </span>
+                            </div>
+                            <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner p-[1px]">
+                               <div className="h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(0,0,0,0.1)]" style={{ width: `${percentage}%`, backgroundColor: COLORS[colorIndex % COLORS.length] }} />
+                            </div>
+                         </div>
+                       );
+                    })}
+                  </div>
+
+                  {/* Right side chart (Agli Side) */}
+                  <div className="w-[55%] h-[240px] relative">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                          <defs>
                             <filter id="pieShadow" x="-20%" y="-20%" width="140%" height="140%">
-                              <feDropShadow dx="-2" dy="4" stdDeviation="3" floodOpacity="0.25" />
+                              <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.25" />
                             </filter>
                          </defs>
                          <Pie 
                            data={data.slice(0, 5)} 
                            cx="50%" cy="50%" 
-                           innerRadius="40%" outerRadius="95%" 
+                           innerRadius="42%" outerRadius="95%" 
                            paddingAngle={4}
-                           cornerRadius={6}
+                           cornerRadius={8}
                            dataKey="count"
                            nameKey="name"
                            stroke="none"
@@ -82,7 +117,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                                <Cell 
                                  key={`cell-${index}`} 
                                  fill={COLORS[colorIndex % COLORS.length]} 
-                                 className="hover:opacity-90 hover:scale-[1.08] transition-all duration-300 origin-center cursor-pointer" 
+                                 className="hover:opacity-90 hover:scale-[1.05] transition-all duration-300 origin-center cursor-pointer" 
                                  style={{ filter: 'url(#pieShadow)' }}
                                />
                              );
@@ -90,45 +125,22 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                          </Pie>
                          <RechartsTooltip 
                            contentStyle={{
-                              backgroundColor: 'rgba(15, 23, 42, 0.95)', 
-                              backdropFilter: 'blur(8px)',
-                              border: '1px solid rgba(51, 65, 85, 0.5)', 
-                              borderRadius: '12px',
-                              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)',
-                              fontSize: '11px',
-                              fontWeight: '900',
-                              color: '#fff',
-                              textTransform: 'uppercase',
-                              padding: '8px 12px'
+                               backgroundColor: 'rgba(15, 23, 42, 0.95)', 
+                               backdropFilter: 'blur(8px)',
+                               border: '1px solid rgba(51, 65, 85, 0.5)', 
+                               borderRadius: '12px',
+                               boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2)',
+                               fontSize: '11px',
+                               fontWeight: '900',
+                               color: '#fff',
+                               textTransform: 'uppercase',
+                               padding: '8px 12px'
                            }}
                            itemStyle={{ color: '#fff', fontWeight: '900' }}
                            cursor={false}
                          />
                       </PieChart>
                     </ResponsiveContainer>
-                  </div>
-                  
-                  {/* Right side list */}
-                  <div className="w-[40%] flex flex-col justify-center gap-2 pr-2">
-                    {data.slice(0, 5).map((item, idx) => {
-                       const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
-                       const colorIndex = chartType === 'category' ? (idx + 3) : idx;
-                       return (
-                         <div key={item.name} className="flex flex-col">
-                            <div className="flex items-center justify-between text-[10px] sm:text-xs font-black leading-tight mb-1">
-                               <span className="truncate pr-1 text-slate-700 dark:text-slate-300 saturate-150" style={{ color: COLORS[colorIndex % COLORS.length] }}>
-                                 {item.name}
-                               </span>
-                               <span className="text-slate-900 dark:text-white shrink-0">
-                                 {percentage}%
-                               </span>
-                            </div>
-                            <div className="w-full h-1.5 bg-slate-200/50 dark:bg-slate-700/50 rounded-full overflow-hidden">
-                               <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percentage}%`, backgroundColor: COLORS[colorIndex % COLORS.length] }} />
-                            </div>
-                         </div>
-                       );
-                    })}
                   </div>
                 </div>
               ) : (
@@ -185,7 +197,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                     <div key={complaint.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
                         <div className="flex items-start justify-between gap-4 mb-3">
                           <div className="flex-1">
-                             <p className="text-xs font-black uppercase text-slate-900 dark:text-white mb-0.5">{complaint.subject}</p>
+                             <p className="text-xs font-black uppercase text-slate-900 dark:text-white mb-0.5">{complaint.category}</p>
                              <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
                                 <span className="flex items-center gap-1 uppercase">
                                   <User size={12} /> {complaint.customerName || 'Unknown User'}
@@ -241,4 +253,3 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
     </div>
   );
 }
-
