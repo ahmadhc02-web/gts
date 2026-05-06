@@ -38,6 +38,22 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
+  const playPopupSound = () => {
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+      audio.volume = 0.4;
+      audio.play().catch(e => console.log('Audio play blocked:', e));
+    } catch (e) {
+      console.log('Audio error:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (viewingClient) {
+      playPopupSound();
+    }
+  }, [viewingClient]);
+
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, selectedArea]);
@@ -100,7 +116,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
           userNearby: userNearby.trim(),
           panelDetails: panelDetails.trim(),
           area: area,
-        }, currentUserName);
+        }, name.trim(), currentUserName);
         toast.success('Client record updated');
       } else {
         await firebaseService.createClient({
@@ -128,7 +144,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
   const handleDelete = async (id: string, clientName: string) => {
     if (confirm(`Permanently remove client record for ${clientName}?`)) {
       try {
-        await firebaseService.deleteClient(id, currentUserName);
+        await firebaseService.deleteClient(id, clientName, currentUserName);
         toast.success('Record purged from primary database');
       } catch (error) {
         toast.error('Purge operation failed');

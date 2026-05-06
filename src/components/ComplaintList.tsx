@@ -13,7 +13,8 @@ import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
 interface ComplaintListProps {
   complaints: Complaint[];
   onDelete?: (id: string) => Promise<void>;
-  onStatusChange?: (id: string, status: ComplaintStatus) => Promise<void>;
+  onStatusChange?: (id: string, status: ComplaintStatus, remarks?: string) => Promise<void>;
+  onUpdateRemarks?: (id: string, remarks: string) => Promise<void>;
   onEdit?: (id: string, data: Partial<Complaint>) => Promise<void>;
   isAdmin?: boolean;
   currentUserId?: string;
@@ -27,6 +28,7 @@ export default function ComplaintList({
   complaints, 
   onDelete, 
   onStatusChange, 
+  onUpdateRemarks,
   onEdit,
   isAdmin,
   currentUserId,
@@ -45,6 +47,25 @@ export default function ComplaintList({
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(20);
   const [selectedComplaint, setSelectedComplaint] = React.useState<Complaint | null>(null);
+  const [statusRemarks, setStatusRemarks] = React.useState('');
+  const [isEditingRemarks, setIsEditingRemarks] = React.useState(false);
+  const [editedRemarks, setEditedRemarks] = React.useState('');
+
+  const playPopupSound = () => {
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+      audio.volume = 0.4;
+      audio.play().catch(e => console.log('Audio play blocked:', e));
+    } catch (e) {
+      console.log('Audio error:', e);
+    }
+  };
+
+  React.useEffect(() => {
+    if (selectedComplaint) {
+      playPopupSound();
+    }
+  }, [selectedComplaint]);
   const [sortConfig, setSortConfig] = React.useState<{
     key: keyof Complaint | 'registry' | 'urgency' | 'client' | 'tactical' | 'category';
     direction: 'asc' | 'desc';
@@ -267,11 +288,12 @@ export default function ComplaintList({
       c.pkgDetails || 'N/A',
       c.userNearby || 'N/A',
       c.description,
+      c.remarks || 'N/A',
       new Date(c.createdAt).toLocaleDateString()
     ]);
     autoTable(doc, {
       startY: 45,
-      head: [['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Date']],
+      head: [['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Team Remarks', 'Date']],
       body: tableRows,
       theme: 'grid',
       headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] },
@@ -287,7 +309,7 @@ export default function ComplaintList({
       return;
     }
 
-    const headers = ['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Date'];
+    const headers = ['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Team Remarks', 'Date'];
     const rows = filtered.map(c => [
       c.customerName,
       c.customerUsername || 'N/A',
@@ -299,6 +321,7 @@ export default function ComplaintList({
       c.pkgDetails || 'N/A',
       c.userNearby || 'N/A',
       `"${c.description.replace(/"/g, '""')}"`,
+      `"${(c.remarks || 'N/A').replace(/"/g, '""')}"`,
       new Date(c.createdAt).toLocaleDateString()
     ]);
 
@@ -360,7 +383,7 @@ export default function ComplaintList({
     // Now proceed with tokens (tokens should be available here if connected)
     setIsBackingUp(true);
     try {
-      const headers = ['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Date'];
+      const headers = ['Client', 'Username', 'Category', 'Priority', 'Status', 'Sector', 'Panel Details', 'Package', 'Nearby', 'Dispatch Details', 'Team Remarks', 'Date'];
       const rows = filtered.map(c => [
         c.customerName,
         c.customerUsername || 'N/A',
@@ -372,6 +395,7 @@ export default function ComplaintList({
         c.pkgDetails || 'N/A',
         c.userNearby || 'N/A',
         `"${c.description.replace(/"/g, '""')}"`,
+        `"${(c.remarks || 'N/A').replace(/"/g, '""')}"`,
         new Date(c.createdAt).toLocaleDateString()
       ]);
 
@@ -507,6 +531,23 @@ export default function ComplaintList({
               </button>
             </div>
             
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm min-w-[240px]">
+              <Calendar size={14} className="text-brand-accent shrink-0" />
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-transparent border-none text-[10px] focus:outline-none text-slate-600 dark:text-slate-100 w-full uppercase font-bold"
+              />
+              <span className="text-slate-300">|</span>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-transparent border-none text-[10px] focus:outline-none text-slate-600 dark:text-slate-100 w-full uppercase font-bold"
+              />
+            </div>
+
             <button
               onClick={() => {
                 clearDateFilters();
@@ -661,24 +702,7 @@ export default function ComplaintList({
           </div>
         </div>
 
-        <div className="flex justify-end">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm w-full lg:w-72">
-            <Calendar size={14} className="text-brand-accent shrink-0" />
-            <input 
-              type="date" 
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-transparent border-none text-[10px] focus:outline-none text-slate-600 dark:text-slate-100 w-full uppercase font-bold"
-            />
-            <span className="text-slate-300">|</span>
-            <input 
-              type="date" 
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-transparent border-none text-[10px] focus:outline-none text-slate-600 dark:text-slate-100 w-full uppercase font-bold"
-            />
-          </div>
-        </div>
+        {/* Removed redundant date input block from bottom of filter grid */}
       </div>
 
       {/* Row-based Grid (Table View) */}
@@ -1001,13 +1025,13 @@ export default function ComplaintList({
         )}
 
         {selectedComplaint && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-2 sm:p-4 md:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedComplaint(null)}
-              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
             
             <motion.div
@@ -1015,165 +1039,225 @@ export default function ComplaintList({
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800"
+              className="relative w-full max-w-5xl bg-white dark:bg-slate-950 rounded-3xl shadow-[0_40px_100px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/50 dark:border-white/10"
             >
-              <div className="p-8 space-y-8">
-                <div className="flex justify-between items-start">
-                  <div className="space-y-1">
-                    <div className={cn(
-                      "inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border mb-4",
-                      getStatusColor(selectedComplaint.status)
-                    )}>
-                      {getStatusIcon(selectedComplaint.status)}
-                      {selectedComplaint.status} Protocol
+              <div className="p-4 sm:p-5 md:p-8 space-y-4 sm:space-y-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                  <div className="flex items-center gap-3 sm:gap-6">
+                    <div className="space-y-1">
+                      <div className={cn(
+                        "inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest border mb-1 sm:mb-2",
+                        getStatusColor(selectedComplaint.status)
+                      )}>
+                        {getStatusIcon(selectedComplaint.status)}
+                        {selectedComplaint.status}
+                      </div>
+                      <h2 className="text-lg sm:text-2xl font-black text-slate-950 dark:text-white uppercase tracking-tighter leading-none">
+                        {selectedComplaint.customerName}
+                      </h2>
                     </div>
-                    <h2 className="text-4xl font-black text-slate-950 dark:text-white uppercase tracking-tight leading-tight">
-                      {selectedComplaint.customerName}
-                    </h2>
+                    
                     {selectedComplaint.customerUsername && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Access ID:</span>
-                        <span className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-md border border-slate-200 dark:border-slate-700">
+                      <div className="flex flex-col gap-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Access ID</span>
+                        <span className="text-[10px] sm:text-xs font-black text-slate-900 dark:text-brand-accent uppercase tracking-widest">
                           {selectedComplaint.customerUsername}
                         </span>
                       </div>
                     )}
                   </div>
+
                   <button 
                     onClick={() => setSelectedComplaint(null)}
-                    className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 transition-all"
+                    className="absolute top-2 right-2 sm:relative sm:top-0 sm:right-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:scale-110 active:scale-95 transition-all shadow-sm"
                   >
-                    <X size={24} />
+                    <X size={18} />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-8">
-                  <div className="space-y-6">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tactical Sector</p>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                        <MapPin size={16} className="text-brand-accent/60" />
-                        <span className="uppercase tracking-tight text-lg">{selectedComplaint.area}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Link Access</p>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                        <Phone size={16} className="text-brand-accent/60" />
-                        <span className="font-mono text-lg">{selectedComplaint.number}</span>
-                      </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 p-3 sm:p-4 rounded-2xl bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800/50">
+                  <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
+                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Sector</p>
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <MapPin size={12} className="text-brand-accent shrink-0" />
+                      <span className="uppercase text-[11px] sm:text-sm truncate">{selectedComplaint.area}</span>
                     </div>
                   </div>
-
-                  <div className="space-y-6">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Package Details</p>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                        <Package size={16} className="text-brand-accent/60" />
-                        <span className="uppercase tracking-tight text-lg">{selectedComplaint.pkgDetails || 'N/A'}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">User Nearby / Landmark</p>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                        <MapPinned size={16} className="text-brand-accent/60" />
-                        <span className="uppercase tracking-tight text-lg">{selectedComplaint.userNearby || 'N/A'}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pannal Details</p>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                        <Layers size={16} className="text-brand-accent/60" />
-                        <span className="uppercase tracking-tight text-lg">{selectedComplaint.panelDetails || 'N/A'}</span>
-                      </div>
+                  <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
+                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Contact</p>
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Phone size={12} className="text-brand-accent shrink-0" />
+                      <span className="font-mono text-[11px] sm:text-sm truncate">{selectedComplaint.number}</span>
                     </div>
                   </div>
-
-                  <div className="space-y-6">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Issue Category</p>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                        <Layers size={16} className="text-brand-accent/60" />
-                        <span className="uppercase tracking-tight text-lg">{selectedComplaint.category || 'N/A'}</span>
-                      </div>
+                  <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
+                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Package</p>
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Package size={12} className="text-brand-accent shrink-0" />
+                      <span className="uppercase text-[11px] sm:text-sm truncate">{selectedComplaint.pkgDetails || 'N/A'}</span>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Urgency Level</p>
-                      <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                        <Zap size={16} className="text-brand-accent/60" />
-                        <div className={cn(
-                          "px-3 py-0.5 rounded text-sm uppercase tracking-widest border",
-                          getPriorityColor(selectedComplaint.priority || 'Medium')
-                        )}>
-                          {selectedComplaint.priority || 'Medium'}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Panel/Nearby</p>
+                    <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Layers size={12} className="text-brand-accent shrink-0" />
+                      <span className="uppercase text-[9px] sm:text-[10px] truncate leading-tight">
+                        {selectedComplaint.panelDetails || 'N/A'} / {selectedComplaint.userNearby || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left Side: Descriptions */}
+                  <div className="col-span-12 lg:col-span-7 space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center px-1">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Operational Log</p>
+                        <div className="flex items-center gap-2">
+                           <Zap size={10} className={cn(getPriorityColor(selectedComplaint.priority || 'Medium'))} />
+                           <span className={cn("text-[9px] font-black uppercase tracking-widest", getPriorityColor(selectedComplaint.priority || 'Medium'))}>
+                             {selectedComplaint.priority || 'Medium'}
+                           </span>
                         </div>
                       </div>
+                      <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm min-h-[80px]">
+                        <p className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 leading-relaxed italic">
+                          "{selectedComplaint.description}"
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Registry Delegate</p>
-                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold">
-                      <User size={16} className="text-slate-300" />
-                      <span className="uppercase tracking-tight">{selectedComplaint.memberName || 'System Core'}</span>
-                    </div>
-                  </div>
-                  <div className="space-y-1 text-right">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Timestamp</p>
-                    <div className="flex items-center gap-2 justify-end text-slate-400 font-bold">
-                      <span className="tracking-tighter">{new Date(selectedComplaint.createdAt).toLocaleString()}</span>
-                      <Calendar size={16} className="text-slate-200" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Operational Log Details</p>
-                  <div className="p-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 italic text-slate-700 dark:text-slate-300 leading-relaxed text-lg shadow-inner">
-                    "{selectedComplaint.description}"
-                  </div>
-                </div>
-
-                {isAdmin && onStatusChange && (
-                  <div className="pt-8 border-t border-slate-100 dark:border-slate-800 space-y-4">
-                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">Executive Registry Management</p>
-                    <div className="flex flex-wrap justify-center gap-3">
-                      {appConfig.statuses.map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => {
-                            onStatusChange(selectedComplaint.id, s);
-                            setSelectedComplaint({ ...selectedComplaint, status: s });
-                          }}
-                          className={cn(
-                            "px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all border",
-                            selectedComplaint.status === s 
-                              ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-xl" 
-                              : "bg-white dark:bg-slate-900 text-slate-500 border-slate-100 dark:border-slate-800 hover:border-slate-300"
+                    {selectedComplaint.remarks && (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center px-1">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Team Resolution Protocol</p>
+                          {(isAdmin || (selectedComplaint.remarkAuthorId && selectedComplaint.remarkAuthorId === currentUserId)) && !isEditingRemarks && (
+                            <button 
+                              onClick={() => {
+                                setEditedRemarks(selectedComplaint.remarks || '');
+                                setIsEditingRemarks(true);
+                              }}
+                              className="text-[9px] font-black uppercase text-brand-accent hover:underline flex items-center gap-1"
+                            >
+                              <Pencil size={10} />
+                              Edit
+                            </button>
                           )}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                    
-                    <div className="flex justify-center pt-4">
-                       {onDelete && (
-                         <button
-                           onClick={async () => {
-                             setComplaintToDelete(selectedComplaint.id);
-                           }}
-                           className="flex items-center gap-2 px-6 py-2.5 text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-all"
-                         >
-                           <Trash2 size={14} />
-                           Revoke Entry
-                         </button>
-                       )}
+                        </div>
+                        
+                        {isEditingRemarks ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={editedRemarks}
+                              onChange={(e) => setEditedRemarks(e.target.value)}
+                              className="w-full p-4 bg-white dark:bg-slate-900 rounded-2xl border border-brand-accent/30 text-xs sm:text-sm focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none"
+                              autoFocus
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button 
+                                onClick={() => setIsEditingRemarks(false)}
+                                className="px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600"
+                              >
+                                Cancel
+                              </button>
+                              <button 
+                                onClick={async () => {
+                                  if (onUpdateRemarks) {
+                                    await onUpdateRemarks(selectedComplaint.id, editedRemarks);
+                                    setSelectedComplaint({ ...selectedComplaint, remarks: editedRemarks });
+                                    setIsEditingRemarks(false);
+                                  }
+                                }}
+                                className="px-4 py-1 bg-brand-accent text-white rounded-lg text-[9px] font-black uppercase tracking-widest"
+                              >
+                                Save Changes
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-4 bg-emerald-50/50 dark:bg-emerald-500/5 rounded-2xl border border-emerald-500/20 italic text-emerald-700 dark:text-emerald-400 text-xs sm:text-sm shadow-sm">
+                            "{selectedComplaint.remarks}"
+                          </div>
+                        )}
+                        {selectedComplaint.remarkAuthorName && !isEditingRemarks && (
+                          <p className="text-[8px] font-bold text-slate-400 text-right uppercase tracking-widest pr-2">
+                            By: {selectedComplaint.remarkAuthorName}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 gap-2">
+                      <div className="flex items-center gap-2">
+                        <User size={12} className="text-slate-400" />
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">Log Delegate:</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-brand-accent truncate max-w-[100px]">{selectedComplaint.memberName || 'System'}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <Clock size={12} />
+                        <span className="text-[9px] font-black uppercase tracking-tight">{new Date(selectedComplaint.createdAt).toLocaleString()}</span>
+                      </div>
                     </div>
                   </div>
-                )}
+
+                  {/* Right Side: Admin Protocol */}
+                  <div className="col-span-12 lg:col-span-5 flex flex-col bg-slate-50/50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/5 rounded-2xl p-4 sm:p-5">
+                    {isAdmin && onStatusChange ? (
+                      <div className="flex flex-col h-full space-y-4">
+                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Tactical Protocol Command</p>
+                        
+                        <div className="space-y-2">
+                          <textarea
+                            value={statusRemarks}
+                            onChange={(e) => setStatusRemarks(e.target.value)}
+                            placeholder="Enter resolution protocol..."
+                            className="w-full h-24 sm:h-32 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          {appConfig.statuses.map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => {
+                                if (s === 'complete' && !statusRemarks.trim()) {
+                                  toast.error('Tactical remarks required for completion.');
+                                  return;
+                                }
+                                onStatusChange(selectedComplaint.id, s, statusRemarks);
+                                setSelectedComplaint({ ...selectedComplaint, status: s, remarks: statusRemarks });
+                                setStatusRemarks('');
+                              }}
+                              className={cn(
+                                "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                                selectedComplaint.status === s 
+                                  ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-lg shadow-brand-accent/20" 
+                                  : "bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-800 hover:border-slate-300"
+                              )}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                        
+                        {onDelete && (
+                          <button
+                            onClick={() => setComplaintToDelete(selectedComplaint.id)}
+                            className="mt-2 w-full py-1 text-[8px] sm:text-[9px] font-black text-rose-500 uppercase tracking-widest hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-all opacity-60 hover:opacity-100"
+                          >
+                            Purge Entry
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center flex-1 text-center py-6 sm:py-8">
+                         <ShieldAlert className="text-slate-200 dark:text-slate-800 mb-2 sm:mb-4" size={32} sm:size={48} />
+                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Admin Only Access</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </motion.div>
           </div>

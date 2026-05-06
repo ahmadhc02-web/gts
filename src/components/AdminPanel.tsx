@@ -19,7 +19,8 @@ interface AdminPanelProps {
   users: UserProfile[];
   currentUserId: string;
   onDeleteComplaint: (id: string) => Promise<void>;
-  onUpdateComplaintStatus: (id: string, status: ComplaintStatus) => Promise<void>;
+  onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string) => Promise<void>;
+  onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
   onCreateUser: (username: string, pass: string, role: 'admin' | 'member') => Promise<void>;
   onDeleteUser: (uid: string) => Promise<void>;
@@ -58,6 +59,7 @@ export default function AdminPanel({
   currentUserId,
   onDeleteComplaint,
   onUpdateComplaintStatus,
+  onUpdateRemarks,
   onUpdateComplaint,
   onCreateUser,
   onDeleteUser,
@@ -281,7 +283,7 @@ export default function AdminPanel({
   return (
     <div className="space-y-12">
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-6">
         {stats.map((stat, idx) => (
           <motion.div
             key={idx}
@@ -292,25 +294,25 @@ export default function AdminPanel({
             onClick={() => handleTileClick(stat.filter)}
             title={stat.tooltip}
             className={cn(
-              "p-6 bg-white dark:bg-slate-950 rounded-2xl border-l-4 shadow-xl shadow-slate-200/20 dark:shadow-none flex flex-col justify-between transition-all group cursor-pointer active:scale-95",
+              "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-slate-200/20 dark:shadow-none flex flex-col justify-between transition-all group cursor-pointer active:scale-95",
               stat.color,
               (forcedStatus === stat.filter.status && forcedPriority === stat.filter.priority && stat.label !== 'Total Registry') ? "ring-2 ring-brand-accent scale-105" : ""
             )}
           >
-            <div className="flex justify-between items-start mb-4">
-              <span className="text-xs font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-100 transition-colors">
+            <div className="flex justify-between items-start mb-2 sm:mb-4">
+              <span className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-100 transition-colors leading-tight">
                 {stat.label}
               </span>
-              <div className={cn("p-2 rounded-lg transition-colors", 
+              <div className={cn("p-1.5 sm:p-2 rounded-lg transition-colors shrink-0", 
                 stat.textColor === 'text-rose-500' ? "bg-rose-500/10" :
                 stat.textColor === 'text-blue-600' ? "bg-blue-600/10" :
                 stat.textColor === 'text-emerald-500' ? "bg-emerald-500/10" :
                 "bg-slate-100 dark:bg-slate-900"
               )}>
-                {stat.icon}
+                {React.cloneElement(stat.icon as React.ReactElement, { size: window.innerWidth < 640 ? 14 : 18 })}
               </div>
             </div>
-            <div className={cn("text-4xl font-black tracking-tighter", stat.textColor)}>
+            <div className={cn("text-2xl sm:text-4xl font-black tracking-tighter", stat.textColor)}>
               {stat.value.toString().padStart(2, '0')}
             </div>
           </motion.div>
@@ -349,13 +351,13 @@ export default function AdminPanel({
               }}
               className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-6 origin-right"
             >
-              <div className="h-[400px] shadow-sm rounded-2xl">
+              <div className="h-[300px] sm:h-[400px] shadow-sm rounded-2xl">
                 <DistributionList complaints={complaints} chartType="area" />
               </div>
-              <div className="h-[400px] shadow-sm rounded-2xl md:col-span-1 lg:col-span-2 xl:col-span-1">
+              <div className="h-[300px] sm:h-[400px] shadow-sm rounded-2xl md:col-span-1 lg:col-span-2 xl:col-span-1">
                 <RealTimeMonitor complaints={complaints} />
               </div>
-              <div className="h-[400px] shadow-sm rounded-2xl">
+              <div className="h-[300px] sm:h-[400px] shadow-sm rounded-2xl">
                 <DistributionList complaints={complaints} chartType="category" />
               </div>
             </motion.div>
@@ -410,6 +412,7 @@ export default function AdminPanel({
             complaints={complaints}
             onDelete={onDeleteComplaint}
             onStatusChange={onUpdateComplaintStatus}
+            onUpdateRemarks={onUpdateRemarks}
             onEdit={onUpdateComplaint}
             isAdmin={true}
             currentUserId={currentUserId}

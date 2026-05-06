@@ -41,6 +41,7 @@ export default function App() {
   });
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({
     categories: DEFAULT_CATEGORIES,
     statuses: DEFAULT_STATUSES,
@@ -359,6 +360,7 @@ export default function App() {
     let lastNotificationId = '';
 
     const unsubscribe = firebaseService.subscribeNotifications((data) => {
+      setNotifications(data);
       if (data.length > 0) {
         const latest = data[0]; // notifications are descending
         
@@ -529,7 +531,9 @@ export default function App() {
   const handleDeleteComplaint = async (id: string) => {
     if (!user) return;
     try {
-      await firebaseService.deleteComplaint(id, user.username);
+      const complaint = complaints.find(c => c.id === id);
+      const customerName = complaint?.customerName || id;
+      await firebaseService.deleteComplaint(id, customerName, user.username);
       toast.success('Complaint deleted successfully!');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -537,10 +541,12 @@ export default function App() {
     }
   };
 
-  const handleUpdateComplaintStatus = async (id: string, status: ComplaintStatus) => {
+  const handleUpdateComplaintStatus = async (id: string, status: ComplaintStatus, remarks?: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateComplaintStatus(id, status, user.username);
+      const complaint = complaints.find(c => c.id === id);
+      const customerName = complaint?.customerName || id;
+      await firebaseService.updateComplaintStatus(id, status, customerName, user.username, user.uid, remarks);
       toast.success(`Status updated to ${status}`);
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -548,10 +554,25 @@ export default function App() {
     }
   };
 
+  const handleUpdateRemarks = async (id: string, remarks: string) => {
+    if (!user) return;
+    try {
+      const complaint = complaints.find(c => c.id === id);
+      const customerName = complaint?.customerName || id;
+      await firebaseService.updateComplaintRemarks(id, remarks, customerName, user.username, user.uid);
+      toast.success('Protocol remarks updated successfully');
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      toast.error('Failed to update remarks.');
+    }
+  };
+
   const handleUpdateComplaint = async (id: string, data: Partial<Complaint>) => {
     if (!user) return;
     try {
-      await firebaseService.updateComplaint(id, data, user.username);
+      const complaint = complaints.find(c => c.id === id);
+      const customerName = data.customerName || complaint?.customerName || id;
+      await firebaseService.updateComplaint(id, data, customerName, user.username);
       toast.success('Log record updated successfully');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -592,7 +613,9 @@ export default function App() {
   const handleDeleteUser = async (uid: string) => {
     if (!user) return;
     try {
-      await firebaseService.deleteUser(uid, user.username);
+      const targetUser = users.find(u => u.uid === uid);
+      const username = targetUser?.username || uid;
+      await firebaseService.deleteUser(uid, username, user.username);
       setUsers(prev => prev.filter(u => u.uid !== uid));
       toast.success('User deleted successfully');
     } catch (e) {
@@ -625,7 +648,7 @@ export default function App() {
   const handleChangeAdminPass = async (newPass: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUserPassword(user.uid, newPass, user.username);
+      await firebaseService.updateUserPassword(user.uid, user.username, newPass, user.username);
       const updatedUsers = await firebaseService.getUsers();
       setUsers(updatedUsers);
       
@@ -673,6 +696,7 @@ export default function App() {
       <Layout 
         user={user} 
         users={users}
+        notifications={notifications}
         onLogout={handleLogout} 
         onRefresh={handleRefresh} 
         isLoading={isLoading}
@@ -691,6 +715,7 @@ export default function App() {
           currentUserId={user.uid}
           onDeleteComplaint={handleDeleteComplaint}
           onUpdateComplaintStatus={handleUpdateComplaintStatus}
+          onUpdateRemarks={handleUpdateRemarks}
           onUpdateComplaint={handleUpdateComplaint}
           onCreateUser={handleCreateUser}
           onDeleteUser={handleDeleteUser}
@@ -716,6 +741,8 @@ export default function App() {
           complaints={complaints}
           currentUser={user}
           onRegisterComplaint={handleRegisterComplaint}
+          onUpdateComplaintStatus={handleUpdateComplaintStatus}
+          onUpdateRemarks={handleUpdateRemarks}
           onUpdateComplaint={handleUpdateComplaint}
           onUpdateUser={handleUpdateUser}
           appConfig={appConfig}

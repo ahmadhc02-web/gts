@@ -121,13 +121,13 @@ export const firebaseService = {
     }
   },
 
-  deleteUser: async (uid: string, authorName: string) => {
+  deleteUser: async (uid: string, username: string, authorName: string) => {
     const path = `users/${uid}`;
     try {
       await deleteDoc(doc(db, 'users', uid));
       await firebaseService.createNotification({
         type: 'user_deleted',
-        message: `Identity revoked: Access node ${uid} purged`,
+        message: `Identity revoked: Access node for "${username}" purged`,
         authorName
       });
     } catch (error) {
@@ -135,14 +135,14 @@ export const firebaseService = {
     }
   },
 
-  updateUserPassword: async (uid: string, newPass: string, authorName: string) => {
+  updateUserPassword: async (uid: string, username: string, newPass: string, authorName: string) => {
     const path = `users/${uid}`;
     try {
       const userRef = doc(db, 'users', uid);
       await updateDoc(userRef, { password: newPass });
       await firebaseService.createNotification({
         type: 'user_updated',
-        message: `Security credentials updated for user: ${uid}`,
+        message: `Security credentials updated for user: ${username}`,
         authorName
       });
     } catch (error) {
@@ -157,7 +157,7 @@ export const firebaseService = {
       await updateDoc(userRef, data);
       await firebaseService.createNotification({
         type: 'user_created',
-        message: `User Profile updated: ${uid}`,
+        message: `User Profile updated: ${data.username || uid}`,
         authorName
       });
     } catch (error) {
@@ -172,7 +172,8 @@ export const firebaseService = {
     const newNotification: Notification = {
       ...data,
       id,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      isRead: false
     };
     try {
       await setDoc(doc(db, 'notifications', id), newNotification);
@@ -180,6 +181,21 @@ export const firebaseService = {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
       throw error;
+    }
+  },
+
+  clearAllNotifications: async () => {
+    const path = 'notifications';
+    try {
+      const q = collection(db, path);
+      const snapshot = await getDocs(q);
+      const batch: Promise<any>[] = [];
+      snapshot.docs.forEach(docSnap => {
+        batch.push(deleteDoc(docSnap.ref));
+      });
+      await Promise.all(batch);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
     }
   },
 
@@ -223,7 +239,8 @@ export const firebaseService = {
       await firebaseService.createNotification({
         type: 'complaint_created',
         message: `New registry: ${newComplaint.customerName} - ${newComplaint.category}`,
-        authorName: member.username
+        authorName: member.username,
+        details: newComplaint
       });
       return newComplaint;
     } catch (error) {
@@ -232,13 +249,13 @@ export const firebaseService = {
     }
   },
 
-  deleteComplaint: async (id: string, authorName: string) => {
+  deleteComplaint: async (id: string, customerName: string, authorName: string) => {
     const path = `complaints/${id}`;
     try {
       await deleteDoc(doc(db, 'complaints', id));
       await firebaseService.createNotification({
         type: 'complaint_deleted',
-        message: `Registry removed: ID ${id}`,
+        message: `Registry removed: "${customerName}" protocol terminated`,
         authorName
       });
     } catch (error) {
@@ -246,14 +263,21 @@ export const firebaseService = {
     }
   },
 
-  updateComplaintStatus: async (id: string, status: ComplaintStatus, authorName: string) => {
+  updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, remarks?: string) => {
     const path = `complaints/${id}`;
     try {
       const complaintRef = doc(db, 'complaints', id);
-      await updateDoc(complaintRef, { status });
+      const updateData: any = { status, updatedAt: Date.now() };
+      if (remarks) {
+        updateData.remarks = remarks;
+        updateData.remarkAuthorId = authorId;
+        updateData.remarkAuthorName = authorName;
+      }
+      
+      await updateDoc(complaintRef, updateData);
       await firebaseService.createNotification({
         type: 'complaint_updated',
-        message: `Status updated to ${status.toUpperCase()} for ID ${id}`,
+        message: `Status updated to ${status.toUpperCase()} for "${customerName}"${remarks ? ` - Remarks: ${remarks}` : ''}`,
         authorName
       });
     } catch (error) {
@@ -261,14 +285,36 @@ export const firebaseService = {
     }
   },
 
-  updateComplaint: async (id: string, data: Partial<Complaint>, authorName: string) => {
+  updateComplaintRemarks: async (id: string, remarks: string, customerName: string, authorName: string, authorId: string) => {
+    const path = `complaints/${id}`;
+    try {
+      const complaintRef = doc(db, 'complaints', id);
+      const updateData = { 
+        remarks, 
+        remarkAuthorId: authorId, 
+        remarkAuthorName: authorName,
+        updatedAt: Date.now() 
+      };
+      
+      await updateDoc(complaintRef, updateData);
+      await firebaseService.createNotification({
+        type: 'complaint_updated',
+        message: `Protocol remarks revised for "${customerName}"`,
+        authorName
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  },
+
+  updateComplaint: async (id: string, data: Partial<Complaint>, customerName: string, authorName: string) => {
     const path = `complaints/${id}`;
     try {
       const complaintRef = doc(db, 'complaints', id);
       await updateDoc(complaintRef, data);
       await firebaseService.createNotification({
         type: 'complaint_updated',
-        message: `Registry modified: ID ${id}`,
+        message: `Registry modified: Data revised for "${customerName}"`,
         authorName
       });
     } catch (error) {
@@ -453,7 +499,8 @@ export const firebaseService = {
       await firebaseService.createNotification({
         type: 'client_added',
         message: `New client added to registry: ${newClient.name}`,
-        authorName
+        authorName,
+        details: newClient
       });
       return newClient;
     } catch (error) {
@@ -462,14 +509,14 @@ export const firebaseService = {
     }
   },
 
-  updateClient: async (id: string, data: Partial<Client>, authorName: string) => {
+  updateClient: async (id: string, data: Partial<Client>, clientName: string, authorName: string) => {
     const path = `clients/${id}`;
     try {
       const clientRef = doc(db, 'clients', id);
       await updateDoc(clientRef, data);
       await firebaseService.createNotification({
         type: 'client_updated',
-        message: `Client record modified: ID ${id}`,
+        message: `Client record modified: Updated info for "${clientName}"`,
         authorName
       });
     } catch (error) {
@@ -477,13 +524,13 @@ export const firebaseService = {
     }
   },
 
-  deleteClient: async (id: string, authorName: string) => {
+  deleteClient: async (id: string, clientName: string, authorName: string) => {
     const path = `clients/${id}`;
     try {
       await deleteDoc(doc(db, 'clients', id));
       await firebaseService.createNotification({
         type: 'client_deleted',
-        message: `Client record removed: ID ${id}`,
+        message: `Client record removed: "${clientName}" purged from database`,
         authorName
       });
     } catch (error) {

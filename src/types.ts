@@ -25,6 +25,10 @@ export interface Complaint {
   userNearby?: string;
   panelDetails?: string;
   createdAt: number;
+  updatedAt?: number;
+  remarks?: string;
+  remarkAuthorId?: string;
+  remarkAuthorName?: string;
 }
 
 export interface UserProfile {
@@ -75,4 +79,6 @@ export interface Notification {
   message: string;
   authorName: string;
   createdAt: number;
+  isRead?: boolean;
+  details?: any; // To store associated object data if needed
 }
