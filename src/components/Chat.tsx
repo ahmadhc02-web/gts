@@ -33,6 +33,30 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [viewportHeight, setViewportHeight] = useState<string>('100%');
+
+  // Handle Visual Viewport for mobile keyboards
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+
+    const handleResize = () => {
+      if (window.visualViewport) {
+        setViewportHeight(`${window.visualViewport.height}px`);
+        // Scroll to bottom on resize (usually keyboard opening)
+        setTimeout(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          }
+        }, 100);
+      }
+    };
+
+    window.visualViewport.addEventListener('resize', handleResize);
+    handleResize(); // Initial call
+
+    return () => window.visualViewport?.removeEventListener('resize', handleResize);
+  }, []);
 
   const QUICK_RESPONSES = [
     "Roger that. 👍",
@@ -180,7 +204,8 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: -400, opacity: 0 }}
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="fixed left-0 top-0 bottom-0 w-80 sm:w-96 bg-white dark:bg-slate-950 shadow-2xl z-[150] border-r border-slate-200 dark:border-slate-800 flex flex-col"
+      className="fixed left-0 top-0 w-full sm:w-96 bg-white dark:bg-slate-950 shadow-2xl z-[150] border-r border-slate-200 dark:border-slate-800 flex flex-col"
+      style={{ height: viewportHeight }}
     >
       {/* Header */}
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex flex-col gap-3 shrink-0 z-[160]">
@@ -525,9 +550,17 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
             
             <div className="flex-1 relative group">
               <input
+                ref={inputRef}
                 type="text"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
+                onFocus={() => {
+                  setTimeout(() => {
+                    if (scrollRef.current) {
+                      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                    }
+                  }, 300);
+                }}
                 placeholder="Tactical relay..."
                 className="w-full px-5 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 dark:focus:border-blue-500 transition-all font-medium text-[13px] placeholder:text-slate-400 placeholder:uppercase placeholder:text-[10px] placeholder:tracking-widest shadow-sm"
               />
