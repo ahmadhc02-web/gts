@@ -90,7 +90,7 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
   return (
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100">
       {/* Report & Stats Section */}
-      <div className="flex-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm flex flex-col relative overflow-hidden">
+      <div className="flex-1 bg-gradient-to-br from-slate-50/50 to-slate-100/30 dark:from-slate-800/30 dark:to-slate-800/10 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 p-6 shadow-sm flex flex-col relative overflow-hidden transition-colors">
          {/* Decorative background elements */}
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none" />
         <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none" />
@@ -130,7 +130,7 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
           </div>
         </div>
 
-        <div className="flex-1 min-h-[260px] w-full mt-2 relative z-10 -ml-4">
+        <div className="flex-1 w-full mt-4 h-full relative z-10 -ml-4">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
@@ -181,24 +181,6 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
               />
             </AreaChart>
           </ResponsiveContainer>
-        </div>
-
-        <div className="mt-6 flex items-center justify-between px-5 py-3 bg-slate-50/80 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700/50 relative z-10">
-           <div className="flex items-center gap-3">
-             <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center">
-               <TrendingUp size={16} className="text-emerald-500" />
-             </div>
-             <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-300 tracking-widest">
-               Operations Trend
-             </span>
-           </div>
-           <span className={`text-[11px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${
-             chartData.length > 1 && chartData[chartData.length - 1].total > chartData[chartData.length - 2].total 
-               ? 'bg-blue-500/10 text-blue-600' 
-               : 'bg-emerald-500/10 text-emerald-600'
-           }`}>
-             {chartData.length > 1 ? (chartData[chartData.length - 1].total > chartData[chartData.length - 2].total ? '+ Rising Volume' : '≈ Stabilizing') : 'Baseline Established'}
-           </span>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity, Flame } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile } from '../types';
 import ComplaintForm from './ComplaintForm';
@@ -70,6 +70,8 @@ export default function MemberPanel({
   const [newPassword, setNewPassword] = useState(currentUser.password);
   const [isUpdating, setIsUpdating] = useState(false);
   const [activeTab, setActiveTab] = useState<'ops' | 'clients' | 'profile' | 'monitor'>('ops');
+  const [isFormVisible, setIsFormVisible] = useState(true);
+  const [isChartsVisible, setIsChartsVisible] = useState(true);
   const stats = [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Global volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
@@ -154,16 +156,49 @@ export default function MemberPanel({
       </div>
 
       {/* Analytics Dashboards - Below Stat Boxes */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-6 mb-6">
-        <div className="h-[400px] shadow-sm rounded-2xl">
-          <DistributionList complaints={complaints} chartType="area" />
+      <div className="space-y-6 mb-6">
+        <div 
+          className="text-center space-y-2 mb-10 cursor-pointer select-none group"
+          onDoubleClick={() => setIsChartsVisible(!isChartsVisible)}
+          title="Double-click to toggle analytics"
+        >
+          <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 group-hover:scale-105 transition-transform duration-500">Chart Analytics</h2>
+          <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Real-time operational data visualization</p>
         </div>
-        <div className="h-[400px] shadow-sm rounded-2xl md:col-span-1 lg:col-span-2 xl:col-span-1">
-          <RealTimeMonitor complaints={complaints} />
-        </div>
-        <div className="h-[400px] shadow-sm rounded-2xl">
-          <DistributionList complaints={complaints} chartType="category" />
-        </div>
+
+        <AnimatePresence mode="wait">
+          {isChartsVisible && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, filter: 'blur(20px)', y: 20 }}
+              animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', y: 0 }}
+              exit={{ 
+                opacity: 0, 
+                scale: 0.8, 
+                x: -400, 
+                y: -100, 
+                rotate: -15, 
+                skewX: -40, 
+                filter: 'blur(50px)',
+                transition: { duration: 1.2, ease: [0.4, 0, 0.2, 1] }
+              }}
+              transition={{ 
+                duration: 0.8, 
+                ease: [0.16, 1, 0.3, 1] 
+              }}
+              className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-6 origin-right"
+            >
+              <div className="h-[400px] shadow-sm rounded-2xl">
+                <DistributionList complaints={complaints} chartType="area" />
+              </div>
+              <div className="h-[400px] shadow-sm rounded-2xl md:col-span-1 lg:col-span-2 xl:col-span-1">
+                <RealTimeMonitor complaints={complaints} />
+              </div>
+              <div className="h-[400px] shadow-sm rounded-2xl">
+                <DistributionList complaints={complaints} chartType="category" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Navigation Tabs */}
@@ -200,14 +235,42 @@ export default function MemberPanel({
         {activeTab === 'ops' && (
           <div className="space-y-12">
             <section>
-              <div className="mb-8 p-6 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-800">
-                <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 mb-1">Field Operations</h2>
-                <p className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Capture and process enterprise support requests.</p>
+              <div 
+                className="text-center space-y-2 mb-10 cursor-pointer select-none group"
+                onDoubleClick={() => setIsFormVisible(!isFormVisible)}
+                title="Double-click to toggle form"
+              >
+                <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 group-hover:scale-105 transition-transform duration-500">Field Operations</h2>
+                <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Capture and process enterprise support requests</p>
               </div>
               
-              <div className="max-w-4xl mx-auto">
-                <ComplaintForm onSubmit={onRegisterComplaint} isLoading={isLoading} appConfig={appConfig} />
-              </div>
+              <AnimatePresence mode="wait">
+                {isFormVisible && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9, filter: 'blur(20px)', y: 20 }}
+                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', y: 0 }}
+                    exit={{ 
+                      opacity: 0, 
+                      scale: 0.8, 
+                      x: 400, 
+                      y: -100, 
+                      rotate: 15, 
+                      skewX: 40, 
+                      filter: 'blur(50px)',
+                      transition: { duration: 1.2, ease: [0.4, 0, 0.2, 1] }
+                    }}
+                    transition={{ 
+                      duration: 0.8, 
+                      ease: [0.16, 1, 0.3, 1] 
+                    }}
+                    className="origin-left"
+                  >
+                    <div className="max-w-4xl mx-auto pt-2 pb-8">
+                      <ComplaintForm onSubmit={onRegisterComplaint} isLoading={isLoading} appConfig={appConfig} />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </section>
 
             <section className="pt-12" id="operations-registry-member">

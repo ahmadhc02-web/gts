@@ -34,58 +34,27 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
   
   return (
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100">
-      <div className="flex-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm flex flex-col relative overflow-hidden">
+      <div className="flex-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col relative overflow-hidden">
         {/* Decorative background elements */}
         <div className={`absolute -top-16 -right-16 w-64 h-64 bg-${iconColor}-500/5 blur-[80px] rounded-full pointer-events-none`} />
         
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-2 relative z-20">
-          <div className="flex items-center">
-            <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">
-              {chartType === 'area' ? 'Zone Analysis' : 'Category Analysis'}
-            </h3>
-          </div>
-        </div>
-
-        <div className="flex-1 flex gap-2 w-full mt-2 h-full min-h-[160px] pb-2 relative z-10">
-           {/* Dynamic Pie and List Swapped */}
+        <div className="flex-1 flex w-full h-full relative z-10">
+           {/* Dynamic Pie and List Swapped - Frame size unified */}
            <div className={cn(
-             "w-full flex items-center relative h-full bg-gradient-to-br from-slate-50/50 to-slate-100/30 dark:from-slate-800/30 dark:to-slate-800/10 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 transition-colors shadow-sm overflow-hidden p-2",
+             "w-full flex items-center relative h-full bg-gradient-to-br from-slate-50/50 to-slate-100/30 dark:from-slate-800/30 dark:to-slate-800/10 rounded-2xl transition-colors shadow-sm overflow-hidden p-4",
              chartType === 'category' ? "hover:border-blue-500/30" : "hover:border-emerald-500/30"
            )}>
-              {data.length > 0 ? (
-                <div className={cn(
-                  "flex w-full h-full items-center",
-                  chartType === 'area' ? "flex-row-reverse" : "flex-row"
-                )}>
-                  {/* List Container */}
-                  <div className={cn(
-                    "w-[45%] flex flex-col justify-center gap-3",
-                    chartType === 'area' ? "pr-4 border-l ml-2" : "pl-4 border-r mr-2",
-                    "border-slate-100 dark:border-slate-800/50"
-                  )}>
-                    {data.slice(0, 5).map((item, idx) => {
-                       const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
-                       const colorIndex = chartType === 'category' ? (idx + 3) : idx;
-                       return (
-                         <div key={item.name} className="flex flex-col group/item cursor-pointer">
-                            <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-black leading-tight mb-1.5 px-1 uppercase tracking-tighter">
-                               <span className="truncate pr-2 text-slate-500 dark:text-slate-400 group-hover/item:text-slate-900 dark:group-hover/item:text-white transition-colors" style={{ color: COLORS[colorIndex % COLORS.length] }}>
-                                 {item.name}
-                               </span>
-                               <span className="text-slate-950 dark:text-white font-black shrink-0 ml-auto">
-                                 {percentage}%
-                               </span>
-                            </div>
-                            <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner p-[1px]">
-                               <div className="h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(0,0,0,0.1)]" style={{ width: `${percentage}%`, backgroundColor: COLORS[colorIndex % COLORS.length] }} />
-                            </div>
-                         </div>
-                       );
-                    })}
-                  </div>
+               {data.length > 0 ? (
+                <div className="flex flex-col w-full h-full">
+                  {/* Chart Container - Top Portion - Height enhanced for maximum impact */}
+                  <div className="w-full h-[400px] relative flex items-center justify-center">
+                    {/* Centered Label - Enhanced for larger size */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                      <span className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-900 dark:text-white opacity-80">
+                        {chartType === 'area' ? 'ZONE' : 'CATEGORY'}
+                      </span>
+                    </div>
 
-                  {/* Right side chart (Agli Side) */}
-                  <div className="w-[55%] h-[240px] relative">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                          <defs>
@@ -96,7 +65,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                          <Pie 
                            data={data.slice(0, 5)} 
                            cx="50%" cy="50%" 
-                           innerRadius="42%" outerRadius="95%" 
+                           innerRadius="50%" outerRadius="100%" 
                            paddingAngle={4}
                            cornerRadius={8}
                            dataKey="count"
@@ -141,6 +110,107 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                          />
                       </PieChart>
                     </ResponsiveContainer>
+                  </div>
+
+                  {/* List Container - Bottom Portion - Reorganized Layout */}
+                  <div className="mt-4 flex flex-col gap-4 px-2 border-t border-slate-100 dark:border-slate-800/50 pt-4">
+                    {/* Top 1 - Big Line */}
+                    {data.length > 0 && (() => {
+                      const item = data[0];
+                      const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
+                      const colorIndex = chartType === 'category' ? 3 : 0;
+                      return (
+                        <div 
+                          key={item.name} 
+                          className="flex flex-col group/item cursor-pointer w-full"
+                          onClick={() => {
+                            setViewBy(chartType);
+                            setSelectedItem(item.name);
+                          }}
+                        >
+                          <div className="flex items-center justify-between text-[10px] font-black leading-tight mb-1.5 uppercase tracking-tight">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[colorIndex % COLORS.length] }} />
+                              <span className="text-slate-500 dark:text-slate-400 group-hover/item:text-slate-900 dark:group-hover/item:text-white transition-colors">
+                                {item.name}
+                              </span>
+                            </div>
+                            <span className="text-slate-950 dark:text-white font-black">
+                              {percentage}%
+                            </span>
+                          </div>
+                          <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner p-[0.5px]">
+                            <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percentage}%`, backgroundColor: COLORS[colorIndex % COLORS.length] }} />
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Top 2 & 3 - Side by Side */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {data.slice(1, 3).map((item, idx) => {
+                        const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
+                        const colorIndex = chartType === 'category' ? (idx + 1 + 3) : (idx + 1);
+                        return (
+                          <div 
+                            key={item.name} 
+                            className="flex flex-col group/item cursor-pointer"
+                            onClick={() => {
+                              setViewBy(chartType);
+                              setSelectedItem(item.name);
+                            }}
+                          >
+                            <div className="flex items-center justify-between text-[9px] font-black leading-tight mb-1.5 uppercase tracking-tight">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[colorIndex % COLORS.length] }} />
+                                <span className="truncate text-slate-500 dark:text-slate-400 group-hover/item:text-slate-900 dark:group-hover/item:text-white transition-colors">
+                                  {item.name}
+                                </span>
+                              </div>
+                              <span className="text-slate-950 dark:text-white font-black ml-1">
+                                {percentage}%
+                              </span>
+                            </div>
+                            <div className="w-full h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner p-[0.5px]">
+                              <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percentage}%`, backgroundColor: COLORS[colorIndex % COLORS.length] }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Top 4 & 5 - Side by Side */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {data.slice(3, 5).map((item, idx) => {
+                        const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
+                        const colorIndex = chartType === 'category' ? (idx + 3 + 3) : (idx + 3);
+                        return (
+                          <div 
+                            key={item.name} 
+                            className="flex flex-col group/item cursor-pointer"
+                            onClick={() => {
+                              setViewBy(chartType);
+                              setSelectedItem(item.name);
+                            }}
+                          >
+                            <div className="flex items-center justify-between text-[9px] font-black leading-tight mb-1.5 uppercase tracking-tight">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[colorIndex % COLORS.length] }} />
+                                <span className="truncate text-slate-500 dark:text-slate-400 group-hover/item:text-slate-900 dark:group-hover/item:text-white transition-colors">
+                                  {item.name}
+                                </span>
+                              </div>
+                              <span className="text-slate-950 dark:text-white font-black ml-1">
+                                {percentage}%
+                              </span>
+                            </div>
+                            <div className="w-full h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner p-[0.5px]">
+                              <div className="h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${percentage}%`, backgroundColor: COLORS[colorIndex % COLORS.length] }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               ) : (
