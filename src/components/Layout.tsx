@@ -150,57 +150,57 @@ export default function Layout({
                 <div className="absolute top-0 right-0 -tr-20 -u-20 w-40 h-40 bg-brand-accent/10 blur-[60px] rounded-full" />
                 <div className="absolute bottom-0 left-0 -bl-20 -d-20 w-40 h-40 bg-emerald-500/10 blur-[60px] rounded-full" />
 
-                <div className="p-8 relative z-10">
-                  <div className="flex items-center justify-between mb-8">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-brand-accent/10 flex items-center justify-center border border-brand-accent/20">
-                        <Bell className="text-brand-accent" size={24} />
+                <div className="p-5 sm:p-8 relative z-10">
+                  <div className="flex items-center justify-between mb-6 sm:mb-8">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-brand-accent/10 flex items-center justify-center border border-brand-accent/20">
+                        <Bell size={20} className="text-brand-accent sm:w-[24px] sm:h-[24px]" />
                       </div>
                       <div>
-                        <h4 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Intelligence Packet</h4>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Metadata Breakdown</p>
+                        <h4 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Intelligence Packet</h4>
+                        <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Metadata Breakdown</p>
                       </div>
                     </div>
                     <button 
                       onClick={() => setSelectedNotif(null)}
-                      className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-500 hover:scale-110 active:scale-95 transition-all"
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-500 hover:scale-110 active:scale-95 transition-all"
                     >
-                      <X size={20} />
+                      <X size={18} className="sm:w-[20px] sm:h-[20px]" />
                     </button>
                   </div>
 
-                  <div className="space-y-6">
-                    <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800">
-                      <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
+                  <div className="space-y-4 sm:space-y-6">
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800">
+                      <p className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
                         {selectedNotif.message}
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Author</p>
-                        <div className="flex items-center gap-2">
-                          <User size={12} className="text-brand-accent" />
-                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100">{selectedNotif.authorName}</span>
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                      <div className="p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Author</p>
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <User size={10} className="text-brand-accent sm:w-[12px] sm:h-[12px]" />
+                          <span className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-slate-100">{selectedNotif.authorName}</span>
                         </div>
                       </div>
-                      <div className="p-4 rounded-xl border border-slate-100 dark:border-slate-800">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Timestamp</p>
-                        <div className="flex items-center gap-2">
-                          <Clock size={12} className="text-emerald-500" />
-                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100">{new Date(selectedNotif.createdAt).toLocaleString()}</span>
+                      <div className="p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Timestamp</p>
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+                          <Clock size={10} className="text-emerald-500 sm:w-[12px] sm:h-[12px]" />
+                          <span className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-slate-100">{new Date(selectedNotif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                       </div>
                     </div>
 
                     {selectedNotif.details && (
-                      <div className="p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20">
-                         <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3">Payload Data</p>
-                         <div className="space-y-2">
+                      <div className="p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20">
+                         <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 sm:mb-3">Payload Data</p>
+                         <div className="space-y-1.5 sm:space-y-2">
                             {Object.entries(selectedNotif.details).filter(([k]) => k !== 'id' && k !== 'createdAt').slice(0, 5).map(([key, value]) => (
-                              <div key={key} className="flex justify-between items-center text-[10px] py-1 border-b border-slate-100 dark:border-slate-800/50 last:border-0">
+                              <div key={key} className="flex justify-between items-center text-[9px] sm:text-[10px] py-1 border-b border-slate-100 dark:border-slate-800/50 last:border-0">
                                 <span className="font-bold uppercase text-slate-500">{key}</span>
-                                <span className="font-black text-slate-900 dark:text-slate-100 truncate max-w-[200px]">{String(value)}</span>
+                                <span className="font-black text-slate-900 dark:text-slate-100 truncate max-w-[140px] sm:max-w-[200px]">{String(value)}</span>
                               </div>
                             ))}
                          </div>
@@ -210,9 +210,9 @@ export default function Layout({
 
                   <button 
                     onClick={() => setSelectedNotif(null)}
-                    className="w-full mt-8 py-4 bg-slate-900 dark:bg-brand-accent text-white rounded-2xl text-xs font-black uppercase tracking-[0.3em] shadow-xl shadow-brand-accent/20 hover:scale-[1.02] active:scale-95 transition-all"
+                    className="w-full mt-6 sm:mt-8 py-3 sm:py-4 bg-slate-900 dark:bg-brand-accent text-white rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] shadow-xl shadow-brand-accent/20 hover:scale-[1.02] active:scale-95 transition-all"
                   >
-                    Acknowledge Intelligence
+                    Acknowledge
                   </button>
                 </div>
               </motion.div>
@@ -387,41 +387,49 @@ export default function Layout({
 
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="container mx-auto px-2 sm:px-4 h-16 flex items-center justify-between">
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-4"
+            className="flex items-center gap-2 sm:gap-4"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-slate-900 dark:bg-brand-accent flex items-center justify-center shadow-lg">
-                <span className="text-white font-black text-xl tracking-tighter">GTS</span>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="relative group shrink-0">
+                <div className="absolute inset-0 bg-brand-accent rounded-lg blur-md opacity-20 group-hover:opacity-40 transition-opacity" />
+                <div className="relative w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 dark:from-brand-accent dark:via-blue-500 dark:to-brand-accent flex items-center justify-center shadow-xl border border-white/10 overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                  <span className="text-white font-black text-lg sm:text-xl tracking-tighter italic leading-none ml-px">GTS</span>
+                  <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-brand-accent-light dark:bg-white/30 rounded-bl-full" />
+                  <div className="absolute bottom-0 left-0 w-1.5 h-1.5 bg-brand-accent-light dark:bg-white/30 rounded-tr-full" />
+                </div>
               </div>
-              <div className="hidden sm:block">
-                <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-white uppercase leading-none">Operations</h1>
-                <p className="text-[10px] text-brand-accent font-bold uppercase tracking-[0.15em] mt-1">
-                  Yaseen Tahir Service
+              <div className="hidden xs:block sm:block">
+                <h1 className="text-xs sm:text-lg font-black tracking-tight text-slate-900 dark:text-white uppercase leading-none">Operations</h1>
+                <p className="text-[8px] sm:text-[10px] text-brand-accent font-bold uppercase tracking-[0.1em] sm:tracking-[0.15em] mt-0.5 sm:mt-1">
+                  YST Service
                 </p>
               </div>
             </div>
           </motion.div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {user && onRefresh && (
-              <RefreshControl onRefresh={onRefresh} isLoading={isLoading} />
+              <div className="scale-90 sm:scale-100">
+                <RefreshControl onRefresh={onRefresh} isLoading={isLoading} />
+              </div>
             )}
 
             {user && (
-              <div className="flex items-center gap-1 sm:gap-2 mr-2">
+              <div className="flex items-center gap-0.5 sm:gap-2">
                 <button
                   onClick={onToggleAudio}
                   className={cn(
-                    "p-2 rounded-lg transition-all",
+                    "p-1.5 sm:p-2 rounded-lg transition-all",
                     isAudioMuted ? "text-slate-400 hover:text-amber-500 bg-amber-500/5" : "text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10"
                   )}
                   title={isAudioMuted ? "Unmute Audio Alerts" : "Mute Audio Alerts"}
                 >
-                  {isAudioMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  {isAudioMuted ? <VolumeX size={16} className="sm:w-[18px] sm:h-[18px]" /> : <Volume2 size={16} className="sm:w-[18px] sm:h-[18px]" />}
                 </button>
 
                 <button
@@ -433,16 +441,16 @@ export default function Layout({
                     }
                   }}
                   className={cn(
-                    "p-2 rounded-lg transition-all relative",
+                    "p-1.5 sm:p-2 rounded-lg transition-all relative",
                     alertAuthorized 
                       ? "text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10" 
                       : "text-amber-500 bg-amber-500/5 animate-pulse"
                   )}
                   title={alertAuthorized ? "Open Notification History" : "Alerts Restricted - Click to configure"}
                 >
-                  {alertAuthorized ? <Bell size={18} /> : <BellOff size={18} />}
+                  {alertAuthorized ? <Bell size={16} className="sm:w-[18px] sm:h-[18px]" /> : <BellOff size={16} className="sm:w-[18px] sm:h-[18px]" />}
                   {alertAuthorized && notifications.length > 0 && (
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-950" />
+                    <span className="absolute top-1 right-1 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-red-500 rounded-full border border-white dark:border-slate-950" />
                   )}
                 </button>
               </div>
@@ -450,10 +458,10 @@ export default function Layout({
             
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-all"
+              className="p-1.5 sm:p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-all"
               title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
-              {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+              {theme === 'dark' ? <Sun size={18} className="sm:w-[20px] sm:h-[20px]" /> : <Moon size={18} className="sm:w-[20px] sm:h-[20px]" />}
             </button>
 
             {user && (
@@ -488,9 +496,9 @@ export default function Layout({
               <button
                 id="logout-button"
                 onClick={onLogout}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all font-semibold text-sm"
+                className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all font-semibold text-sm"
               >
-                <LogOut size={18} />
+                <LogOut size={16} className="sm:w-[18px] sm:h-[18px]" />
                 <span className="hidden sm:inline">Sign Out</span>
               </button>
             )}
@@ -510,23 +518,26 @@ export default function Layout({
       </main>
 
       {/* Footer */}
-      <footer className="py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+      <footer className="py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
         <div className="container mx-auto px-4">
           <div className="flex flex-col items-center">
-             <div className="w-8 h-8 rounded-lg bg-slate-900 dark:bg-brand-accent flex items-center justify-center mb-4">
-                <span className="text-white font-black text-sm">GTS</span>
+             <div className="relative group mb-3 sm:mb-4">
+                <div className="absolute inset-0 bg-brand-accent rounded-lg blur-md opacity-20 group-hover:opacity-40 transition-opacity" />
+                <div className="relative w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 dark:from-brand-accent dark:via-blue-500 dark:to-brand-accent flex items-center justify-center shadow-xl border border-white/10 overflow-hidden">
+                  <span className="text-white font-black text-sm sm:text-lg tracking-tighter italic leading-none ml-px">GTS</span>
+                </div>
              </div>
-             <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-[0.3em] mb-1">Green Tech Services</p>
-             <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">ISP Management Pro</h4>
+             <p className="text-[8px] sm:text-[10px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-[0.2em] sm:tracking-[0.3em] mb-1">Green Tech Services</p>
+             <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">ISP Management Pro</h4>
           </div>
           
-          <div className="h-px w-8 bg-slate-200 dark:bg-slate-800 mx-auto my-8" />
+          <div className="h-px w-6 sm:w-8 bg-slate-200 dark:bg-slate-800 mx-auto my-6 sm:my-8" />
 
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6 max-w-4xl mx-auto">
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
-              © {new Date().getFullYear()} Green Tech Services Operations. Enterprise Edition.
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6 max-w-4xl mx-auto">
+            <p className="text-[9px] sm:text-[11px] text-slate-400 dark:text-slate-500 font-medium text-center md:text-left">
+              © {new Date().getFullYear()} Green Tech Services Operations. <br className="xs:hidden" /> Enterprise Edition.
             </p>
-            <div className="inline-flex items-center gap-4 px-4 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold tracking-widest text-slate-400 cursor-default">
+            <div className="inline-flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-[8px] sm:text-[10px] uppercase font-bold tracking-widest text-slate-400 cursor-default">
               Proprietor: Yaseen Tahir
             </div>
           </div>

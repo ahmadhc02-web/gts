@@ -5,6 +5,7 @@
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --breakpoint-xs: 480px;
 
   --color-brand-primary: #0f172a; /* Slate 900 - Deep Business Neutral */
   --color-brand-accent: #2563eb; /* Blue 600 - Trust Blue */

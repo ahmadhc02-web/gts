@@ -33,8 +33,14 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
         className="relative z-10 w-full max-w-md mx-auto business-card p-10 bg-white dark:bg-slate-950 shadow-2xl"
       >
         <div className="text-center mb-10">
-          <div className="w-16 h-16 bg-slate-950 dark:bg-brand-accent rounded-2xl flex items-center justify-center mx-auto shadow-xl mb-6">
-            <span className="text-white font-black text-2xl tracking-tighter">GTS</span>
+          <div className="relative group w-20 h-20 mx-auto mb-6">
+            <div className="absolute inset-0 bg-brand-accent rounded-2xl blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
+            <div className="relative w-20 h-20 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 dark:from-brand-accent dark:via-blue-500 dark:to-brand-accent rounded-2xl flex items-center justify-center shadow-2xl border border-white/10 overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+              <span className="text-white font-black text-3xl tracking-tighter italic leading-none ml-px">GTS</span>
+              <div className="absolute top-0 right-0 w-3 h-3 bg-brand-accent-light dark:bg-white/30 rounded-bl-full" />
+              <div className="absolute bottom-0 left-0 w-3 h-3 bg-brand-accent-light dark:bg-white/30 rounded-tr-full" />
+            </div>
           </div>
           <h2 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white uppercase leading-none">GTS TEAM</h2>
           <p className="text-slate-600 dark:text-slate-400 text-xs uppercase font-black tracking-[0.2em] mt-3">

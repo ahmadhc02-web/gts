@@ -98,86 +98,91 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-2 relative z-10">
           <div className="flex items-center">
             <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">
-              {reportType === 'monthly' ? 'Monthly' : 'Daily'} Ops Report
+              {reportType === 'monthly' ? 'Monthly Data' : 'Daily Data'}
             </h3>
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2 p-1 bg-slate-100/80 dark:bg-slate-800/80 rounded-xl">
+            <div className="flex items-center gap-1 p-0.5 bg-slate-100/50 dark:bg-slate-800/50 rounded-lg border border-slate-200/50 dark:border-slate-700/50 scale-90 sm:scale-100">
               <button
                 onClick={() => setReportType('daily')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
                   reportType === 'daily' 
                     ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                 }`}
               >
-                <Clock size={14} />
+                <Clock size={12} />
                 Daily
               </button>
               <button
                 onClick={() => setReportType('monthly')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
                   reportType === 'monthly' 
                     ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                 }`}
               >
-                <Calendar size={14} />
+                <Calendar size={12} />
                 Monthly
               </button>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 w-full mt-4 h-full relative z-10 -ml-4">
+        <div className="flex-1 w-full mt-4 h-full relative z-10 -ml-4 group">
+          {/* Enhanced Chart Frame Decoration */}
+          <div className="absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-blue-500/40 to-transparent z-10" />
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-24 h-1 bg-blue-600/20 rounded-full blur-sm z-10 animate-pulse" />
+          
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/>
                   <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(148, 163, 184, 0.15)" />
+              <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(148, 163, 184, 0.1)" />
               <XAxis 
                 dataKey="name" 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 11, fontWeight: 800, fill: '#94a3b8' }}
-                dy={15}
+                tick={{ fontSize: 9, fontWeight: 800, fill: '#64748b' }}
+                dy={12}
               />
               <YAxis 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 11, fontWeight: 800, fill: '#94a3b8' }}
-                dx={-10}
+                tick={{ fontSize: 9, fontWeight: 800, fill: '#64748b' }}
+                dx={-8}
               />
               <Tooltip 
                 contentStyle={{ 
                   backgroundColor: 'rgba(15, 23, 42, 0.95)', 
                   backdropFilter: 'blur(8px)',
-                  border: '1px solid rgba(51, 65, 85, 0.5)', 
-                  borderRadius: '16px',
-                  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
-                  fontSize: '13px',
+                  border: '1px solid rgba(51, 65, 85, 0.4)', 
+                  borderRadius: '12px',
+                  boxShadow: '0 15px 30px -10px rgba(0, 0, 0, 0.3)',
+                  fontSize: '11px',
                   fontWeight: '900',
                   color: '#fff',
-                  padding: '12px 16px',
+                  padding: '10px 14px',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em'
                 }}
-                itemStyle={{ color: '#60a5fa', fontWeight: '900' }}
-                cursor={{ stroke: '#3b82f6', strokeWidth: 2, strokeDasharray: '4 4' }}
+                itemStyle={{ color: '#60a5fa', fontWeight: '900', padding: 0 }}
+                cursor={{ stroke: '#3b82f6', strokeWidth: 1.5, strokeDasharray: '4 4' }}
               />
               <Area 
                 type="monotone" 
                 dataKey="total" 
                 stroke="#3b82f6" 
-                strokeWidth={4}
+                strokeWidth={3}
                 fillOpacity={1} 
                 fill="url(#colorTotal)" 
-                animationDuration={1500}
+                animationDuration={1200}
+                activeDot={{ r: 5, strokeWidth: 0, fill: '#3b82f6', shadow: '0 0 10px rgba(59, 130, 246, 0.5)' }}
               />
             </AreaChart>
           </ResponsiveContainer>

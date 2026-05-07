@@ -274,12 +274,21 @@ export default function App() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         requestWakeLock();
+        firebaseService.updateUserPresence(user.uid).catch(() => {});
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // Immediate presence update
+    firebaseService.updateUserPresence(user.uid).catch(() => {});
+    
+    const presenceInterval = setInterval(() => {
+      firebaseService.updateUserPresence(user.uid).catch(() => {});
+    }, 120000); // Pulse every 2 mins
+
     return () => {
       clearInterval(interval);
+      clearInterval(presenceInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (wakeLock) wakeLock.release();
     };
@@ -330,6 +339,11 @@ export default function App() {
         } else {
           setUsers(initialUsers);
         }
+
+        // Real-time user updates for presence
+        firebaseService.subscribeUsers((updatedUsers) => {
+          setUsers(updatedUsers);
+        });
       } catch (err) {
         console.error("Initialization error:", err instanceof Error ? err.message : String(err));
         setError("System initialization failed. Please refresh.");

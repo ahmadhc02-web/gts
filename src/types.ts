@@ -37,6 +37,7 @@ export interface UserProfile {
   password?: string; // Added for simplified demo auth
   role: 'admin' | 'member';
   createdAt: number;
+  lastActive?: number;
 }
 
 export interface Client {

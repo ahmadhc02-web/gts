@@ -23,6 +23,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<{ uid: string, username: string }[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
@@ -35,27 +36,43 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [viewportHeight, setViewportHeight] = useState<string>('100%');
+  const [viewportTop, setViewportTop] = useState<number>(0);
+  const [isUserSelectorOpen, setIsUserSelectorOpen] = useState(false);
+
+  const isUserOnline = (lastActive?: number) => {
+    if (!lastActive) return false;
+    const fiveMinutes = 5 * 60 * 1000;
+    return Date.now() - lastActive < fiveMinutes;
+  };
 
   // Handle Visual Viewport for mobile keyboards
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.visualViewport) return;
+    if (typeof window === 'undefined') return;
 
     const handleResize = () => {
-      if (window.visualViewport) {
-        setViewportHeight(`${window.visualViewport.height}px`);
-        // Scroll to bottom on resize (usually keyboard opening)
-        setTimeout(() => {
-          if (scrollRef.current) {
-            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-          }
-        }, 100);
+      const vv = window.visualViewport;
+      if (vv) {
+        // Update height and offset from layout top
+        setViewportHeight(`${vv.height}px`);
+        setViewportTop(vv.offsetTop);
+      } else {
+        setViewportHeight('100%');
+        setViewportTop(0);
       }
     };
 
-    window.visualViewport.addEventListener('resize', handleResize);
-    handleResize(); // Initial call
+    window.visualViewport?.addEventListener('resize', handleResize);
+    window.visualViewport?.addEventListener('scroll', handleResize);
+    window.addEventListener('resize', handleResize);
+    
+    // Initial sync
+    handleResize();
 
-    return () => window.visualViewport?.removeEventListener('resize', handleResize);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('scroll', handleResize);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
   const QUICK_RESPONSES = [
@@ -82,18 +99,48 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       
       msgs.forEach(msg => {
         if (!msg.seenBy?.[currentUser.uid]) {
-          firebaseService.markMessageAsSeen(msg.id, currentUser);
+          // Only mark as seen if it's a global message or current user is the intended recipient
+          if (!msg.recipientId || msg.recipientId === currentUser.uid) {
+            firebaseService.markMessageAsSeen(msg.id, currentUser);
+          }
         }
       });
     });
-    return () => unsubscribe();
+
+    const unsubscribeTyping = firebaseService.subscribeTypingStatus((typing) => {
+      setTypingUsers(typing.filter(t => t.uid !== currentUser.uid));
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeTyping();
+    };
   }, [currentUser]);
+
+  // Handle typing status
+  useEffect(() => {
+    if (newMessage.trim() === '') {
+      firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false);
+      return;
+    }
+
+    firebaseService.setTypingStatus(currentUser.uid, currentUser.username, true);
+    
+    const timeout = setTimeout(() => {
+      firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false);
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [newMessage, currentUser]);
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
-  }, [messages, isRecording, replyTo, selectedScope]);
+  }, [messages, isRecording, replyTo, selectedScope, typingUsers]);
 
   // Handle clicking outside emoji picker to close it
   useEffect(() => {
@@ -198,14 +245,34 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     );
   });
 
+  // Lock body scroll on mobile when chat is open
+  useEffect(() => {
+    if (window.innerWidth < 640) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, []);
+
   return (
     <motion.div
-      initial={{ x: -400, opacity: 0 }}
+      initial={{ x: window.innerWidth < 640 ? '-100%' : -400, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
-      exit={{ x: -400, opacity: 0 }}
-      transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="fixed left-0 top-0 w-full sm:w-96 bg-white dark:bg-slate-950 shadow-2xl z-[150] border-r border-slate-200 dark:border-slate-800 flex flex-col"
-      style={{ height: viewportHeight }}
+      exit={{ x: window.innerWidth < 640 ? '-100%' : -400, opacity: 0 }}
+      transition={{ 
+        type: 'spring', 
+        damping: 25, 
+        stiffness: 200
+      }}
+      className="fixed left-0 w-full sm:w-96 bg-white dark:bg-slate-950 shadow-2xl z-[150] border-r border-slate-200 dark:border-slate-800 flex flex-col"
+      style={{ 
+        height: viewportHeight,
+        top: 0,
+        transform: `translateY(${viewportTop}px)`,
+        willChange: 'transform',
+        overscrollBehavior: 'contain'
+      }}
     >
       {/* Header */}
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex flex-col gap-3 shrink-0 z-[160]">
@@ -249,25 +316,138 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
           </div>
         </div>
 
-        {/* Channel Selector */}
-        <div className="w-full relative mt-1">
-          <select
-            value={selectedScope}
-            onChange={(e) => setSelectedScope(e.target.value)}
-            className="w-full px-3 py-2 text-[11px] font-black uppercase tracking-widest rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600/30 appearance-none shadow-sm"
+        {/* Channel Selector - Redesigned */}
+        <div className="w-full relative mt-1 z-[170]">
+          <button
+            onClick={() => setIsUserSelectorOpen(!isUserSelectorOpen)}
+            className="w-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 flex items-center justify-between shadow-sm active:scale-[0.98] transition-all"
           >
-            <option value="global">GLOBAL RELAY (ALL)</option>
-            {users.filter(u => currentUser.role === 'admin' ? u.uid !== currentUser.uid : u.role === 'admin').map(user => (
-              <option key={user.uid} value={user.uid}>
-                PRIVATE: {user.username} {user.role === 'admin' ? '(ADMIN)' : ''}
-              </option>
-            ))}
-          </select>
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-            <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
+              <span>
+                {selectedScope === 'global' 
+                  ? 'GLOBAL RELAY (ALL)' 
+                  : `PRIVATE: ${users.find(u => u.uid === selectedScope)?.username || 'SECURE_NODE'}`
+                }
+              </span>
+            </div>
+            <motion.div
+              animate={{ rotate: isUserSelectorOpen ? 180 : 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            >
+              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </motion.div>
+          </button>
+
+          <AnimatePresence>
+            {isUserSelectorOpen && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setIsUserSelectorOpen(false)}
+                  className="fixed inset-0 z-10"
+                />
+                <motion.div
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 4, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  className="absolute top-full left-0 right-0 z-20 mt-1 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] max-h-64 overflow-y-auto scrollbar-thin overflow-x-hidden"
+                >
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => {
+                        setSelectedScope('global');
+                        setIsUserSelectorOpen(false);
+                      }}
+                      className={cn(
+                        "w-full px-4 py-3 rounded-xl text-left transition-all flex items-center justify-between group",
+                        selectedScope === 'global' ? "bg-blue-600 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          "w-8 h-8 rounded-lg flex items-center justify-center border",
+                          selectedScope === 'global' ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                        )}>
+                          <MessageSquare size={14} className={selectedScope === 'global' ? 'text-white' : 'text-blue-600'} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest">Global Relay</p>
+                          <p className={cn("text-[8px] font-bold uppercase tracking-widest opacity-60", selectedScope === 'global' ? "text-white" : "text-slate-500")}>
+                            All active personnel
+                          </p>
+                        </div>
+                      </div>
+                      {selectedScope === 'global' && <CheckCheck size={14} className="text-white" />}
+                    </button>
+
+                    <div className="my-2 px-4 flex items-center gap-2">
+                      <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
+                      <span className="text-[7px] font-black text-slate-400 uppercase tracking-[0.2em]">Deployment Nodes</span>
+                      <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
+                    </div>
+
+                    {users
+                      .filter(u => u.uid !== currentUser.uid)
+                      .map((user, idx) => {
+                        const online = isUserOnline(user.lastActive);
+                        return (
+                          <motion.button
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.03 }}
+                            key={user.uid}
+                            onClick={() => {
+                              setSelectedScope(user.uid);
+                              setIsUserSelectorOpen(false);
+                            }}
+                            className={cn(
+                              "w-full px-4 py-3 rounded-xl text-left transition-all flex items-center justify-between group",
+                              selectedScope === user.uid ? "bg-blue-600 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800"
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="relative">
+                                <div className={cn(
+                                  "w-8 h-8 rounded-lg flex items-center justify-center border",
+                                  selectedScope === user.uid ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                                )}>
+                                  <User size={14} className={selectedScope === user.uid ? 'text-white' : 'text-slate-500'} />
+                                </div>
+                                <span className={cn(
+                                  "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 border-2 rounded-full",
+                                  online ? "bg-emerald-500" : "bg-blue-500",
+                                  selectedScope === user.uid ? (online ? "border-blue-600" : "border-blue-600") : "border-white dark:border-slate-900"
+                                )} />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-[10px] font-black uppercase tracking-widest">{user.username}</p>
+                                  {user.role === 'admin' && (
+                                    <span className={cn("text-[7px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter", selectedScope === user.uid ? "bg-white/20 text-white" : "bg-amber-500/10 text-amber-600")}>
+                                      Admin
+                                    </span>
+                                  )}
+                                </div>
+                                <p className={cn("text-[8px] font-bold uppercase tracking-widest opacity-60", selectedScope === user.uid ? "text-white" : "text-slate-500")}>
+                                  {online ? 'Active Connection' : user.lastActive ? `Last Seen: ${new Date(user.lastActive).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Signal Lost'}
+                                </p>
+                              </div>
+                            </div>
+                            {selectedScope === user.uid && <CheckCheck size={14} className="text-white" />}
+                          </motion.button>
+                        );
+                      })}
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -287,8 +467,14 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
             const prevMsg = displayedMessages[index - 1];
             const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.createdAt - prevMsg.createdAt < 60000);
             
-            const seenList = Object.values(msg.seenBy || {}) as { username: string; time: number }[];
-            const filteredSeen = seenList.filter(s => s.username !== msg.senderName);
+            const seenBy = msg.seenBy || {};
+            const isSeenByRecipient = msg.recipientId ? !!seenBy[msg.recipientId] : false;
+            const seenList = Object.values(seenBy) as { username: string; time: number }[];
+            
+            // For private messages, only show seen status of the recipient
+            const filteredSeen = msg.recipientId 
+              ? (isSeenByRecipient ? [seenBy[msg.recipientId]] : [])
+              : seenList.filter(s => s.username !== msg.senderName);
 
             const handleDragEnd = (_: any, info: any) => {
               const swipeThreshold = 80;
@@ -448,6 +634,52 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
             );
           })
         )}
+
+        {/* Typing Indicators */}
+        <AnimatePresence>
+          {typingUsers.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.9 }}
+              className="flex items-center gap-3 px-2 pt-2"
+            >
+              <div className="flex gap-1.5 bg-slate-100 dark:bg-slate-900 px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div className="flex gap-1 items-center">
+                  <span className="w-1 h-1 bg-blue-600 rounded-full animate-[bounce_1.4s_infinite_0ms]" />
+                  <span className="w-1 h-1 bg-blue-600 rounded-full animate-[bounce_1.4s_infinite_200ms]" />
+                  <span className="w-1 h-1 bg-blue-600 rounded-full animate-[bounce_1.4s_infinite_400ms]" />
+                </div>
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                  {typingUsers.length === 1 
+                    ? `${typingUsers[0].username} is typing...` 
+                    : `${typingUsers.length} people are typing...`}
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Sending State */}
+        <AnimatePresence>
+          {isSending && (
+            <motion.div
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 40 }}
+              className="flex flex-col items-end max-w-[85%] ml-auto mt-6"
+            >
+              <div className="flex items-center gap-2 mb-1.5 px-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 animate-pulse italic">
+                  Transmitting...
+                </span>
+              </div>
+              <div className="px-4 py-3 rounded-2xl rounded-tr-none bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 opacity-60 italic text-[14px]">
+                Encrypting relay packet...
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Quick Responses & Emoji Picker & Recorder Area */}
@@ -555,11 +787,17 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onFocus={() => {
+                  // Wait for both the keyboard and the dynamic height update
                   setTimeout(() => {
                     if (scrollRef.current) {
                       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
                     }
-                  }, 300);
+                  }, 150);
+                  setTimeout(() => {
+                    if (scrollRef.current) {
+                      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                    }
+                  }, 400);
                 }}
                 placeholder="Tactical relay..."
                 className="w-full px-5 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 dark:focus:border-blue-500 transition-all font-medium text-[13px] placeholder:text-slate-400 placeholder:uppercase placeholder:text-[10px] placeholder:tracking-widest shadow-sm"

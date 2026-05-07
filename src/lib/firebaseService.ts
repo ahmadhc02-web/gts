@@ -59,8 +59,23 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+
+  let serializedErr: string;
+  try {
+    serializedErr = JSON.stringify(errInfo);
+  } catch (stringifyError) {
+    // If it still fails, provide a safe fallback that doesn't rely on stringifying the whole object
+    serializedErr = JSON.stringify({
+      error: errInfo.error,
+      operationType: errInfo.operationType,
+      path: errInfo.path,
+      authInfo: { userId: errInfo.authInfo.userId }
+    });
+    console.warn('Safe stringify used for Firestore error info due to potential circularity');
+  }
+
+  console.error('Firestore Error: ', serializedErr);
+  throw new Error(serializedErr);
 }
 
 // Identity Integrity check helper
@@ -163,6 +178,60 @@ export const firebaseService = {
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
+  },
+
+  updateUserPresence: async (uid: string) => {
+    const path = `users/${uid}`;
+    try {
+      const userRef = doc(db, 'users', uid);
+      await updateDoc(userRef, { lastActive: Date.now() });
+    } catch (error) {
+      // Fail silently for presence to avoid noise
+    }
+  },
+
+  setTypingStatus: async (uid: string, username: string, isTyping: boolean) => {
+    const path = `typing/${uid}`;
+    try {
+      if (isTyping) {
+        await setDoc(doc(db, 'typing', uid), {
+          uid,
+          username,
+          timestamp: Date.now()
+        });
+      } else {
+        await deleteDoc(doc(db, 'typing', uid));
+      }
+    } catch (error) {
+      // Fail silently
+    }
+  },
+
+  subscribeTypingStatus: (callback: (typingUsers: { uid: string, username: string }[]) => void) => {
+    const path = 'typing';
+    const q = collection(db, path);
+    return onSnapshot(q, (snapshot) => {
+      const now = Date.now();
+      const typing = snapshot.docs
+        .map(doc => doc.data() as { uid: string, username: string, timestamp: number })
+        // Filter out stale typing indicators (older than 10 seconds)
+        .filter(t => now - t.timestamp < 10000)
+        .map(t => ({ uid: t.uid, username: t.username }));
+      callback(typing);
+    }, (error) => {
+      // Fail silently for typing
+    });
+  },
+
+  subscribeUsers: (callback: (users: UserProfile[]) => void) => {
+    const path = 'users';
+    const q = collection(db, path);
+    return onSnapshot(q, (snapshot) => {
+      const users = snapshot.docs.map(doc => doc.data() as UserProfile);
+      callback(users);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    });
   },
 
   // --- Notifications ---
