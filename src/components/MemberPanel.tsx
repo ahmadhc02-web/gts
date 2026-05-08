@@ -270,7 +270,7 @@ export default function MemberPanel({
                     className="origin-left"
                   >
                     <div className="max-w-4xl mx-auto pt-2 pb-8">
-                      <ComplaintForm onSubmit={onRegisterComplaint} isLoading={isLoading} appConfig={appConfig} />
+                      <ComplaintForm onSubmit={onRegisterComplaint} isLoading={isLoading} appConfig={appConfig} currentUser={currentUser} />
                     </div>
                   </motion.div>
                 )}
@@ -284,7 +284,7 @@ export default function MemberPanel({
               <ComplaintList 
                 complaints={complaints}
                 isAdmin={false}
-                currentUserId={currentUser.uid}
+                currentUser={currentUser}
                 onStatusChange={onUpdateComplaintStatus}
                 onUpdateRemarks={onUpdateRemarks}
                 onEdit={onUpdateComplaint}
@@ -304,7 +304,7 @@ export default function MemberPanel({
         )}
 
         {activeTab === 'clients' && (
-          <ClientManagement appConfig={appConfig} isAdmin={false} currentUserId={currentUser.uid} currentUserName={currentUser.username} />
+          <ClientManagement appConfig={appConfig} isAdmin={false} currentUser={currentUser} currentUserName={currentUser.username} />
         )}
 
         {activeTab === 'profile' && (

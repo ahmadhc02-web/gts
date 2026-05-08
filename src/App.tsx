@@ -12,6 +12,7 @@ import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
+import { safeStringify } from './lib/utils';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
@@ -296,61 +297,112 @@ export default function App() {
 
   // Auto-login logic and initial data fetch
   useEffect(() => {
-    const init = async () => {
+    let unsubscribeConfig: (() => void) | undefined;
+    let authReady = false;
+
+    const init = async (userAuth: any) => {
       try {
-        // Attempt to establish a Firebase session
-        try {
-          await signInAnonymously(auth);
-          console.log('Connected to Firebase as anonymous user');
-        } catch (authErr) {
-          console.warn("Auth initialization restricted:", authErr);
-        }
-
-        // Subscribe to app config after auth attempt
-        firebaseService.subscribeConfig((data) => {
-          if (data) {
-            setAppConfig({
-              categories: data.categories || DEFAULT_CATEGORIES,
-              statuses: data.statuses || DEFAULT_STATUSES,
-              priorities: data.priorities || DEFAULT_PRIORITIES,
-              zones: data.zones || DEFAULT_ZONES,
-            });
-          } else {
-            console.log('No app config found, initializing with defaults...');
-            // First time initialization
-            firebaseService.updateConfig({
-              categories: DEFAULT_CATEGORIES,
-              statuses: DEFAULT_STATUSES,
-              priorities: DEFAULT_PRIORITIES,
-              zones: DEFAULT_ZONES,
-            }, 'System Bootstrap').catch(err => {
-              console.error('Failed to bootstrap config:', err instanceof Error ? err.message : String(err));
-            });
+        const fetchTenantId = user ? firebaseService.getReadTenantId(user) : undefined;
+        const initialUsers = await firebaseService.getUsers(fetchTenantId);
+        
+        let currentUsers = [...initialUsers];
+        
+        if (!fetchTenantId || fetchTenantId === 'main') {
+          const hasAbc = currentUsers.some(u => u.username === 'abc');
+          
+          if (!hasAbc) {
+            try {
+              const abcAdmin = await firebaseService.createUser('abc-id', 'abc', 'abc', 'super_admin', undefined, 'main', '000');
+              currentUsers.push(abcAdmin);
+            } catch(e) {
+              console.error("Failed to inject abc user:", e);
+            }
           }
-        });
-        
-        // Fetch users for login/bootstrap
-        const initialUsers = await firebaseService.getUsers();
-        
-        // Bootstrap first admin if no users exist
-        if (initialUsers.length === 0) {
-          const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'admin');
-          setUsers([admin]);
-        } else {
-          setUsers(initialUsers);
-        }
 
-        // Real-time user updates for presence
-        firebaseService.subscribeUsers((updatedUsers) => {
-          setUsers(updatedUsers);
-        });
+          // Bootstrap first admin if no users exist
+          if (currentUsers.length === 0) {
+            try {
+              const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'super_admin');
+              currentUsers.push(admin);
+            } catch (e) {
+               console.error("Failed to bootstrap admin:", e);
+            }
+          } 
+        }
+        
+        setUsers(currentUsers);
       } catch (err) {
         console.error("Initialization error:", err instanceof Error ? err.message : String(err));
         setError("System initialization failed. Please refresh.");
       }
     };
-    init();
+
+    import('firebase/auth').then(({ onAuthStateChanged }) => {
+      const unsubscribeAuth = onAuthStateChanged(auth, (userAuth) => {
+        if (!authReady) {
+          authReady = true;
+          init(userAuth);
+        }
+      });
+      
+      // Attempt to establish a Firebase session
+      signInAnonymously(auth).then(() => {
+        console.log('Connected to Firebase as anonymous user');
+      }).catch(authErr => {
+        console.warn("Auth initialization restricted:", authErr);
+        if (!authReady) {
+          authReady = true;
+          init(null);
+        }
+      });
+
+      return () => unsubscribeAuth();
+    });
+
+    return () => {
+      if (unsubscribeConfig) unsubscribeConfig();
+    };
   }, []);
+
+  // Real-time user updates for presence and management
+  useEffect(() => {
+    // Only subscribe to real-time user changes when logged in, or we'll get permission errors
+    if (!user) return;
+    
+    const tenantId = firebaseService.getReadTenantId(user);
+    
+    // Subscribe to app config for the current tenant
+    const unsubscribeConfig = firebaseService.subscribeConfig((data) => {
+      if (data) {
+        setAppConfig({
+          categories: data.categories || DEFAULT_CATEGORIES,
+          statuses: data.statuses || DEFAULT_STATUSES,
+          priorities: data.priorities || DEFAULT_PRIORITIES,
+          zones: data.zones || DEFAULT_ZONES,
+        });
+      } else {
+        console.log('No app config found for tenant, initializing with defaults...');
+        // First time initialization for this tenant
+        firebaseService.updateConfig({
+          categories: DEFAULT_CATEGORIES,
+          statuses: DEFAULT_STATUSES,
+          priorities: DEFAULT_PRIORITIES,
+          zones: DEFAULT_ZONES,
+        }, 'System Bootstrap', tenantId).catch(err => {
+          console.error('Failed to bootstrap config for tenant:', err instanceof Error ? err.message : String(err));
+        });
+      }
+    }, tenantId);
+
+    const unsubscribe = firebaseService.subscribeUsers((updatedUsers) => {
+      setUsers(updatedUsers);
+    }, tenantId);
+
+    return () => {
+      unsubscribeConfig();
+      unsubscribe();
+    };
+  }, [user]);
 
   // Fetch complaints only when a user is logged in
   useEffect(() => {
@@ -359,9 +411,11 @@ export default function App() {
       return;
     }
     
+    const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
+    
     const unsubscribe = firebaseService.subscribeComplaints((data) => {
       setComplaints(data);
-    });
+    }, tenantId);
 
     return () => unsubscribe();
   }, [user]);
@@ -370,6 +424,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     
+    const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
     let isInitialLoad = true;
     let lastNotificationId = '';
 
@@ -424,7 +479,7 @@ export default function App() {
         lastNotificationId = latest.id;
         isInitialLoad = false;
       }
-    });
+    }, tenantId);
 
     return () => unsubscribe();
   }, [user, alertAuthorized, isAudioMuted, notificationAudio]);
@@ -435,6 +490,8 @@ export default function App() {
     
     let isInitialLoad = true;
     let lastMessageId = '';
+
+    const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
 
     const unsubscribe = firebaseService.subscribeMessages((data) => {
       // Filter out private messages not meant for user
@@ -484,27 +541,49 @@ export default function App() {
         lastMessageId = latest.id;
         isInitialLoad = false;
       }
-    });
+    }, tenantId);
 
     return () => unsubscribe();
   }, [user, alertAuthorized, isAudioMuted]);
 
-  const handleLogin = async (username: string, pass: string) => {
+  const handleLogin = async (username: string, pass: string, lineCode?: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const foundUser = users.find(u => u.username === username);
+      let dealerId: string | undefined = undefined;
+      let effectiveUsers = users;
+
+      // If a line code is provided, we need to validate it first
+      if (lineCode) {
+        const networkOwner = await firebaseService.getNetworkOwnerByLineCode(lineCode);
+        if (!networkOwner) {
+          setError('Invalid Network Code. Access Denied.');
+          setIsLoading(false);
+          return;
+        }
+        
+        if (networkOwner.role === 'super_admin') {
+           effectiveUsers = [networkOwner];
+        } else {
+           dealerId = networkOwner.uid;
+           // Fetch users specifically for this dealer's network and include the dealer themselves
+           const networkUsers = await firebaseService.getUsers(dealerId);
+           effectiveUsers = [networkOwner, ...networkUsers];
+        }
+      }
+
+      const foundUser = effectiveUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
       
       if (foundUser && foundUser.password === pass) {
         setUser(foundUser);
-        localStorage.setItem('complaint_app_user', JSON.stringify(foundUser));
+        localStorage.setItem('complaint_app_user', safeStringify(foundUser));
         setShowWelcome(true);
         toast.success(`Welcome back, ${foundUser.username}`);
       } else {
         setError('Invalid username or password');
       }
     } catch (e) {
-      setError('Login failed. Please try again.');
+      setError('Login failed. Please verify credentials.');
     } finally {
       setIsLoading(false);
     }
@@ -594,7 +673,7 @@ export default function App() {
     }
   };
 
-  const handleCreateUser = async (username: string, pass: string, role: 'admin' | 'member') => {
+  const handleCreateUser = async (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string) => {
     if (!user) return;
     const trimmedName = username.trim();
     if (!trimmedName || !pass.trim()) {
@@ -614,12 +693,11 @@ export default function App() {
 
     try {
       const uid = Math.random().toString(36).substr(2, 9);
-      const newUser = await firebaseService.createUser(uid, trimmedName, pass, role, user.username);
-      setUsers(prev => [...prev, newUser]);
-      toast.success(`User ${trimmedName} created successfully!`);
+      await firebaseService.createUser(uid, trimmedName, pass, role, user.username, dealerId, lineCode);
+      toast.success(`${role === 'dealer' ? 'Dealer' : 'User'} ${trimmedName} created successfully!`);
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
-      toast.error('Failed to create user.');
+      toast.error('Failed to create account.');
       throw e;
     }
   };
@@ -630,7 +708,6 @@ export default function App() {
       const targetUser = users.find(u => u.uid === uid);
       const username = targetUser?.username || uid;
       await firebaseService.deleteUser(uid, username, user.username);
-      setUsers(prev => prev.filter(u => u.uid !== uid));
       toast.success('User deleted successfully');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -642,14 +719,12 @@ export default function App() {
     if (!user) return;
     try {
       await firebaseService.updateUser(uid, { username, password: pass }, user.username);
-      const updatedUsers = await firebaseService.getUsers();
-      setUsers(updatedUsers);
       
       // If updating self, update local user state too
       if (user && user.uid === uid) {
         const updatedUser = { ...user, username, password: pass };
         setUser(updatedUser);
-        localStorage.setItem('complaint_app_user', JSON.stringify(updatedUser));
+        localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }
       
       toast.success('User details updated successfully!');
@@ -669,7 +744,7 @@ export default function App() {
       // Update local state and persistence
       const updatedUser = { ...user, password: newPass };
       setUser(updatedUser);
-      localStorage.setItem('complaint_app_user', JSON.stringify(updatedUser));
+      localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       
       toast.success(`Admin password changed successfully!`);
     } catch (e) {
@@ -692,7 +767,8 @@ export default function App() {
 
   const handleUpdateConfig = (newConfig: AppConfig) => {
     if (!user) return;
-    firebaseService.updateConfig(newConfig, user.username);
+    const tenantId = firebaseService.getTenantId(user);
+    firebaseService.updateConfig(newConfig, user.username, tenantId);
     toast.success('System configuration updated');
   };
 
@@ -722,11 +798,11 @@ export default function App() {
 
         {!user ? (
         <LoginForm onLogin={handleLogin} isLoading={isLoading} error={error} />
-      ) : user.role === 'admin' ? (
+      ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer') ? (
         <AdminPanel
           complaints={complaints}
           users={users}
-          currentUserId={user.uid}
+          currentUser={user}
           onDeleteComplaint={handleDeleteComplaint}
           onUpdateComplaintStatus={handleUpdateComplaintStatus}
           onUpdateRemarks={handleUpdateRemarks}

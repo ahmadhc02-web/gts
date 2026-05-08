@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Phase 3: Primitives ---
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && getUserData().role == 'super_admin';
+    }
+
+    function isDealer() {
+      return isSignedIn() && getUserData().role == 'dealer';
+    }
+
+    function getEffectiveDealerId() {
+      let user = getUserData();
+      return user.role == 'dealer' ? request.auth.uid : (user.dealerId == null ? 'main' : user.dealerId);
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Phase 4: Collection Rules ---
+
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.username is string && data.username.size() <= 50 &&
+               data.role in ['admin', 'member', 'dealer', 'super_admin'] &&
+               isValidId(data.dealerId || 'main');
+      }
+
+      // Read: Users can see themselves, Dealers see their members, SuperAdmins see all
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId || 
+        isSuperAdmin() || 
+        (isDealer() && existing().dealerId == request.auth.uid) ||
+        (getUserData().dealerId == existing().dealerId)
+      );
+      
+      allow list: if isSignedIn() && (
+        isSuperAdmin() || 
+        (isDealer() && resource.data.dealerId == request.auth.uid) ||
+        (resource.data.dealerId == getUserData().dealerId)
+      );
+
+      allow create: if isSignedIn() && isValidUser(incoming()) && (
+        isSuperAdmin() || 
+        (isDealer() && incoming().dealerId == request.auth.uid)
+      );
+
+      allow update: if isSignedIn() && (
+        isSuperAdmin() || 
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['password', 'username', 'updatedAt'])) ||
+        (isDealer() && existing().dealerId == request.auth.uid)
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    match /complaints/{complaintId} {
+      function isValidComplaint(data) {
+        return data.id == complaintId &&
+               data.customerName is string && data.customerName.size() <= 100 &&
+               data.status in ['pending', 'in process', 'complete'] &&
+               data.dealerId is string && data.dealerId.size() <= 128;
+      }
+
+      allow read: if isSignedIn() && (isSuperAdmin() || existing().dealerId == getEffectiveDealerId());
+      
+      allow create: if isSignedIn() && isValidComplaint(incoming()) && 
+                    incoming().dealerId == getEffectiveDealerId();
+
+      allow update: if isSignedIn() && (
+        isSuperAdmin() || 
+        (existing().dealerId == getEffectiveDealerId() && incoming().diff(existing()).affectedKeys().hasAny(['status', 'description', 'pkgDetails', 'panelDetails', 'priority', 'category', 'updatedAt', 'remarks']))
+      );
+
+      allow delete: if isSuperAdmin() || (isDealer() && existing().dealerId == request.auth.uid);
+    }
+
+    match /clients/{clientId} {
+      function isValidClient(data) {
+        return data.id == clientId &&
+               data.name is string && data.name.size() <= 100 &&
+               data.dealerId is string && data.dealerId.size() <= 128;
+      }
+
+      allow read: if isSignedIn() && (isSuperAdmin() || existing().dealerId == getEffectiveDealerId());
+      
+      allow create: if isSignedIn() && isValidClient(incoming()) && 
+                    incoming().dealerId == getEffectiveDealerId();
+
+      allow update: if isSignedIn() && (
+        isSuperAdmin() || 
+        (existing().dealerId == getEffectiveDealerId() && incoming().dealerId == existing().dealerId)
+      );
+
+      allow delete: if isSuperAdmin() || (isDealer() && existing().dealerId == request.auth.uid);
+    }
+
+    match /chat/{messageId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || existing().dealerId == getEffectiveDealerId());
+      allow create: if isSignedIn() && incoming().dealerId == getEffectiveDealerId();
+      allow delete: if isSuperAdmin() || (isDealer() && existing().dealerId == request.auth.uid);
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || existing().dealerId == getEffectiveDealerId());
+      allow create: if isSignedIn() && incoming().dealerId == getEffectiveDealerId();
+      allow delete: if isSuperAdmin() || (isDealer() && existing().dealerId == request.auth.uid);
+    }
+
+    match /config/{configId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /typing/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+  }
+}

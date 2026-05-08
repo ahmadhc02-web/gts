@@ -29,15 +29,18 @@ export interface Complaint {
   remarks?: string;
   remarkAuthorId?: string;
   remarkAuthorName?: string;
+  dealerId?: string; // Multi-tenancy support
 }
 
 export interface UserProfile {
   uid: string;
   username: string;
   password?: string; // Added for simplified demo auth
-  role: 'admin' | 'member';
+  role: 'admin' | 'member' | 'dealer' | 'super_admin';
   createdAt: number;
   lastActive?: number;
+  dealerId?: string; // For dealers and users created by dealers
+  lineCode?: string; // Specific code for dealer identification
 }
 
 export interface Client {
@@ -53,6 +56,7 @@ export interface Client {
   panelDetails?: string;
   createdBy: string;
   createdAt: number;
+  dealerId?: string; // Multi-tenancy support
 }
 
 export interface ChatMessage {
@@ -72,6 +76,7 @@ export interface ChatMessage {
   };
   createdAt: number;
   seenBy?: Record<string, { username: string; time: number }>;
+  dealerId?: string; // Multi-tenancy support
 }
 
 export interface Notification {
@@ -82,4 +87,5 @@ export interface Notification {
   createdAt: number;
   isRead?: boolean;
   details?: any; // To store associated object data if needed
+  dealerId?: string; // Multi-tenancy support
 }

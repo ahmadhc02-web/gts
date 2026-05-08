@@ -308,6 +308,16 @@ export default function Layout({
                 </div>
               </div>
 
+              {!alertAuthorized && (
+                <div className="mx-4 mt-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3 shrink-0">
+                  <ShieldAlert size={16} className="text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-tighter leading-none">Alerts Suppressed</p>
+                    <p className="text-[8px] font-bold text-amber-600/70 dark:text-amber-400/70 uppercase tracking-widest mt-1">Initialize Speaker Matrix in Console</p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
                 {notifications.length === 0 ? (
                   <div className="py-20 text-center">
@@ -395,18 +405,48 @@ export default function Layout({
           >
             <div className="flex items-center gap-2 sm:gap-3">
               <div className="relative group shrink-0">
-                <div className="absolute inset-0 bg-brand-accent rounded-lg blur-md opacity-20 group-hover:opacity-40 transition-opacity" />
-                <div className="relative w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 dark:from-brand-accent dark:via-blue-500 dark:to-brand-accent flex items-center justify-center shadow-xl border border-white/10 overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-                  <span className="text-white font-black text-lg sm:text-xl tracking-tighter italic leading-none ml-px">GTS</span>
-                  <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-brand-accent-light dark:bg-white/30 rounded-bl-full" />
-                  <div className="absolute bottom-0 left-0 w-1.5 h-1.5 bg-brand-accent-light dark:bg-white/30 rounded-tr-full" />
+                {/* Modern Mesh Gradient Background */}
+                <div className="absolute -inset-1.5 bg-gradient-to-r from-brand-accent via-blue-500 to-emerald-500 rounded-xl blur-lg opacity-25 group-hover:opacity-60 transition-opacity duration-500 animate-pulse" />
+                
+                {/* Main Logo Container */}
+                <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950 flex items-center justify-center shadow-2xl border border-white/10 overflow-hidden group/logo">
+                  {/* Internal Animated Mesh */}
+                  <div className="absolute inset-0 opacity-40">
+                    <div className="absolute top-0 -left-1/4 w-1/2 h-1/2 bg-brand-accent/40 blur-2xl rounded-full animate-blob" />
+                    <div className="absolute bottom-0 -right-1/4 w-1/2 h-1/2 bg-blue-500/40 blur-2xl rounded-full animate-blob animation-delay-2000" />
+                  </div>
+                  
+                  {/* Subtle Grid Pattern */}
+                  <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay" />
+                  
+                  {/* Shimmer Effect */}
+                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full group-hover/logo:translate-x-full transition-transform duration-1000 ease-in-out" />
+                  
+                  {/* Text with modern styling */}
+                  <div className="relative flex items-baseline">
+                    <span className="text-white font-black text-xl sm:text-2xl tracking-tighter italic leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                      G
+                    </span>
+                    <span className="text-brand-accent font-black text-xl sm:text-2xl tracking-tighter italic leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                      TS
+                    </span>
+                  </div>
+
+                  {/* Corner Accents */}
+                  <div className="absolute top-1 left-1 w-2 h-0.5 bg-white/20 rounded-full" />
+                  <div className="absolute top-1 left-1 w-0.5 h-2 bg-white/20 rounded-full" />
+                  <div className="absolute bottom-1 right-1 w-2 h-0.5 bg-white/20 rounded-full" />
+                  <div className="absolute bottom-1 right-1 w-0.5 h-2 bg-white/20 rounded-full" />
                 </div>
               </div>
+              
               <div className="hidden xs:block sm:block">
-                <h1 className="text-xs sm:text-lg font-black tracking-tight text-slate-900 dark:text-white uppercase leading-none">Operations</h1>
-                <p className="text-[8px] sm:text-[10px] text-brand-accent font-bold uppercase tracking-[0.1em] sm:tracking-[0.15em] mt-0.5 sm:mt-1">
-                  YST Service
+                <h1 className="text-xs sm:text-lg font-black tracking-tight text-emerald-600 dark:text-emerald-400 uppercase leading-none font-mono">Green Tech Services</h1>
+                <p className="text-[8px] sm:text-[10px] text-emerald-500/80 font-bold uppercase tracking-[0.2em] mt-0.5 sm:mt-1 flex items-center gap-1.5 opacity-90">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Yaseen Tahir SDK {user && user.role === 'super_admin' && <span className="text-brand-accent ml-1 font-black px-1.5 py-0.5 rounded bg-brand-accent/10 border border-brand-accent/20">ROOT ADMIN</span>}
+                  {user && user.role === 'dealer' && <span className="text-blue-500 ml-1 font-black px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20">MAIN DEALER PANEL</span>}
+                  {user && user.role === 'admin' && <span className="text-purple-500 ml-1 font-black px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">LITE ADMIN PANEL</span>}
                 </p>
               </div>
             </div>
@@ -433,24 +473,22 @@ export default function Layout({
                 </button>
 
                 <button
-                  onClick={() => {
-                    if (!alertAuthorized && onResetBanner) {
-                      onResetBanner();
-                    } else {
-                      setIsNotificationsOpen(!isNotificationsOpen);
-                    }
-                  }}
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                   className={cn(
                     "p-1.5 sm:p-2 rounded-lg transition-all relative",
                     alertAuthorized 
-                      ? "text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10" 
-                      : "text-amber-500 bg-amber-500/5 animate-pulse"
+                      ? (isAudioMuted ? "text-slate-400 bg-slate-400/5 hover:bg-slate-400/10" : "text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10")
+                      : "text-amber-500 bg-amber-500/5 hover:bg-amber-500/10 shadow-sm"
                   )}
-                  title={alertAuthorized ? "Open Notification History" : "Alerts Restricted - Click to configure"}
+                  title={alertAuthorized ? (isAudioMuted ? "Open Notifications (Muted)" : "Open Notification History") : "Operation History (Alerts Restricted)"}
                 >
-                  {alertAuthorized ? <Bell size={16} className="sm:w-[18px] sm:h-[18px]" /> : <BellOff size={16} className="sm:w-[18px] sm:h-[18px]" />}
-                  {alertAuthorized && notifications.length > 0 && (
-                    <span className="absolute top-1 right-1 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-red-500 rounded-full border border-white dark:border-slate-950" />
+                  {isAudioMuted && alertAuthorized ? (
+                    <BellOff size={16} className="sm:w-[18px] sm:h-[18px]" />
+                  ) : (
+                    <Bell size={16} className={cn("sm:w-[18px] sm:h-[18px]", !alertAuthorized && "opacity-60")} />
+                  )}
+                  {notifications.length > 0 && (
+                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-950 shadow-sm" />
                   )}
                 </button>
               </div>
@@ -522,9 +560,9 @@ export default function Layout({
         <div className="container mx-auto px-4">
           <div className="flex flex-col items-center">
              <div className="relative group mb-3 sm:mb-4">
-                <div className="absolute inset-0 bg-brand-accent rounded-lg blur-md opacity-20 group-hover:opacity-40 transition-opacity" />
-                <div className="relative w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 dark:from-brand-accent dark:via-blue-500 dark:to-brand-accent flex items-center justify-center shadow-xl border border-white/10 overflow-hidden">
-                  <span className="text-white font-black text-sm sm:text-lg tracking-tighter italic leading-none ml-px">GTS</span>
+                <div className="absolute -inset-1 bg-gradient-to-r from-brand-accent to-blue-500 rounded-lg blur opacity-25 group-hover:opacity-50 transition" />
+                <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950 flex items-center justify-center shadow-xl border border-white/10 overflow-hidden">
+                  <span className="text-white font-black text-base sm:text-xl tracking-tighter italic leading-none drop-shadow-md">G<span className="text-brand-accent">TS</span></span>
                 </div>
              </div>
              <p className="text-[8px] sm:text-[10px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-[0.2em] sm:tracking-[0.3em] mb-1">Green Tech Services</p>

@@ -8,7 +8,9 @@
         "uid": { "type": "string" },
         "username": { "type": "string" },
         "password": { "type": "string" },
-        "role": { "type": "string", "enum": ["admin", "member"] },
+        "role": { "type": "string", "enum": ["admin", "member", "dealer", "super_admin"] },
+        "dealerId": { "type": "string", "description": "ID of the tenant/dealer this user belongs to." },
+        "lineCode": { "type": "string", "description": "Unique code for dealer network access." },
         "createdAt": { "type": "number" }
       },
       "required": ["uid", "username", "role", "createdAt"]
@@ -31,6 +33,7 @@
         "pkgDetails": { "type": "string" },
         "userNearby": { "type": "string" },
         "panelDetails": { "type": "string" },
+        "dealerId": { "type": "string" },
         "createdAt": { "type": "number" }
       },
       "required": ["id", "memberId", "memberName", "customerName", "status", "createdAt"]
@@ -67,6 +70,7 @@
         "audioUrl": { "type": "string" },
         "type": { "type": "string", "enum": ["text", "voice"] },
         "duration": { "type": "number" },
+        "dealerId": { "type": "string" },
         "createdAt": { "type": "number" }
       },
       "required": ["id", "senderId", "senderName", "createdAt"]
@@ -87,6 +91,7 @@
         "userNearby": { "type": "string" },
         "panelDetails": { "type": "string" },
         "createdBy": { "type": "string" },
+        "dealerId": { "type": "string" },
         "createdAt": { "type": "number" }
       },
       "required": ["id", "username", "name", "createdBy"]
@@ -111,6 +116,7 @@
         "type": { "type": "string" },
         "message": { "type": "string" },
         "authorName": { "type": "string" },
+        "dealerId": { "type": "string" },
         "createdAt": { "type": "number" }
       },
       "required": ["id", "type", "message", "authorName", "createdAt"]

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
-import { Client } from '../types';
+import { Client, UserProfile } from '../types';
 import { firebaseService } from '../lib/firebaseService';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
@@ -10,11 +10,11 @@ import { AppConfig } from '../constants';
 interface ClientManagementProps {
   appConfig: AppConfig;
   isAdmin: boolean;
-  currentUserId: string;
+  currentUser: UserProfile;
   currentUserName: string;
 }
 
-export default function ClientManagement({ appConfig, isAdmin, currentUserId, currentUserName }: ClientManagementProps) {
+export default function ClientManagement({ appConfig, isAdmin, currentUser, currentUserName }: ClientManagementProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,6 +38,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
+  const currentUserId = currentUser.uid;
+
   const playPopupSound = () => {
     try {
       const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
@@ -59,13 +61,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
   }, [searchQuery, selectedArea]);
 
   useEffect(() => {
-    // Show all clients to everyone
+    // Show scoped clients
+    const tenantId = firebaseService.getReadTenantId(currentUser);
     const unsubscribe = firebaseService.subscribeClients((data) => {
       setClients(data);
       setIsLoading(false);
-    });
+    }, tenantId);
     return () => unsubscribe();
-  }, []);
+  }, [currentUser]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -130,7 +133,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUserId, cu
           panelDetails: panelDetails.trim(),
           area: area,
           createdBy: currentUserId
-        }, currentUserName);
+        }, currentUserName, firebaseService.getTenantId(currentUser));
         toast.success('Client record successfully registered');
       }
       resetForm();

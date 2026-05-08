@@ -1,4 +1,5 @@
 // src/services/googleSheetsService.ts
+import { safeStringify } from '../lib/utils';
 
 export interface GoogleTokens {
   access_token?: string;
@@ -139,15 +140,17 @@ export const googleSheetsService = {
     ];
 
     try {
+      const payload = {
+        tokens,
+        spreadsheetId,
+        range: fullRange,
+        values
+      };
+
       const response = await fetch('/api/sheets/append', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tokens,
-          spreadsheetId,
-          range: fullRange,
-          values
-        })
+        body: safeStringify(payload)
       });
 
       if (!response.ok) {

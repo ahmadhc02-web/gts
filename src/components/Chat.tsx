@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, User, X, MessageSquare, Clock, CheckCheck, Eye, Trash2, Smile, Paperclip, Mic, CornerUpLeft } from 'lucide-react';
+import { Send, User, X, MessageSquare, Clock, CheckCheck, Eye, Trash2, Smile, Paperclip, Mic, CornerUpLeft, Loader2 } from 'lucide-react';
 import EmojiPicker, { Theme, EmojiClickData } from 'emoji-picker-react';
 import { ChatMessage, UserProfile } from '../types';
 import { firebaseService } from '../lib/firebaseService';
@@ -28,7 +28,15 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
   const [isRecording, setIsRecording] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [selectedScope, setSelectedScope] = useState<string>('global');
+  const [selectedScope, setSelectedScope] = useState<string>(currentUser.role === 'member' ? (users.find(u => u.role === 'super_admin' || u.role === 'admin')?.uid || users.find(u => u.role === 'dealer')?.uid || 'global') : 'global');
+
+  useEffect(() => {
+    if (currentUser.role === 'member' && selectedScope === 'global') {
+       const uScope = users.find(u => u.role === 'super_admin' || u.role === 'admin')?.uid || users.find(u => u.role === 'dealer')?.uid;
+       if (uScope) setSelectedScope(uScope);
+    }
+  }, [currentUser.role, users, selectedScope]);
+
   const { theme } = useTheme();
   const isOnline = useOnlineStatus();
 
@@ -359,41 +367,57 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                   className="absolute top-full left-0 right-0 z-20 mt-1 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] max-h-64 overflow-y-auto scrollbar-thin overflow-x-hidden"
                 >
                   <div className="space-y-1">
-                    <button
-                      onClick={() => {
-                        setSelectedScope('global');
-                        setIsUserSelectorOpen(false);
-                      }}
-                      className={cn(
-                        "w-full px-4 py-3 rounded-xl text-left transition-all flex items-center justify-between group",
-                        selectedScope === 'global' ? "bg-blue-600 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-8 h-8 rounded-lg flex items-center justify-center border",
-                          selectedScope === 'global' ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                        )}>
-                          <MessageSquare size={14} className={selectedScope === 'global' ? 'text-white' : 'text-blue-600'} />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest">Global Relay</p>
-                          <p className={cn("text-[8px] font-bold uppercase tracking-widest opacity-60", selectedScope === 'global' ? "text-white" : "text-slate-500")}>
-                            All active personnel
-                          </p>
-                        </div>
-                      </div>
-                      {selectedScope === 'global' && <CheckCheck size={14} className="text-white" />}
-                    </button>
+                    {currentUser.role !== 'member' && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setSelectedScope('global');
+                            setIsUserSelectorOpen(false);
+                          }}
+                          className={cn(
+                            "w-full px-4 py-3 rounded-xl text-left transition-all flex items-center justify-between group",
+                            selectedScope === 'global' ? "bg-blue-600 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "w-8 h-8 rounded-lg flex items-center justify-center border",
+                              selectedScope === 'global' ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                            )}>
+                              <MessageSquare size={14} className={selectedScope === 'global' ? 'text-white' : 'text-blue-600'} />
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-widest">Global Relay</p>
+                              <p className={cn("text-[8px] font-bold uppercase tracking-widest opacity-60", selectedScope === 'global' ? "text-white" : "text-slate-500")}>
+                                All active personnel
+                              </p>
+                            </div>
+                          </div>
+                          {selectedScope === 'global' && <CheckCheck size={14} className="text-white" />}
+                        </button>
 
-                    <div className="my-2 px-4 flex items-center gap-2">
-                      <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
-                      <span className="text-[7px] font-black text-slate-400 uppercase tracking-[0.2em]">Deployment Nodes</span>
-                      <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
-                    </div>
+                        <div className="my-2 px-4 flex items-center gap-2">
+                          <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
+                          <span className="text-[7px] font-black text-slate-400 uppercase tracking-[0.2em]">Deployment Nodes</span>
+                          <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
+                        </div>
+                      </>
+                    )}
 
                     {users
                       .filter(u => u.uid !== currentUser.uid)
+                      .filter(u => {
+                        if (currentUser.role === 'member') {
+                          return u.role === 'admin' || u.role === 'super_admin' || (u.role === 'dealer' && u.uid === currentUser.dealerId);
+                        }
+                        if (currentUser.role === 'admin' || currentUser.role === 'super_admin') {
+                          return u.role !== 'dealer';
+                        }
+                        if (currentUser.role === 'dealer') {
+                          return u.role !== 'dealer';
+                        }
+                        return true;
+                      })
                       .map((user, idx) => {
                         const online = isUserOnline(user.lastActive);
                         return (
@@ -563,17 +587,17 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                         initial={{ opacity: 0, y: 5 }}
                         animate={{ opacity: 1, y: 0 }}
                         className={cn(
-                          "px-3 py-2 mb-0.5 rounded-t-2xl bg-slate-50/90 dark:bg-slate-900/60 backdrop-blur-md border-x border-t border-slate-200/80 dark:border-slate-800/80 border-l-4 border-l-blue-600 text-[11px] w-fit max-w-[95%] shadow-sm",
+                          "px-3 py-2 mb-0.5 rounded-t-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-x border-t border-slate-200/50 dark:border-slate-800/50 border-l-4 border-l-blue-600 text-[11px] w-fit max-w-[95%] shadow-sm",
                           isMe ? "mr-4 rounded-br-none" : "ml-4 rounded-bl-none"
                         )}
                       >
                         <div className="flex items-center gap-1.5 mb-1">
                           <span className="font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 text-[8px]">{msg.replyTo.senderName}</span>
                           <span className="w-1 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
-                          <span className="text-slate-400 uppercase text-[7px] font-bold">RELAY_REF</span>
+                          <span className="text-slate-400 uppercase text-[7px] font-bold italic">RE: MSG_{msg.replyTo.id.slice(-4).toUpperCase()}</span>
                         </div>
-                        <p className="text-slate-600 dark:text-slate-400 truncate font-medium italic leading-relaxed">
-                          {msg.replyTo.type === 'voice' ? '🎤 Audio transmission' : msg.replyTo.text}
+                        <p className="text-slate-500 dark:text-slate-400 truncate font-medium max-w-[200px]">
+                          {msg.replyTo.type === 'voice' ? '🎤 Voice Transmission' : msg.replyTo.text}
                         </p>
                       </motion.div>
                     )}
@@ -636,7 +660,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
         )}
 
         {/* Typing Indicators */}
-        <AnimatePresence>
+        <AnimatePresence mode="popLayout">
           {typingUsers.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 10, scale: 0.9 }}
@@ -644,16 +668,17 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
               exit={{ opacity: 0, y: 10, scale: 0.9 }}
               className="flex items-center gap-3 px-2 pt-2"
             >
-              <div className="flex gap-1.5 bg-slate-100 dark:bg-slate-900 px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="flex gap-2.5 bg-blue-50/50 dark:bg-blue-900/20 px-4 py-2.5 rounded-2xl border border-blue-100 dark:border-blue-900/30 shadow-sm backdrop-blur-sm">
                 <div className="flex gap-1 items-center">
-                  <span className="w-1 h-1 bg-blue-600 rounded-full animate-[bounce_1.4s_infinite_0ms]" />
-                  <span className="w-1 h-1 bg-blue-600 rounded-full animate-[bounce_1.4s_infinite_200ms]" />
-                  <span className="w-1 h-1 bg-blue-600 rounded-full animate-[bounce_1.4s_infinite_400ms]" />
+                  <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                  <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" />
                 </div>
-                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                <span className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 flex items-center gap-2">
                   {typingUsers.length === 1 
-                    ? `${typingUsers[0].username} is typing...` 
-                    : `${typingUsers.length} people are typing...`}
+                    ? `${typingUsers[0].username.toUpperCase()}` 
+                    : `${typingUsers.length} OPERATIVES`}
+                  <span className="text-[9px] font-bold opacity-60">IS TYPING...</span>
                 </span>
               </div>
             </motion.div>
@@ -661,21 +686,22 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
         </AnimatePresence>
 
         {/* Sending State */}
-        <AnimatePresence>
+        <AnimatePresence mode="popLayout">
           {isSending && (
             <motion.div
-              initial={{ opacity: 0, x: 40 }}
+              initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 40 }}
-              className="flex flex-col items-end max-w-[85%] ml-auto mt-6"
+              exit={{ opacity: 0, x: 20 }}
+              className="flex flex-col items-end max-w-[85%] ml-auto mt-4"
             >
-              <div className="flex items-center gap-2 mb-1.5 px-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 animate-pulse italic">
+              <div className="flex items-center gap-2 mb-1 px-1">
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                  <Loader2 size={10} className="animate-spin" />
                   Transmitting...
                 </span>
               </div>
-              <div className="px-4 py-3 rounded-2xl rounded-tr-none bg-slate-100 dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700 opacity-60 italic text-[14px]">
-                Encrypting relay packet...
+              <div className="px-4 py-3 rounded-2xl rounded-tr-none bg-slate-50 dark:bg-slate-900/50 text-slate-400 border border-slate-200 dark:border-slate-800 opacity-60 italic text-[13px] font-mono">
+                PACKET_SYNC_INIT...
               </div>
             </motion.div>
           )}

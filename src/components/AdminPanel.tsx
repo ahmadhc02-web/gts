@@ -9,6 +9,7 @@ import RealTimeMonitor from './RealTimeMonitor';
 import DistributionList from './DistributionList';
 import HighFrequencyNodes from './HighFrequencyNodes';
 import { googleSheetsService } from '../services/googleSheetsService';
+import { firebaseService } from '../lib/firebaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { AppConfig } from '../constants';
@@ -17,12 +18,12 @@ import MicVisualizer from './MicVisualizer';
 interface AdminPanelProps {
   complaints: Complaint[];
   users: UserProfile[];
-  currentUserId: string;
+  currentUser: UserProfile;
   onDeleteComplaint: (id: string) => Promise<void>;
   onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
-  onCreateUser: (username: string, pass: string, role: 'admin' | 'member') => Promise<void>;
+  onCreateUser: (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string) => Promise<void>;
   onDeleteUser: (uid: string) => Promise<void>;
   onUpdateUser: (uid: string, username: string, pass: string) => Promise<void>;
   onRegisterComplaint: (data: {
@@ -56,7 +57,7 @@ interface AdminPanelProps {
 export default function AdminPanel({
   complaints,
   users,
-  currentUserId,
+  currentUser,
   onDeleteComplaint,
   onUpdateComplaintStatus,
   onUpdateRemarks,
@@ -80,12 +81,13 @@ export default function AdminPanel({
   isMicMuted,
   onToggleMic
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor'>('complaints');
+  const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers'>('complaints');
   const [isFormVisible, setIsFormVisible] = useState(true);
   const [isChartsVisible, setIsChartsVisible] = useState(true);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newUserRole, setNewUserRole] = useState<'admin' | 'member'>('member');
+  const [newLineCode, setNewLineCode] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserProfile['role']>('member');
   const [isCreating, setIsCreating] = useState(false);
   
   // User editing state
@@ -221,8 +223,21 @@ export default function AdminPanel({
 
     setIsCreating(true);
     try {
-      await onCreateUser(trimmedName, newPassword, newUserRole);
-      setFormSuccess(`${newUserRole.charAt(0).toUpperCase() + newUserRole.slice(1)} account "${trimmedName}" created!`);
+      if (activeTab === 'dealers') {
+        if (!newLineCode.trim()) {
+          setFormError('Line Code is required for Dealer accounts.');
+          setIsCreating(false);
+          return;
+        }
+        await onCreateUser(trimmedName, newPassword, 'dealer', undefined, newLineCode.trim());
+        setFormSuccess(`Dealer account "${trimmedName}" created with Line Code: ${newLineCode}`);
+        setNewLineCode('');
+      } else {
+        // Correctly associate the new user with the dealer if the current user is a dealer or a dealer's admin
+        const effectiveDealerId = currentUser.role === 'dealer' ? currentUser.uid : currentUser.dealerId;
+        await onCreateUser(trimmedName, newPassword, newUserRole, effectiveDealerId);
+        setFormSuccess(`${newUserRole.charAt(0).toUpperCase() + newUserRole.slice(1)} account "${trimmedName}" created!`);
+      }
       setNewUsername('');
       setNewPassword('');
       setNewUserRole('member');
@@ -374,6 +389,7 @@ export default function AdminPanel({
             { id: 'clients', label: 'User Details', icon: Contact },
             { id: 'nodes', label: 'Active Nodes', icon: Flame },
             { id: 'users', label: 'Link Access', icon: Users },
+            ...(currentUser.role === 'super_admin' ? [{ id: 'dealers', label: 'Dealer Section', icon: ShieldAlert }] : []),
             { id: 'config', label: 'Workflow Config', icon: Settings },
             { id: 'settings', label: 'Security', icon: Shield },
             { id: 'integrations', label: 'Cloud Connection', icon: CloudUpload },
@@ -415,7 +431,7 @@ export default function AdminPanel({
             onUpdateRemarks={onUpdateRemarks}
             onEdit={onUpdateComplaint}
             isAdmin={true}
-            currentUserId={currentUserId}
+            currentUser={currentUser}
             forcedStatusFilter={forcedStatus}
             forcedPriorityFilter={forcedPriority}
             forcedCategoryFilter={forcedCategory}
@@ -463,6 +479,7 @@ export default function AdminPanel({
                       }} 
                       isLoading={isLoading || false} 
                       appConfig={appConfig}
+                      currentUser={currentUser}
                     />
                   </div>
                 </motion.div>
@@ -472,7 +489,7 @@ export default function AdminPanel({
         )}
 
         {activeTab === 'clients' && (
-          <ClientManagement appConfig={appConfig} isAdmin={true} currentUserId={currentUserId} currentUserName={users.find(u => u.uid === currentUserId)?.username || 'Admin'} />
+          <ClientManagement appConfig={appConfig} isAdmin={true} currentUser={currentUser} currentUserName={users.find(u => u.uid === currentUser.uid)?.username || 'Admin'} />
         )}
 
         {activeTab === 'nodes' && (
@@ -577,7 +594,18 @@ export default function AdminPanel({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                    {users.map((user) => (
+                    {users
+                      .filter(u => {
+                        const isNotDealer = u.role !== 'dealer';
+                        const isNotSelfSuperAdmin = u.role !== 'super_admin' || u.uid === currentUser.uid;
+                        
+                        // Show all users to super_admin and admin, but for dealers only show their own network.
+                        const belongsToMyTenant = currentUser.role === 'super_admin' || currentUser.role === 'admin' || u.dealerId === currentUser.uid;
+                        
+                        return isNotDealer && isNotSelfSuperAdmin && belongsToMyTenant;
+                      })
+                      .sort((a, b) => b.createdAt - a.createdAt)
+                      .map((user) => (
                       <tr key={user.uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
                         <td className="px-6 py-4">
                           {editingUserId === user.uid ? (
@@ -631,7 +659,7 @@ export default function AdminPanel({
                               </>
                             ) : (
                               <>
-                                {user.uid !== currentUserId && (
+                                {user.uid !== currentUser.uid && (
                                   <button
                                     onClick={() => {
                                       window.dispatchEvent(new CustomEvent('openChat', { detail: { uid: user.uid } }));
@@ -649,7 +677,7 @@ export default function AdminPanel({
                                 >
                                   <Pencil size={16} />
                                 </button>
-                                {user.uid !== currentUserId ? (
+                                {user.uid !== currentUser.uid ? (
                                   deletingId === user.uid ? (
                                     <>
                                       <button
@@ -852,6 +880,193 @@ export default function AdminPanel({
               >
                 Execute Global Purge
               </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'dealers' && currentUser.role === 'super_admin' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-1">
+              <div className="business-card p-8 bg-white dark:bg-slate-950 border-emerald-500/20 ring-1 ring-emerald-500/10">
+                <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3 text-emerald-600 dark:text-emerald-400">
+                  <ShieldAlert size={20} />
+                  Dealer Setup
+                </h3>
+                {formError && (
+                  <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold">
+                    {formError}
+                  </div>
+                )}
+                {formSuccess && (
+                  <div className="mb-6 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
+                    {formSuccess}
+                  </div>
+                )}
+                <form onSubmit={handleCreateUser} className="space-y-6">
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>Dealer Username</label>
+                    <input
+                      type="text"
+                      value={newUsername}
+                      onChange={(e) => setNewUsername(e.target.value)}
+                      placeholder="e.g. dealer_north"
+                      className={inputClasses}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>Dealer Passkey</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className={inputClasses}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>Dealer Line Code (Unique ID)</label>
+                    <input
+                      type="text"
+                      value={newLineCode}
+                      onChange={(e) => setNewLineCode(e.target.value)}
+                      placeholder="e.g. DLR-99"
+                      className={cn(inputClasses, "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/10")}
+                      required
+                    />
+                    <p className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-tight">Important: This code will isolate the dealer's workspace.</p>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isCreating}
+                    className="w-full py-4 rounded-lg bg-emerald-600 text-white font-bold uppercase tracking-widest text-[11px] shadow-lg hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-emerald-500/20"
+                  >
+                    {isCreating ? 'Provisioning...' : 'Authorize New Dealer Account'}
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <div className="lg:col-span-2">
+              <div className="business-card overflow-hidden bg-white dark:bg-slate-950">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+                   <h4 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500">Authorized Dealers Registry</h4>
+                </div>
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 dark:bg-slate-900/50">
+                    <tr className="border-b border-slate-100 dark:border-slate-800">
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Line Code</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Node Status</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Protocol</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                    {users.filter(u => u.role === 'dealer').length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-12 text-center text-slate-400 uppercase font-black tracking-widest text-xs">No Dealers Authorized in Registry</td>
+                      </tr>
+                    ) : (
+                      users.filter(u => u.role === 'dealer').map((dealer) => (
+                        <tr key={dealer.uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
+                          <td className="px-6 py-4">
+                            {editingUserId === dealer.uid ? (
+                              <div className="space-y-2">
+                                <input
+                                  type="text"
+                                  value={editUsername}
+                                  onChange={(e) => setEditUsername(e.target.value)}
+                                  className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
+                                />
+                                <input
+                                  type="password"
+                                  value={editPassword}
+                                  onChange={(e) => setEditPassword(e.target.value)}
+                                  placeholder="New Password"
+                                  className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
+                                />
+                              </div>
+                            ) : (
+                              <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{dealer.username}</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-black rounded border border-emerald-200 dark:border-emerald-800/50">
+                              {dealer.lineCode}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span className="text-[10px] font-black text-slate-400 uppercase">Operational</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                             <div className="flex justify-end gap-2">
+                               {editingUserId === dealer.uid ? (
+                                 <>
+                                   <button
+                                     onClick={() => handleUpdateUser(dealer.uid)}
+                                     disabled={isUpdating}
+                                     className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all"
+                                     title="Save Changes"
+                                   >
+                                     <Check size={16} />
+                                   </button>
+                                   <button
+                                     onClick={handleCancelEditUser}
+                                     className="p-2 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/50 rounded-lg transition-all"
+                                     title="Cancel"
+                                   >
+                                     <X size={16} />
+                                   </button>
+                                 </>
+                               ) : (
+                                 <>
+                                   <button
+                                      onClick={() => handleStartEditUser(dealer)}
+                                      className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all"
+                                      title="Edit Dealer"
+                                    >
+                                      <Pencil size={16} />
+                                    </button>
+                                    {deletingId === dealer.uid ? (
+                                      <>
+                                        <button
+                                          onClick={async () => {
+                                            try { await onDeleteUser(dealer.uid); setDeletingId(null); } catch (err) { toast.error('Unauthorized action'); }
+                                          }}
+                                          className="px-3 py-1.5 text-[9px] font-black text-white bg-red-600 rounded-md hover:bg-red-700 shadow-md shadow-red-500/20 uppercase tracking-widest"
+                                        >
+                                          Confirm
+                                        </button>
+                                        <button
+                                          onClick={() => setDeletingId(null)}
+                                          className="px-3 py-1.5 text-[9px] font-bold text-slate-400 hover:text-slate-900 uppercase tracking-widest"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        onClick={() => setDeletingId(dealer.uid)}
+                                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
+                                        title="Revoke Permission"
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    )}
+                                 </>
+                               )}
+                             </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

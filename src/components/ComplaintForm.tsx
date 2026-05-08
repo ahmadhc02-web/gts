@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned, Layers } from 'lucide-react';
-import { ComplaintStatus, ComplaintCategory, ComplaintPriority, Client } from '../types';
+import { ComplaintStatus, ComplaintCategory, ComplaintPriority, Client, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { Network, Wifi, ShieldAlert, Zap, Search } from 'lucide-react';
 import { AppConfig } from '../constants';
@@ -23,9 +23,10 @@ interface ComplaintFormProps {
   }) => Promise<void>;
   isLoading: boolean;
   appConfig: AppConfig;
+  currentUser: UserProfile;
 }
 
-export default function ComplaintForm({ onSubmit, isLoading, appConfig }: ComplaintFormProps) {
+export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentUser }: ComplaintFormProps) {
   const [customerName, setCustomerName] = useState('');
   const [customerUsername, setCustomerUsername] = useState('');
   const [area, setArea] = useState('');
@@ -53,11 +54,12 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig }: Compla
   }, []);
 
   useEffect(() => {
+    const tenantId = firebaseService.getReadTenantId(currentUser);
     const unsubscribe = firebaseService.subscribeClients((data) => {
       setClients(data);
-    });
+    }, tenantId);
     return () => unsubscribe();
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     if (appConfig.categories.length > 0 && !category) setCategory(appConfig.categories[0]);

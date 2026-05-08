@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, Loader2, Key } from 'lucide-react';
 import { cn } from '../lib/utils';
 import NetworkBackground from './NetworkBackground';
 
 interface LoginFormProps {
-  onLogin: (username: string, pass: string) => Promise<void>;
+  onLogin: (username: string, pass: string, lineCode?: string) => Promise<void>;
   isLoading: boolean;
   error?: string | null;
 }
@@ -13,12 +13,13 @@ interface LoginFormProps {
 export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [lineCode, setLineCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) return;
-    await onLogin(username, password);
+    await onLogin(username, password, lineCode || undefined);
   };
 
   const inputClasses = "w-full pl-10 pr-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600 font-medium";
@@ -33,18 +34,28 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
         className="relative z-10 w-full max-w-md mx-auto business-card p-10 bg-white dark:bg-slate-950 shadow-2xl"
       >
         <div className="text-center mb-10">
-          <div className="relative group w-20 h-20 mx-auto mb-6">
-            <div className="absolute inset-0 bg-brand-accent rounded-2xl blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
-            <div className="relative w-20 h-20 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 dark:from-brand-accent dark:via-blue-500 dark:to-brand-accent rounded-2xl flex items-center justify-center shadow-2xl border border-white/10 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-              <span className="text-white font-black text-3xl tracking-tighter italic leading-none ml-px">GTS</span>
-              <div className="absolute top-0 right-0 w-3 h-3 bg-brand-accent-light dark:bg-white/30 rounded-bl-full" />
-              <div className="absolute bottom-0 left-0 w-3 h-3 bg-brand-accent-light dark:bg-white/30 rounded-tr-full" />
+          <div className="relative group w-20 h-20 mx-auto mb-8">
+            <div className="absolute -inset-4 bg-gradient-to-r from-brand-accent via-blue-500 to-emerald-500 rounded-3xl blur-2xl opacity-20 group-hover:opacity-50 transition-opacity duration-700 animate-pulse" />
+            <div className="relative w-20 h-20 bg-slate-950 rounded-2xl flex items-center justify-center shadow-2xl border border-white/10 overflow-hidden group/logo">
+              <div className="absolute inset-0 opacity-40">
+                <div className="absolute top-0 -left-1/4 w-1/2 h-1/2 bg-brand-accent/40 blur-2xl rounded-full animate-blob" />
+                <div className="absolute bottom-0 -right-1/4 w-1/2 h-1/2 bg-blue-500/40 blur-2xl rounded-full animate-blob animation-delay-2000" />
+              </div>
+              <div className="relative flex items-baseline">
+                <span className="text-white font-black text-4xl sm:text-5xl tracking-tighter italic leading-none drop-shadow-lg">G</span>
+                <span className="text-brand-accent font-black text-4xl sm:text-5xl tracking-tighter italic leading-none drop-shadow-lg">TS</span>
+              </div>
+              {/* Corner Accents */}
+              <div className="absolute top-2 left-2 w-3 h-0.5 bg-white/20 rounded-full" />
+              <div className="absolute top-2 left-2 w-0.5 h-3 bg-white/20 rounded-full" />
+              <div className="absolute bottom-2 right-2 w-3 h-0.5 bg-white/20 rounded-full" />
+              <div className="absolute bottom-2 right-2 w-0.5 h-3 bg-white/20 rounded-full" />
             </div>
           </div>
-          <h2 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white uppercase leading-none">GTS TEAM</h2>
-          <p className="text-slate-600 dark:text-slate-400 text-xs uppercase font-black tracking-[0.2em] mt-3">
-            Secure System
+          <h2 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white uppercase leading-none font-mono">Operations Console</h2>
+          <p className="text-brand-accent text-[10px] uppercase font-bold tracking-[0.4em] mt-3 flex items-center justify-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-ping" />
+            Access Restricted
           </p>
         </div>
 
@@ -61,6 +72,21 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
                 placeholder="Username"
                 className={inputClasses}
                 required
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Network Code (Optional)</label>
+            <div className="relative">
+              <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                id="line-code-input"
+                type="text"
+                value={lineCode}
+                onChange={(e) => setLineCode(e.target.value)}
+                placeholder="Ex: DEALER-101"
+                className={inputClasses}
               />
             </div>
           </div>

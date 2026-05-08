@@ -96,34 +96,33 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none" />
         
         <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-2 relative z-10">
-          <div className="flex items-center">
-            <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">
-              {reportType === 'monthly' ? 'Monthly Data' : 'Daily Data'}
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-6 bg-blue-600 rounded-full" />
+            <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">
+              Tactical Analysis <span className="text-slate-400 dark:text-slate-500 font-normal">/</span> <span className="text-blue-600">{reportType === 'monthly' ? 'Monthly' : 'Daily'}</span>
             </h3>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-1 p-0.5 bg-slate-100/50 dark:bg-slate-800/50 rounded-lg border border-slate-200/50 dark:border-slate-700/50 scale-90 sm:scale-100">
+          <div className="flex items-center">
+            <div className="flex items-center p-1 bg-slate-200/50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 backdrop-blur-md">
               <button
                 onClick={() => setReportType('daily')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
+                className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-300 ${
                   reportType === 'daily' 
-                    ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' 
-                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-lg shadow-blue-500/10' 
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                <Clock size={12} />
                 Daily
               </button>
               <button
                 onClick={() => setReportType('monthly')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
+                className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-300 ${
                   reportType === 'monthly' 
-                    ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' 
-                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-lg shadow-blue-500/10' 
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                <Calendar size={12} />
                 Monthly
               </button>
             </div>
@@ -131,9 +130,10 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         </div>
 
         <div className="flex-1 w-full mt-4 h-full relative z-10 -ml-4 group">
-          {/* Enhanced Chart Frame Decoration */}
-          <div className="absolute inset-x-4 bottom-0 h-px bg-gradient-to-r from-transparent via-blue-500/40 to-transparent z-10" />
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-24 h-1 bg-blue-600/20 rounded-full blur-sm z-10 animate-pulse" />
+          {/* Enhanced Chart Frame Decoration - Pointer Line */}
+          <div className="absolute inset-x-8 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent z-20 opacity-50" />
+          <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-32 h-[8px] bg-blue-600/30 rounded-full blur-md z-10 animate-pulse" />
+          <div className="absolute bottom-[-1px] left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-500 rounded-full z-30" />
           
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>

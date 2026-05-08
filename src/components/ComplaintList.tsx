@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned } from 'lucide-react';
-import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority } from '../types';
+import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile } from '../types';
 import { cn } from '../lib/utils';
 import { Network, ShieldAlert, Zap, Layers } from 'lucide-react';
 import { googleSheetsService } from '../services/googleSheetsService';
@@ -17,7 +17,7 @@ interface ComplaintListProps {
   onUpdateRemarks?: (id: string, remarks: string) => Promise<void>;
   onEdit?: (id: string, data: Partial<Complaint>) => Promise<void>;
   isAdmin?: boolean;
-  currentUserId?: string;
+  currentUser: UserProfile;
   forcedStatusFilter?: ComplaintStatus | 'all';
   forcedPriorityFilter?: ComplaintPriority | 'all';
   forcedCategoryFilter?: ComplaintCategory | 'all';
@@ -31,12 +31,13 @@ export default function ComplaintList({
   onUpdateRemarks,
   onEdit,
   isAdmin,
-  currentUserId,
+  currentUser,
   forcedStatusFilter = 'all',
   forcedPriorityFilter = 'all',
   forcedCategoryFilter = 'all',
   appConfig
 }: ComplaintListProps) {
+  const currentUserId = currentUser.uid;
   const [startDate, setStartDate] = React.useState('');
   const [endDate, setEndDate] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<ComplaintStatus | 'all'>(forcedStatusFilter);
