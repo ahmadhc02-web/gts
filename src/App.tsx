@@ -36,6 +36,8 @@ export default function App() {
     }
   }, [isOnline]);
 
+  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
+
   const [user, setUser] = useState<UserProfile | null>(() => {
     const savedUser = localStorage.getItem('complaint_app_user');
     return savedUser ? JSON.parse(savedUser) : null;
@@ -337,10 +339,11 @@ export default function App() {
       }
     };
 
-    import('firebase/auth').then(({ onAuthStateChanged }) => {
+    import('firebase/auth').then(({ onAuthStateChanged, signInAnonymously }) => {
       const unsubscribeAuth = onAuthStateChanged(auth, (userAuth) => {
         if (!authReady) {
           authReady = true;
+          setFirebaseAuthReady(true);
           init(userAuth);
         }
       });
@@ -352,6 +355,7 @@ export default function App() {
         console.warn("Auth initialization restricted:", authErr);
         if (!authReady) {
           authReady = true;
+          setFirebaseAuthReady(true);
           init(null);
         }
       });
@@ -367,7 +371,7 @@ export default function App() {
   // Real-time user updates for presence and management
   useEffect(() => {
     // Only subscribe to real-time user changes when logged in, or we'll get permission errors
-    if (!user) return;
+    if (!user || !firebaseAuthReady) return;
     
     const tenantId = firebaseService.getReadTenantId(user);
     
@@ -406,7 +410,7 @@ export default function App() {
 
   // Fetch complaints only when a user is logged in
   useEffect(() => {
-    if (!user) {
+    if (!user || !firebaseAuthReady) {
       setComplaints([]);
       return;
     }
@@ -422,7 +426,7 @@ export default function App() {
 
   // Centralized Notifications Subscription
   useEffect(() => {
-    if (!user) return;
+    if (!user || !firebaseAuthReady) return;
     
     const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
     let isInitialLoad = true;
@@ -486,7 +490,7 @@ export default function App() {
 
   // Global Chat Notifications
   useEffect(() => {
-    if (!user) return;
+    if (!user || !firebaseAuthReady) return;
     
     let isInitialLoad = true;
     let lastMessageId = '';
@@ -795,8 +799,12 @@ export default function App() {
         onToggleAudio={handleToggleAudio}
         onResetBanner={handleResetBanner}
       >
-
-        {!user ? (
+        {!firebaseAuthReady ? (
+          <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-400">
+            <div className="w-8 h-8 border-2 border-brand-accent border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-sm font-mono tracking-wider">ESTABLISHING SECURE UPLINK...</p>
+          </div>
+        ) : !user ? (
         <LoginForm onLogin={handleLogin} isLoading={isLoading} error={error} />
       ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer') ? (
         <AdminPanel
