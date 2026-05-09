@@ -12,10 +12,11 @@ import {
   onSnapshot,
   serverTimestamp,
   getDocFromServer,
-  or
+  or,
+  and
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification } from '../types';
+import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification, ChatGroup } from '../types';
 import { safeStringify } from './utils';
 
 enum OperationType {
@@ -120,19 +121,33 @@ export const firebaseService = {
     return user.dealerId || 'main';
   },
 
+  // Utility to ensure auth is ready before performing operations
+  waitForAuth: async (): Promise<any> => {
+    return new Promise((resolve) => {
+      const unsubscribe = auth.onAuthStateChanged((user) => {
+        if (user) {
+          unsubscribe();
+          resolve(user);
+        }
+      });
+      // Also check immediate current user
+      if (auth.currentUser) {
+        unsubscribe();
+        resolve(auth.currentUser);
+      }
+    });
+  },
+
   // --- Users ---
   getUsers: async (dealerId?: string): Promise<UserProfile[]> => {
     const path = 'users';
     try {
-      const isMain = dealerId === 'main';
-      let q = query(collection(db, path));
-      if (dealerId && !isMain) {
-        q = query(collection(db, path), or(where('dealerId', '==', dealerId), where('uid', '==', dealerId)));
-      }
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(collection(db, path));
       let users = snapshot.docs.map(doc => doc.data() as UserProfile);
       
-      if (isMain) {
+      if (dealerId && dealerId !== 'main') {
+        users = users.filter(u => u.dealerId === dealerId || u.uid === dealerId);
+      } else if (dealerId === 'main') {
         users = users.filter(u => !u.dealerId || u.dealerId === 'main');
       }
       
@@ -158,16 +173,16 @@ export const firebaseService = {
   getNetworkOwnerByLineCode: async (lineCode: string): Promise<UserProfile | null> => {
     const path = 'users';
     try {
-      const q = query(collection(db, path), where('lineCode', '==', lineCode));
-      const snapshot = await getDocs(q);
-      return snapshot.empty ? null : snapshot.docs[0].data() as UserProfile;
+      const snapshot = await getDocs(collection(db, path));
+      const users = snapshot.docs.map(doc => doc.data() as UserProfile);
+      return users.find(u => u.lineCode === lineCode) || null;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
       return null;
     }
   },
 
-  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorName?: string, dealerId: string = 'main', lineCode?: string): Promise<UserProfile> => {
+  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string): Promise<UserProfile> => {
     const path = `users/${uid}`;
     const newUser: UserProfile = {
       uid,
@@ -176,6 +191,8 @@ export const firebaseService = {
       role,
       createdAt: Date.now(),
       dealerId,
+      createdBy: authorId,
+      createdByName: authorName,
       ...(lineCode && { lineCode })
     };
     try {
@@ -243,6 +260,8 @@ export const firebaseService = {
   updateUserPresence: async (uid: string) => {
     const path = `users/${uid}`;
     try {
+      // Don't wait for auth here, just skip if not ready
+      if (!auth.currentUser) return;
       const userRef = doc(db, 'users', uid);
       await updateDoc(userRef, { lastActive: Date.now() });
     } catch (error) {
@@ -253,6 +272,7 @@ export const firebaseService = {
   setTypingStatus: async (uid: string, username: string, isTyping: boolean) => {
     const path = `typing/${uid}`;
     try {
+      if (!auth.currentUser) return;
       if (isTyping) {
         await setDoc(doc(db, 'typing', uid), {
           uid,
@@ -285,21 +305,21 @@ export const firebaseService = {
 
   subscribeUsers: (callback: (users: UserProfile[]) => void, dealerId?: string) => {
     const path = 'users';
-    const isMain = dealerId === 'main';
-    let q = query(collection(db, path));
-    if (dealerId && !isMain) {
-      q = query(collection(db, path), or(where('dealerId', '==', dealerId), where('uid', '==', dealerId)));
-    }
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(collection(db, path), (snapshot) => {
       let users = snapshot.docs.map(doc => doc.data() as UserProfile);
       
-      if (isMain) {
+      if (dealerId && dealerId !== 'main') {
+        users = users.filter(u => u.dealerId === dealerId || u.uid === dealerId);
+      } else if (dealerId === 'main') {
         users = users.filter(u => !u.dealerId || u.dealerId === 'main');
       }
       
       callback(users);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      // Only handle error if we ARE signed in
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.LIST, path);
+      }
     });
   },
 
@@ -331,14 +351,13 @@ export const firebaseService = {
   clearAllNotifications: async (dealerId?: string) => {
     const path = 'notifications';
     try {
-      let q = query(collection(db, path));
-      if (dealerId) {
-        q = query(collection(db, path), where('dealerId', '==', dealerId));
-      }
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(collection(db, path));
       const batch: Promise<any>[] = [];
       snapshot.docs.forEach(docSnap => {
-        batch.push(deleteDoc(docSnap.ref));
+        const data = docSnap.data();
+        if (!dealerId || data.dealerId === dealerId) {
+          batch.push(deleteDoc(docSnap.ref));
+        }
       });
       await Promise.all(batch);
     } catch (error) {
@@ -348,19 +367,16 @@ export const firebaseService = {
 
   subscribeNotifications: (callback: (notifications: Notification[]) => void, dealerId?: string) => {
     const path = 'notifications';
-    const isMain = dealerId === 'main';
-    let q = query(collection(db, path), orderBy('createdAt', 'desc'));
-    if (dealerId && !isMain) {
-      q = query(collection(db, path), where('dealerId', '==', dealerId), orderBy('createdAt', 'desc'));
-    }
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(collection(db, path), (snapshot) => {
       let notifications = snapshot.docs.map(doc => doc.data() as Notification);
       
-      if (isMain) {
+      if (dealerId && dealerId !== 'main') {
+        notifications = notifications.filter(n => n.dealerId === dealerId);
+      } else if (dealerId === 'main') {
         notifications = notifications.filter(n => !n.dealerId || n.dealerId === 'main');
       }
       
-      callback(notifications);
+      callback(notifications.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
     }, (error) => {
       console.error('Subscription error for notifications:', error instanceof Error ? error.message : String(error));
       handleFirestoreError(error, OperationType.LIST, path);
@@ -371,19 +387,16 @@ export const firebaseService = {
   getComplaints: async (dealerId?: string): Promise<Complaint[]> => {
     const path = 'complaints';
     try {
-      const isMain = dealerId === 'main';
-      let q = query(collection(db, path), orderBy('createdAt', 'desc'));
-      if (dealerId && !isMain) {
-        q = query(collection(db, path), where('dealerId', '==', dealerId), orderBy('createdAt', 'desc'));
-      }
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(collection(db, path));
       let complaints = snapshot.docs.map(doc => doc.data() as Complaint);
       
-      if (isMain) {
+      if (dealerId && dealerId !== 'main') {
+        complaints = complaints.filter(c => c.dealerId === dealerId);
+      } else if (dealerId === 'main') {
         complaints = complaints.filter(c => !c.dealerId || c.dealerId === 'main');
       }
       
-      return complaints;
+      return complaints.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
       return [];
@@ -496,19 +509,16 @@ export const firebaseService = {
 
   subscribeComplaints: (callback: (complaints: Complaint[]) => void, dealerId?: string) => {
     const path = 'complaints';
-    const isMain = dealerId === 'main';
-    let q = query(collection(db, path), orderBy('createdAt', 'desc'));
-    if (dealerId && !isMain) {
-      q = query(collection(db, path), where('dealerId', '==', dealerId), orderBy('createdAt', 'desc'));
-    }
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(collection(db, path), (snapshot) => {
       let complaints = snapshot.docs.map(doc => doc.data() as Complaint);
       
-      if (isMain) {
+      if (dealerId && dealerId !== 'main') {
+        complaints = complaints.filter(c => c.dealerId === dealerId);
+      } else if (dealerId === 'main') {
         complaints = complaints.filter(c => !c.dealerId || c.dealerId === 'main');
       }
       
-      callback(complaints);
+      callback(complaints.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, path);
     });
@@ -561,7 +571,7 @@ export const firebaseService = {
   },
 
   // --- Chat ---
-  sendMessage: async (sender: UserProfile, text: string, replyTo?: ChatMessage['replyTo'], recipientId?: string): Promise<ChatMessage> => {
+  sendMessage: async (sender: UserProfile, text: string, replyTo?: ChatMessage['replyTo'], recipientId?: string, isGroup?: boolean): Promise<ChatMessage> => {
     const id = `msg_${Math.random().toString(36).substr(2, 12)}`;
     const path = `chat/${id}`;
     const now = Date.now();
@@ -579,6 +589,7 @@ export const firebaseService = {
       },
       replyTo,
       recipientId,
+      isGroup,
       dealerId: tenantId
     } as any);
 
@@ -591,7 +602,7 @@ export const firebaseService = {
     }
   },
 
-  sendVoiceMessage: async (sender: UserProfile, audioBase64: string, duration: number, replyTo?: ChatMessage['replyTo'], recipientId?: string): Promise<ChatMessage> => {
+  sendVoiceMessage: async (sender: UserProfile, audioBase64: string, duration: number, replyTo?: ChatMessage['replyTo'], recipientId?: string, isGroup?: boolean): Promise<ChatMessage> => {
     const id = `msg_${Math.random().toString(36).substr(2, 12)}`;
     const path = `chat/${id}`;
     const now = Date.now();
@@ -611,6 +622,7 @@ export const firebaseService = {
       },
       replyTo,
       recipientId,
+      isGroup,
       dealerId: tenantId
     } as any);
 
@@ -623,12 +635,56 @@ export const firebaseService = {
     }
   },
 
-  markMessageAsSeen: async (messageId: string, user: UserProfile) => {
+  createGroup: async (name: string, members: string[], creator: UserProfile): Promise<ChatGroup> => {
+    const id = `group_${Math.random().toString(36).substr(2, 9)}`;
+    const path = `groups/${id}`;
+    const tenantId = firebaseService.getTenantId(creator);
+
+    const newGroup: ChatGroup = {
+      id,
+      name,
+      members: Array.from(new Set([...members, creator.uid])),
+      createdBy: creator.uid,
+      createdAt: Date.now(),
+      dealerId: tenantId
+    };
+
+    try {
+      await setDoc(doc(db, 'groups', id), newGroup);
+      return newGroup;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+      throw error;
+    }
+  },
+
+  subscribeGroups: (callback: (groups: ChatGroup[]) => void, userId: string, dealerId?: string) => {
+    const path = 'groups';
+    const q = query(collection(db, path), where('members', 'array-contains', userId));
+    
+    return onSnapshot(q, (snapshot) => {
+      let groups = snapshot.docs.map(doc => doc.data() as ChatGroup);
+      
+      if (dealerId) {
+        if (dealerId === 'main') {
+          groups = groups.filter(g => !g.dealerId || g.dealerId === 'main');
+        } else {
+          groups = groups.filter(g => g.dealerId === dealerId);
+        }
+      }
+      
+      callback(groups);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    });
+  },
+
+  markAsSeen: async (messageId: string, uid: string, username: string) => {
     const path = `chat/${messageId}`;
     try {
       const msgRef = doc(db, 'chat', messageId);
       await updateDoc(msgRef, {
-        [`seenBy.${user.uid}`]: { username: user.username, time: Date.now() }
+        [`seenBy.${uid}`]: { username, time: Date.now() }
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
@@ -647,14 +703,46 @@ export const firebaseService = {
   clearAllMessages: async (dealerId?: string) => {
     const path = 'chat';
     try {
-      let q = query(collection(db, path));
-      if (dealerId) {
-        q = query(collection(db, path), where('dealerId', '==', dealerId));
-      }
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(collection(db, path));
       const batch: Promise<any>[] = [];
       snapshot.docs.forEach(docSnap => {
-        batch.push(deleteDoc(docSnap.ref));
+        const data = docSnap.data();
+        if (!dealerId || data.dealerId === dealerId) {
+          batch.push(deleteDoc(docSnap.ref));
+        }
+      });
+      await Promise.all(batch);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  },
+
+  deleteGroup: async (groupId: string): Promise<void> => {
+    const path = `groups/${groupId}`;
+    try {
+      await deleteDoc(doc(db, 'groups', groupId));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  },
+
+  clearMessagesByScope: async (userId: string, scopeId: string, isGroup: boolean) => {
+    const path = 'chat';
+    try {
+      const snapshot = await getDocs(collection(db, path));
+      const batch: Promise<any>[] = [];
+      snapshot.docs.forEach(docSnap => {
+        const msg = docSnap.data() as ChatMessage;
+        const matches = isGroup 
+          ? (msg.isGroup && msg.recipientId === scopeId)
+          : (!msg.isGroup && (
+              (msg.senderId === userId && msg.recipientId === scopeId) ||
+              (msg.senderId === scopeId && msg.recipientId === userId)
+            ));
+        
+        if (matches) {
+          batch.push(deleteDoc(docSnap.ref));
+        }
       });
       await Promise.all(batch);
     } catch (error) {
@@ -664,19 +752,16 @@ export const firebaseService = {
 
   subscribeMessages: (callback: (messages: ChatMessage[]) => void, dealerId?: string) => {
     const path = 'chat';
-    const isMain = dealerId === 'main';
-    let q = query(collection(db, path), orderBy('createdAt', 'asc'));
-    if (dealerId && !isMain) {
-      q = query(collection(db, path), where('dealerId', '==', dealerId), orderBy('createdAt', 'asc'));
-    }
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(collection(db, path), (snapshot) => {
       let messages = snapshot.docs.map(doc => doc.data() as ChatMessage);
       
-      if (isMain) {
+      if (dealerId && dealerId !== 'main') {
+        messages = messages.filter(m => m.dealerId === dealerId);
+      } else if (dealerId === 'main') {
         messages = messages.filter(m => !m.dealerId || m.dealerId === 'main');
       }
       
-      callback(messages);
+      callback(messages.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, path);
     });
@@ -685,19 +770,16 @@ export const firebaseService = {
   getClients: async (dealerId?: string): Promise<Client[]> => {
     const path = 'clients';
     try {
-      const isMain = dealerId === 'main';
-      let q = query(collection(db, path), orderBy('createdAt', 'desc'));
-      if (dealerId && !isMain) {
-        q = query(collection(db, path), where('dealerId', '==', dealerId), orderBy('createdAt', 'desc'));
-      }
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(collection(db, path));
       let clients = snapshot.docs.map(doc => doc.data() as Client);
       
-      if (isMain) {
+      if (dealerId && dealerId !== 'main') {
+        clients = clients.filter(c => c.dealerId === dealerId);
+      } else if (dealerId === 'main') {
         clients = clients.filter(c => !c.dealerId || c.dealerId === 'main');
       }
       
-      return clients;
+      return clients.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
       return [];
@@ -761,17 +843,15 @@ export const firebaseService = {
 
   subscribeClients: (callback: (clients: Client[]) => void, dealerId?: string) => {
     const path = 'clients';
-    const isMain = dealerId === 'main';
-    let q = query(collection(db, path));
-    if (dealerId && !isMain) {
-      q = query(collection(db, path), where('dealerId', '==', dealerId));
-    }
-    
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(collection(db, path), (snapshot) => {
       let clients = snapshot.docs.map(doc => ({ ...doc.data() as Client }));
       
-      if (isMain) {
-        clients = clients.filter(c => !c.dealerId || c.dealerId === 'main');
+      if (dealerId) {
+        if (dealerId === 'main') {
+          clients = clients.filter(c => !c.dealerId || c.dealerId === 'main');
+        } else {
+          clients = clients.filter(c => c.dealerId === dealerId);
+        }
       }
       
       // Robust in-memory sort to avoid composite index requirement

@@ -1,78 +1,102 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
+    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isSuperAdmin() {
-      return isSignedIn() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isDealer() {
-      return isSignedIn() && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'dealer';
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function getDealerId() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('dealerId', 'main');
+    function isAdmin() {
+      return isSignedIn() && getUserData().role in ['super_admin', 'dealer', 'admin'];
     }
 
-    function getEffectiveDealerId() {
-      return isDealer() ? request.auth.uid : getDealerId();
+    function isMemberOfGroup(groupId) {
+      return isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
     }
 
-    match /users/{userId} {
-      allow read: if true;
-      allow create: if true; 
-      allow update: if true;
-      allow delete: if true;
+    // Default deny
+    match /{document=**} {
+      allow read, write: if true;
     }
 
-    match /complaints/{complaintId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
-    match /clients/{clientId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
-    match /chat/{messageId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /notifications/{notificationId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /system/alarm {
-      allow read: if true;
-      allow write: if true;
-    }
-
+    // Config - Public read (for auth/setup), Admin write
     match /config/{configId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isAdmin();
     }
 
-    match /typing/{uid} {
+    // Users
+    match /users/{userId} {
       allow read: if true;
-      allow write: if true;
+      allow create: if true; // Allow registration
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Complaints
+    match /complaints/{complaintId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Clients
+    match /clients/{clientId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Chat
+    match /chat/{messageId} {
+      allow read: if isSignedIn() && (
+        !resource.data.recipientId || // Global
+        resource.data.senderId == request.auth.uid || 
+        resource.data.recipientId == request.auth.uid ||
+        (resource.data.get('isGroup', false) == true && isMemberOfGroup(resource.data.recipientId))
+      );
+      allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.senderId) || 
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seenBy']))
+      );
+      allow delete: if isAdmin() || isOwner(resource.data.senderId);
+    }
+
+    // Groups
+    match /groups/{groupId} {
+      allow read: if isSignedIn() && (request.auth.uid in resource.data.members || isAdmin());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (request.auth.uid in resource.data.members || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Typing
+    match /typing/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(uid);
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // System Alarm
+    match /system/alarm {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }

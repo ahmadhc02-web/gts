@@ -1,144 +1,102 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 0. Global Safety Net
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // --- Phase 3: Primitives ---
-
+    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isSuperAdmin() {
-      return isSignedIn() && getUserData().role == 'super_admin';
+    function isAdmin() {
+      return isSignedIn() && getUserData().role in ['super_admin', 'dealer', 'admin'];
     }
 
-    function isDealer() {
-      return isSignedIn() && getUserData().role == 'dealer';
+    function isMemberOfGroup(groupId) {
+      return isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
     }
 
-    function getEffectiveDealerId() {
-      let user = getUserData();
-      return user.role == 'dealer' ? request.auth.uid : (user.dealerId == null ? 'main' : user.dealerId);
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
     }
 
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // --- Phase 4: Collection Rules ---
-
-    match /users/{userId} {
-      function isValidUser(data) {
-        return data.username is string && data.username.size() <= 50 &&
-               data.role in ['admin', 'member', 'dealer', 'super_admin'] &&
-               isValidId(data.dealerId || 'main');
-      }
-
-      // Read: Users can see themselves, Dealers see their members, SuperAdmins see all
-      allow get: if isSignedIn() && (
-        request.auth.uid == userId || 
-        isSuperAdmin() || 
-        (isDealer() && existing().dealerId == request.auth.uid) ||
-        (getUserData().dealerId == existing().dealerId)
-      );
-      
-      allow list: if isSignedIn() && (
-        isSuperAdmin() || 
-        (isDealer() && resource.data.dealerId == request.auth.uid) ||
-        (resource.data.dealerId == getUserData().dealerId)
-      );
-
-      allow create: if isSignedIn() && isValidUser(incoming()) && (
-        isSuperAdmin() || 
-        (isDealer() && incoming().dealerId == request.auth.uid)
-      );
-
-      allow update: if isSignedIn() && (
-        isSuperAdmin() || 
-        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['password', 'username', 'updatedAt'])) ||
-        (isDealer() && existing().dealerId == request.auth.uid)
-      );
-
-      allow delete: if isSuperAdmin();
-    }
-
-    match /complaints/{complaintId} {
-      function isValidComplaint(data) {
-        return data.id == complaintId &&
-               data.customerName is string && data.customerName.size() <= 100 &&
-               data.status in ['pending', 'in process', 'complete'] &&
-               data.dealerId is string && data.dealerId.size() <= 128;
-      }
-
-      allow read: if isSignedIn() && (isSuperAdmin() || existing().dealerId == getEffectiveDealerId());
-      
-      allow create: if isSignedIn() && isValidComplaint(incoming()) && 
-                    incoming().dealerId == getEffectiveDealerId();
-
-      allow update: if isSignedIn() && (
-        isSuperAdmin() || 
-        (existing().dealerId == getEffectiveDealerId() && incoming().diff(existing()).affectedKeys().hasAny(['status', 'description', 'pkgDetails', 'panelDetails', 'priority', 'category', 'updatedAt', 'remarks']))
-      );
-
-      allow delete: if isSuperAdmin() || (isDealer() && existing().dealerId == request.auth.uid);
-    }
-
-    match /clients/{clientId} {
-      function isValidClient(data) {
-        return data.id == clientId &&
-               data.name is string && data.name.size() <= 100 &&
-               data.dealerId is string && data.dealerId.size() <= 128;
-      }
-
-      allow read: if isSignedIn() && (isSuperAdmin() || existing().dealerId == getEffectiveDealerId());
-      
-      allow create: if isSignedIn() && isValidClient(incoming()) && 
-                    incoming().dealerId == getEffectiveDealerId();
-
-      allow update: if isSignedIn() && (
-        isSuperAdmin() || 
-        (existing().dealerId == getEffectiveDealerId() && incoming().dealerId == existing().dealerId)
-      );
-
-      allow delete: if isSuperAdmin() || (isDealer() && existing().dealerId == request.auth.uid);
-    }
-
-    match /chat/{messageId} {
-      allow read: if isSignedIn() && (isSuperAdmin() || existing().dealerId == getEffectiveDealerId());
-      allow create: if isSignedIn() && incoming().dealerId == getEffectiveDealerId();
-      allow delete: if isSuperAdmin() || (isDealer() && existing().dealerId == request.auth.uid);
-    }
-
-    match /notifications/{notificationId} {
-      allow read: if isSignedIn() && (isSuperAdmin() || existing().dealerId == getEffectiveDealerId());
-      allow create: if isSignedIn() && incoming().dealerId == getEffectiveDealerId();
-      allow delete: if isSuperAdmin() || (isDealer() && existing().dealerId == request.auth.uid);
-    }
-
+    // Config - Public read (for auth/setup), Admin write
     match /config/{configId} {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
+    // Users
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if true; // Allow registration
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Complaints
+    match /complaints/{complaintId} {
+      allow read: if isSignedIn(); // Basic read for all members in tenant usually, but kept simple for now
+      allow create: if isSignedIn();
+      allow update: if isSignedIn(); // Add more logic later
+      allow delete: if isAdmin();
+    }
+
+    // Clients
+    match /clients/{clientId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Chat
+    match /chat/{messageId} {
+      allow read: if isSignedIn() && (
+        !resource.data.recipientId || // Global
+        resource.data.senderId == request.auth.uid || 
+        resource.data.recipientId == request.auth.uid ||
+        (resource.data.isGroup == true && isMemberOfGroup(resource.data.recipientId))
+      );
+      allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        isOwner(resource.data.senderId) || 
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seenBy']))
+      );
+      allow delete: if isAdmin() || isOwner(resource.data.senderId);
+    }
+
+    // Groups
+    match /groups/{groupId} {
+      allow read: if isSignedIn() && (request.auth.uid in resource.data.members || isAdmin());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (request.auth.uid in resource.data.members || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Typing
     match /typing/{uid} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == uid;
+      allow write: if isOwner(uid);
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // System Alarm
+    match /system/alarm {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }

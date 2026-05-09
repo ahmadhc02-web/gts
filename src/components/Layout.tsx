@@ -44,6 +44,7 @@ export default function Layout({
 }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const [isChatOpen, setIsChatOpen] = React.useState(false);
+  const [selectedChatId, setSelectedChatId] = React.useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
   const [selectedNotif, setSelectedNotif] = React.useState<Notification | null>(null);
   const isOnline = useOnlineStatus();
@@ -58,7 +59,12 @@ export default function Layout({
   }, [isOnline]);
 
   useEffect(() => {
-    const handleOpenChat = () => setIsChatOpen(true);
+    const handleOpenChat = (e: any) => {
+      setIsChatOpen(true);
+      if (e.detail && typeof e.detail === 'string') {
+        setSelectedChatId(e.detail);
+      }
+    };
     window.addEventListener('openChat', handleOpenChat);
     return () => window.removeEventListener('openChat', handleOpenChat);
   }, []);
@@ -240,9 +246,13 @@ export default function Layout({
           <Chat 
             currentUser={user} 
             users={users}
-            onClose={() => setIsChatOpen(false)} 
+            onClose={() => {
+              setIsChatOpen(false);
+              setSelectedChatId(null);
+            }} 
             isAudioMuted={isAudioMuted} 
-            isMicMuted={isMicMuted} 
+            isMicMuted={isMicMuted}
+            selectedId={selectedChatId}
           />
         )}
       </AnimatePresence>

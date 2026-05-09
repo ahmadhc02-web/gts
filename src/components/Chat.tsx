@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, User, X, MessageSquare, Clock, CheckCheck, Eye, Trash2, Smile, Paperclip, Mic, CornerUpLeft, Loader2 } from 'lucide-react';
+import { Send, User, X, MessageSquare, Clock, CheckCheck, Eye, Trash2, Smile, Paperclip, Mic, CornerUpLeft, Loader2, Plus, Users, ChevronLeft, Search, MoreVertical, LifeBuoy } from 'lucide-react';
 import EmojiPicker, { Theme, EmojiClickData } from 'emoji-picker-react';
-import { ChatMessage, UserProfile } from '../types';
+import { ChatMessage, UserProfile, ChatGroup } from '../types';
 import { firebaseService } from '../lib/firebaseService';
 import { cn } from '../lib/utils';
 import { useTheme } from '../hooks/useTheme';
@@ -17,71 +17,56 @@ interface ChatProps {
   onClose: () => void;
   isAudioMuted?: boolean;
   isMicMuted?: boolean;
+  selectedId?: string | null;
 }
 
-export default function Chat({ currentUser, users = [], onClose, isAudioMuted = false, isMicMuted = false }: ChatProps) {
+type ViewState = 'list' | 'chat' | 'create-group' | 'new-chat';
+
+export default function Chat({ currentUser, users = [], onClose, isAudioMuted = false, isMicMuted = false, selectedId }: ChatProps) {
+  const [viewState, setViewState] = useState<ViewState>('list');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [typingUsers, setTypingUsers] = useState<{ uid: string, username: string }[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [selectedScope, setSelectedScope] = useState<string>('global');
+  const [isGroupChat, setIsGroupChat] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [newGroupName, setNewGroupName] = useState<string>('');
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([currentUser.uid]);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [selectedScope, setSelectedScope] = useState<string>(currentUser.role === 'member' ? (users.find(u => u.role === 'super_admin' || u.role === 'admin')?.uid || users.find(u => u.role === 'dealer')?.uid || 'global') : 'global');
-
-  useEffect(() => {
-    if (currentUser.role === 'member' && selectedScope === 'global') {
-       const uScope = users.find(u => u.role === 'super_admin' || u.role === 'admin')?.uid || users.find(u => u.role === 'dealer')?.uid;
-       if (uScope) setSelectedScope(uScope);
-    }
-  }, [currentUser.role, users, selectedScope]);
-
-  const { theme } = useTheme();
-  const isOnline = useOnlineStatus();
+  const [deleteChatConfirm, setDeleteChatConfirm] = useState<{id: string, name: string, isGroup: boolean} | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { theme } = useTheme();
+  const isOnline = useOnlineStatus();
+
+  // Handling external chat trigger
+  useEffect(() => {
+    if (selectedId) {
+      if (selectedId === 'global') {
+        setSelectedScope('global');
+        setIsGroupChat(false);
+        setViewState('chat');
+      } else if (groups.length > 0 && groups.some(g => g.id === selectedId)) {
+        setSelectedScope(selectedId);
+        setIsGroupChat(true);
+        setViewState('chat');
+      } else if (users.length > 0 && users.some(u => u.uid === selectedId)) {
+        setSelectedScope(selectedId);
+        setIsGroupChat(false);
+        setViewState('chat');
+      }
+    }
+  }, [selectedId, groups, users]);
+
   const [viewportHeight, setViewportHeight] = useState<string>('100%');
   const [viewportTop, setViewportTop] = useState<number>(0);
-  const [isUserSelectorOpen, setIsUserSelectorOpen] = useState(false);
-
-  const isUserOnline = (lastActive?: number) => {
-    if (!lastActive) return false;
-    const fiveMinutes = 5 * 60 * 1000;
-    return Date.now() - lastActive < fiveMinutes;
-  };
-
-  // Handle Visual Viewport for mobile keyboards
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const handleResize = () => {
-      const vv = window.visualViewport;
-      if (vv) {
-        // Update height and offset from layout top
-        setViewportHeight(`${vv.height}px`);
-        setViewportTop(vv.offsetTop);
-      } else {
-        setViewportHeight('100%');
-        setViewportTop(0);
-      }
-    };
-
-    window.visualViewport?.addEventListener('resize', handleResize);
-    window.visualViewport?.addEventListener('scroll', handleResize);
-    window.addEventListener('resize', handleResize);
-    
-    // Initial sync
-    handleResize();
-
-    return () => {
-      window.visualViewport?.removeEventListener('resize', handleResize);
-      window.visualViewport?.removeEventListener('scroll', handleResize);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
 
   const QUICK_RESPONSES = [
     "Roger that. 👍",
@@ -90,44 +75,59 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     "Status updated. ✅",
     "Critical alarm! 🚨"
   ];
-  
-  useEffect(() => {
-    const handleOpenChatEvent = (e: any) => {
-      if (e.detail?.uid) {
-        setSelectedScope(e.detail.uid);
-      }
-    };
-    window.addEventListener('openChat', handleOpenChatEvent);
-    return () => window.removeEventListener('openChat', handleOpenChatEvent);
-  }, []);
 
+  const superAdmin = users.find(u => u.role === 'super_admin');
+  const isSuperAdmin = currentUser.role === 'super_admin';
+
+  // Redirect 'support' scope for regular users to Super Admin DM
   useEffect(() => {
-    const unsubscribe = firebaseService.subscribeMessages((msgs) => {
+    if (selectedScope === 'support' && !isSuperAdmin && superAdmin) {
+      setSelectedScope(superAdmin.uid);
+      setIsGroupChat(false);
+    }
+  }, [selectedScope, isSuperAdmin, superAdmin]);
+
+  // Subscription for messages, groups and typing status
+  useEffect(() => {
+    const tenantId = firebaseService.getReadTenantId(currentUser);
+
+    const unsubMessages = firebaseService.subscribeMessages((msgs) => {
       setMessages(msgs);
-      
-      msgs.forEach(msg => {
-        if (!msg.seenBy?.[currentUser.uid]) {
-          // Only mark as seen if it's a global message or current user is the intended recipient
-          if (!msg.recipientId || msg.recipientId === currentUser.uid) {
-            firebaseService.markMessageAsSeen(msg.id, currentUser);
-          }
-        }
-      });
+    }, tenantId);
+
+    const unsubTyping = firebaseService.subscribeTypingStatus((typing) => {
+      setTypingUsers(typing.filter(u => u.uid !== currentUser.uid));
     });
 
-    const unsubscribeTyping = firebaseService.subscribeTypingStatus((typing) => {
-      setTypingUsers(typing.filter(t => t.uid !== currentUser.uid));
-    });
+    const unsubGroups = firebaseService.subscribeGroups((gs) => {
+      setGroups(gs);
+    }, currentUser.uid, tenantId);
 
     return () => {
-      unsubscribe();
-      unsubscribeTyping();
+      unsubMessages();
+      unsubTyping();
+      unsubGroups();
     };
   }, [currentUser]);
 
+  // Mark messages as seen when entering a chat
+  useEffect(() => {
+    if (viewState === 'chat' && messages.length > 0) {
+      const unseenMsgs = messages.filter(msg => {
+        if (selectedScope === 'global' || selectedScope === 'support') return !msg.recipientId && !msg.seenBy?.[currentUser.uid];
+        if (isGroupChat) return msg.isGroup && msg.recipientId === selectedScope && !msg.seenBy?.[currentUser.uid];
+        return !msg.isGroup && msg.senderId === selectedScope && msg.recipientId === currentUser.uid && !msg.seenBy?.[currentUser.uid];
+      });
+
+      unseenMsgs.forEach(msg => {
+        firebaseService.markAsSeen(msg.id, currentUser.uid, currentUser.username);
+      });
+    }
+  }, [viewState, messages, selectedScope, isGroupChat, currentUser]);
+
   // Handle typing status
   useEffect(() => {
-    if (newMessage.trim() === '') {
+    if (newMessage.trim() === '' || viewState !== 'chat') {
       firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false);
       return;
     }
@@ -139,18 +139,49 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     }, 3000);
 
     return () => clearTimeout(timeout);
-  }, [newMessage, currentUser]);
+  }, [newMessage, currentUser, viewState]);
 
+  // Handle openChat custom event
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: 'smooth'
-      });
-    }
-  }, [messages, isRecording, replyTo, selectedScope, typingUsers]);
+    const handleOpenChatEvent = (e: any) => {
+      if (e.detail?.uid) {
+        setSelectedScope(e.detail.uid);
+        setIsGroupChat(!!e.detail.isGroup);
+        setViewState('chat');
+      }
+    };
+    window.addEventListener('openChat', handleOpenChatEvent as EventListener);
+    return () => window.removeEventListener('openChat', handleOpenChatEvent as EventListener);
+  }, []);
 
-  // Handle clicking outside emoji picker to close it
+  // Handle Visual Viewport for mobile keyboards
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleResize = () => {
+      const vv = window.visualViewport;
+      if (vv) {
+        setViewportHeight(`${vv.height}px`);
+        setViewportTop(vv.offsetTop);
+      } else {
+        setViewportHeight('100%');
+        setViewportTop(0);
+      }
+    };
+
+    window.visualViewport?.addEventListener('resize', handleResize);
+    window.visualViewport?.addEventListener('scroll', handleResize);
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('scroll', handleResize);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  // Handle clicking outside emoji picker
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
@@ -160,6 +191,16 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Scroll to bottom on updates
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [messages, isRecording, replyTo, selectedScope, typingUsers, viewState]);
 
   const handleSendMessage = async (text: string) => {
     const trimmed = text.trim();
@@ -174,14 +215,14 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
         ...(replyTo.type && { type: replyTo.type })
       } : undefined;
 
-      const recipientId = selectedScope === 'global' ? undefined : selectedScope;
-      await firebaseService.sendMessage(currentUser, trimmed, replyData, recipientId);
+      const recipientId = (selectedScope === 'global' || selectedScope === 'support') ? undefined : selectedScope;
+      await firebaseService.sendMessage(currentUser, trimmed, replyData, recipientId, isGroupChat);
       setNewMessage('');
       setShowEmojiPicker(false);
       setReplyTo(null);
     } catch (err) {
-      console.error('Failed to send message:', err instanceof Error ? err.message : String(err));
-      toast.error('Failed to send message. Please check your connection.');
+      console.error('Failed to send message:', err);
+      toast.error('Failed to send message.');
     } finally {
       setIsSending(false);
     }
@@ -197,13 +238,13 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
         ...(replyTo.type && { type: replyTo.type })
       } : undefined;
 
-      const recipientId = selectedScope === 'global' ? undefined : selectedScope;
-      await firebaseService.sendVoiceMessage(currentUser, base64, duration, replyData, recipientId);
+      const recipientId = (selectedScope === 'global' || selectedScope === 'support') ? undefined : selectedScope;
+      await firebaseService.sendVoiceMessage(currentUser, base64, duration, replyData, recipientId, isGroupChat);
       setIsRecording(false);
       setReplyTo(null);
     } catch (err) {
-      console.error('Failed to send voice message:', err instanceof Error ? err.message : String(err));
-      toast.error('Failed to send voice message. It might be too large or your connection is weak.');
+      console.error('Failed to send voice message:', err);
+      toast.error('Failed to send voice message.');
     } finally {
       setIsSending(false);
     }
@@ -213,55 +254,223 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     setNewMessage(prev => prev + emojiData.emoji);
   };
 
-  const handleDeleteMessage = async (messageId: string) => {
+  const handleDeleteMessage = async (messageId: string | null) => {
+    if (!messageId) return;
     try {
       setDeleteConfirmId(null);
       await firebaseService.deleteMessage(messageId);
-      toast.success('Message deleted');
+      toast.success('Message purged');
     } catch (err) {
-      console.error('Failed to delete message:', err instanceof Error ? err.message : String(err));
-      toast.error('Failed to delete message');
+      console.error('Failed to purge message:', err);
+      toast.error('Failed to purge message');
     }
   };
 
-  const handleClearChat = async () => {
-    if (!window.confirm('WIPE ALL OPERATIONAL LOGS?')) return;
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim() || selectedMembers.length === 0) {
+      toast.error('Tactical unit requires designation and recruits.');
+      return;
+    }
+
     try {
-      await firebaseService.clearAllMessages();
+      const group = await firebaseService.createGroup(newGroupName, selectedMembers, currentUser);
+      toast.success(`Unit "${group.name}" initialized!`);
+      setSelectedScope(group.id);
+      setIsGroupChat(true);
+      setViewState('chat');
+      setNewGroupName('');
+      setSelectedMembers([currentUser.uid]);
     } catch (err) {
-      console.error('Failed to clear chat:', err instanceof Error ? err.message : String(err));
+      console.error('Failed to create group:', err);
+      toast.error('Initialization failed.');
     }
   };
 
-  const formatTime = (ts: number) => {
-    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const handleDeleteChat = async () => {
+    if (!deleteChatConfirm) return;
+    try {
+      if (deleteChatConfirm.isGroup) {
+        await firebaseService.deleteGroup(deleteChatConfirm.id);
+        toast.success(`Unit "${deleteChatConfirm.name}" decommissioned`);
+      } else {
+        await firebaseService.clearMessagesByScope(currentUser.uid, deleteChatConfirm.id, false);
+        toast.success(`Terminal link with ${deleteChatConfirm.name} closed`);
+      }
+    } catch (err) {
+      console.error('Failed to delete chat:', err);
+      toast.error('Operation failed.');
+    } finally {
+      setDeleteChatConfirm(null);
+    }
   };
 
-  const visibleMessages = messages.filter(msg => {
-    if (!msg.recipientId) return true;
-    if (msg.senderId === currentUser.uid || msg.recipientId === currentUser.uid) return true;
-    return false;
-  });
+  const isUserOnline = (lastActive?: number) => {
+    if (!lastActive) return false;
+    const fiveMinutes = 5 * 60 * 1000;
+    return Date.now() - lastActive < fiveMinutes;
+  };
 
-  const displayedMessages = visibleMessages.filter(msg => {
-    if (selectedScope === 'global') {
-      return !msg.recipientId;
-    }
-    return !!msg.recipientId && (
-      (msg.recipientId === selectedScope && msg.senderId === currentUser.uid) || 
-      (msg.senderId === selectedScope && msg.recipientId === currentUser.uid)
+  const getLastMessage = (scopeId: string, isGroup: boolean) => {
+    const scopeMsgs = messages.filter(msg => {
+      // support/global logic - merged
+      if (scopeId === 'global' || scopeId === 'support') {
+        if (msg.recipientId) return false;
+        if (isSuperAdmin) return true; // Super admin sees all orphaned support messages
+        return msg.senderId === currentUser.uid || msg.seenBy?.[currentUser.uid];
+      }
+
+      if (isGroup) return msg.isGroup && msg.recipientId === scopeId;
+
+      // Direct Message (DM) Logic - handles users and support line with Super Admin
+      const isDirect = !msg.isGroup;
+      if (!isDirect) return false;
+
+      // If Super Admin is viewing a user, they should see direct messages AND support messages sent by that user
+      if (isSuperAdmin) {
+        return (msg.senderId === currentUser.uid && msg.recipientId === scopeId) || // From SA to user
+               (msg.senderId === scopeId && (msg.recipientId === currentUser.uid || !msg.recipientId)); // From user to SA or support
+      }
+
+      // If regular user is viewing Super Admin, they see their DM and their support messages
+      const isViewingSuperAdmin = users.find(u => u.uid === scopeId)?.role === 'super_admin';
+      if (isViewingSuperAdmin) {
+        return (msg.senderId === currentUser.uid && (msg.recipientId === scopeId || !msg.recipientId)) || // From user to SA or support
+               (msg.senderId === scopeId && msg.recipientId === currentUser.uid); // From SA to user
+      }
+
+      // Normal DM
+      return (msg.senderId === currentUser.uid && msg.recipientId === scopeId) ||
+             (msg.senderId === scopeId && msg.recipientId === currentUser.uid);
+    });
+    return scopeMsgs[scopeMsgs.length - 1];
+  };
+
+  const getUnseenCount = (scopeId: string, isGroup: boolean) => {
+    const scopeMsgs = messages.filter(msg => {
+      if (scopeId === 'global' || scopeId === 'support') {
+        if (msg.recipientId) return false;
+        if (isSuperAdmin) return !msg.seenBy?.[currentUser.uid];
+        return msg.senderId !== currentUser.uid && !msg.seenBy?.[currentUser.uid];
+      }
+      
+      if (isGroup) return msg.isGroup && msg.recipientId === scopeId;
+
+      // DM Unseen Logic
+      const isDirect = !msg.isGroup;
+      if (!isDirect) return false;
+
+      if (isSuperAdmin) {
+        return msg.senderId === scopeId && (msg.recipientId === currentUser.uid || !msg.recipientId);
+      }
+
+      const isViewingSuperAdmin = users.find(u => u.uid === scopeId)?.role === 'super_admin';
+      if (isViewingSuperAdmin) {
+        return msg.senderId === scopeId && msg.recipientId === currentUser.uid;
+      }
+
+      return msg.senderId === scopeId && msg.recipientId === currentUser.uid;
+    });
+    return scopeMsgs.filter(msg => !msg.seenBy?.[currentUser.uid]).length;
+  };
+
+  const ChatListItem = ({ id, name, isOnline, isGroup, icon: Icon }: { id: string, name: string, isOnline?: boolean, isGroup?: boolean, icon: any, key?: React.Key }) => {
+    const lastMsg = getLastMessage(id, !!isGroup);
+    const unseenCount = getUnseenCount(id, !!isGroup);
+
+    const handleSeen = () => {
+      const unseenMsgs = messages.filter(msg => {
+        if (id === 'global' || id === 'support') return !msg.recipientId && !msg.seenBy?.[currentUser.uid];
+        if (isGroup) return msg.isGroup && msg.recipientId === id && !msg.seenBy?.[currentUser.uid];
+        return !msg.isGroup && msg.senderId === id && msg.recipientId === currentUser.uid && !msg.seenBy?.[currentUser.uid];
+      });
+      
+      if (unseenMsgs.length === 0) {
+        toast.info('No new transmissions to confirm.');
+        return;
+      }
+
+      unseenMsgs.forEach(msg => {
+        firebaseService.markAsSeen(msg.id, currentUser.uid, currentUser.username);
+      });
+      toast.success(`Broadcasting SEEN status for ${name}`);
+    };
+
+    const handleDelete = () => {
+      setDeleteChatConfirm({ id, name, isGroup: !!isGroup });
+    };
+
+    const handleDragEnd = (_: any, info: any) => {
+      const threshold = 120;
+      if (info.offset.x > threshold) {
+        handleSeen();
+      } else if (info.offset.x < -threshold) {
+        handleDelete();
+      }
+    };
+    
+    return (
+      <div className="relative overflow-hidden bg-slate-100 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
+        {/* Background Swipe Actions */}
+        <div className="absolute inset-0 flex items-center justify-between px-6 z-0">
+          <div className="flex items-center gap-2 text-emerald-500">
+            <Eye size={20} className="animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Mark Seen</span>
+          </div>
+          <div className="flex items-center gap-2 text-rose-500">
+            <span className="text-[10px] font-black uppercase tracking-widest">Decommission</span>
+            <Trash2 size={20} className="animate-pulse" />
+          </div>
+        </div>
+
+        <motion.button
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.8}
+          onDragEnd={handleDragEnd}
+          onClick={() => {
+            setSelectedScope(id);
+            setIsGroupChat(!!isGroup);
+            setViewState('chat');
+          }}
+          className="relative w-full p-4 flex items-center gap-3 bg-white dark:bg-slate-950 transition-colors group cursor-pointer z-10 touch-pan-y"
+        >
+          <div className="relative shrink-0">
+            <div className={cn(
+              "w-12 h-12 rounded-2xl flex items-center justify-center border transition-all",
+              isGroup ? "bg-indigo-500/10 text-indigo-500 border-indigo-500/20" : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+            )}>
+              <Icon size={24} />
+            </div>
+            {isOnline && (
+              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full" />
+            )}
+          </div>
+          <div className="flex-1 text-left min-w-0">
+            <div className="flex justify-between items-center mb-0.5">
+              <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
+                {name}
+              </h4>
+              {lastMsg && (
+                <span className="text-[10px] font-bold text-slate-400 font-mono">
+                  {new Date(lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+            <div className="flex justify-between items-center">
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate pr-4 italic">
+                {lastMsg ? (lastMsg.type === 'voice' ? '🎤 Voice Message' : lastMsg.text) : 'Awaiting transmission...'}
+              </p>
+              {unseenCount > 0 && (
+                <span className="shrink-0 bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                  {unseenCount}
+                </span>
+              )}
+            </div>
+          </div>
+        </motion.button>
+      </div>
     );
-  });
-
-  // Lock body scroll on mobile when chat is open
-  useEffect(() => {
-    if (window.innerWidth < 640) {
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = '';
-      };
-    }
-  }, []);
+  };
 
   return (
     <motion.div
@@ -282,577 +491,717 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
         overscrollBehavior: 'contain'
       }}
     >
-      {/* Header */}
-      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex flex-col gap-3 shrink-0 z-[160]">
-        <div className="flex justify-between items-center w-full">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-2xl bg-blue-600/10 dark:bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400 border border-blue-600/20 shadow-inner">
+      {/* List View */}
+      {viewState === 'list' && (
+        <div className="flex flex-col h-full bg-slate-50/30 dark:bg-slate-900/10">
+          {/* Header */}
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-950">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
                 <MessageSquare size={20} />
               </div>
-              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full animate-pulse" />
-            </div>
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white leading-tight font-display">Communication Node</h3>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <div className={cn(
-                  "w-1.5 h-1.5 rounded-full animate-pulse",
-                  isOnline ? "bg-emerald-500" : "bg-amber-500"
-                )} />
-                <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">
-                  {isOnline ? 'Encrypted • Live Relay' : 'Offline • Local Access'}
-                </p>
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white leading-tight">Relay Center</h2>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className={cn("w-1.5 h-1.5 rounded-full", isOnline ? "bg-emerald-500 animate-pulse" : "bg-amber-500")} />
+                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">
+                    {isOnline ? 'Encrypted Connection' : 'Offline Mode'}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-1">
-            {currentUser.role === 'admin' && (
+            <div className="flex items-center gap-1">
               <button 
-                onClick={handleClearChat}
-                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
-                title="Clear Logs"
+                onClick={() => setViewState('create-group')} 
+                className="p-2.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all" 
+                title="New Group"
               >
-                <Trash2 size={16} />
+                <Users size={20} />
               </button>
-            )}
-            <button 
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Channel Selector - Redesigned */}
-        <div className="w-full relative mt-1 z-[170]">
-          <button
-            onClick={() => setIsUserSelectorOpen(!isUserSelectorOpen)}
-            className="w-full px-4 py-3 text-[11px] font-black uppercase tracking-[0.15em] rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-300 flex items-center justify-between shadow-sm active:scale-[0.98] transition-all"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
-              <span>
-                {selectedScope === 'global' 
-                  ? 'GLOBAL RELAY (ALL)' 
-                  : `PRIVATE: ${users.find(u => u.uid === selectedScope)?.username || 'SECURE_NODE'}`
-                }
-              </span>
+              <button 
+                onClick={() => setViewState('new-chat')} 
+                className="p-2.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all" 
+                title="New Chat"
+              >
+                <Plus size={20} />
+              </button>
+              <button 
+                onClick={onClose} 
+                className="p-2.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
+              >
+                <X size={20} />
+              </button>
             </div>
-            <motion.div
-              animate={{ rotate: isUserSelectorOpen ? 180 : 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            >
-              <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </motion.div>
-          </button>
+          </div>
 
-          <AnimatePresence>
-            {isUserSelectorOpen && (
-              <>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setIsUserSelectorOpen(false)}
-                  className="fixed inset-0 z-10"
+          {/* Search Bar - Added */}
+          <div className="px-4 py-2 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800">
+             <div className="relative group">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                <input 
+                  type="text" 
+                  placeholder="SEARCH CHATS..." 
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-[10px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                 />
-                <motion.div
-                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 4, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  className="absolute top-full left-0 right-0 z-20 mt-1 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] max-h-64 overflow-y-auto scrollbar-thin overflow-x-hidden"
-                >
-                  <div className="space-y-1">
-                    {currentUser.role !== 'member' && (
-                      <>
-                        <button
-                          onClick={() => {
-                            setSelectedScope('global');
-                            setIsUserSelectorOpen(false);
-                          }}
-                          className={cn(
-                            "w-full px-4 py-3 rounded-xl text-left transition-all flex items-center justify-between group",
-                            selectedScope === 'global' ? "bg-blue-600 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800"
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={cn(
-                              "w-8 h-8 rounded-lg flex items-center justify-center border",
-                              selectedScope === 'global' ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                            )}>
-                              <MessageSquare size={14} className={selectedScope === 'global' ? 'text-white' : 'text-blue-600'} />
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-black uppercase tracking-widest">Global Relay</p>
-                              <p className={cn("text-[8px] font-bold uppercase tracking-widest opacity-60", selectedScope === 'global' ? "text-white" : "text-slate-500")}>
-                                All active personnel
-                              </p>
-                            </div>
-                          </div>
-                          {selectedScope === 'global' && <CheckCheck size={14} className="text-white" />}
-                        </button>
-
-                        <div className="my-2 px-4 flex items-center gap-2">
-                          <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
-                          <span className="text-[7px] font-black text-slate-400 uppercase tracking-[0.2em]">Deployment Nodes</span>
-                          <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
-                        </div>
-                      </>
-                    )}
-
-                    {users
-                      .filter(u => u.uid !== currentUser.uid)
-                      .filter(u => {
-                        if (currentUser.role === 'member') {
-                          return u.role === 'admin' || u.role === 'super_admin' || (u.role === 'dealer' && u.uid === currentUser.dealerId);
-                        }
-                        if (currentUser.role === 'admin' || currentUser.role === 'super_admin') {
-                          return u.role !== 'dealer';
-                        }
-                        if (currentUser.role === 'dealer') {
-                          return u.role !== 'dealer';
-                        }
-                        return true;
-                      })
-                      .map((user, idx) => {
-                        const online = isUserOnline(user.lastActive);
-                        return (
-                          <motion.button
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: idx * 0.03 }}
-                            key={user.uid}
-                            onClick={() => {
-                              setSelectedScope(user.uid);
-                              setIsUserSelectorOpen(false);
-                            }}
-                            className={cn(
-                              "w-full px-4 py-3 rounded-xl text-left transition-all flex items-center justify-between group",
-                              selectedScope === user.uid ? "bg-blue-600 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800"
-                            )}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="relative">
-                                <div className={cn(
-                                  "w-8 h-8 rounded-lg flex items-center justify-center border",
-                                  selectedScope === user.uid ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                                )}>
-                                  <User size={14} className={selectedScope === user.uid ? 'text-white' : 'text-slate-500'} />
-                                </div>
-                                <span className={cn(
-                                  "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 border-2 rounded-full",
-                                  online ? "bg-emerald-500" : "bg-blue-500",
-                                  selectedScope === user.uid ? (online ? "border-blue-600" : "border-blue-600") : "border-white dark:border-slate-900"
-                                )} />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <p className="text-[10px] font-black uppercase tracking-widest">{user.username}</p>
-                                  {user.role === 'admin' && (
-                                    <span className={cn("text-[7px] px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter", selectedScope === user.uid ? "bg-white/20 text-white" : "bg-amber-500/10 text-amber-600")}>
-                                      Admin
-                                    </span>
-                                  )}
-                                </div>
-                                <p className={cn("text-[8px] font-bold uppercase tracking-widest opacity-60", selectedScope === user.uid ? "text-white" : "text-slate-500")}>
-                                  {online ? 'Active Connection' : user.lastActive ? `Last Seen: ${new Date(user.lastActive).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Signal Lost'}
-                                </p>
-                              </div>
-                            </div>
-                            {selectedScope === user.uid && <CheckCheck size={14} className="text-white" />}
-                          </motion.button>
-                        );
-                      })}
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div 
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800"
-      >
-        {displayedMessages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
-            <MessageSquare size={48} className="text-slate-300 mb-4" />
-            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Secure link established<br/>Awaiting tactical transmission</p>
+             </div>
           </div>
-        ) : (
-          displayedMessages.map((msg, index) => {
-            const isMe = msg.senderId === currentUser.uid;
-            const prevMsg = displayedMessages[index - 1];
-            const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.createdAt - prevMsg.createdAt < 60000);
-            
-            const seenBy = msg.seenBy || {};
-            const isSeenByRecipient = msg.recipientId ? !!seenBy[msg.recipientId] : false;
-            const seenList = Object.values(seenBy) as { username: string; time: number }[];
-            
-            // For private messages, only show seen status of the recipient
-            const filteredSeen = msg.recipientId 
-              ? (isSeenByRecipient ? [seenBy[msg.recipientId]] : [])
-              : seenList.filter(s => s.username !== msg.senderName);
 
-            const handleDragEnd = (_: any, info: any) => {
-              const swipeThreshold = 80;
-              if (info.offset.x > swipeThreshold) {
-                setReplyTo(msg);
-              } else if (info.offset.x < -swipeThreshold) {
-                if (isMe || currentUser.role === 'admin') {
-                  setDeleteConfirmId(msg.id);
-                }
-              }
-            };
-
-            return (
-              <motion.div 
-                layout
-                initial={{ opacity: 0, x: isMe ? 40 : -40, scale: 0.9, y: 10 }}
-                animate={{ opacity: 1, x: 0, scale: 1, y: 0 }}
-                transition={{ 
-                  type: "spring",
-                  stiffness: 350,
-                  damping: 30,
-                  mass: 0.8,
-                  opacity: { duration: 0.2 }
-                }}
-                key={msg.id}
-                className={cn(
-                  "flex flex-col max-w-[85%] group relative",
-                  isMe ? "ml-auto items-end" : "mr-auto items-start",
-                  isConsecutive ? "mt-1" : "mt-6"
-                )}
-              >
-                {!isConsecutive && (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className={cn(
-                      "flex items-center gap-2 mb-1.5 px-1",
-                      isMe ? "flex-row-reverse" : "flex-row"
-                    )}
-                  >
-                    <div className={cn(
-                      "w-1 h-3 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.4)]",
-                      isMe ? "bg-slate-400 dark:bg-slate-600" : "bg-blue-600"
-                    )} />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-slate-100 font-display">
-                      {isMe ? 'Internal Protocol' : msg.senderName}
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 font-mono">
-                      {formatTime(msg.createdAt)}
-                    </span>
-                  </motion.div>
-                )}
-                
-                <div className="relative group/bubble flex items-center gap-2 w-full">
-                  {/* Swipe Background Indicators - Polished */}
-                  <div className="absolute inset-0 flex items-center justify-between pointer-events-none overflow-hidden rounded-2xl">
-                    <motion.div 
-                      className="flex items-center gap-2 text-blue-500 pl-4"
-                      initial={{ opacity: 0, x: -20 }}
-                      whileDrag={{ opacity: 1, x: 0 }}
-                    >
-                      <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-                        <CornerUpLeft size={16} />
-                      </div>
-                      <span className="font-black text-[9px] uppercase tracking-tighter">Reply</span>
-                    </motion.div>
-                    <motion.div 
-                      className="flex items-center gap-2 text-rose-500 pr-4"
-                      initial={{ opacity: 0, x: 20 }}
-                      whileDrag={{ opacity: 1, x: 0 }}
-                    >
-                      <span className="font-black text-[9px] uppercase tracking-tighter">Delete</span>
-                      <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20">
-                        <Trash2 size={16} />
-                      </div>
-                    </motion.div>
-                  </div>
-
-                  <div className={cn(
-                    "flex flex-col w-full z-10",
-                    isMe ? "items-end" : "items-start"
-                  )}>
-                    {/* Reply Context - Polished */}
-                    {msg.replyTo && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={cn(
-                          "px-3 py-2 mb-0.5 rounded-t-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-x border-t border-slate-200/50 dark:border-slate-800/50 border-l-4 border-l-blue-600 text-[11px] w-fit max-w-[95%] shadow-sm",
-                          isMe ? "mr-4 rounded-br-none" : "ml-4 rounded-bl-none"
-                        )}
-                      >
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className="font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 text-[8px]">{msg.replyTo.senderName}</span>
-                          <span className="w-1 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
-                          <span className="text-slate-400 uppercase text-[7px] font-bold italic">RE: MSG_{msg.replyTo.id.slice(-4).toUpperCase()}</span>
-                        </div>
-                        <p className="text-slate-500 dark:text-slate-400 truncate font-medium max-w-[200px]">
-                          {msg.replyTo.type === 'voice' ? '🎤 Voice Transmission' : msg.replyTo.text}
-                        </p>
-                      </motion.div>
-                    )}
-
-                    <motion.div 
-                      drag="x"
-                      dragConstraints={{ left: (isMe || currentUser.role === 'admin') ? -120 : 0, right: 120 }}
-                      dragSnapToOrigin={true}
-                      dragElastic={0.15}
-                      onDragEnd={handleDragEnd}
-                      whileDrag={{ scale: 1.02, transition: { duration: 0.1 } }}
-                      className={cn(
-                        "group/inner relative flex items-center gap-2 cursor-grab active:cursor-grabbing max-w-full",
-                        isMe ? "flex-row" : "flex-row-reverse"
-                      )}
-                    >
-                      <div className={cn(
-                        "px-4 py-3 rounded-2xl text-[14px] leading-relaxed font-medium shadow-md shadow-black/[0.03] break-words relative transition-all w-fit group-active:scale-[0.98]",
-                        isMe 
-                          ? "bg-gradient-to-br from-slate-900 to-slate-800 dark:from-blue-600 dark:to-blue-700 text-white shadow-lg shadow-slate-900/10 dark:shadow-blue-600/15" 
-                          : "bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-800 shadow-md",
-                        isMe 
-                          ? (msg.replyTo ? "rounded-tr-none rounded-tl-xl" : "rounded-tr-none") 
-                          : (msg.replyTo ? "rounded-tl-none rounded-tr-xl" : "rounded-tl-none"),
-                        isMe ? "order-2" : "order-1"
-                      )}
-                    >
-                      {msg.type === 'voice' ? (
-                        <VoiceMsgPlayer audioUrl={msg.audioUrl!} duration={msg.duration!} isMe={isMe} isAudioMuted={isAudioMuted} />
-                      ) : (
-                        <span className="tracking-tight antialiased">{msg.text}</span>
-                      )}
-                      
-                      {isMe && index === displayedMessages.length - 1 && (
-                        <div className="absolute -right-5 bottom-1">
-                           <div className={cn("text-blue-500 transition-all transform", filteredSeen.length > 0 ? "opacity-100 scale-110" : "opacity-30 scale-100")}>
-                             <CheckCheck size={12} />
-                           </div>
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                </div>
-              </div>
-              
-              {filteredSeen.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 justify-end px-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <span className="text-[7px] font-black uppercase tracking-widest text-slate-400 font-mono">Acknowledged by: </span>
-                    {filteredSeen.map((viewer, idx) => (
-                      <span key={idx} className="text-[7px] font-bold text-slate-500 whitespace-nowrap font-mono">
-                        {viewer.username.toUpperCase()}
-                        {idx < filteredSeen.length - 1 ? ' ' : ''}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </motion.div>
-            );
-          })
-        )}
-
-        {/* Typing Indicators */}
-        <AnimatePresence mode="popLayout">
-          {typingUsers.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.9 }}
-              className="flex items-center gap-3 px-2 pt-2"
-            >
-              <div className="flex gap-2.5 bg-blue-50/50 dark:bg-blue-900/20 px-4 py-2.5 rounded-2xl border border-blue-100 dark:border-blue-900/30 shadow-sm backdrop-blur-sm">
-                <div className="flex gap-1 items-center">
-                  <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                  <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                  <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" />
-                </div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 flex items-center gap-2">
-                  {typingUsers.length === 1 
-                    ? `${typingUsers[0].username.toUpperCase()}` 
-                    : `${typingUsers.length} OPERATIVES`}
-                  <span className="text-[9px] font-bold opacity-60">IS TYPING...</span>
-                </span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Sending State */}
-        <AnimatePresence mode="popLayout">
-          {isSending && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className="flex flex-col items-end max-w-[85%] ml-auto mt-4"
-            >
-              <div className="flex items-center gap-2 mb-1 px-1">
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
-                  <Loader2 size={10} className="animate-spin" />
-                  Transmitting...
-                </span>
-              </div>
-              <div className="px-4 py-3 rounded-2xl rounded-tr-none bg-slate-50 dark:bg-slate-900/50 text-slate-400 border border-slate-200 dark:border-slate-800 opacity-60 italic text-[13px] font-mono">
-                PACKET_SYNC_INIT...
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Quick Responses & Emoji Picker & Recorder Area */}
-      <div className="relative">
-        {/* Reply Preview - Polished */}
-        <AnimatePresence>
-          {replyTo && (
-            <motion.div 
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 50, opacity: 0 }}
-              className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 px-5 py-4 flex items-center gap-4 overflow-hidden shadow-[0_-8px_30px_rgba(0,0,0,0.08)] z-[155] rounded-t-3xl mx-2"
-            >
-              <div className="w-1.5 h-10 bg-blue-600 dark:bg-blue-500 rounded-full shrink-0 shadow-[0_0_12px_rgba(37,99,235,0.3)]" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Tactical Reference</span>
-                  <span className="w-1 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
-                  <span className="text-[9px] font-bold text-slate-400 uppercase">{replyTo.senderName}</span>
-                </div>
-                <p className="text-[13px] text-slate-600 dark:text-slate-300 truncate font-medium">
-                  {replyTo.type === 'voice' ? '🎤 AUDIO_LOG_TRANSMISSION' : replyTo.text}
-                </p>
-              </div>
-              <button 
-                onClick={() => setReplyTo(null)}
-                className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-2xl transition-all shrink-0 border border-transparent hover:border-rose-100 dark:hover:border-rose-900/30"
-              >
-                <X size={18} />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {showEmojiPicker && (
-            <motion.div 
-              ref={emojiPickerRef}
-              initial={{ opacity: 0, y: 20, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.9 }}
-              className="absolute bottom-full left-4 z-[200] shadow-2xl rounded-2xl overflow-hidden mb-2"
-            >
-              <EmojiPicker 
-                onEmojiClick={onEmojiClick}
-                theme={theme === 'dark' ? Theme.DARK : Theme.LIGHT}
-                width={320}
-                height={400}
-                lazyLoadEmojis={true}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {newMessage.length === 0 && !isSending && !showEmojiPicker && !isRecording && !replyTo && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="px-4 py-2 flex gap-2 overflow-x-auto no-scrollbar"
-            >
-              {QUICK_RESPONSES.map(resp => (
-                <button
-                  key={resp}
-                  onClick={() => handleSendMessage(resp)}
-                  className="shrink-0 px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:border-blue-600 hover:text-blue-600 transition-all font-sans shadow-sm"
-                >
-                  {resp}
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Recording Overlay */}
-      {isRecording ? (
-        <VoiceRecorder 
-          onSend={handleSendVoice} 
-          onCancel={() => setIsRecording(false)} 
-          isAudioMuted={isAudioMuted}
-          isMicMuted={isMicMuted}
-        />
-      ) : (
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur-sm z-[160]">
-          <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(newMessage); }} className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className={cn(
-                "p-2.5 rounded-2xl transition-all shadow-sm ring-1 ring-inset",
-                showEmojiPicker 
-                  ? "bg-blue-600 text-white ring-blue-700" 
-                  : "bg-slate-50 dark:bg-slate-900 text-slate-400 hover:text-blue-600 ring-slate-200 dark:ring-slate-800 hover:ring-blue-200 dark:hover:ring-blue-900"
-              )}
-            >
-              <Smile size={20} />
-            </button>
-            
-            <div className="flex-1 relative group">
-              <input
-                ref={inputRef}
-                type="text"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onFocus={() => {
-                  // Wait for both the keyboard and the dynamic height update
-                  setTimeout(() => {
-                    if (scrollRef.current) {
-                      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-                    }
-                  }, 150);
-                  setTimeout(() => {
-                    if (scrollRef.current) {
-                      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-                    }
-                  }, 400);
-                }}
-                placeholder="Tactical relay..."
-                className="w-full px-5 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 dark:focus:border-blue-500 transition-all font-medium text-[13px] placeholder:text-slate-400 placeholder:uppercase placeholder:text-[10px] placeholder:tracking-widest shadow-sm"
-              />
-            </div>
-
-            {newMessage.trim() ? (
-              <button
-                type="submit"
-                disabled={isSending}
-                className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/30 hover:bg-blue-700 hover:shadow-blue-600/40 transition-all active:scale-90 disabled:opacity-50"
-              >
-                <Send size={18} className="translate-x-0.5" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsRecording(true)}
-                title="Voice message"
-                className="w-12 h-12 rounded-2xl bg-slate-900 dark:bg-blue-600 text-white hover:bg-slate-800 dark:hover:bg-blue-500 flex items-center justify-center shadow-lg shadow-slate-900/10 dark:shadow-blue-600/20 transition-all active:scale-90"
-              >
-                <Mic size={20} />
-              </button>
+          <div className="flex-1 overflow-y-auto no-scrollbar">
+            {/* Help & Support */}
+            {!isSuperAdmin && (!searchTerm || 'help & support'.includes(searchTerm.toLowerCase())) && (
+              <ChatListItem id="support" name="Help & Support" icon={LifeBuoy} />
             )}
-          </form>
+
+            {/* Support Requests (Super Admin Only) */}
+            {isSuperAdmin && (
+              <div className="px-5 py-3 bg-rose-500/10 dark:bg-rose-500/5 border-y border-rose-500/10 mb-2">
+                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                    <LifeBuoy size={12} />
+                    Support Desk
+                 </span>
+              </div>
+            )}
+            {isSuperAdmin && users
+              .filter(u => u.uid !== currentUser.uid)
+              .filter(u => !searchTerm || u.username.toLowerCase().includes(searchTerm.toLowerCase()))
+              .map(user => {
+                const lastM = getLastMessage(user.uid, false);
+                const unseen = getUnseenCount(user.uid, false);
+                // Also check if they have messages with recipientId === undefined (legacy Support messages)
+                const hasLegacySupport = messages.some(m => !m.recipientId && m.senderId === user.uid);
+                
+                if (!lastM && !unseen && !hasLegacySupport) return null; // Only show users who have chatted
+                return <ChatListItem key={user.uid} id={user.uid} name={user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />;
+              })
+            }
+
+            {/* Groups Section */}
+            <div className="px-5 py-3 bg-slate-100/50 dark:bg-slate-900/50 border-y border-slate-200 dark:border-slate-800">
+               <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Tactical Units ({groups.length})</span>
+            </div>
+            {groups
+              .filter(g => !searchTerm || g.name.toLowerCase().includes(searchTerm.toLowerCase()))
+              .length === 0 ? (
+              <div className="p-8 text-center opacity-40 italic text-[11px] text-slate-500 uppercase tracking-widest">No matching units.</div>
+            ) : (
+              groups
+                .filter(g => !searchTerm || g.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                .map(group => (
+                  <ChatListItem key={group.id} id={group.id} name={group.name} isGroup={true} icon={Users} />
+                ))
+            )}
+
+            {/* Individual DM Section */}
+            <div className="px-5 py-3 bg-slate-100/50 dark:bg-slate-900/50 border-y border-slate-200 dark:border-slate-800">
+               <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Secure Uplinks</span>
+            </div>
+            {users
+              .filter(u => u.uid !== currentUser.uid)
+              .filter(u => !searchTerm || u.username.toLowerCase().includes(searchTerm.toLowerCase()))
+              .filter(u => !!getLastMessage(u.uid, false))
+              .map(user => (
+                <ChatListItem key={user.uid} id={user.uid} name={user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />
+              ))}
+              
+            {users
+              .filter(u => u.uid !== currentUser.uid)
+              .filter(u => !searchTerm || u.username.toLowerCase().includes(searchTerm.toLowerCase()))
+              .filter(u => !!getLastMessage(u.uid, false)).length === 0 && (
+                <div className="p-8 text-center opacity-40 italic text-[11px] text-slate-500 uppercase tracking-widest">No matching transmissions.</div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Delete Confirmation Modal - Polished */}
+      {/* New Chat View */}
+      {viewState === 'new-chat' && (
+        <div className="flex flex-col h-full animate-in slide-in-from-right duration-300">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-4 bg-white dark:bg-slate-950">
+             <button onClick={() => setViewState('list')} className="p-2 -ml-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+               <ChevronLeft size={20} />
+             </button>
+             <h2 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">New Transmission</h2>
+          </div>
+          <div className="p-4 border-b border-slate-100 dark:border-slate-900 bg-slate-50/50 dark:bg-slate-900/50">
+             <div className="relative group">
+               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+               <input 
+                 type="text" 
+                 placeholder="SEARCH OPERATIVE..." 
+                 className="w-full pl-11 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all shadow-sm"
+                 value={searchTerm}
+                 onChange={(e) => setSearchTerm(e.target.value)}
+               />
+             </div>
+          </div>
+          <div className="flex-1 overflow-y-auto no-scrollbar">
+             {users
+               .filter(u => u.uid !== currentUser.uid)
+               .filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase()))
+               .map(user => (
+                 <button
+                   key={user.uid}
+                   onClick={() => {
+                     setSelectedScope(user.uid);
+                     setIsGroupChat(false);
+                     setViewState('chat');
+                     setSearchTerm('');
+                   }}
+                   className="w-full p-4 flex items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-900 border-b border-slate-50 dark:border-slate-900 transition-all group"
+                 >
+                   <div className="w-11 h-11 rounded-2xl bg-blue-600/10 text-blue-600 flex items-center justify-center font-black shadow-inner border border-blue-600/20 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                     {user.username[0].toUpperCase()}
+                   </div>
+                   <div className="text-left flex-1 min-w-0">
+                     <p className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white truncate">{user.username}</p>
+                     <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">{user.role}</p>
+                   </div>
+                   {isUserOnline(user.lastActive) && (
+                     <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-950 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                   )}
+                 </button>
+               ))
+             }
+          </div>
+        </div>
+      )}
+
+      {/* Create Group View */}
+      {viewState === 'create-group' && (
+        <div className="flex flex-col h-full animate-in slide-in-from-right duration-300">
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-950">
+             <div className="flex items-center gap-3">
+               <button onClick={() => setViewState('list')} className="p-2 -ml-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+                 <ChevronLeft size={20} />
+               </button>
+               <h2 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Unit Deployment</h2>
+             </div>
+             <button
+               disabled={!newGroupName.trim() || selectedMembers.length === 0}
+               onClick={handleCreateGroup}
+               className="px-5 py-2.5 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:grayscale transition-all shadow-lg shadow-blue-600/30 active:scale-95"
+             >
+               Initialize
+             </button>
+          </div>
+          <div className="p-5 space-y-6">
+             <div>
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2 block">Tactical Designation</label>
+                <input 
+                  type="text" 
+                  placeholder="UNIT CALLSIGN..." 
+                  className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all shadow-sm"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                />
+             </div>
+             <div>
+                <label className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2 block">Select Recruits ({selectedMembers.length})</label>
+                <div className="relative mb-4 group">
+                   <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                   <input 
+                     type="text" 
+                     placeholder="FILTER PERSONEL..." 
+                     className="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest outline-none shadow-sm focus:ring-4 focus:ring-blue-600/10 transition-all"
+                     value={searchTerm}
+                     onChange={(e) => setSearchTerm(e.target.value)}
+                   />
+                </div>
+                <div className="max-h-[350px] overflow-y-auto space-y-2 p-1 no-scrollbar">
+                   {users
+                     .filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase()))
+                     .map(user => {
+                        const isSelected = selectedMembers.includes(user.uid);
+                        const isMe = user.uid === currentUser.uid;
+                        return (
+                          <button
+                            key={user.uid}
+                            onClick={() => {
+                               if (isMe) return; // Cannot unselect self
+                               if (isSelected) {
+                                 setSelectedMembers(prev => prev.filter(id => id !== user.uid));
+                               } else {
+                                 setSelectedMembers(prev => [...prev, user.uid]);
+                               }
+                            }}
+                            className={cn(
+                              "w-full p-3.5 rounded-2xl flex items-center gap-4 transition-all border",
+                              isSelected 
+                                ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20" 
+                                : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 shadow-sm",
+                              isMe && "ring-2 ring-emerald-500/50"
+                            )}
+                          >
+                             <div className={cn(
+                               "w-9 h-9 rounded-xl flex items-center justify-center font-black", 
+                               isSelected ? "bg-white/20" : "bg-blue-500/10 text-blue-500"
+                             )}>
+                               {user.username[0].toUpperCase()}
+                             </div>
+                             <div className="text-left flex-1 min-w-0">
+                               <p className="text-[12px] font-black uppercase truncate tracking-tight">
+                                 {user.username} {isMe && "(YOU)"}
+                                </p>
+                               <p className={cn("text-[9px] uppercase font-bold tracking-widest", isSelected ? "text-blue-100" : "text-slate-400")}>{user.role}</p>
+                             </div>
+                             <div className={cn(
+                               "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all", 
+                               isSelected ? "bg-white border-white" : "border-slate-200 dark:border-slate-800"
+                             )}>
+                                {isSelected && <CheckCheck size={12} className="text-blue-600" />}
+                             </div>
+                          </button>
+                        );
+                     })
+                   }
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chat View (Actual Conversation) */}
+      <AnimatePresence>
+        {deleteChatConfirm && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-xs p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 p-8 opacity-5">
+                <Trash2 size={80} />
+              </div>
+              <div className="w-14 h-14 rounded-3xl bg-rose-500/10 text-rose-600 flex items-center justify-center mb-6 border border-rose-500/20">
+                <Trash2 size={28} />
+              </div>
+              <h3 className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white mb-3">
+                {deleteChatConfirm.isGroup ? 'DECIMILARIZE UNIT?' : 'TERMINATE LINK?'}
+              </h3>
+              <p className="text-[12px] text-slate-500 dark:text-slate-400 uppercase font-bold leading-relaxed mb-8 tracking-tight">
+                Are you sure you want to permanently erase all transmissions associated with <span className="text-rose-500 font-black">{deleteChatConfirm.name}</span>? This action cannot be reversed.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => setDeleteChatConfirm(null)}
+                  className="px-4 py-4 rounded-3xl bg-slate-100 dark:bg-slate-800 text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                >
+                  ABORT
+                </button>
+                <button
+                  onClick={handleDeleteChat}
+                  className="px-4 py-4 rounded-3xl bg-rose-600 text-white text-[11px] font-black uppercase tracking-widest hover:bg-rose-700 shadow-xl shadow-rose-600/30 transition-all active:scale-95"
+                >
+                  CONFIRM
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {viewState === 'chat' && (
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-50/30 dark:bg-slate-900/10">
+          {/* Header */}
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center gap-3 shrink-0 z-[160]">
+            <button 
+              onClick={() => {
+                setViewState('list');
+                setSelectedScope('global');
+                setIsGroupChat(false);
+              }} 
+              className="p-2 -ml-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors shrink-0"
+            >
+              <ChevronLeft size={20} className="text-slate-600 dark:text-slate-400" />
+            </button>
+            <div className="relative shrink-0">
+              <div className={cn(
+                "w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner border",
+                isGroupChat ? "bg-indigo-600/10 text-indigo-600 border-indigo-600/20" : "bg-blue-600/10 text-blue-600 border-blue-600/20"
+              )}>
+                {isGroupChat ? <Users size={20} /> : <User size={20} />}
+              </div>
+              {!isGroupChat && isUserOnline(users.find(u => u.uid === selectedScope)?.lastActive) && (
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full animate-pulse" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-[13px] font-black uppercase tracking-tight text-slate-900 dark:text-white leading-tight font-display truncate">
+                {selectedScope === 'global' || selectedScope === 'support'
+                  ? 'Help & Support' 
+                  : isGroupChat 
+                    ? groups.find(g => g.id === selectedScope)?.name 
+                    : users.find(u => u.uid === selectedScope)?.username}
+              </h3>
+              <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mt-1">
+                {selectedScope === 'global' || selectedScope === 'support' ? 'Encrypted Support Line' : isGroupChat ? `${groups.find(g => g.id === selectedScope)?.members.length} Members` : 'Secure Direct Line'}
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={onClose}
+                className="p-2 text-slate-400 hover:text-rose-600 transition-all rounded-xl"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div 
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800"
+          >
+            {(() => {
+              const displayedMessages = messages.filter(msg => {
+                if (selectedScope === 'global' || selectedScope === 'support') {
+                   const isSupportMsg = !msg.recipientId;
+                   if (!isSupportMsg) return false;
+                   if (isSuperAdmin) return true;
+                   return msg.senderId === currentUser.uid;
+                }
+                
+                if (isGroupChat) return msg.isGroup && msg.recipientId === selectedScope;
+                
+                // DM Filter Logic
+                if (msg.isGroup) return false;
+                
+                // SA viewing an operative: see DMs + support requests from that operative
+                if (isSuperAdmin) {
+                  const isDm = (msg.senderId === currentUser.uid && msg.recipientId === selectedScope) ||
+                              (msg.senderId === selectedScope && msg.recipientId === currentUser.uid);
+                  const isOrphanedSupport = !msg.recipientId && msg.senderId === selectedScope;
+                  return isDm || isOrphanedSupport;
+                }
+                
+                // User viewing SA: see DMs + their own support requests
+                const targetUser = users.find(u => u.uid === selectedScope);
+                const isViewingSuperAdmin = targetUser?.role === 'super_admin';
+                if (isViewingSuperAdmin) {
+                  const isDm = (msg.senderId === currentUser.uid && msg.recipientId === selectedScope) ||
+                              (msg.senderId === selectedScope && msg.recipientId === currentUser.uid);
+                  const isMyOrphanedSupport = !msg.recipientId && msg.senderId === currentUser.uid;
+                  return isDm || isMyOrphanedSupport;
+                }
+
+                return (msg.senderId === currentUser.uid && msg.recipientId === selectedScope) ||
+                       (msg.senderId === selectedScope && msg.recipientId === currentUser.uid);
+              });
+
+              if (displayedMessages.length === 0) {
+                return (
+                  <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
+                    <MessageSquare size={48} className="text-slate-300 mb-4" />
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400 font-mono italic">
+                      [ SECURE LINK_STABLE ]<br/>Awaiting tactical transmission
+                    </p>
+                  </div>
+                );
+              }
+
+              return displayedMessages.map((msg, index) => {
+                const isMe = msg.senderId === currentUser.uid;
+                const prevMsg = displayedMessages[index - 1];
+                const isConsecutive = prevMsg && prevMsg.senderId === msg.senderId && (msg.createdAt - prevMsg.createdAt < 60000);
+                
+                const seenBy = msg.seenBy || {};
+                const isSeenByRecipient = msg.recipientId ? !!seenBy[msg.recipientId] : false;
+                const seenList = Object.values(seenBy) as { username: string; time: number }[];
+                
+                const filteredSeen = msg.recipientId 
+                  ? (isSeenByRecipient ? [seenBy[msg.recipientId]] : [])
+                  : seenList.filter(s => s.username !== msg.senderName);
+
+                const handleDragEnd = (_: any, info: any) => {
+                  const swipeThreshold = 80;
+                  if (info.offset.x > swipeThreshold) {
+                    setReplyTo(msg);
+                  } else if (info.offset.x < -swipeThreshold) {
+                    if (isMe || currentUser.role === 'admin') {
+                      setDeleteConfirmId(msg.id);
+                    }
+                  }
+                };
+
+                return (
+                  <motion.div 
+                    layout
+                    initial={{ opacity: 0, x: isMe ? 40 : -40, scale: 0.9, y: 10 }}
+                    animate={{ opacity: 1, x: 0, scale: 1, y: 0 }}
+                    transition={{ 
+                      type: "spring",
+                      stiffness: 350,
+                      damping: 30,
+                      mass: 0.8,
+                      opacity: { duration: 0.2 }
+                    }}
+                    key={msg.id}
+                    className={cn(
+                      "flex flex-col max-w-[85%] group relative",
+                      isMe ? "ml-auto items-end" : "mr-auto items-start",
+                      isConsecutive ? "mt-1" : "mt-6"
+                    )}
+                  >
+                    {!isConsecutive && (
+                      <span className="text-[9px] font-black uppercase tracking-[0.1em] text-slate-400 mb-1.5 px-1 flex items-center gap-2">
+                        {isMe ? 'Command Node' : msg.senderName}
+                        <span className="w-1 h-1 rounded-full bg-slate-300" />
+                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+
+                    <motion.div
+                      drag="x"
+                      dragConstraints={{ left: 0, right: 0 }}
+                      onDragEnd={handleDragEnd}
+                      className={cn(
+                        "relative px-4 py-2.5 rounded-2xl shadow-sm border transition-all cursor-grab active:cursor-grabbing",
+                        isMe 
+                          ? "rounded-tr-none bg-blue-600 text-white border-blue-500 shadow-blue-600/10" 
+                          : "rounded-tl-none bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border-slate-100 dark:border-slate-800 shadow-slate-200/50 dark:shadow-none"
+                      )}
+                    >
+                      {msg.replyTo && (
+                        <div className={cn(
+                          "mb-2 p-2 rounded-xl text-[11px] border-l-4 font-medium flex items-center gap-2 max-w-[200px] truncate",
+                          isMe 
+                            ? "bg-blue-700/50 border-blue-300 text-blue-100" 
+                            : "bg-slate-100 dark:bg-slate-800 border-blue-600 text-slate-500 dark:text-slate-400"
+                        )}>
+                          <CornerUpLeft size={10} className="shrink-0" />
+                          <span className="truncate">{msg.replyTo.text || 'AUDIO_LOG'}</span>
+                        </div>
+                      )}
+
+                      {msg.type === 'voice' ? (
+                        <VoiceMsgPlayer 
+                          audioUrl={msg.audioUrl || ''} 
+                          duration={msg.duration || 0} 
+                          isMe={isMe} 
+                        />
+                      ) : (
+                        <p className="text-[13px] leading-relaxed font-medium whitespace-pre-wrap break-words">{msg.text}</p>
+                      )}
+
+                      {isMe && !isGroupChat && (
+                        <div className="absolute -bottom-1 -right-4 flex items-center gap-0.5">
+                          {isSeenByRecipient ? (
+                            <CheckCheck size={12} className="text-blue-500" />
+                          ) : (
+                            <div className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+                          )}
+                        </div>
+                      )}
+                    </motion.div>
+
+                    {isMe && isGroupChat && filteredSeen.length > 0 && (
+                      <div className="mt-1 flex items-center gap-1 overflow-x-auto no-scrollbar">
+                         <CheckCheck size={10} className="text-blue-500 shrink-0" />
+                         <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter truncate">
+                           Read by {filteredSeen.map(s => s.username).join(', ')}
+                         </span>
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              });
+            })()}
+
+            {/* Typing Indicator */}
+            <AnimatePresence>
+              {typingUsers.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="flex items-center gap-3 px-1 mt-4"
+                >
+                  <div className="flex -space-x-2">
+                    {typingUsers.slice(0, 3).map((u) => (
+                      <div key={u.uid} className="w-5 h-5 rounded-lg bg-blue-600 border border-white dark:border-slate-950 flex items-center justify-center text-[8px] font-black text-white shadow-sm">
+                        {u.username[0].toUpperCase()}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-3 py-1.5 rounded-2xl rounded-tl-none bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 flex items-center gap-2">
+                      {typingUsers.length === 1 
+                        ? `${typingUsers[0].username.toUpperCase()}` 
+                        : `${typingUsers.length} OPERATIVES`}
+                      <span className="text-[9px] font-bold opacity-60">TRANSCRIPTING...</span>
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Sending State */}
+            <AnimatePresence mode="popLayout">
+              {isSending && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  className="flex flex-col items-end max-w-[85%] ml-auto mt-4"
+                >
+                  <div className="flex items-center gap-2 mb-1 px-1">
+                    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                      <Loader2 size={10} className="animate-spin" />
+                      SYNCHRONIZING...
+                    </span>
+                  </div>
+                  <div className="px-4 py-3 rounded-2xl rounded-tr-none bg-slate-50 dark:bg-slate-900/50 text-slate-400 border border-slate-200 dark:border-slate-800 opacity-60 italic text-[12px] font-mono shadow-sm">
+                    PACKET_TRANSIT
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Quick Responses & Emoji Picker & Recorder Area */}
+          <div className="relative shrink-0">
+            {/* Reply Preview */}
+            <AnimatePresence>
+              {replyTo && (
+                <motion.div 
+                  initial={{ y: 50, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 50, opacity: 0 }}
+                  className="absolute bottom-full left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 px-5 py-3 flex items-center gap-4 overflow-hidden shadow-[0_-8px_30px_rgba(0,0,0,0.08)] z-[155] rounded-t-3xl mx-2 mb-[-1px]"
+                >
+                  <div className="w-1.5 h-10 bg-blue-600 dark:bg-blue-500 rounded-full shrink-0 shadow-[0_0_12px_rgba(37,99,235,0.3)]" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">Context Node</span>
+                      <span className="w-1 h-1 bg-slate-300 dark:bg-slate-700 rounded-full" />
+                      <span className="text-[8px] font-bold text-slate-400 uppercase">{replyTo.senderName}</span>
+                    </div>
+                    <p className="text-[12px] text-slate-600 dark:text-slate-300 truncate font-medium">
+                      {replyTo.type === 'voice' ? '🎤 AUDIO_LOG' : replyTo.text}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setReplyTo(null)}
+                    className="p-2 text-slate-400 hover:text-rose-600 transition-all"
+                  >
+                    <X size={16} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {showEmojiPicker && (
+                <motion.div 
+                  ref={emojiPickerRef}
+                  initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                  className="absolute bottom-full left-4 z-[200] shadow-2xl rounded-2xl overflow-hidden mb-2"
+                >
+                  <EmojiPicker 
+                    onEmojiClick={onEmojiClick}
+                    theme={theme === 'dark' ? Theme.DARK : Theme.LIGHT}
+                    width={320}
+                    height={400}
+                    lazyLoadEmojis={true}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {newMessage.length === 0 && !isSending && !showEmojiPicker && !isRecording && !replyTo && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="px-4 py-2 flex gap-2 overflow-x-auto no-scrollbar scroll-smooth"
+                >
+                  {QUICK_RESPONSES.map(resp => (
+                    <button
+                      key={resp}
+                      onClick={() => handleSendMessage(resp)}
+                      className="shrink-0 px-4 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:border-blue-600 hover:text-blue-600 transition-all shadow-sm active:scale-95"
+                    >
+                      {resp}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Input Overlay */}
+            {isRecording ? (
+              <VoiceRecorder 
+                onSend={handleSendVoice} 
+                onCancel={() => setIsRecording(false)} 
+                isAudioMuted={isAudioMuted}
+                isMicMuted={isMicMuted}
+              />
+            ) : (
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur-sm z-[160]">
+                <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(newMessage); }} className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className={cn(
+                      "p-2.5 rounded-2xl transition-all shadow-sm ring-1 ring-inset",
+                      showEmojiPicker 
+                        ? "bg-blue-600 text-white ring-blue-700" 
+                        : "bg-slate-50 dark:bg-slate-900 text-slate-400 hover:text-blue-600 ring-slate-200 dark:ring-slate-800 hover:ring-blue-200 dark:hover:ring-blue-900 shadow-inner"
+                    )}
+                  >
+                    <Smile size={20} />
+                  </button>
+                  
+                  <div className="flex-1 relative">
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onFocus={() => {
+                        setTimeout(() => {
+                          if (scrollRef.current) {
+                            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                          }
+                        }, 150);
+                      }}
+                      placeholder="Transmitting tactical data..."
+                      className="w-full px-5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 dark:focus:border-blue-500 transition-all font-medium text-[13px] placeholder:text-slate-400 placeholder:uppercase placeholder:text-[10px] placeholder:tracking-widest shadow-inner shadow-black/5"
+                    />
+                  </div>
+
+                  {newMessage.trim() ? (
+                    <button
+                      type="submit"
+                      disabled={isSending}
+                      className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-600/30 hover:bg-blue-700 hover:shadow-blue-600/40 transition-all active:scale-90 disabled:opacity-50"
+                    >
+                      <Send size={18} className="translate-x-0.5" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsRecording(true)}
+                      title="Voice message"
+                      className="w-11 h-11 rounded-2xl bg-slate-900 dark:bg-blue-600 text-white hover:bg-slate-800 dark:hover:bg-blue-500 flex items-center justify-center shadow-lg shadow-black/10 dark:shadow-blue-600/20 transition-all active:scale-90"
+                    >
+                      <Mic size={20} />
+                    </button>
+                  )}
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {deleteConfirmId && (
           <motion.div 
@@ -866,21 +1215,16 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] max-w-sm w-full border border-slate-200 dark:border-slate-800 relative overflow-hidden"
+              className="bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800 relative overflow-hidden"
             >
-              {/* Emergency Pattern Background */}
               <div className="absolute top-0 left-0 right-0 h-1.5 bg-rose-600" />
-              <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-rose-500/5 to-transparent pointer-events-none" />
-
-              <div className="w-16 h-16 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-600 mb-6 border border-rose-500/20 shadow-inner group">
-                <Trash2 size={32} className="group-hover:rotate-12 transition-transform" />
+              <div className="w-16 h-16 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-600 mb-6 border border-rose-500/20 shadow-inner">
+                <Trash2 size={32} />
               </div>
-              
-              <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-3">Terminate Transmission?</h3>
+              <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-3">Confirm Purge?</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 font-medium leading-relaxed">
-                Confirming this action will permanently purge this record from the operational relay. This cannot be reversed.
+                Record deletion is permanent and cannot be reversed from the relay nexus.
               </p>
-              
               <div className="flex flex-col gap-3">
                 <button
                   onClick={() => handleDeleteMessage(deleteConfirmId)}
@@ -892,7 +1236,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                   onClick={() => setDeleteConfirmId(null)}
                   className="w-full px-6 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-sm font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95"
                 >
-                  Abort
+                  Hold Record
                 </button>
               </div>
             </motion.div>
@@ -902,5 +1246,3 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     </motion.div>
   );
 }
-
-

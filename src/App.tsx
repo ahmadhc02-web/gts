@@ -303,6 +303,8 @@ export default function App() {
     let authReady = false;
 
     const init = async (userAuth: any) => {
+      console.log('App: Initializing with auth status:', !!userAuth);
+      
       try {
         const fetchTenantId = user ? firebaseService.getReadTenantId(user) : undefined;
         const initialUsers = await firebaseService.getUsers(fetchTenantId);
@@ -314,7 +316,7 @@ export default function App() {
           
           if (!hasAbc) {
             try {
-              const abcAdmin = await firebaseService.createUser('abc-id', 'abc', 'abc', 'super_admin', undefined, 'main', '000');
+              const abcAdmin = await firebaseService.createUser('abc-id', 'abc', 'abc', 'super_admin', 'system', 'System Bootstrap', 'main', '000');
               currentUsers.push(abcAdmin);
             } catch(e) {
               console.error("Failed to inject abc user:", e);
@@ -324,7 +326,7 @@ export default function App() {
           // Bootstrap first admin if no users exist
           if (currentUsers.length === 0) {
             try {
-              const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'super_admin');
+              const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'super_admin', 'system', 'System Bootstrap');
               currentUsers.push(admin);
             } catch (e) {
                console.error("Failed to bootstrap admin:", e);
@@ -336,27 +338,30 @@ export default function App() {
       } catch (err) {
         console.error("Initialization error:", err instanceof Error ? err.message : String(err));
         setError("System initialization failed. Please refresh.");
+      } finally {
+        setIsLoading(false);
       }
     };
 
     import('firebase/auth').then(({ onAuthStateChanged, signInAnonymously }) => {
       const unsubscribeAuth = onAuthStateChanged(auth, (userAuth) => {
-        if (!authReady) {
+        if (userAuth && !authReady) {
           authReady = true;
           setFirebaseAuthReady(true);
           init(userAuth);
-        }
-      });
-      
-      // Attempt to establish a Firebase session
-      signInAnonymously(auth).then(() => {
-        console.log('Connected to Firebase as anonymous user');
-      }).catch(authErr => {
-        console.warn("Auth initialization restricted:", authErr);
-        if (!authReady) {
-          authReady = true;
-          setFirebaseAuthReady(true);
-          init(null);
+        } else if (!userAuth && !authReady) {
+          // If not signed in yet, try to sign in anonymously
+          signInAnonymously(auth).catch(authErr => {
+            console.warn("Auth initialization restricted:", authErr);
+            // Even if anonymous auth fails, we should still mark ready 
+            // but init(null) will be called if as a absolute fallback 
+            // to show login screen or error
+            if (!authReady) {
+              authReady = true;
+              setFirebaseAuthReady(true);
+              init(null);
+            }
+          });
         }
       });
 
@@ -370,8 +375,8 @@ export default function App() {
 
   // Real-time user updates for presence and management
   useEffect(() => {
-    // Only subscribe to real-time user changes when logged in, or we'll get permission errors
-    if (!user || !firebaseAuthReady) return;
+    // Only subscribe to real-time user changes when logged in
+    if (!user) return;
     
     const tenantId = firebaseService.getReadTenantId(user);
     
@@ -410,7 +415,7 @@ export default function App() {
 
   // Fetch complaints only when a user is logged in
   useEffect(() => {
-    if (!user || !firebaseAuthReady) {
+    if (!user) {
       setComplaints([]);
       return;
     }
@@ -426,7 +431,7 @@ export default function App() {
 
   // Centralized Notifications Subscription
   useEffect(() => {
-    if (!user || !firebaseAuthReady) return;
+    if (!user) return;
     
     const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
     let isInitialLoad = true;
@@ -490,7 +495,7 @@ export default function App() {
 
   // Global Chat Notifications
   useEffect(() => {
-    if (!user || !firebaseAuthReady) return;
+    if (!user) return;
     
     let isInitialLoad = true;
     let lastMessageId = '';
@@ -697,7 +702,7 @@ export default function App() {
 
     try {
       const uid = Math.random().toString(36).substr(2, 9);
-      await firebaseService.createUser(uid, trimmedName, pass, role, user.username, dealerId, lineCode);
+      await firebaseService.createUser(uid, trimmedName, pass, role, user.uid, user.username, dealerId, lineCode);
       toast.success(`${role === 'dealer' ? 'Dealer' : 'User'} ${trimmedName} created successfully!`);
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));

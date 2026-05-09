@@ -52,6 +52,7 @@ interface AdminPanelProps {
   onAuthorizeMic: () => Promise<void>;
   isMicMuted: boolean;
   onToggleMic: () => void;
+  onChatUser?: (uid: string) => void;
 }
 
 export default function AdminPanel({
@@ -79,7 +80,8 @@ export default function AdminPanel({
   micAuthorized,
   onAuthorizeMic,
   isMicMuted,
-  onToggleMic
+  onToggleMic,
+  onChatUser
 }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers'>('complaints');
   const [isFormVisible, setIsFormVisible] = useState(true);
@@ -89,6 +91,7 @@ export default function AdminPanel({
   const [newLineCode, setNewLineCode] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserProfile['role']>('member');
   const [isCreating, setIsCreating] = useState(false);
+  const [selectedDealerId, setSelectedDealerId] = useState<string | 'all'>('all');
   
   // User editing state
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -385,6 +388,7 @@ export default function AdminPanel({
         <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl w-full lg:w-fit border border-slate-200 dark:border-slate-800">
           {[
             { id: 'complaints', label: 'Operations', icon: ClipboardList },
+            ...(currentUser.role === 'super_admin' ? [{ id: 'dealers_data', label: 'Dealers Data', icon: BarChart3 }] : []),
             { id: 'submit', label: 'Complain Reg', icon: PlusSquare },
             { id: 'clients', label: 'User Details', icon: Contact },
             { id: 'nodes', label: 'Active Nodes', icon: Flame },
@@ -424,19 +428,127 @@ export default function AdminPanel({
         id="operations-registry"
       >
         {activeTab === 'complaints' && (
-          <ComplaintList
-            complaints={complaints}
-            onDelete={onDeleteComplaint}
-            onStatusChange={onUpdateComplaintStatus}
-            onUpdateRemarks={onUpdateRemarks}
-            onEdit={onUpdateComplaint}
-            isAdmin={true}
-            currentUser={currentUser}
-            forcedStatusFilter={forcedStatus}
-            forcedPriorityFilter={forcedPriority}
-            forcedCategoryFilter={forcedCategory}
-            appConfig={appConfig}
-          />
+          <div className="space-y-6">
+            {selectedDealerId !== 'all' && (
+              <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+                    <BarChart3 size={16} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Active Dealer Audit Filter</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-tight">Viewing data for: {users.find(u => u.uid === selectedDealerId)?.username || 'Selected Dealer'}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedDealerId('all')}
+                  className="px-4 py-2 rounded-lg bg-white dark:bg-slate-900 border border-blue-100 dark:border-blue-800 text-[10px] font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 transition-all shadow-sm"
+                >
+                  Clear Filter
+                </button>
+              </div>
+            )}
+            <ComplaintList
+              complaints={selectedDealerId === 'all' ? complaints : complaints.filter(c => c.dealerId === selectedDealerId)}
+              onDelete={onDeleteComplaint}
+              onStatusChange={onUpdateComplaintStatus}
+              onUpdateRemarks={onUpdateRemarks}
+              onEdit={onUpdateComplaint}
+              isAdmin={true}
+              currentUser={currentUser}
+              forcedStatusFilter={forcedStatus}
+              forcedPriorityFilter={forcedPriority}
+              forcedCategoryFilter={forcedCategory}
+              appConfig={appConfig}
+            />
+          </div>
+        )}
+
+        {activeTab === 'dealers_data' && currentUser.role === 'super_admin' && (
+          <div className="space-y-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h3 className="text-2xl font-black uppercase tracking-tight">Dealer Intelligence</h3>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Select an authorized dealer network to audit operational performance</p>
+              </div>
+              <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                <button 
+                  onClick={() => setSelectedDealerId('all')}
+                  className={cn(
+                    "px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all",
+                    selectedDealerId === 'all' ? "bg-slate-950 dark:bg-brand-accent text-white" : "text-slate-500 hover:text-slate-900"
+                  )}
+                >
+                  Global View
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {users.filter(u => u.role === 'dealer').map((dealer) => {
+                const dealerComplaints = complaints.filter(c => c.dealerId === dealer.uid);
+                const pending = dealerComplaints.filter(c => c.status === 'pending').length;
+                const completed = dealerComplaints.filter(c => c.status === 'complete').length;
+                
+                return (
+                  <motion.div
+                    key={dealer.uid}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      setSelectedDealerId(dealer.uid);
+                      setActiveTab('complaints');
+                    }}
+                    className={cn(
+                      "p-6 rounded-2xl border-2 transition-all cursor-pointer group",
+                      selectedDealerId === dealer.uid 
+                        ? "bg-slate-950 dark:bg-brand-accent text-white border-slate-950 dark:border-brand-accent" 
+                        : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 hover:border-brand-accent/50"
+                    )}
+                  >
+                    <div className="flex justify-between items-start mb-6">
+                      <div className={cn(
+                        "w-12 h-12 rounded-xl flex items-center justify-center",
+                        selectedDealerId === dealer.uid ? "bg-white/10" : "bg-slate-100 dark:bg-slate-900"
+                      )}>
+                        <TrendingUp size={24} className={selectedDealerId === dealer.uid ? "text-white" : "text-brand-accent"} />
+                      </div>
+                      <div className={cn(
+                        "px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest border",
+                        selectedDealerId === dealer.uid ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500"
+                      )}>
+                        {dealer.lineCode}
+                      </div>
+                    </div>
+                    
+                    <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate">{dealer.username}</h4>
+                    <p className={cn("text-[10px] font-bold uppercase tracking-widest mb-6", selectedDealerId === dealer.uid ? "text-white/60" : "text-slate-400")}>Authorized Dealer Network</p>
+                    
+                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10 dark:border-slate-800">
+                      <div>
+                        <p className={cn("text-[9px] font-black uppercase tracking-widest", selectedDealerId === dealer.uid ? "text-white/40" : "text-slate-500")}>Operations</p>
+                        <p className="text-xl font-black tracking-tighter">{dealerComplaints.length}</p>
+                      </div>
+                      <div>
+                        <p className={cn("text-[9px] font-black uppercase tracking-widest", selectedDealerId === dealer.uid ? "text-white/40" : "text-slate-500")}>Pending</p>
+                        <p className="text-xl font-black tracking-tighter text-amber-500">{pending}</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {users.filter(u => u.role === 'dealer').length === 0 && (
+              <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <ShieldAlert size={32} className="text-slate-300" />
+                </div>
+                <h4 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">No Active Dealer Networks</h4>
+                <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Authorize dealers in the "Dealer Section" to start auditing their data.</p>
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'submit' && (
@@ -589,6 +701,7 @@ export default function AdminPanel({
                     <tr className="border-b border-slate-100 dark:border-slate-800">
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Clearance</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Created From</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Registry Date</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Protocol</th>
                     </tr>
@@ -636,6 +749,11 @@ export default function AdminPanel({
                             {user.role}
                           </span>
                         </td>
+                        <td className="px-6 py-4">
+                          <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-slate-800">
+                            {user.createdByName || (user.createdBy === 'system' ? 'System' : 'Unknown Agent')}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-[11px] font-medium text-slate-400 uppercase tracking-tighter">{new Date(user.createdAt).toLocaleDateString()}</td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex justify-end gap-2">
@@ -662,7 +780,7 @@ export default function AdminPanel({
                                 {user.uid !== currentUser.uid && (
                                   <button
                                     onClick={() => {
-                                      window.dispatchEvent(new CustomEvent('openChat', { detail: { uid: user.uid } }));
+                                      window.dispatchEvent(new CustomEvent('openChat', { detail: user.uid }));
                                     }}
                                     className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all"
                                     title="Private Message"
@@ -1024,6 +1142,15 @@ export default function AdminPanel({
                                  </>
                                ) : (
                                  <>
+                                   <button
+                                     onClick={() => {
+                                       window.dispatchEvent(new CustomEvent('openChat', { detail: dealer.uid }));
+                                     }}
+                                     className="p-2 text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all"
+                                     title="Communicate with Dealer"
+                                   >
+                                     <MessageSquare size={16} />
+                                   </button>
                                    <button
                                       onClick={() => handleStartEditUser(dealer)}
                                       className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all"

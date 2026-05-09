@@ -41,6 +41,8 @@ export interface UserProfile {
   lastActive?: number;
   dealerId?: string; // For dealers and users created by dealers
   lineCode?: string; // Specific code for dealer identification
+  createdBy?: string; // UID of creator
+  createdByName?: string; // Name of creator
 }
 
 export interface Client {
@@ -59,6 +61,15 @@ export interface Client {
   dealerId?: string; // Multi-tenancy support
 }
 
+export interface ChatGroup {
+  id: string;
+  name: string;
+  members: string[]; // array of uids
+  createdBy: string;
+  createdAt: number;
+  dealerId?: string;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -66,7 +77,8 @@ export interface ChatMessage {
   text?: string;
   audioUrl?: string;
   type?: 'text' | 'voice';
-  recipientId?: string;
+  recipientId?: string; // userId or groupId
+  isGroup?: boolean;
   duration?: number;
   replyTo?: {
     id: string;
