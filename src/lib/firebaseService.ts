@@ -13,7 +13,8 @@ import {
   serverTimestamp,
   getDocFromServer,
   or,
-  and
+  and,
+  writeBatch
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification, ChatGroup } from '../types';
@@ -226,7 +227,35 @@ export const firebaseService = {
   deleteUser: async (uid: string, username: string, authorName: string) => {
     const path = `users/${uid}`;
     try {
-      await deleteDoc(doc(db, 'users', uid));
+      const userRef = doc(db, 'users', uid);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.data() as UserProfile | undefined;
+
+      if (userData && userData.role === 'dealer') {
+        const dealerId = uid;
+        const collectionsToDelete = ['users', 'complaints', 'clients', 'groups', 'messages', 'notifications'];
+
+        for (const collName of collectionsToDelete) {
+          const q = query(collection(db, collName), where('dealerId', '==', dealerId));
+          const snap = await getDocs(q);
+          
+          const docs = snap.docs;
+          // Process in batches of 400 to stay well within the 500 limit
+          for (let i = 0; i < docs.length; i += 400) {
+            const batch = writeBatch(db);
+            const chunk = docs.slice(i, i + 400);
+            chunk.forEach(d => batch.delete(d.ref));
+            await batch.commit();
+          }
+        }
+
+        // Use standard delete for the user itself to be safe
+        await deleteDoc(userRef);
+      } else {
+        // Just delete the single user if not a dealer
+        await deleteDoc(userRef);
+      }
+
       await firebaseService.createNotification({
         type: 'user_deleted',
         message: `Identity revoked: Access node for "${username}" purged`,

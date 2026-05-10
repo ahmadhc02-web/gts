@@ -1181,22 +1181,27 @@ export default function AdminPanel({
                                       <Pencil size={16} />
                                     </button>
                                     {deletingId === dealer.uid ? (
-                                      <>
-                                        <button
-                                          onClick={async () => {
-                                            try { await onDeleteUser(dealer.uid); setDeletingId(null); } catch (err) { toast.error('Unauthorized action'); }
-                                          }}
-                                          className="px-3 py-1.5 text-[9px] font-black text-white bg-red-600 rounded-md hover:bg-red-700 shadow-md shadow-red-500/20 uppercase tracking-widest"
-                                        >
-                                          Confirm
-                                        </button>
-                                        <button
-                                          onClick={() => setDeletingId(null)}
-                                          className="px-3 py-1.5 text-[9px] font-bold text-slate-400 hover:text-slate-900 uppercase tracking-widest"
-                                        >
-                                          Cancel
-                                        </button>
-                                      </>
+                                      <div className="flex flex-col items-end gap-2 pr-2">
+                                        <span className="text-[7px] text-red-500 font-black uppercase animate-pulse tracking-[0.2em]">
+                                          PURGE NETWORK & DATA?
+                                        </span>
+                                        <div className="flex gap-2 pb-2">
+                                          <button
+                                            onClick={async () => {
+                                              try { await onDeleteUser(dealer.uid); setDeletingId(null); } catch (err) { toast.error('Unauthorized action'); }
+                                            }}
+                                            className="px-3 py-1.5 text-[9px] font-black text-white bg-red-600 rounded-md hover:bg-red-700 shadow-md shadow-red-500/20 uppercase tracking-widest"
+                                          >
+                                            Confirm Purge
+                                          </button>
+                                          <button
+                                            onClick={() => setDeletingId(null)}
+                                            className="px-3 py-1.5 text-[9px] font-bold text-slate-400 hover:text-slate-900 uppercase tracking-widest"
+                                          >
+                                            Abort
+                                          </button>
+                                        </div>
+                                      </div>
                                     ) : (
                                       <button
                                         onClick={() => setDeletingId(dealer.uid)}
