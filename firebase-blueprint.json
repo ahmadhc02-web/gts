@@ -120,6 +120,20 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "type", "message", "authorName", "createdAt"]
+    },
+    "ChatGroup": {
+      "title": "Chat Group",
+      "description": "A group of users for team communication.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "createdBy": { "type": "string" },
+        "dealerId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "members", "createdBy", "createdAt"]
     }
   },
   "firestore": {
@@ -146,6 +160,10 @@
     "chat/{messageId}": {
       "schema": "Message",
       "description": "Real-time team communication."
+    },
+    "groups/{groupId}": {
+      "schema": "ChatGroup",
+      "description": "Operational tactical units and team groups."
     },
     "system/alarm": {
       "schema": "Alarm",

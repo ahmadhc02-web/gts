@@ -25,7 +25,7 @@ interface AdminPanelProps {
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
   onCreateUser: (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string) => Promise<void>;
   onDeleteUser: (uid: string) => Promise<void>;
-  onUpdateUser: (uid: string, username: string, pass: string) => Promise<void>;
+  onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string) => Promise<void>;
   onRegisterComplaint: (data: {
     customerName: string;
     customerUsername: string;
@@ -97,6 +97,7 @@ export default function AdminPanel({
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editUsername, setEditUsername] = useState('');
   const [editPassword, setEditPassword] = useState('');
+  const [editLineCode, setEditLineCode] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -256,12 +257,14 @@ export default function AdminPanel({
     setEditingUserId(user.uid);
     setEditUsername(user.username);
     setEditPassword(user.password);
+    setEditLineCode(user.lineCode || '');
   };
 
   const handleCancelEditUser = () => {
     setEditingUserId(null);
     setEditUsername('');
     setEditPassword('');
+    setEditLineCode('');
   };
 
   const handleUpdateUser = async (uid: string) => {
@@ -272,7 +275,7 @@ export default function AdminPanel({
     
     setIsUpdating(true);
     try {
-      await onUpdateUser(uid, editUsername.trim(), editPassword.trim());
+      await onUpdateUser(uid, editUsername.trim(), editPassword.trim(), editLineCode.trim() || undefined);
       setEditingUserId(null);
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
@@ -736,6 +739,15 @@ export default function AdminPanel({
                                 placeholder="New Password"
                                 className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
                               />
+                              {currentUser.role === 'super_admin' && user.role === 'dealer' && (
+                                <input
+                                  type="text"
+                                  value={editLineCode}
+                                  onChange={(e) => setEditLineCode(e.target.value)}
+                                  placeholder="Line Code"
+                                  className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
+                                />
+                              )}
                             </div>
                           ) : (
                             <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.username}</span>
@@ -1110,9 +1122,19 @@ export default function AdminPanel({
                             )}
                           </td>
                           <td className="px-6 py-4">
-                            <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-black rounded border border-emerald-200 dark:border-emerald-800/50">
-                              {dealer.lineCode}
-                            </span>
+                            {editingUserId === dealer.uid ? (
+                              <input
+                                type="text"
+                                value={editLineCode}
+                                onChange={(e) => setEditLineCode(e.target.value)}
+                                className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
+                                placeholder="Line Code"
+                              />
+                            ) : (
+                              <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-black rounded border border-emerald-200 dark:border-emerald-800/50">
+                                {dealer.lineCode}
+                              </span>
+                            )}
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">

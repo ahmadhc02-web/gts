@@ -109,6 +109,17 @@ function sanitize<T>(obj: T): T {
 }
 
 export const firebaseService = {
+  testConnection: async () => {
+    try {
+      await getDocFromServer(doc(db, 'config', 'app'));
+      console.log('Firebase connection verified');
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('the client is offline')) {
+        console.error("Please check your Firebase configuration.");
+      }
+    }
+  },
+
   // Helper to get effect dealer ID for multi-tenancy
   getTenantId: (user: UserProfile) => {
     if (user.role === 'dealer') return user.uid;
@@ -184,12 +195,12 @@ export const firebaseService = {
 
   createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string): Promise<UserProfile> => {
     const path = `users/${uid}`;
-    const newUser: UserProfile = {
+    const newUser: any = {
       uid,
       username,
       password: pass,
       role,
-      createdAt: Date.now(),
+      createdAt: serverTimestamp(),
       dealerId,
       createdBy: authorId,
       createdByName: authorName,
@@ -331,13 +342,13 @@ export const firebaseService = {
     // Clean potential undefined values
     const cleanData = sanitize(data);
     
-    const newNotification: Notification = {
+    const newNotification: any = {
       ...cleanData,
       id,
-      createdAt: Date.now(),
+      createdAt: serverTimestamp(),
       isRead: false,
       dealerId: data.dealerId || 'main'
-    } as Notification;
+    };
     
     try {
       await setDoc(doc(db, 'notifications', id), newNotification);
@@ -378,8 +389,11 @@ export const firebaseService = {
       
       callback(notifications.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
     }, (error) => {
-      console.error('Subscription error for notifications:', error instanceof Error ? error.message : String(error));
-      handleFirestoreError(error, OperationType.LIST, path);
+      // Only report if we are supposed to be signed in
+      if (auth.currentUser) {
+        console.error('Subscription error for notifications:', error instanceof Error ? error.message : String(error));
+        handleFirestoreError(error, OperationType.LIST, path);
+      }
     });
   },
 
@@ -409,12 +423,12 @@ export const firebaseService = {
     
     const tenantId = firebaseService.getTenantId(member);
     
-    const newComplaint: Complaint = sanitize({
+    const newComplaint: any = sanitize({
       ...data,
       id,
       memberId: member.uid,
       memberName: member.username,
-      createdAt: Date.now(),
+      createdAt: serverTimestamp(),
       dealerId: tenantId
     });
     try {
@@ -520,7 +534,9 @@ export const firebaseService = {
       
       callback(complaints.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.LIST, path);
+      }
     });
   },
 
@@ -548,7 +564,9 @@ export const firebaseService = {
         callback(null);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
     });
   },
 
@@ -574,18 +592,19 @@ export const firebaseService = {
   sendMessage: async (sender: UserProfile, text: string, replyTo?: ChatMessage['replyTo'], recipientId?: string, isGroup?: boolean): Promise<ChatMessage> => {
     const id = `msg_${Math.random().toString(36).substr(2, 12)}`;
     const path = `chat/${id}`;
-    const now = Date.now();
+    const now = serverTimestamp();
+    const clientNow = Date.now();
     
     const tenantId = firebaseService.getTenantId(sender);
     
-    const newMessage: ChatMessage = sanitize({
+    const newMessage: any = sanitize({
       id,
       senderId: sender.uid,
       senderName: sender.username,
       text,
       createdAt: now,
       seenBy: {
-        [sender.uid]: { username: sender.username, time: now }
+        [sender.uid]: { username: sender.username, time: clientNow }
       },
       replyTo,
       recipientId,
@@ -605,11 +624,12 @@ export const firebaseService = {
   sendVoiceMessage: async (sender: UserProfile, audioBase64: string, duration: number, replyTo?: ChatMessage['replyTo'], recipientId?: string, isGroup?: boolean): Promise<ChatMessage> => {
     const id = `msg_${Math.random().toString(36).substr(2, 12)}`;
     const path = `chat/${id}`;
-    const now = Date.now();
+    const now = serverTimestamp();
+    const clientNow = Date.now();
     
     const tenantId = firebaseService.getTenantId(sender);
 
-    const newMessage: ChatMessage = sanitize({
+    const newMessage: any = sanitize({
       id,
       senderId: sender.uid,
       senderName: sender.username,
@@ -618,7 +638,7 @@ export const firebaseService = {
       duration,
       createdAt: now,
       seenBy: {
-        [sender.uid]: { username: sender.username, time: now }
+        [sender.uid]: { username: sender.username, time: clientNow }
       },
       replyTo,
       recipientId,
@@ -640,12 +660,12 @@ export const firebaseService = {
     const path = `groups/${id}`;
     const tenantId = firebaseService.getTenantId(creator);
 
-    const newGroup: ChatGroup = {
+    const newGroup: any = {
       id,
       name,
       members: Array.from(new Set([...members, creator.uid])),
       createdBy: creator.uid,
-      createdAt: Date.now(),
+      createdAt: serverTimestamp(),
       dealerId: tenantId
     };
 
@@ -675,7 +695,9 @@ export const firebaseService = {
       
       callback(groups);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.LIST, path);
+      }
     });
   },
 
@@ -763,7 +785,9 @@ export const firebaseService = {
       
       callback(messages.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
     });
   },
 
@@ -789,10 +813,10 @@ export const firebaseService = {
   createClient: async (data: Omit<Client, 'id' | 'createdAt'>, authorName: string, dealerId: string = 'main'): Promise<Client> => {
     const id = Math.random().toString(36).substr(2, 9);
     const path = `clients/${id}`;
-    const newClient: Client = sanitize({
+    const newClient: any = sanitize({
       ...data,
       id,
-      createdAt: Date.now(),
+      createdAt: serverTimestamp(),
       dealerId
     });
     try {
@@ -858,7 +882,9 @@ export const firebaseService = {
       clients.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       callback(clients);
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, path);
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
     });
   }
 };

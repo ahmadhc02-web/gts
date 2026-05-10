@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, User, X, MessageSquare, Clock, CheckCheck, Eye, Trash2, Smile, Paperclip, Mic, CornerUpLeft, Loader2, Plus, Users, ChevronLeft, Search, MoreVertical, LifeBuoy } from 'lucide-react';
+import { Send, User, X, MessageSquare, Clock, CheckCheck, Eye, Trash2, Smile, Paperclip, Mic, CornerUpLeft, Loader2, Plus, Users, ChevronLeft, Search, MoreVertical, LifeBuoy, Globe } from 'lucide-react';
 import EmojiPicker, { Theme, EmojiClickData } from 'emoji-picker-react';
 import { ChatMessage, UserProfile, ChatGroup } from '../types';
 import { firebaseService } from '../lib/firebaseService';
@@ -32,7 +32,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
-  const [selectedScope, setSelectedScope] = useState<string>('global');
+  const [selectedScope, setSelectedScope] = useState<string>('support');
   const [isGroupChat, setIsGroupChat] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [newGroupName, setNewGroupName] = useState<string>('');
@@ -266,28 +266,42 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     }
   };
 
+  const [isInitializingGroup, setIsInitializingGroup] = useState(false);
   const handleCreateGroup = async () => {
     if (!newGroupName.trim() || selectedMembers.length === 0) {
       toast.error('Tactical unit requires designation and recruits.');
       return;
     }
 
+    setIsInitializingGroup(true);
     try {
+      console.log('Initiating unit deployment:', { name: newGroupName, members: selectedMembers });
       const group = await firebaseService.createGroup(newGroupName, selectedMembers, currentUser);
+      console.log('Group created successfully:', group);
       toast.success(`Unit "${group.name}" initialized!`);
       setSelectedScope(group.id);
       setIsGroupChat(true);
       setViewState('chat');
       setNewGroupName('');
       setSelectedMembers([currentUser.uid]);
-    } catch (err) {
-      console.error('Failed to create group:', err);
-      toast.error('Initialization failed.');
+    } catch (err: any) {
+      console.error('Failed to deploy unit:', err);
+      toast.error(`Initialization failed: ${err?.message || 'Check network link.'}`);
+    } finally {
+      setIsInitializingGroup(false);
     }
   };
 
   const handleDeleteChat = async () => {
     if (!deleteChatConfirm) return;
+    
+    // Final security check
+    if (deleteChatConfirm.isGroup && currentUser.role === 'member') {
+      toast.error('Tactical units can only be decommissioned by administrators.');
+      setDeleteChatConfirm(null);
+      return;
+    }
+
     try {
       if (deleteChatConfirm.isGroup) {
         await firebaseService.deleteGroup(deleteChatConfirm.id);
@@ -396,6 +410,10 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     };
 
     const handleDelete = () => {
+      if (isGroup && currentUser.role === 'member') {
+        toast.error('Members are restricted from decommissioning tactical units.');
+        return;
+      }
       setDeleteChatConfirm({ id, name, isGroup: !!isGroup });
     };
 
@@ -404,10 +422,16 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       if (info.offset.x > threshold) {
         handleSeen();
       } else if (info.offset.x < -threshold) {
+        // Prevent swipe if group and member
+        if (isGroup && currentUser.role === 'member') {
+          return;
+        }
         handleDelete();
       }
     };
     
+    const showDeleteAction = !isGroup || (currentUser.role === 'admin' || currentUser.role === 'super_admin');
+
     return (
       <div className="relative overflow-hidden bg-slate-100 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
         {/* Background Swipe Actions */}
@@ -416,16 +440,18 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
             <Eye size={20} className="animate-pulse" />
             <span className="text-[10px] font-black uppercase tracking-widest">Mark Seen</span>
           </div>
-          <div className="flex items-center gap-2 text-rose-500">
-            <span className="text-[10px] font-black uppercase tracking-widest">Decommission</span>
-            <Trash2 size={20} className="animate-pulse" />
-          </div>
+          {showDeleteAction && (
+            <div className="flex items-center gap-2 text-rose-500">
+              <span className="text-[10px] font-black uppercase tracking-widest">Decommission</span>
+              <Trash2 size={20} className="animate-pulse" />
+            </div>
+          )}
         </div>
 
         <motion.button
           drag="x"
           dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={0.8}
+          dragElastic={showDeleteAction ? 0.8 : 0.2}
           onDragEnd={handleDragEnd}
           onClick={() => {
             setSelectedScope(id);
@@ -511,13 +537,15 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <button 
-                onClick={() => setViewState('create-group')} 
-                className="p-2.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all" 
-                title="New Group"
-              >
-                <Users size={20} />
-              </button>
+              {(currentUser.role === 'super_admin' || currentUser.role === 'admin') && (
+                <button 
+                  onClick={() => setViewState('create-group')} 
+                  className="p-2.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all" 
+                  title="New Group"
+                >
+                  <Users size={20} />
+                </button>
+              )}
               <button 
                 onClick={() => setViewState('new-chat')} 
                 className="p-2.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all" 
@@ -640,6 +668,12 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
              {users
                .filter(u => u.uid !== currentUser.uid)
                .filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase()))
+               .filter(u => {
+                 if (currentUser.role === 'member') {
+                   return u.role === 'super_admin' || u.role === 'admin';
+                 }
+                 return true;
+               })
                .map(user => (
                  <button
                    key={user.uid}

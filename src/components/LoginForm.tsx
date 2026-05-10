@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Lock, User, Eye, EyeOff, Loader2, Key } from 'lucide-react';
 import { cn } from '../lib/utils';
 import NetworkBackground from './NetworkBackground';
+import { firebaseService } from '../lib/firebaseService';
 
 interface LoginFormProps {
   onLogin: (username: string, pass: string, lineCode?: string) => Promise<void>;
@@ -15,10 +16,42 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
   const [password, setPassword] = useState('');
   const [lineCode, setLineCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [requiredLineCode, setRequiredLineCode] = useState<boolean>(false);
+  const [isCheckingUser, setIsCheckingUser] = useState(false);
+
+  // Check if username needs a line code
+  useEffect(() => {
+    const checkUser = async () => {
+      if (username.length < 3) {
+        setRequiredLineCode(false);
+        return;
+      }
+      
+      setIsCheckingUser(true);
+      try {
+        // Use a cached list or a more targeted check if possible
+        // For now, we fetch once and filter locally to avoid hitting quotas
+        const users = await firebaseService.getUsers();
+        const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+        setRequiredLineCode(!!user?.lineCode);
+      } catch (err) {
+        console.warn("User protocol validation pending...");
+      } finally {
+        setIsCheckingUser(false);
+      }
+    };
+
+    const timer = setTimeout(checkUser, 1000); // Increased debounce to 1s
+    return () => clearTimeout(timer);
+  }, [username]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) return;
+    if (requiredLineCode && !lineCode) {
+      alert("Network Code is mandatory for this account.");
+      return;
+    }
     await onLogin(username, password, lineCode || undefined);
   };
 
@@ -70,26 +103,41 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Username"
-                className={inputClasses}
+                className={cn(inputClasses, isCheckingUser && "opacity-70")}
                 required
               />
+              {isCheckingUser && (
+                <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                   <Loader2 size={16} className="animate-spin text-brand-accent" />
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Network Code (Optional)</label>
-            <div className="relative">
-              <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input
-                id="line-code-input"
-                type="text"
-                value={lineCode}
-                onChange={(e) => setLineCode(e.target.value)}
-                placeholder="Ex: DEALER-101"
-                className={inputClasses}
-              />
-            </div>
-          </div>
+          <AnimatePresence>
+            {requiredLineCode && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0, scale: 0.95 }}
+                animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                exit={{ opacity: 0, height: 0, scale: 0.95 }}
+                className="space-y-2 overflow-hidden"
+              >
+                <label className="block text-xs font-black text-brand-accent uppercase tracking-widest ml-1">Network Code (Mandatory)</label>
+                <div className="relative">
+                  <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-accent" size={18} />
+                  <input
+                    id="line-code-input"
+                    type="text"
+                    value={lineCode}
+                    onChange={(e) => setLineCode(e.target.value)}
+                    placeholder="Enter Network Code"
+                    className={cn(inputClasses, "border-brand-accent/30 ring-2 ring-brand-accent/10")}
+                    required
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="space-y-2">
             <label className="block text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Passkey</label>
