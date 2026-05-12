@@ -30,7 +30,7 @@ interface MemberPanelProps {
   }) => Promise<void>;
   onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
-  onUpdateUser: (uid: string, username: string, pass: string) => Promise<void>;
+  onUpdateUser: (uid: string, username: string, pass: string, fullName?: string) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
   isLoading: boolean;
   alertAuthorized: boolean;
@@ -72,6 +72,7 @@ export default function MemberPanel({
 
   const [newUsername, setNewUsername] = useState(currentUser.username);
   const [newPassword, setNewPassword] = useState(currentUser.password);
+  const [newFullName, setNewFullName] = useState(currentUser.fullName || '');
   const [isUpdating, setIsUpdating] = useState(false);
   const [activeTab, setActiveTab] = useState<'ops' | 'clients' | 'profile' | 'monitor'>('ops');
   const [isFormVisible, setIsFormVisible] = useState(true);
@@ -104,7 +105,7 @@ export default function MemberPanel({
     
     setIsUpdating(true);
     try {
-      await onUpdateUser(currentUser.uid, newUsername.trim(), newPassword.trim());
+      await onUpdateUser(currentUser.uid, newUsername.trim(), newPassword.trim(), newFullName.trim());
     } finally {
       setIsUpdating(false);
     }
@@ -307,148 +308,172 @@ export default function MemberPanel({
           <ClientManagement appConfig={appConfig} isAdmin={false} currentUser={currentUser} currentUserName={currentUser.username} />
         )}
 
-        {activeTab === 'profile' && (
+          {activeTab === 'profile' && (
           <div className="max-w-4xl">
-            {/* Profile Security Section */}
-            <section>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                <div>
-                  <div className="mb-6">
-                    <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-500 mb-2">Identity Security</h3>
-                    <p className="text-xs text-slate-400 font-medium leading-relaxed">Update your login credentials. Changes will take effect immediately upon confirmation.</p>
-                  </div>
-                  
-                  <form onSubmit={handleUpdateProfile} className="space-y-6">
-                    <div className="space-y-1.5">
-                      <label className={labelClasses}>Link Access ID (Username)</label>
-                      <div className="relative">
-                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                        <input
-                          type="text"
-                          value={newUsername}
-                          onChange={(e) => setNewUsername(e.target.value)}
-                          className={cn(inputClasses, "pl-11")}
-                          required
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-1.5">
-                      <label className={labelClasses}>New Access Passkey</label>
-                      <div className="relative">
-                        <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-                        <input
-                          type="password"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          className={cn(inputClasses, "pl-11")}
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isUpdating}
-                      className="px-8 py-3.5 rounded-xl bg-slate-900 dark:bg-brand-accent text-white font-black uppercase tracking-widest text-[10px] shadow-lg hover:shadow-brand-accent/20 transition-all active:scale-[0.98] disabled:opacity-50"
-                    >
-                      {isUpdating ? 'Synchronizing Credentials...' : 'Confirm Identity Update'}
-                    </button>
-                  </form>
-
-                  {/* Sign Out Section */}
-                  <div className="mt-12 pt-12 border-t border-slate-100 dark:border-slate-800">
-                    <button
-                      onClick={onLogout}
-                      className="w-full py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-[11px] shadow-lg flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
-                    >
-                      <LogOut size={16} />
-                      Sign Out
-                    </button>
-                    <p className="text-center text-[9px] font-black uppercase tracking-[0.3em] text-slate-400 mt-4 leading-none">
-                      Operational Session Exit
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-slate-800">
-                    <div className="flex items-center gap-3 mb-6">
-                      <Activity className="text-amber-500" size={20} />
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Audio Matrix Hub</h4>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      {!alertAuthorized ? (
-                        <button
-                          onClick={onAuthorizeAlerts}
-                          className="w-full py-3 rounded-xl bg-amber-500 text-white font-black uppercase tracking-widest text-[9px] shadow-lg"
-                        >
-                          Unlock Speaker Matrix
-                        </button>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Speaker State</span>
-                            <button
-                              onClick={onToggleAudio}
-                              className={cn(
-                                "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest",
-                                isAudioMuted ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
-                              )}
-                            >
-                              {isAudioMuted ? 'Active' : 'Mute'}
-                            </button>
-                          </div>
-                          <button
-                            onClick={onSoundTest}
-                            className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 font-black uppercase tracking-widest text-[9px] hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
-                          >
-                            <Zap size={12} className="text-amber-500" />
-                            Ping Speaker Hub
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-slate-800">
-                    <div className="flex items-center gap-3 mb-6">
-                      <Mic className="text-blue-500" size={20} />
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Voice Input Protocol</h4>
-                    </div>
-
-                    <div className="space-y-4">
-                      {!micAuthorized ? (
-                        <button
-                          onClick={onAuthorizeMic}
-                          className="w-full py-3 rounded-xl bg-blue-600 text-white font-black uppercase tracking-widest text-[9px] shadow-lg"
-                        >
-                          Authorize Mic Capture
-                        </button>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Mic State</span>
-                            <button
-                              onClick={onToggleMic}
-                              className={cn(
-                                "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest",
-                                isMicMuted ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
-                              )}
-                            >
-                              {isMicMuted ? 'Active' : 'Mute'}
-                            </button>
-                          </div>
-                          <div className="mt-4 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
-                            <MicVisualizer isMuted={isMicMuted} isAuthorized={micAuthorized} />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
+            {/* Identity Profile Section */}
+            <section className="mb-12">
+              <div className="mb-6">
+                <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-500 mb-2">Profile System</h3>
+                <p className="text-xs text-slate-400 font-medium leading-relaxed">Update your public identity. This name will be visible across all transmissions and notifications.</p>
               </div>
+
+              <form onSubmit={handleUpdateProfile} className="space-y-6">
+                <div className="space-y-1.5 max-w-md">
+                  <label className={labelClasses}>Full Identity Name</label>
+                  <div className="relative">
+                    <Contact className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input
+                      type="text"
+                      placeholder="ENTER FULL NAME..."
+                      value={newFullName}
+                      onChange={(e) => setNewFullName(e.target.value)}
+                      className={cn(inputClasses, "pl-11")}
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-500 mb-2">Identity Security</h3>
+                  <p className="text-xs text-slate-400 font-medium leading-relaxed mb-6">Update your login credentials. Changes will take effect immediately upon confirmation.</p>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <div className="space-y-6">
+                      <div className="space-y-1.5">
+                        <label className={labelClasses}>Link Access ID (Username)</label>
+                        <div className="relative">
+                          <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                          <input
+                            type="text"
+                            value={newUsername}
+                            onChange={(e) => setNewUsername(e.target.value)}
+                            className={cn(inputClasses, "pl-11")}
+                            required
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <label className={labelClasses}>New Access Passkey</label>
+                        <div className="relative">
+                          <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                          <input
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className={cn(inputClasses, "pl-11")}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isUpdating}
+                        className="px-8 py-3.5 rounded-xl bg-slate-900 dark:bg-brand-accent text-white font-black uppercase tracking-widest text-[10px] shadow-lg hover:shadow-brand-accent/20 transition-all active:scale-[0.98] disabled:opacity-50"
+                      >
+                        {isUpdating ? 'Synchronizing Credentials...' : 'Confirm Identity Update'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-3 mb-6">
+                          <Activity className="text-amber-500" size={20} />
+                          <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Audio Matrix Hub</h4>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          {!alertAuthorized ? (
+                            <button
+                              type="button"
+                              onClick={onAuthorizeAlerts}
+                              className="w-full py-3 rounded-xl bg-amber-500 text-white font-black uppercase tracking-widest text-[9px] shadow-lg"
+                            >
+                              Unlock Speaker Matrix
+                            </button>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Speaker State</span>
+                                <button
+                                  type="button"
+                                  onClick={onToggleAudio}
+                                  className={cn(
+                                    "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest",
+                                    isAudioMuted ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+                                  )}
+                                >
+                                  {isAudioMuted ? 'Active' : 'Mute'}
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={onSoundTest}
+                                className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 font-black uppercase tracking-widest text-[9px] hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                              >
+                                <Zap size={12} className="text-amber-500" />
+                                Ping Speaker Hub
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-3 mb-6">
+                          <Mic className="text-blue-500" size={20} />
+                          <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Voice Input Protocol</h4>
+                        </div>
+
+                        <div className="space-y-4">
+                          {!micAuthorized ? (
+                            <button
+                              type="button"
+                              onClick={onAuthorizeMic}
+                              className="w-full py-3 rounded-xl bg-blue-600 text-white font-black uppercase tracking-widest text-[9px] shadow-lg"
+                            >
+                              Authorize Mic Capture
+                            </button>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Mic State</span>
+                                <button
+                                  type="button"
+                                  onClick={onToggleMic}
+                                  className={cn(
+                                    "px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest",
+                                    isMicMuted ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+                                  )}
+                                >
+                                  {isMicMuted ? 'Active' : 'Mute'}
+                                </button>
+                              </div>
+                              <div className="mt-4 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
+                                <MicVisualizer isMuted={isMicMuted} isAuthorized={micAuthorized} />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </form>
+            </section>
+
+            {/* Sign Out Section */}
+            <section className="mt-12 pt-12 border-t border-slate-100 dark:border-slate-800 pb-12">
+              <button
+                onClick={onLogout}
+                className="w-full max-w-sm mx-auto py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-[11px] shadow-lg flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
+              >
+                <LogOut size={16} />
+                Sign Out
+              </button>
+              <p className="text-center text-[9px] font-black uppercase tracking-[0.3em] text-slate-400 mt-4 leading-none">
+                Operational Session Exit
+              </p>
             </section>
           </div>
         )}

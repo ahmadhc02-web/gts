@@ -310,7 +310,7 @@ export const firebaseService = {
     }
   },
 
-  setTypingStatus: async (uid: string, username: string, isTyping: boolean) => {
+  setTypingStatus: async (uid: string, username: string, isTyping: boolean, fullName?: string) => {
     const path = `typing/${uid}`;
     try {
       if (!auth.currentUser) return;
@@ -318,6 +318,7 @@ export const firebaseService = {
         await setDoc(doc(db, 'typing', uid), {
           uid,
           username,
+          fullName,
           timestamp: Date.now()
         });
       } else {
@@ -328,16 +329,16 @@ export const firebaseService = {
     }
   },
 
-  subscribeTypingStatus: (callback: (typingUsers: { uid: string, username: string }[]) => void) => {
+  subscribeTypingStatus: (callback: (typingUsers: { uid: string, username: string, fullName?: string }[]) => void) => {
     const path = 'typing';
     const q = collection(db, path);
     return onSnapshot(q, (snapshot) => {
       const now = Date.now();
       const typing = snapshot.docs
-        .map(doc => doc.data() as { uid: string, username: string, timestamp: number })
+        .map(doc => doc.data() as { uid: string, username: string, fullName?: string, timestamp: number })
         // Filter out stale typing indicators (older than 10 seconds)
         .filter(t => now - t.timestamp < 10000)
-        .map(t => ({ uid: t.uid, username: t.username }));
+        .map(t => ({ uid: t.uid, username: t.username, fullName: t.fullName }));
       callback(typing);
     }, (error) => {
       // Fail silently for typing
@@ -457,7 +458,7 @@ export const firebaseService = {
       ...data,
       id,
       memberId: member.uid,
-      memberName: member.username,
+      memberName: member.fullName || member.username,
       createdAt: serverTimestamp(),
       dealerId: tenantId
     });
@@ -466,7 +467,7 @@ export const firebaseService = {
       await firebaseService.createNotification({
         type: 'complaint_created',
         message: `New registry: ${newComplaint.customerName} - ${newComplaint.category}`,
-        authorName: member.username,
+        authorName: member.fullName || member.username,
         details: newComplaint,
         dealerId: tenantId || undefined
       });
@@ -630,11 +631,11 @@ export const firebaseService = {
     const newMessage: any = sanitize({
       id,
       senderId: sender.uid,
-      senderName: sender.username,
+      senderName: sender.fullName || sender.username,
       text,
       createdAt: now,
       seenBy: {
-        [sender.uid]: { username: sender.username, time: clientNow }
+        [sender.uid]: { username: sender.fullName || sender.username, time: clientNow }
       },
       replyTo,
       recipientId,
@@ -662,13 +663,13 @@ export const firebaseService = {
     const newMessage: any = sanitize({
       id,
       senderId: sender.uid,
-      senderName: sender.username,
+      senderName: sender.fullName || sender.username,
       audioUrl: audioBase64,
       type: 'voice',
       duration,
       createdAt: now,
       seenBy: {
-        [sender.uid]: { username: sender.username, time: clientNow }
+        [sender.uid]: { username: sender.fullName || sender.username, time: clientNow }
       },
       replyTo,
       recipientId,

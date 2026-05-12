@@ -28,7 +28,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
   const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [typingUsers, setTypingUsers] = useState<{ uid: string, username: string }[]>([]);
+  const [typingUsers, setTypingUsers] = useState<{ uid: string, username: string, fullName?: string }[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
@@ -128,14 +128,14 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
   // Handle typing status
   useEffect(() => {
     if (newMessage.trim() === '' || viewState !== 'chat') {
-      firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false);
+      firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false, currentUser.fullName);
       return;
     }
 
-    firebaseService.setTypingStatus(currentUser.uid, currentUser.username, true);
+    firebaseService.setTypingStatus(currentUser.uid, currentUser.username, true, currentUser.fullName);
     
     const timeout = setTimeout(() => {
-      firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false);
+      firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false, currentUser.fullName);
     }, 3000);
 
     return () => clearTimeout(timeout);
@@ -541,7 +541,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                 <button 
                   onClick={() => setViewState('create-group')} 
                   className="p-2.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all" 
-                  title="New Group"
+                  title="Unit Deployment"
                 >
                   <Users size={20} />
                 </button>
@@ -601,7 +601,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                 const hasLegacySupport = messages.some(m => !m.recipientId && m.senderId === user.uid);
                 
                 if (!lastM && !unseen && !hasLegacySupport) return null; // Only show users who have chatted
-                return <ChatListItem key={user.uid} id={user.uid} name={user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />;
+                return <ChatListItem key={user.uid} id={user.uid} name={user.fullName || user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />;
               })
             }
 
@@ -630,7 +630,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
               .filter(u => !searchTerm || u.username.toLowerCase().includes(searchTerm.toLowerCase()))
               .filter(u => !!getLastMessage(u.uid, false))
               .map(user => (
-                <ChatListItem key={user.uid} id={user.uid} name={user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />
+                <ChatListItem key={user.uid} id={user.uid} name={user.fullName || user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />
               ))}
               
             {users
@@ -670,7 +670,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                .filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase()))
                .filter(u => {
                  if (currentUser.role === 'member') {
-                   return u.role === 'admin';
+                   return u.role === 'admin' || u.role === 'super_admin';
                  }
                  return true;
                })
@@ -686,11 +686,15 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                    className="w-full p-4 flex items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-900 border-b border-slate-50 dark:border-slate-900 transition-all group"
                  >
                    <div className="w-11 h-11 rounded-2xl bg-blue-600/10 text-blue-600 flex items-center justify-center font-black shadow-inner border border-blue-600/20 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                     {user.username[0].toUpperCase()}
+                     {(user.fullName || user.username)[0].toUpperCase()}
                    </div>
                    <div className="text-left flex-1 min-w-0">
-                     <p className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white truncate">{user.username}</p>
-                     <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">{user.role}</p>
+                     <p className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white truncate">{user.fullName || user.username}</p>
+                     {user.fullName ? (
+                       <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">@{user.username} - {user.role}</p>
+                     ) : (
+                       <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">{user.role}</p>
+                     )}
                    </div>
                    {isUserOnline(user.lastActive) && (
                      <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-950 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
@@ -703,7 +707,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       )}
 
       {/* Create Group View */}
-      {viewState === 'create-group' && (
+      {viewState === 'create-group' && (currentUser.role === 'admin' || currentUser.role === 'super_admin') && (
         <div className="flex flex-col h-full animate-in slide-in-from-right duration-300">
           <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-950">
              <div className="flex items-center gap-3">
@@ -772,13 +776,15 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                                "w-9 h-9 rounded-xl flex items-center justify-center font-black", 
                                isSelected ? "bg-white/20" : "bg-blue-500/10 text-blue-500"
                              )}>
-                               {user.username[0].toUpperCase()}
+                               { (user.fullName || user.username)[0].toUpperCase() }
                              </div>
                              <div className="text-left flex-1 min-w-0">
                                <p className="text-[12px] font-black uppercase truncate tracking-tight">
-                                 {user.username} {isMe && "(YOU)"}
+                                 {user.fullName || user.username} {isMe && "(YOU)"}
                                 </p>
-                               <p className={cn("text-[9px] uppercase font-bold tracking-widest", isSelected ? "text-blue-100" : "text-slate-400")}>{user.role}</p>
+                               <p className={cn("text-[9px] uppercase font-bold tracking-widest", isSelected ? "text-blue-100" : "text-slate-400")}>
+                                 {user.fullName ? `@${user.username} - ${user.role}` : user.role}
+                               </p>
                              </div>
                              <div className={cn(
                                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all", 
@@ -868,7 +874,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                   ? 'Help & Support' 
                   : isGroupChat 
                     ? groups.find(g => g.id === selectedScope)?.name 
-                    : users.find(u => u.uid === selectedScope)?.username}
+                    : (users.find(u => u.uid === selectedScope)?.fullName || users.find(u => u.uid === selectedScope)?.username)}
               </h3>
               <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mt-1">
                 {selectedScope === 'global' || selectedScope === 'support' ? 'Encrypted Support Line' : isGroupChat ? `${groups.find(g => g.id === selectedScope)?.members.length} Members` : 'Secure Direct Line'}
@@ -1056,14 +1062,14 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                   <div className="flex -space-x-2">
                     {typingUsers.slice(0, 3).map((u) => (
                       <div key={u.uid} className="w-5 h-5 rounded-lg bg-blue-600 border border-white dark:border-slate-950 flex items-center justify-center text-[8px] font-black text-white shadow-sm">
-                        {u.username[0].toUpperCase()}
+                        { (u.fullName || u.username)[0].toUpperCase() }
                       </div>
                     ))}
                   </div>
                   <div className="px-3 py-1.5 rounded-2xl rounded-tl-none bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 shadow-sm">
                     <span className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 flex items-center gap-2">
                       {typingUsers.length === 1 
-                        ? `${typingUsers[0].username.toUpperCase()}` 
+                        ? `${(typingUsers[0].fullName || typingUsers[0].username).toUpperCase()}` 
                         : `${typingUsers.length} OPERATIVES`}
                       <span className="text-[9px] font-bold opacity-60">TRANSCRIPTING...</span>
                     </span>

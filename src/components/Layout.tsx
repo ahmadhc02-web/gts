@@ -538,7 +538,7 @@ export default function Layout({
             {user && (
               <div className="hidden md:flex items-center gap-3 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
                 <User size={16} className="text-brand-accent" />
-                <span className="text-sm font-semibold">{user.username}</span>
+                <span className="text-sm font-semibold">{user.fullName || user.username}</span>
                 <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-brand-accent/10 text-brand-accent border border-brand-accent/20">
                   {user.role}
                 </span>

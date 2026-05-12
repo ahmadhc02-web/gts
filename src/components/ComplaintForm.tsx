@@ -68,11 +68,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
     if (appConfig.zones && appConfig.zones.length > 0 && !area) setArea(appConfig.zones[0]);
   }, [appConfig]);
 
-  // Auto-select area based on username keywords
-  useEffect(() => {
-    if (!customerUsername || !appConfig.zones) return;
+  // Manual selection area based on username keywords (called only during typing)
+  const autoSelectArea = (username: string) => {
+    if (!username || !appConfig.zones) return;
     
-    const lowerUsername = customerUsername.toLowerCase();
+    const lowerUsername = username.toLowerCase();
     const matchedZone = appConfig.zones.find(zone => 
       lowerUsername.includes(zone.toLowerCase())
     );
@@ -80,7 +80,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
     if (matchedZone) {
       setArea(matchedZone);
     }
-  }, [customerUsername, appConfig.zones]);
+  };
 
   const handleSelectClient = (client: Client) => {
     setCustomerName(client.name);
@@ -190,7 +190,9 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                     type="text"
                     value={customerUsername}
                     onChange={(e) => {
-                      setCustomerUsername(e.target.value);
+                      const val = e.target.value;
+                      setCustomerUsername(val);
+                      autoSelectArea(val);
                       setShowClientList(true);
                     }}
                     onFocus={() => setShowClientList(true)}

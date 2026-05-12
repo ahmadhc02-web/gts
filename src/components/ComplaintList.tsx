@@ -68,7 +68,7 @@ export default function ComplaintList({
     }
   }, [selectedComplaint]);
   const [sortConfig, setSortConfig] = React.useState<{
-    key: keyof Complaint | 'registry' | 'urgency' | 'client' | 'tactical' | 'category';
+    key: keyof Complaint | 'registry' | 'urgency' | 'client' | 'tactical' | 'category' | 'profile';
     direction: 'asc' | 'desc';
   }>({ key: 'registry', direction: 'desc' });
 
@@ -172,6 +172,10 @@ export default function ComplaintList({
         case 'category':
           valA = (a.category || '').toLowerCase();
           valB = (b.category || '').toLowerCase();
+          break;
+        case 'profile':
+          valA = (a.pkgDetails || '').toLowerCase();
+          valB = (b.pkgDetails || '').toLowerCase();
           break;
         case 'registry':
           valA = a.createdAt;
@@ -751,6 +755,17 @@ export default function ComplaintList({
                 </th>
                 <th 
                   className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
+                  onClick={() => handleSort('profile')}
+                >
+                  <div className="flex items-center gap-2">
+                    Profile
+                    {sortConfig.key === 'profile' && (
+                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
+                    )}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('panelDetails' as keyof Complaint)}
                 >
                   <div className="flex items-center gap-2">
@@ -811,7 +826,7 @@ export default function ComplaintList({
               <AnimatePresence mode="popLayout">
                 {paginatedComplaints.length === 0 ? (
                    <tr>
-                     <td colSpan={9} className="py-24 text-center">
+                     <td colSpan={10} className="py-24 text-center">
                        <Clock size={40} className="text-slate-200 mx-auto mb-4" />
                        <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No records meet current parameters</p>
                     </td>
@@ -857,6 +872,16 @@ export default function ComplaintList({
                             </span>
                           )}
                           <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{complaint.number}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-md bg-brand-accent/10 border border-brand-accent/20">
+                            <Package size={14} className="text-brand-accent" />
+                          </div>
+                          <span className="text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">
+                            {complaint.pkgDetails || 'N/A'}
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-5">

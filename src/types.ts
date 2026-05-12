@@ -37,6 +37,7 @@ export interface UserProfile {
   username: string;
   password?: string; // Added for simplified demo auth
   role: 'admin' | 'member' | 'dealer' | 'super_admin';
+  fullName?: string;
   createdAt: number;
   lastActive?: number;
   dealerId?: string; // For dealers and users created by dealers

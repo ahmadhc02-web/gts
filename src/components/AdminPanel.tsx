@@ -87,6 +87,7 @@ export default function AdminPanel({
   const [isFormVisible, setIsFormVisible] = useState(true);
   const [isChartsVisible, setIsChartsVisible] = useState(true);
   const [newUsername, setNewUsername] = useState('');
+  const [newFullName, setNewFullName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newLineCode, setNewLineCode] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -97,6 +98,7 @@ export default function AdminPanel({
   // User editing state
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editUsername, setEditUsername] = useState('');
+  const [editFullName, setEditFullName] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editLineCode, setEditLineCode] = useState('');
   const [editCompanyName, setEditCompanyName] = useState('');
@@ -242,10 +244,12 @@ export default function AdminPanel({
       } else {
         // Correctly associate the new user with the dealer if the current user is a dealer or a dealer's admin
         const effectiveDealerId = currentUser.role === 'dealer' ? currentUser.uid : currentUser.dealerId;
-        await onCreateUser(trimmedName, newPassword, newUserRole, effectiveDealerId);
+        // @ts-ignore - fullName is added to user management
+        await onCreateUser(trimmedName, newPassword, newUserRole, effectiveDealerId, undefined, undefined, newFullName.trim());
         setFormSuccess(`${newUserRole.charAt(0).toUpperCase() + newUserRole.slice(1)} account "${trimmedName}" created!`);
       }
       setNewUsername('');
+      setNewFullName('');
       setNewPassword('');
       setNewUserRole('member');
       setTimeout(() => setFormSuccess(null), 5000); 
@@ -259,6 +263,7 @@ export default function AdminPanel({
   const handleStartEditUser = (user: UserProfile) => {
     setEditingUserId(user.uid);
     setEditUsername(user.username);
+    setEditFullName(user.fullName || '');
     setEditPassword(user.password || '');
     setEditLineCode(user.lineCode || '');
     setEditCompanyName(user.companyName || '');
@@ -267,6 +272,7 @@ export default function AdminPanel({
   const handleCancelEditUser = () => {
     setEditingUserId(null);
     setEditUsername('');
+    setEditFullName('');
     setEditPassword('');
     setEditLineCode('');
     setEditCompanyName('');
@@ -280,7 +286,8 @@ export default function AdminPanel({
     
     setIsUpdating(true);
     try {
-      await onUpdateUser(uid, editUsername.trim(), editPassword.trim(), editLineCode.trim() || undefined, editCompanyName.trim() || undefined);
+      // @ts-ignore - fullName is added to user management
+      await onUpdateUser(uid, editUsername.trim(), editPassword.trim(), editLineCode.trim() || undefined, editCompanyName.trim() || undefined, editFullName.trim());
       setEditingUserId(null);
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
@@ -649,6 +656,16 @@ export default function AdminPanel({
                     />
                   </div>
                   <div className="space-y-1.5">
+                    <label className={labelClasses}>Full Name</label>
+                    <input
+                      type="text"
+                      value={newFullName}
+                      onChange={(e) => setNewFullName(e.target.value)}
+                      placeholder="e.g. John Doe"
+                      className={inputClasses}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
                     <label className={labelClasses}>Access Password</label>
                     <input
                       type="password"
@@ -735,6 +752,14 @@ export default function AdminPanel({
                                 type="text"
                                 value={editUsername}
                                 onChange={(e) => setEditUsername(e.target.value)}
+                                placeholder="Username"
+                                className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
+                              />
+                              <input
+                                type="text"
+                                value={editFullName}
+                                onChange={(e) => setEditFullName(e.target.value)}
+                                placeholder="Full Name"
                                 className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
                               />
                               <input
@@ -755,7 +780,10 @@ export default function AdminPanel({
                               )}
                             </div>
                           ) : (
-                            <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.username}</span>
+                            <div className="flex flex-col">
+                              <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.fullName || user.username}</span>
+                              {user.fullName && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">@{user.username}</span>}
+                            </div>
                           )}
                         </td>
                         <td className="px-6 py-4">

@@ -691,7 +691,7 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
-      await firebaseService.deleteComplaint(id, customerName, user.username);
+      await firebaseService.deleteComplaint(id, customerName, user.fullName || user.username);
       toast.success('Complaint deleted successfully!');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -704,7 +704,7 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
-      await firebaseService.updateComplaintStatus(id, status, customerName, user.username, user.uid, remarks);
+      await firebaseService.updateComplaintStatus(id, status, customerName, user.fullName || user.username, user.uid, remarks);
       toast.success(`Status updated to ${status}`);
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -717,7 +717,7 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
-      await firebaseService.updateComplaintRemarks(id, remarks, customerName, user.username, user.uid);
+      await firebaseService.updateComplaintRemarks(id, remarks, customerName, user.fullName || user.username, user.uid);
       toast.success('Protocol remarks updated successfully');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -730,7 +730,7 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = data.customerName || complaint?.customerName || id;
-      await firebaseService.updateComplaint(id, data, customerName, user.username);
+      await firebaseService.updateComplaint(id, data, customerName, user.fullName || user.username);
       toast.success('Log record updated successfully');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -758,7 +758,7 @@ export default function App() {
 
     try {
       const uid = Math.random().toString(36).substr(2, 9);
-      await firebaseService.createUser(uid, trimmedName, pass, role, user.uid, user.username, dealerId, lineCode, companyName);
+      await firebaseService.createUser(uid, trimmedName, pass, role, user.uid, user.fullName || user.username, dealerId, lineCode, companyName);
       toast.success(`${role === 'dealer' ? 'Dealer' : 'User'} ${trimmedName} created successfully!`);
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -772,7 +772,7 @@ export default function App() {
     try {
       const targetUser = users.find(u => u.uid === uid);
       const username = targetUser?.username || uid;
-      await firebaseService.deleteUser(uid, username, user.username);
+      await firebaseService.deleteUser(uid, username, user.fullName || user.username);
       toast.success('User deleted successfully');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -780,14 +780,14 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string) => {
+  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUser(uid, { username, password: pass, ...(lineCode && { lineCode }), ...(companyName && { companyName }) }, user.username);
+      await firebaseService.updateUser(uid, { username, password: pass, fullName, ...(lineCode && { lineCode }), ...(companyName && { companyName }) }, user.fullName || user.username);
       
       // If updating self, update local user state too
       if (user && user.uid === uid) {
-        const updatedUser = { ...user, username, password: pass, ...(lineCode && { lineCode }), ...(companyName && { companyName }) };
+        const updatedUser = { ...user, username, password: pass, fullName, ...(lineCode && { lineCode }), ...(companyName && { companyName }) };
         setUser(updatedUser);
         localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }
@@ -802,7 +802,7 @@ export default function App() {
   const handleChangeAdminPass = async (newPass: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUserPassword(user.uid, user.username, newPass, user.username);
+      await firebaseService.updateUserPassword(user.uid, user.username, newPass, user.fullName || user.username);
       const updatedUsers = await firebaseService.getUsers();
       setUsers(updatedUsers);
       
@@ -833,7 +833,7 @@ export default function App() {
   const handleUpdateConfig = (newConfig: AppConfig) => {
     if (!user) return;
     const tenantId = firebaseService.getTenantId(user);
-    firebaseService.updateConfig(newConfig, user.username, tenantId);
+    firebaseService.updateConfig(newConfig, user.fullName || user.username, tenantId);
     toast.success('System configuration updated');
   };
 
