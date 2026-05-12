@@ -50,6 +50,7 @@ export default function App() {
   });
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({
     categories: DEFAULT_CATEGORIES,
@@ -423,13 +424,18 @@ export default function App() {
       }
     }, tenantId);
 
-    const unsubscribe = firebaseService.subscribeUsers((updatedUsers) => {
+    const unsubscribeUsers = firebaseService.subscribeUsers((updatedUsers) => {
       setUsers(updatedUsers);
     }, tenantId);
 
+    const unsubscribeGroups = firebaseService.subscribeGroups((updatedGroups) => {
+      setUserGroups(updatedGroups);
+    }, user.uid, tenantId);
+
     return () => {
       unsubscribeConfig();
-      unsubscribe();
+      unsubscribeUsers();
+      unsubscribeGroups();
     };
   }, [user, firebaseAuthReady]);
 
@@ -527,10 +533,16 @@ export default function App() {
     let lastMessageId = '';
 
     const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
+    const userGroupIds = userGroups.map(g => g.id);
 
     const unsubscribe = firebaseService.subscribeMessages((data) => {
       // Filter out private messages not meant for user
-      const visibleData = data.filter(msg => !msg.recipientId || msg.senderId === user.uid || msg.recipientId === user.uid);
+      const visibleData = data.filter(msg => 
+        !msg.recipientId || 
+        msg.senderId === user.uid || 
+        msg.recipientId === user.uid ||
+        (msg.isGroup && userGroupIds.includes(msg.recipientId))
+      );
       if (visibleData.length > 0) {
         const latest = visibleData[visibleData.length - 1];
         
@@ -579,7 +591,7 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, firebaseAuthReady, alertAuthorized, isAudioMuted, chatAudio]);
+  }, [user, firebaseAuthReady, alertAuthorized, isAudioMuted, chatAudio, userGroups]);
 
   const handleLogin = async (username: string, pass: string, lineCode?: string) => {
     setIsLoading(true);
@@ -620,6 +632,17 @@ export default function App() {
         localStorage.setItem('complaint_app_user', safeStringify(foundUser));
         setShowWelcome(true);
         toast.success(`Access Granted: Welcome back, ${foundUser.username}`);
+        
+        if (!alertAuthorized) {
+          toast("Action Required: Enable Audio Notifications", {
+            description: "To receive real-time sound alerts for messages and notifications, please initialize the audio matrix in settings or profile.",
+            action: {
+              label: "Initialize Now",
+              onClick: () => onAuthorizeAlerts()
+            },
+            duration: 10000,
+          });
+        }
       } else {
         setError('Invalid Identity Credentials. Access Denied.');
       }
