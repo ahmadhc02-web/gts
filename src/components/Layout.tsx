@@ -50,6 +50,27 @@ export default function Layout({
   const isOnline = useOnlineStatus();
   const [showSyncStatus, setShowSyncStatus] = useState(false);
 
+  const getBrandingText = () => {
+    if (!user) return "Green Tech Services";
+    
+    // If dealer logs in, show their company name
+    if (user.role === 'dealer' && user.companyName) {
+      return user.companyName;
+    }
+    
+    // If member/admin logs in, find their dealer's company name
+    if (user.dealerId && user.dealerId !== 'main') {
+      const dealer = users.find(u => u.uid === user.dealerId && u.role === 'dealer');
+      if (dealer && dealer.companyName) {
+        return dealer.companyName;
+      }
+    }
+    
+    return "Green Tech Services";
+  };
+
+  const brandingText = getBrandingText();
+
   useEffect(() => {
     if (isOnline) {
       setShowSyncStatus(true);
@@ -451,12 +472,14 @@ export default function Layout({
               </div>
               
               <div className="hidden xs:block sm:block">
-                <h1 className="text-xs sm:text-lg font-black tracking-tight text-emerald-600 dark:text-emerald-400 uppercase leading-none font-mono">Green Tech Services</h1>
+                <h1 className="text-xs sm:text-lg font-black tracking-tight text-emerald-600 dark:text-emerald-400 uppercase leading-none font-mono">
+                  {brandingText}
+                </h1>
                 <p className="text-[8px] sm:text-[10px] text-emerald-500/80 font-bold uppercase tracking-[0.2em] mt-0.5 sm:mt-1 flex items-center gap-1.5 opacity-90">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   Yaseen Tahir SDK {user && user.role === 'super_admin' && <span className="text-brand-accent ml-1 font-black px-1.5 py-0.5 rounded bg-brand-accent/10 border border-brand-accent/20">ROOT ADMIN</span>}
                   {user && user.role === 'dealer' && <span className="text-blue-500 ml-1 font-black px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20">MAIN DEALER PANEL</span>}
-                  {user && user.role === 'admin' && <span className="text-purple-500 ml-1 font-black px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">LITE ADMIN PANEL</span>}
+                  {user && (user.role === 'admin' || (user.role === 'member' && user.dealerId && user.dealerId !== 'main')) && <span className="text-purple-500 ml-1 font-black px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">{user.role === 'admin' ? 'LITE ADMIN PANEL' : 'OPERATIONAL MEMBER'}</span>}
                 </p>
               </div>
             </div>
@@ -575,7 +598,9 @@ export default function Layout({
                   <span className="text-white font-black text-base sm:text-xl tracking-tighter italic leading-none drop-shadow-md">G<span className="text-brand-accent">TS</span></span>
                 </div>
              </div>
-             <p className="text-[8px] sm:text-[10px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-[0.2em] sm:tracking-[0.3em] mb-1">Green Tech Services</p>
+             <p className="text-[8px] sm:text-[10px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-[0.2em] sm:tracking-[0.3em] mb-1">
+               {brandingText}
+             </p>
              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">ISP Management Pro</h4>
           </div>
           

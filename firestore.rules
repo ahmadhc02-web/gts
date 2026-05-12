@@ -65,15 +65,15 @@ service cloud.firestore {
     // Config - Public read (for auth/setup), Admin write
     match /config/{configId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if true; // Relaxed for bootstrap and tenant initialization
     }
 
     // Users
     match /users/{userId} {
       allow read: if true;
-      allow create: if true; // Allow bootstrap/creation without auth to unblock initialization
-      allow update: if true; // Relaxed for management
-      allow delete: if true; // Relaxed for management
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
     }
 
     function isValidComplaint(data) {

@@ -715,7 +715,7 @@ export default function App() {
     }
   };
 
-  const handleCreateUser = async (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string) => {
+  const handleCreateUser = async (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string, companyName?: string) => {
     if (!user) return;
     const trimmedName = username.trim();
     if (!trimmedName || !pass.trim()) {
@@ -735,7 +735,7 @@ export default function App() {
 
     try {
       const uid = Math.random().toString(36).substr(2, 9);
-      await firebaseService.createUser(uid, trimmedName, pass, role, user.uid, user.username, dealerId, lineCode);
+      await firebaseService.createUser(uid, trimmedName, pass, role, user.uid, user.username, dealerId, lineCode, companyName);
       toast.success(`${role === 'dealer' ? 'Dealer' : 'User'} ${trimmedName} created successfully!`);
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -757,14 +757,14 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string) => {
+  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUser(uid, { username, password: pass, ...(lineCode && { lineCode }) }, user.username);
+      await firebaseService.updateUser(uid, { username, password: pass, ...(lineCode && { lineCode }), ...(companyName && { companyName }) }, user.username);
       
       // If updating self, update local user state too
       if (user && user.uid === uid) {
-        const updatedUser = { ...user, username, password: pass, ...(lineCode && { lineCode }) };
+        const updatedUser = { ...user, username, password: pass, ...(lineCode && { lineCode }), ...(companyName && { companyName }) };
         setUser(updatedUser);
         localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }

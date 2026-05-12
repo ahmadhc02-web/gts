@@ -194,7 +194,7 @@ export const firebaseService = {
     }
   },
 
-  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string): Promise<UserProfile> => {
+  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string, companyName?: string): Promise<UserProfile> => {
     const path = `users/${uid}`;
     const newUser: any = {
       uid,
@@ -205,7 +205,8 @@ export const firebaseService = {
       dealerId,
       createdBy: authorId,
       createdByName: authorName,
-      ...(lineCode && { lineCode })
+      ...(lineCode && { lineCode }),
+      ...(companyName && { companyName })
     };
     try {
       await setDoc(doc(db, 'users', uid), newUser);
@@ -233,7 +234,7 @@ export const firebaseService = {
 
       if (userData && userData.role === 'dealer') {
         const dealerId = uid;
-        const collectionsToDelete = ['users', 'complaints', 'clients', 'groups', 'messages', 'notifications'];
+        const collectionsToDelete = ['users', 'complaints', 'clients', 'groups', 'chat', 'notifications'];
 
         for (const collName of collectionsToDelete) {
           const q = query(collection(db, collName), where('dealerId', '==', dealerId));

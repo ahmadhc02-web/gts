@@ -43,6 +43,7 @@ export interface UserProfile {
   lineCode?: string; // Specific code for dealer identification
   createdBy?: string; // UID of creator
   createdByName?: string; // Name of creator
+  companyName?: string; // Dealer company name
 }
 
 export interface Client {

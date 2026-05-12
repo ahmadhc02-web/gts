@@ -670,7 +670,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                .filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase()))
                .filter(u => {
                  if (currentUser.role === 'member') {
-                   return u.role === 'super_admin' || u.role === 'admin';
+                   return u.role === 'admin';
                  }
                  return true;
                })

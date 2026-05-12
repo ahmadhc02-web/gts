@@ -18,22 +18,39 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
   const [showPassword, setShowPassword] = useState(false);
   const [requiredLineCode, setRequiredLineCode] = useState<boolean>(false);
   const [isCheckingUser, setIsCheckingUser] = useState(false);
+  const [detectedCompanyName, setDetectedCompanyName] = useState<string>("Green Tech Services");
 
-  // Check if username needs a line code
+  // Check if username needs a line code and fetch branding
   useEffect(() => {
     const checkUser = async () => {
       if (username.length < 3) {
         setRequiredLineCode(false);
+        setDetectedCompanyName("Green Tech Services");
         return;
       }
       
       setIsCheckingUser(true);
       try {
-        // Use a cached list or a more targeted check if possible
-        // For now, we fetch once and filter locally to avoid hitting quotas
-        const users = await firebaseService.getUsers();
-        const user = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
-        setRequiredLineCode(!!user?.lineCode);
+        const allUsers = await firebaseService.getUsers();
+        const foundUser = allUsers.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
+        setRequiredLineCode(!!foundUser?.lineCode);
+
+        if (foundUser) {
+          if (foundUser.role === 'dealer' && foundUser.companyName) {
+            setDetectedCompanyName(foundUser.companyName);
+          } else if (foundUser.dealerId && foundUser.dealerId !== 'main') {
+            const dealer = allUsers.find(u => u.uid === foundUser.dealerId && u.role === 'dealer');
+            if (dealer && dealer.companyName) {
+              setDetectedCompanyName(dealer.companyName);
+            } else {
+              setDetectedCompanyName("Green Tech Services");
+            }
+          } else {
+            setDetectedCompanyName("Green Tech Services");
+          }
+        } else {
+          setDetectedCompanyName("Green Tech Services");
+        }
       } catch (err) {
         console.warn("User protocol validation pending...");
       } finally {
@@ -41,7 +58,7 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
       }
     };
 
-    const timer = setTimeout(checkUser, 1000); // Increased debounce to 1s
+    const timer = setTimeout(checkUser, 800); 
     return () => clearTimeout(timer);
   }, [username]);
 
@@ -85,7 +102,9 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
               <div className="absolute bottom-2 right-2 w-0.5 h-3 bg-white/20 rounded-full" />
             </div>
           </div>
-          <h2 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white uppercase leading-none font-mono">Operations Console</h2>
+          <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-950 dark:text-white uppercase leading-none font-mono">
+            {detectedCompanyName}
+          </h2>
           <p className="text-brand-accent text-[10px] uppercase font-bold tracking-[0.4em] mt-3 flex items-center justify-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-ping" />
             Access Restricted
@@ -194,7 +213,7 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
 
         <div className="mt-10 pt-8 border-t border-slate-100 dark:border-slate-800 text-center">
           <p className="text-[11px] text-slate-500 dark:text-slate-400 uppercase tracking-[0.4em] font-black leading-none italic">
-            Green Tech Services Operations
+            Powered by {detectedCompanyName}
           </p>
           <p className="text-xs text-brand-accent font-black mt-3 uppercase tracking-tight">
             Proprietor: Yaseen Tahir

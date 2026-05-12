@@ -23,9 +23,9 @@ interface AdminPanelProps {
   onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
-  onCreateUser: (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string) => Promise<void>;
+  onCreateUser: (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string, companyName?: string) => Promise<void>;
   onDeleteUser: (uid: string) => Promise<void>;
-  onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string) => Promise<void>;
+  onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string) => Promise<void>;
   onRegisterComplaint: (data: {
     customerName: string;
     customerUsername: string;
@@ -89,6 +89,7 @@ export default function AdminPanel({
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newLineCode, setNewLineCode] = useState('');
+  const [newCompanyName, setNewCompanyName] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserProfile['role']>('member');
   const [isCreating, setIsCreating] = useState(false);
   const [selectedDealerId, setSelectedDealerId] = useState<string | 'all'>('all');
@@ -98,6 +99,7 @@ export default function AdminPanel({
   const [editUsername, setEditUsername] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editLineCode, setEditLineCode] = useState('');
+  const [editCompanyName, setEditCompanyName] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -233,9 +235,10 @@ export default function AdminPanel({
           setIsCreating(false);
           return;
         }
-        await onCreateUser(trimmedName, newPassword, 'dealer', undefined, newLineCode.trim());
+        await onCreateUser(trimmedName, newPassword, 'dealer', undefined, newLineCode.trim(), newCompanyName.trim());
         setFormSuccess(`Dealer account "${trimmedName}" created with Line Code: ${newLineCode}`);
         setNewLineCode('');
+        setNewCompanyName('');
       } else {
         // Correctly associate the new user with the dealer if the current user is a dealer or a dealer's admin
         const effectiveDealerId = currentUser.role === 'dealer' ? currentUser.uid : currentUser.dealerId;
@@ -256,8 +259,9 @@ export default function AdminPanel({
   const handleStartEditUser = (user: UserProfile) => {
     setEditingUserId(user.uid);
     setEditUsername(user.username);
-    setEditPassword(user.password);
+    setEditPassword(user.password || '');
     setEditLineCode(user.lineCode || '');
+    setEditCompanyName(user.companyName || '');
   };
 
   const handleCancelEditUser = () => {
@@ -265,6 +269,7 @@ export default function AdminPanel({
     setEditUsername('');
     setEditPassword('');
     setEditLineCode('');
+    setEditCompanyName('');
   };
 
   const handleUpdateUser = async (uid: string) => {
@@ -275,7 +280,7 @@ export default function AdminPanel({
     
     setIsUpdating(true);
     try {
-      await onUpdateUser(uid, editUsername.trim(), editPassword.trim(), editLineCode.trim() || undefined);
+      await onUpdateUser(uid, editUsername.trim(), editPassword.trim(), editLineCode.trim() || undefined, editCompanyName.trim() || undefined);
       setEditingUserId(null);
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
@@ -1034,12 +1039,12 @@ export default function AdminPanel({
                 )}
                 <form onSubmit={handleCreateUser} className="space-y-6">
                   <div className="space-y-1.5">
-                    <label className={labelClasses}>Dealer Username</label>
+                    <label className={labelClasses}>Dealer Name</label>
                     <input
                       type="text"
                       value={newUsername}
                       onChange={(e) => setNewUsername(e.target.value)}
-                      placeholder="e.g. dealer_north"
+                      placeholder="e.g. John Doe"
                       className={inputClasses}
                       required
                     />
@@ -1056,7 +1061,7 @@ export default function AdminPanel({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className={labelClasses}>Dealer Line Code (Unique ID)</label>
+                    <label className={labelClasses}>Dealer Line Code</label>
                     <input
                       type="text"
                       value={newLineCode}
@@ -1065,7 +1070,17 @@ export default function AdminPanel({
                       className={cn(inputClasses, "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/10")}
                       required
                     />
-                    <p className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-tight">Important: This code will isolate the dealer's workspace.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>Leader Company Name</label>
+                    <input
+                      type="text"
+                      value={newCompanyName}
+                      onChange={(e) => setNewCompanyName(e.target.value)}
+                      placeholder="e.g. Tech Solutions"
+                      className={inputClasses}
+                      required
+                    />
                   </div>
                   <button
                     type="submit"
@@ -1086,7 +1101,7 @@ export default function AdminPanel({
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 dark:bg-slate-900/50">
                     <tr className="border-b border-slate-100 dark:border-slate-800">
-                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
+                      <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity / Company</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Line Code</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Node Status</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Protocol</th>
@@ -1099,7 +1114,7 @@ export default function AdminPanel({
                       </tr>
                     ) : (
                       users.filter(u => u.role === 'dealer').map((dealer) => (
-                        <tr key={dealer.uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
+                         <tr key={dealer.uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
                           <td className="px-6 py-4">
                             {editingUserId === dealer.uid ? (
                               <div className="space-y-2">
@@ -1107,18 +1122,29 @@ export default function AdminPanel({
                                   type="text"
                                   value={editUsername}
                                   onChange={(e) => setEditUsername(e.target.value)}
+                                  placeholder="Dealer Name"
+                                  className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
+                                />
+                                <input
+                                  type="text"
+                                  value={editCompanyName}
+                                  onChange={(e) => setEditCompanyName(e.target.value)}
+                                  placeholder="Company Name"
                                   className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
                                 />
                                 <input
                                   type="password"
                                   value={editPassword}
                                   onChange={(e) => setEditPassword(e.target.value)}
-                                  placeholder="New Password"
+                                  placeholder="New Passkey"
                                   className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900"
                                 />
                               </div>
                             ) : (
-                              <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{dealer.username}</span>
+                              <div className="flex flex-col">
+                                <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{dealer.username}</span>
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{dealer.companyName || 'No Company Set'}</span>
+                              </div>
                             )}
                           </td>
                           <td className="px-6 py-4">
