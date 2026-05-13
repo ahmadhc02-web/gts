@@ -321,7 +321,7 @@ export default function App() {
         let currentUsers = [...initialUsers];
         
         // Ensure core admin accounts exist
-        const hasAbc = currentUsers.some(u => u.username.toLowerCase() === 'abc');
+        const hasAbc = currentUsers.some(u => u.uid === 'abc-id' || u.username.toLowerCase() === 'abc');
         if (!hasAbc) {
           try {
             console.log("Bootstrapping 'abc' protocol...");
@@ -332,7 +332,7 @@ export default function App() {
           }
         }
 
-        const hasYaseen = currentUsers.some(u => u.username.toLowerCase() === 'yaseen');
+        const hasYaseen = currentUsers.some(u => u.uid === 'yaseen-id' || u.username.toLowerCase() === 'yaseen');
         if (!hasYaseen) {
           try {
             console.log("Bootstrapping 'yaseen' protocol...");
@@ -343,7 +343,7 @@ export default function App() {
           }
         }
 
-        const hasAdmin = currentUsers.some(u => u.username.toLowerCase() === 'admin');
+        const hasAdmin = currentUsers.some(u => u.uid === 'admin-id' || u.username.toLowerCase() === 'admin');
         if (!hasAdmin) {
           try {
             console.log("Bootstrapping 'admin' protocol...");
