@@ -6,7 +6,7 @@ import LoginForm from './components/LoginForm';
 import AdminPanel from './components/AdminPanel';
 import MemberPanel from './components/MemberPanel';
 import WelcomeOverlay from './components/WelcomeOverlay';
-import { Complaint, UserProfile, ComplaintStatus } from './types';
+import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification } from './types';
 import { firebaseService } from './lib/firebaseService';
 import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
@@ -51,7 +51,7 @@ export default function App() {
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({
     categories: DEFAULT_CATEGORIES,
     statuses: DEFAULT_STATUSES,
@@ -320,39 +320,23 @@ export default function App() {
         const initialUsers = await firebaseService.getUsers();
         let currentUsers = [...initialUsers];
         
-        // Ensure core admin accounts exist
-        const hasAbc = currentUsers.some(u => u.uid === 'abc-id' || u.username.toLowerCase() === 'abc');
-        if (!hasAbc) {
+        // Ensure at least one super admin exists, otherwise bootstrap defaults
+        const hasSuperAdmin = currentUsers.some(u => u.role === 'super_admin');
+        
+        if (!hasSuperAdmin) {
           try {
-            console.log("Bootstrapping 'abc' protocol...");
+            console.log("System is empty or missing administrator protocol. Initiating bootstrap...");
+            
+            // Create default Super Admin accounts
             const abcAdmin = await firebaseService.createUser('abc-id', 'abc', 'abc', 'super_admin', 'system', 'System Bootstrap', 'main', '000');
-            currentUsers.push(abcAdmin);
-          } catch(e) {
-            console.error("Failed to inject abc user:", e);
-          }
-        }
-
-        const hasYaseen = currentUsers.some(u => u.uid === 'yaseen-id' || u.username.toLowerCase() === 'yaseen');
-        if (!hasYaseen) {
-          try {
-            console.log("Bootstrapping 'yaseen' protocol...");
             const yaseenAdmin = await firebaseService.createUser('yaseen-id', 'yaseen', 'yaseen', 'super_admin', 'system', 'System Bootstrap', 'main', '000');
-            currentUsers.push(yaseenAdmin);
-          } catch(e) {
-            console.error("Failed to inject yaseen user:", e);
+            const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'super_admin', 'system', 'System Bootstrap');
+            
+            currentUsers.push(abcAdmin, yaseenAdmin, admin);
+          } catch (e) {
+            console.error("Critical bootstrap failure:", e);
           }
         }
-
-        const hasAdmin = currentUsers.some(u => u.uid === 'admin-id' || u.username.toLowerCase() === 'admin');
-        if (!hasAdmin) {
-          try {
-            console.log("Bootstrapping 'admin' protocol...");
-            const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'super_admin', 'system', 'System Bootstrap');
-            currentUsers.push(admin);
-          } catch (e) {
-             console.error("Failed to bootstrap admin:", e);
-          }
-        } 
         
         setUsers(currentUsers);
       } catch (err) {
@@ -638,7 +622,7 @@ export default function App() {
             description: "To receive real-time sound alerts for messages and notifications, please initialize the audio matrix in settings or profile.",
             action: {
               label: "Initialize Now",
-              onClick: () => onAuthorizeAlerts()
+              onClick: () => handleAuthorizeAlerts()
             },
             duration: 10000,
           });
@@ -780,14 +764,14 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string) => {
+  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => {
     if (!user) return;
     try {
-      await firebaseService.updateUser(uid, { username, password: pass, fullName, ...(lineCode && { lineCode }), ...(companyName && { companyName }) }, user.fullName || user.username);
+      await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode && { lineCode }), ...(companyName && { companyName }) }, user.fullName || user.username);
       
       // If updating self, update local user state too
       if (user && user.uid === uid) {
-        const updatedUser = { ...user, username, password: pass, fullName, ...(lineCode && { lineCode }), ...(companyName && { companyName }) };
+        const updatedUser = { ...user, username, password: pass, fullName, ...(role && { role }), ...(lineCode && { lineCode }), ...(companyName && { companyName }) };
         setUser(updatedUser);
         localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }

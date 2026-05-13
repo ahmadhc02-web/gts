@@ -36,7 +36,7 @@ export interface UserProfile {
   uid: string;
   username: string;
   password?: string; // Added for simplified demo auth
-  role: 'admin' | 'member' | 'dealer' | 'super_admin';
+  role: 'admin' | 'member' | 'dealer' | 'super_admin' | 'liteadmin';
   fullName?: string;
   createdAt: number;
   lastActive?: number;

@@ -30,7 +30,7 @@ interface MemberPanelProps {
   }) => Promise<void>;
   onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
-  onUpdateUser: (uid: string, username: string, pass: string, fullName?: string) => Promise<void>;
+  onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
   isLoading: boolean;
   alertAuthorized: boolean;
@@ -105,7 +105,14 @@ export default function MemberPanel({
     
     setIsUpdating(true);
     try {
-      await onUpdateUser(currentUser.uid, newUsername.trim(), newPassword.trim(), newFullName.trim());
+      await onUpdateUser(
+        currentUser.uid, 
+        newUsername.trim(), 
+        newPassword.trim(), 
+        currentUser.lineCode, 
+        currentUser.companyName, 
+        newFullName.trim()
+      );
     } finally {
       setIsUpdating(false);
     }

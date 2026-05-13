@@ -25,7 +25,7 @@ interface AdminPanelProps {
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
   onCreateUser: (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string, companyName?: string) => Promise<void>;
   onDeleteUser: (uid: string) => Promise<void>;
-  onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string) => Promise<void>;
+  onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => Promise<void>;
   onRegisterComplaint: (data: {
     customerName: string;
     customerUsername: string;
@@ -100,6 +100,7 @@ export default function AdminPanel({
   const [editUsername, setEditUsername] = useState('');
   const [editFullName, setEditFullName] = useState('');
   const [editPassword, setEditPassword] = useState('');
+  const [editUserRole, setEditUserRole] = useState<UserProfile['role']>('member');
   const [editLineCode, setEditLineCode] = useState('');
   const [editCompanyName, setEditCompanyName] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -265,6 +266,7 @@ export default function AdminPanel({
     setEditUsername(user.username);
     setEditFullName(user.fullName || '');
     setEditPassword(user.password || '');
+    setEditUserRole(user.role);
     setEditLineCode(user.lineCode || '');
     setEditCompanyName(user.companyName || '');
   };
@@ -287,7 +289,7 @@ export default function AdminPanel({
     setIsUpdating(true);
     try {
       // @ts-ignore - fullName is added to user management
-      await onUpdateUser(uid, editUsername.trim(), editPassword.trim(), editLineCode.trim() || undefined, editCompanyName.trim() || undefined, editFullName.trim());
+      await onUpdateUser(uid, editUsername.trim(), editPassword.trim(), editLineCode.trim() || undefined, editCompanyName.trim() || undefined, editFullName.trim(), editUserRole);
       setEditingUserId(null);
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
@@ -678,7 +680,7 @@ export default function AdminPanel({
                   </div>
                   <div className="space-y-1.5">
                     <label className={labelClasses}>Clearance Level</label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       <button
                         type="button"
                         onClick={() => setNewUserRole('member')}
@@ -693,6 +695,18 @@ export default function AdminPanel({
                       </button>
                       <button
                         type="button"
+                        onClick={() => setNewUserRole('liteadmin')}
+                        className={cn(
+                          "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                          newUserRole === 'liteadmin' 
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20" 
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                        )}
+                      >
+                        Lite Admin
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setNewUserRole('admin')}
                         className={cn(
                           "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
@@ -703,6 +717,20 @@ export default function AdminPanel({
                       >
                         Supervisor
                       </button>
+                      {currentUser.role === 'super_admin' && (
+                        <button
+                          type="button"
+                          onClick={() => setNewUserRole('super_admin')}
+                          className={cn(
+                            "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border col-span-2 sm:col-span-1",
+                            newUserRole === 'super_admin' 
+                              ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/20" 
+                              : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                          )}
+                        >
+                          Super Admin
+                        </button>
+                      )}
                     </div>
                   </div>
                   <button
@@ -787,12 +815,30 @@ export default function AdminPanel({
                           )}
                         </td>
                         <td className="px-6 py-4">
-                          <span className={cn(
-                            "px-2.5 py-1 rounded text-xs font-black uppercase tracking-widest border",
-                            user.role === 'admin' ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/30" : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800"
-                          )}>
-                            {user.role}
-                          </span>
+                          {editingUserId === user.uid && currentUser.role === 'super_admin' ? (
+                            <select
+                              value={editUserRole}
+                              onChange={(e) => setEditUserRole(e.target.value as any)}
+                              className="w-full px-2 py-1 text-sm border rounded bg-white dark:bg-slate-900 uppercase font-black"
+                            >
+                              <option value="member">Member</option>
+                              <option value="liteadmin">Lite Admin</option>
+                              <option value="admin">Admin</option>
+                              <option value="super_admin">Super Admin</option>
+                              <option value="dealer">Dealer</option>
+                            </select>
+                          ) : (
+                            <span className={cn(
+                              "px-2.5 py-1 rounded text-xs font-black uppercase tracking-widest border",
+                              user.role === 'super_admin' ? "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/30" :
+                              user.role === 'admin' ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/30" :
+                              user.role === 'liteadmin' ? "bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/30" :
+                              user.role === 'dealer' ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/30" :
+                              "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+                            )}>
+                              {user.role}
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-slate-800">

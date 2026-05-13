@@ -17,7 +17,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification, ChatGroup } from '../types';
+import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup } from '../types';
 import { safeStringify } from './utils';
 
 enum OperationType {
@@ -366,7 +366,7 @@ export const firebaseService = {
   },
 
   // --- Notifications ---
-  createNotification: async (data: Omit<Notification, 'id' | 'createdAt'>): Promise<Notification> => {
+  createNotification: async (data: Omit<AppNotification, 'id' | 'createdAt'>): Promise<AppNotification> => {
     const id = `notif_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
     const path = `notifications/${id}`;
     
@@ -407,10 +407,10 @@ export const firebaseService = {
     }
   },
 
-  subscribeNotifications: (callback: (notifications: Notification[]) => void, dealerId?: string) => {
+  subscribeNotifications: (callback: (notifications: AppNotification[]) => void, dealerId?: string) => {
     const path = 'notifications';
     return onSnapshot(collection(db, path), (snapshot) => {
-      let notifications = snapshot.docs.map(doc => doc.data() as Notification);
+      let notifications = snapshot.docs.map(doc => doc.data() as AppNotification);
       
       if (dealerId && dealerId !== 'main') {
         notifications = notifications.filter(n => n.dealerId === dealerId);
