@@ -271,7 +271,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               </motion.div>
               
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>Package Protocol</label>
+                <label className={labelClasses}>Profile (Package)</label>
                 <div className="relative">
                   <input
                     type="text"

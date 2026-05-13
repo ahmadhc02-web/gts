@@ -1117,7 +1117,7 @@ export default function ComplaintList({
                     </div>
                   </div>
                   <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
-                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Package</p>
+                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Profile</p>
                     <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
                       <Package size={12} className="text-brand-accent shrink-0" />
                       <span className="uppercase text-[11px] sm:text-sm truncate">{selectedComplaint.pkgDetails || 'N/A'}</span>
@@ -1395,7 +1395,7 @@ function EditModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className={labelClasses}>Package Details</label>
+              <label className={labelClasses}>Profile (Package)</label>
               <input
                 type="text"
                 value={data.pkgDetails || ''}
