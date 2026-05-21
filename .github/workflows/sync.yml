@@ -16,21 +16,23 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # 1. Hugging Face repo ko ek alag folder mein clone karein
+          # 1. GitHub folder se bahar nikal jayein
+          cd ..
+          
+          # 2. Hugging Face repo ko bilkul alag jagah clone karein
           git clone https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app hf_repo
           
-          # 2. .git folder ko safe rakhein, baki sab delete kar dein
+          # 3. HF repo ke andar jayein aur .git folder ko chhor kar sab delete kar dein
           cd hf_repo
           find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
           
-          # 3. GitHub ka sara code (jo action ne checkout kiya tha) wahan copy karein
-          # $GITHUB_WORKSPACE mein hamara GitHub wala code hai
-          cp -r $GITHUB_WORKSPACE/* .
+          # 4. GitHub wala code yahan copy karein (ab path sahi hai)
+          cp -r ../my-wifi-app/* .
           
-          # 4. Binary/Fuzool files wapis remove karein
+          # 5. Fuzool binary files remove karein
           rm -f *.tgz
           
-          # 5. Push kar dein
+          # 6. Push kar dein
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           git add .
