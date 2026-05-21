@@ -238,65 +238,41 @@ export const googleSheetsService = {
   },
 
   initiateAuth: async (): Promise<GoogleTokens> => {
-    return new Promise((resolve, reject) => {
-      const width = 500;
-      const height = 620;
-      const left = window.screen.width / 2 - width / 2;
-      const top = window.screen.height / 2 - height / 2;
+    try {
+      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      const { auth: fbAuth } = await import('../lib/firebase');
       
-      const popup = window.open(
-        getApiUrl('/api/auth/google'),
-        'Connect Google Account',
-        `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`
-      );
+      const googleProvider = new GoogleAuthProvider();
+      googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+      googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
       
-      if (!popup) {
-        reject(new Error('Popup blocked! Please allow popups for this website to connect your Google account properly.'));
-        return;
+      // Set custom parameters to ensure we prompt for consent and ask for offline access parameters
+      googleProvider.setCustomParameters({
+        prompt: 'consent',
+        access_type: 'offline'
+      });
+      
+      const result = await signInWithPopup(fbAuth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      
+      if (!credential || !credential.accessToken) {
+        throw new Error("Failed to obtain Google access token from Firebase popup.");
       }
       
-      const isIframe = window.self !== window.top;
+      const tokens: GoogleTokens = {
+        access_token: credential.accessToken,
+        refresh_token: result.user?.refreshToken || undefined,
+        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file openid email profile',
+        token_type: 'Bearer',
+        expiry_date: Date.now() + 3500 * 1000 // Google tokens usually expire in 1 hour
+      };
       
-      const maxTimeout = setTimeout(() => {
-        clearInterval(timer);
-        window.removeEventListener('message', handleMessage);
-        reject(new Error('Authentication timed out. If you have signed in, please refresh the page and try again.'));
-      }, 180000); // 3-minute timeout
-      
-      const timer = setInterval(() => {
-        try {
-          // In iframe context, popup.closed is highly unreliable (often returns true falsely due to sandboxing/cross-origin redirects).
-          // Therefore, we bypass the closed window check when in an iframe.
-          if (!isIframe && (!popup || popup.closed)) {
-            clearInterval(timer);
-            clearTimeout(maxTimeout);
-            window.removeEventListener('message', handleMessage);
-            reject(new Error('Auth window closed'));
-          }
-        } catch (e) {
-          console.warn("Unable to access popup window.closed status:", e);
-        }
-      }, 1000);
-      
-      function handleMessage(event: MessageEvent) {
-        // Support dev and prod URLs for safety
-        if (event.data && event.data.type === 'google-oauth-success') {
-          clearInterval(timer);
-          clearTimeout(maxTimeout);
-          window.removeEventListener('message', handleMessage);
-          
-          const tokens = event.data.tokens as GoogleTokens;
-          if (tokens) {
-            googleSheetsService.saveTokens(tokens);
-            resolve(tokens);
-          } else {
-            reject(new Error('OAuth failed: No tokens received'));
-          }
-        }
-      }
-      
-      window.addEventListener('message', handleMessage);
-    });
+      googleSheetsService.saveTokens(tokens);
+      return tokens;
+    } catch (error: any) {
+      console.error("Failed to connect Google account via Firebase Auth Service:", error);
+      throw new Error(error.message || "Google Sheets connection failed.");
+    }
   },
 
   appendComplaint: async (complaint: any) => {

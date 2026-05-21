@@ -114,6 +114,33 @@ async function startServer() {
       const authClient = getOAuthClient(req);
       const { tokens } = await authClient.getToken(code);
       
+      // Real-time synchronization to Firebase Firestore 24/7 so Hugging Face or any external frontend receives active tokens instantly
+      try {
+        const { initializeApp: serverInitApp } = await import('firebase/app');
+        const { initializeFirestore: serverInitFirestore, doc: serverDoc, setDoc: serverSetDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
+        const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+        if (fs.existsSync(firebaseConfigPath)) {
+          const configJson = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+          const tempApp = serverInitApp(configJson, "server-oauth-sync-" + Date.now());
+          const tempDb = serverInitFirestore(tempApp, {
+            experimentalForceLongPolling: true,
+          }, configJson.firestoreDatabaseId);
+          
+          const gsDocRef = serverDoc(tempDb, 'config', 'google_sheets');
+          const gsSnap = await serverGetDoc(gsDocRef);
+          const gsExisting = gsSnap.exists() ? gsSnap.data() : {};
+          
+          await serverSetDoc(gsDocRef, {
+            ...gsExisting,
+            tokens,
+            updatedAt: Date.now()
+          });
+          console.log("Server: Google Sheets connection credentials successfully synchronized to Firestore.");
+        }
+      } catch (fbErr: any) {
+        console.error("Server: Failed syncing Google credentials to Firestore:", fbErr);
+      }
+      
       const escapedTokensStr = JSON.stringify(tokens).replace(/</g, '\\u003c');
       res.send(`
         <!DOCTYPE html>

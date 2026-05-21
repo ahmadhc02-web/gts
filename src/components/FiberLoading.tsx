@@ -8,208 +8,213 @@ interface FiberLoadingProps {
 }
 
 export default function FiberLoading({ className, fullScreen = false }: FiberLoadingProps) {
-  const [progress, setProgress] = React.useState(0);
-  const [statusIndex, setStatusIndex] = React.useState(0);
-  
-  const statuses = [
-    "Splicing Optical Fiber",
-    "Calibrating Matrix",
-    "Initializing Neural Uplink",
-    "Syncing Data Fragments",
-    "Verifying Protocols"
-  ];
-
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(timer);
-          return 100;
-        }
-        return prev + Math.random() * 2;
-      });
-    }, 50);
-
-    const statusTimer = setInterval(() => {
-      setStatusIndex(prev => (prev + 1) % statuses.length);
-    }, 1500);
-
-    return () => {
-      clearInterval(timer);
-      clearInterval(statusTimer);
-    };
-  }, []);
-
   return (
     <div className={cn(
-      "flex flex-col items-center justify-center gap-8",
-      fullScreen && "fixed inset-0 z-[10000] bg-slate-950 backdrop-blur-xl",
+      "flex flex-col items-center justify-center",
+      fullScreen && "fixed inset-0 z-[10000] bg-slate-950 overflow-hidden select-none",
       className
     )}>
-      <div className="relative w-72 h-32 flex items-center justify-center">
-        {/* Optical Glow Core */}
-        <div className="absolute w-24 h-24 bg-brand-accent/20 rounded-full blur-3xl animate-pulse" />
-        
-        {/* Left Fiber */}
-        <motion.div
-          initial={{ x: -150, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ 
-            duration: 1.2, 
-            repeat: Infinity, 
-            repeatType: "reverse",
-            ease: "easeInOut" 
-          }}
-          className="absolute left-0 w-36 h-[2px] bg-gradient-to-r from-transparent via-brand-accent to-white rounded-full"
-        >
-          {/* Connector Head */}
-          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 bg-brand-accent rounded-[2px] border border-white/50 shadow-[0_0_20px_rgba(59,130,246,1)]" />
-        </motion.div>
-
-        {/* Right Fiber */}
-        <motion.div
-          initial={{ x: 150, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ 
-            duration: 1.2, 
-            repeat: Infinity, 
-            repeatType: "reverse",
-            ease: "easeInOut" 
-          }}
-          className="absolute right-0 w-36 h-[2px] bg-gradient-to-l from-transparent via-blue-400 to-white rounded-full"
-        >
-          {/* Connector Head */}
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-5 h-5 bg-blue-400 rounded-[2px] border border-white/50 shadow-[0_0_20px_rgba(96,165,250,1)]" />
-        </motion.div>
-
-        {/* Neural Junction Spark */}
-        <motion.div
-          animate={{ 
-            scale: [0.8, 1.5, 0.8],
-            opacity: [0.2, 1, 0.2],
-            rotate: [0, 90, 180]
-          }}
-          transition={{ 
-            duration: 1.2, 
-            repeat: Infinity, 
-            ease: "easeInOut" 
-          }}
-          className="relative w-10 h-10 flex items-center justify-center"
-        >
-          <div className="absolute inset-0 bg-white rounded-full blur-xl" />
-          <div className="absolute w-2 h-16 bg-white/20 blur-md rotate-45" />
-          <div className="absolute w-2 h-16 bg-white/20 blur-md -rotate-45" />
-        </motion.div>
-        
-        {/* Data Geometric Pulses */}
-        {[...Array(4)].map((_, i) => (
-          <motion.div
-            key={'geom-'+i}
-            initial={{ scale: 0.5, opacity: 0, rotate: 45 }}
-            animate={{ scale: [0.5, 2, 3], opacity: [0, 0.6, 0] }}
-            transition={{ 
-              duration: 2, 
-              delay: i * 0.5,
-              repeat: Infinity, 
-              ease: "easeOut" 
-            }}
-            className="absolute w-20 h-20 border border-brand-accent/40 rounded-lg"
-          />
-        ))}
-      </div>
-
-      <div className="w-full max-w-xs space-y-6 px-4">
-        <div className="text-center space-y-3">
-          <motion.div
-            key={statusIndex}
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -5 }}
-            className="h-5"
-          >
-            <p className="text-white font-black text-[10px] uppercase tracking-[0.5em] font-mono">
-              {statuses[statusIndex]}
-            </p>
-          </motion.div>
+      {/* Cinematic Dark Grid & Laser Alignment Backdrop */}
+      {fullScreen && (
+        <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
+          {/* Neon Radial Depths (Pre-fusion glow) */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-gradient-to-tr from-cyan-500/10 via-brand-accent/5 to-purple-500/10 rounded-full blur-[140px] opacity-65" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-cyan-500/10 rounded-full blur-[90px] opacity-40 animate-pulse" />
           
-          <div className="flex justify-center gap-1.5 opacity-50">
-            {[...Array(5)].map((_, i) => (
+          {/* Subtle Lab Matrix Grid */}
+          <div 
+            className="absolute inset-0 opacity-[0.08]" 
+            style={{ 
+              backgroundImage: 'radial-gradient(circle, #22d3ee 1px, transparent 1px)', 
+              backgroundSize: '24px 24px' 
+            }} 
+          />
+
+          {/* Sweeping Laser Scan Line (Alignment Indicator) */}
+          <motion.div
+            animate={{ y: ['-100%', '200%'] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+            className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent blur-[1px]"
+          />
+        </div>
+      )}
+
+      {/* Fiber Splicing Machine Visualizer */}
+      <div className="relative w-full max-w-lg h-80 flex flex-col items-center justify-center">
+        
+        {/* Lab/Tech Clutches/Chucks Holding Fibers */}
+        <div className="absolute inset-x-0 flex justify-between px-16 pointer-events-none opacity-40">
+          {/* Left Fiber Holder */}
+          <div className="w-14 h-20 border-r-4 border-cyan-500 bg-slate-900/80 rounded-l-md flex flex-col justify-between p-1.5 shadow-[0_0_15px_rgba(34,211,238,0.2)]">
+            <div className="w-full h-1 bg-cyan-500/30 rounded" />
+            <div className="w-full h-2 bg-slate-800 border border-slate-700 rounded" />
+            <div className="w-full h-1 bg-cyan-500/30 rounded" />
+          </div>
+          {/* Right Fiber Holder */}
+          <div className="w-14 h-20 border-l-4 border-indigo-500 bg-slate-900/80 rounded-r-md flex flex-col justify-between p-1.5 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+            <div className="w-full h-1 bg-indigo-500/30 rounded" />
+            <div className="w-full h-2 bg-slate-800 border border-slate-700 rounded" />
+            <div className="w-full h-1 bg-indigo-500/30 rounded" />
+          </div>
+        </div>
+
+        {/* Dynamic Plasma Spark Arc Nodes (Splicer Electrodes Top & Bottom) */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full pointer-events-none flex flex-col items-center justify-between py-10 z-10">
+          {/* Top Electrode */}
+          <div className="flex flex-col items-center">
+            <div className="w-4 h-14 bg-gradient-to-b from-slate-800 to-slate-400 rounded-b shadow-[0_-5px_15px_rgba(255,255,255,0.1)]" />
+            <div className="w-1.5 h-3 bg-amber-400 rounded-b-full shadow-[0_0_10px_#fbbf24] animate-pulse" />
+          </div>
+          
+          {/* Bottom Electrode */}
+          <div className="flex flex-col items-center">
+            <div className="w-1.5 h-3 bg-amber-400 rounded-t-full shadow-[0_0_10px_#fbbf24] animate-pulse" />
+            <div className="w-4 h-14 bg-gradient-to-t from-slate-800 to-slate-400 rounded-t shadow-[0_5px_15px_rgba(255,255,255,0.1)]" />
+          </div>
+        </div>
+
+        {/* THE FUSION STAGE */}
+        <div className="relative w-[360px] h-[160px] flex items-center justify-center">
+          
+          {/* Cyber Aligning Brackets (Horizontal Crosshairs) */}
+          <div className="absolute inset-0 flex items-center justify-between border-l border-r border-cyan-500/10 pointer-events-none">
+            <div className="w-6 h-6 border-t border-l border-cyan-500/30 -ml-2" />
+            <div className="w-6 h-6 border-b border-r border-indigo-500/30 -mr-2" />
+          </div>
+
+          {/* LEFT OPTICAL FIBER (Reaches towards center with laser core) */}
+          <motion.div
+            animate={{ 
+              x: [
+                -50,  // Far left (Preparation)
+                -2,   // Close gap alignment
+                1,    // Melt / Spliced Contact
+                1,    // Wait fused
+                -50   // Repreparation loop
+              ] 
+            }}
+            transition={{
+              duration: 5.5,
+              repeat: Infinity,
+              ease: "easeInOut",
+              times: [0, 0.22, 0.32, 0.9, 1]
+            }}
+            className="absolute left-0 w-1/2 h-10 flex items-center justify-end pr-[2px]"
+          >
+            {/* Cladding / Outer Glass Sleeve */}
+            <div className="relative w-40 h-5 bg-gradient-to-b from-white/20 via-white/5 to-white/25 rounded-l border-t border-b border-white/20 backdrop-blur-[1px] shadow-inner">
+              {/* Inner Glowing Silica Core */}
+              <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 h-1 bg-cyan-400 shadow-[0_0_12px_#22d3ee,0_0_4px_#38bdf8]" />
+              {/* Inner Laser Alignment Indicator */}
+              <div className="absolute top-0 right-1 w-2 h-full bg-cyan-400/30 animate-pulse" />
+            </div>
+          </motion.div>
+
+          {/* RIGHT OPTICAL FIBER (Reaches from right with matching core) */}
+          <motion.div
+            animate={{ 
+              x: [
+                50,   // Far right
+                2,    // Close alignment
+                -1,   // Melt / Spliced Contact
+                -1,   // Wait fused
+                50    // Loop reset
+              ] 
+            }}
+            transition={{
+              duration: 5.5,
+              repeat: Infinity,
+              ease: "easeInOut",
+              times: [0, 0.22, 0.32, 0.9, 1]
+            }}
+            className="absolute right-0 w-1/2 h-10 flex items-center justify-start pl-[2px]"
+          >
+            {/* Cladding / Outer Glass Sleeve */}
+            <div className="relative w-40 h-5 bg-gradient-to-b from-white/20 via-white/5 to-white/25 rounded-r border-t border-b border-white/20 backdrop-blur-[1px] shadow-inner">
+              {/* Inner Glowing Silica Core */}
+              <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 h-1 bg-indigo-400 shadow-[0_0_12px_#818cf8,0_0_4px_#6366f1]" />
+              {/* Inner Laser Alignment Indicator */}
+              <div className="absolute top-0 left-1 w-2 h-full bg-indigo-400/30 animate-pulse" />
+            </div>
+          </motion.div>
+
+          {/* HIGH TEMPERATURE PLASMA ELECTRIC ARC (FUSION ARC TRIGGER) */}
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{
+              scale: [0, 0, 5, 1.2, 0, 0],
+              opacity: [0, 0, 1, 0.8, 0, 0],
+            }}
+            transition={{
+              duration: 5.5,
+              repeat: Infinity,
+              times: [0, 0.28, 0.33, 0.44, 0.52, 1],
+              ease: "easeOut"
+            }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20"
+          >
+            {/* White-Hot Core Plasma Arc */}
+            <div className="w-10 h-10 rounded-full bg-white shadow-[0_0_50px_#fff,0_0_30px_#22d3ee,0_0_15px_#22d3ee] flex items-center justify-center">
+              {/* Electric Discharge Sparks */}
+              <div className="w-full h-[3px] bg-cyan-300 animate-ping rounded-full" />
+              <div className="absolute w-[3px] h-full bg-cyan-300 animate-ping rounded-full" />
+            </div>
+          </motion.div>
+
+          {/* EXPLODING ENERGY WAVE (Shockwave when fibers fuse) */}
+          <motion.div
+            initial={{ scale: 0.1, opacity: 0 }}
+            animate={{
+              scale: [0.1, 0.1, 1.8, 0],
+              opacity: [0, 0, 0.7, 0],
+            }}
+            transition={{
+              duration: 5.5,
+              repeat: Infinity,
+              times: [0, 0.31, 0.46, 0.6],
+              ease: "easeOut"
+            }}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 border border-cyan-400 rounded-full blur-[1px]"
+          />
+
+          {/* HIGH-SPEED PHOTON DATA FLOWS (Occurs instantly after splicing succeeds) */}
+          <div className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden">
+            {[...Array(6)].map((_, idx) => (
               <motion.div
-                key={'dots-'+i}
-                animate={{ 
-                  scale: [1, 1.5, 1],
-                  bg: i * 20 <= progress ? "var(--brand-accent)" : "#334155"
+                key={'photon-' + idx}
+                initial={{ x: '10%', opacity: 0, scale: 0.8 }}
+                animate={{
+                  x: ['10%', '10%', '90%', '90%'],
+                  opacity: [0, 0, 1, 0],
+                  scale: [0.8, 0.8, 1.2, 0.8]
                 }}
-                transition={{ duration: 0.8, delay: i * 0.1, repeat: Infinity }}
-                className={cn(
-                  "w-1 h-1 rounded-full",
-                  i * 20 <= progress ? "bg-brand-accent" : "bg-slate-700"
-                )}
+                transition={{
+                  duration: 5.5,
+                  repeat: Infinity,
+                  times: [0, 0.35, 0.85, 1],
+                  delay: idx * 0.08,
+                  ease: "easeInOut"
+                }}
+                className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_12px_rgba(34,211,238,1)] border border-cyan-400"
               />
             ))}
           </div>
-        </div>
 
-        {/* Functional Progress Bar */}
-        <div className="space-y-4">
-          <div className="flex justify-between items-end px-1">
-            <div className="flex flex-col">
-              <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest leading-none">System Status</span>
-              <span className="text-[10px] font-black text-white/80 uppercase tracking-tighter mt-1">
-                {Math.floor(progress) < 30 ? "Protocol: Handshake" : 
-                 Math.floor(progress) < 60 ? "Registry: Syncing" : 
-                 Math.floor(progress) < 90 ? "Network: Calibrating" : "Security: Authorized"}
-              </span>
+          {/* SPLICER CALIBRATION OVERLAY GRID DATA */}
+          <div className="absolute inset-x-0 bottom-2 flex justify-between px-3 font-mono text-[9px] text-cyan-400/40 pointer-events-none select-none">
+            <div className="flex flex-col gap-0.5">
+              <span>AXIS X: ALIGNED</span>
+              <span>LOSS: 0.01 dB</span>
             </div>
-            <span className="text-xl font-black text-brand-accent font-mono italic leading-none">{Math.floor(progress)}%</span>
-          </div>
-          
-          <div className="relative">
-            <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-white/5 p-[1px]">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${progress}%` }}
-                className="h-full bg-gradient-to-r from-brand-accent via-blue-400 to-white rounded-full shadow-[0_0_15px_rgba(59,130,246,0.6)]"
-              />
+            <div className="flex flex-col gap-0.5 items-end">
+              <span>ARC: 15.2 mA</span>
+              <span>SPLICING...</span>
             </div>
-            {/* Scan Line on progress bar */}
-            <motion.div 
-              animate={{ left: ['0%', '100%'] }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-              className="absolute top-0 bottom-0 w-8 bg-white/20 blur-md pointer-events-none"
-            />
           </div>
 
-          {/* Technical Log Snippet */}
-          <div className="h-8 overflow-hidden opacity-40">
-            <motion.div
-              animate={{ y: [0, -40] }}
-              transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-              className="space-y-1"
-            >
-              {[...Array(10)].map((_, i) => (
-                <p key={'log-'+i} className="text-[7px] font-mono text-emerald-500/80 uppercase tracking-tighter">
-                  {`> [${new Date().toISOString().split('T')[1].split('.')[0]}] - AUTH_NODE_${Math.floor(Math.random() * 1000)}: SYNC_COMPLETE`}
-                </p>
-              ))}
-            </motion.div>
-          </div>
         </div>
+
       </div>
-
-      {/* Technologic Background Overlay */}
-      {fullScreen && (
-        <div className="absolute inset-0 -z-10 pointer-events-none">
-          <div className="absolute inset-0 opacity-10" 
-            style={{ 
-              backgroundImage: 'radial-gradient(circle, #3b82f6 1px, transparent 1px)', 
-              backgroundSize: '32px 32px' 
-            }} 
-          />
-          <div className="absolute top-1/4 left-10 w-px h-1/2 bg-gradient-to-b from-transparent via-brand-accent/20 to-transparent" />
-          <div className="absolute top-1/4 right-10 w-px h-1/2 bg-gradient-to-b from-transparent via-brand-accent/20 to-transparent" />
-        </div>
-      )}
     </div>
   );
 }
