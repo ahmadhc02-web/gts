@@ -12,22 +12,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Poori history le kar aayega taaki shallow wala masla na ho
+          fetch-depth: 0
 
-      - name: Push to HF (Bypassing Large Binary Files)
+      - name: Push Clean Code to HF
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Git settings configure karein
+          # 1. Purani saari fuzool binary files ko agar workflow runner mein hain to remove karein
+          rm -f *.tgz || true
+          
+          # 2. Git setup configure karein
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # Hugging Face ko naye remote ke taur par add karein
+          # 3. YAHAN ASLI JADOO HAI: Ek temporary naya saaf suthra git setup banayein jismein koi purani kharab history na ho
+          cd ..
+          mkdir fresh_sync
+          cp -r my-wifi-app/* fresh_sync/ 2>/dev/null || cp -r * fresh_sync/ 2>/dev/null || true
+          cd fresh_sync
+          
+          # Fuzool ya barhi files ko naye setup se delete rakhein
+          rm -f *.tgz || true
+          rm -rf .git
+          
+          # Naya git initialize karein (is se purani kharab history bilkul khatam)
+          git init
+          git add .
+          git commit -m "Fresh clean deployment without binaries"
+          
+          # 4. Hugging face par bina kisi history issue ke force push kar dein
           git remote add hf https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app
-          
-          # CRITICAL STEP: Git ko bolen ke push karte waqt agar .tgz file mile to use push na kare
-          # Yeh sirf aapka fresh text code aur suthri files hi aage bhejega
-          git rm --cached -r *.tgz || true
-          
-          # Ab force push karein bina kisi error ke
-          git push --force hf main
+          git push --force hf master:main || git push --force hf main
