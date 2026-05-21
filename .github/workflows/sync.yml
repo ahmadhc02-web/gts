@@ -12,15 +12,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          # Isko 1 karne se purani saari fuzool files ki history delete ho jayegi
-          fetch-depth: 1 
+          fetch-depth: 0
 
-      - name: Push to HF
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        # Is command ko humne modify kiya hai taaki sirf fresh code jaye
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git remote add hf https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app
-          git push --force hf main
+      - name: Push to Hugging Face Space
+        # Yeh official plugin saari history aur git-lfs ke errors ko khud manage kar leta hai
+        uses: Prime-S/sync-to-huggingface-space@v1.1
+        with:
+          shared-secret: ${{ secrets.HF_TOKEN }}
+          hf-username: 'mahmad995'
+          hf-space-name: 'my-wifi-app'
