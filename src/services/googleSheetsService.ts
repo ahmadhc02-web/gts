@@ -183,6 +183,9 @@ export const googleSheetsService = {
   saveTokens: (tokens: GoogleTokens) => {
     const existing = googleSheetsService.getTokens();
     const updated = { ...existing, ...tokens };
+    if (existing && existing.refresh_token && !updated.refresh_token) {
+      updated.refresh_token = existing.refresh_token;
+    }
     configCache.tokens = updated;
     localStorage.setItem(TOKEN_KEY, safeStringify(updated));
     window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: updated }));
@@ -239,39 +242,133 @@ export const googleSheetsService = {
 
   initiateAuth: async (): Promise<GoogleTokens> => {
     try {
-      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
-      const { auth: fbAuth } = await import('../lib/firebase');
-      
-      const googleProvider = new GoogleAuthProvider();
-      googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
-      googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
-      
-      // Set custom parameters to ensure we prompt for consent and ask for offline access parameters
-      googleProvider.setCustomParameters({
+      console.log("Initiating Google Sheets connection using Firebase Auth...");
+      // Check if user is offline
+      if (!navigator.onLine) {
+        throw new Error("You are currently offline. Please connect to the internet first.");
+      }
+
+      // Configure provider with custom prompt to always ensure consent is requested
+      provider.setCustomParameters({
         prompt: 'consent',
         access_type: 'offline'
       });
-      
-      const result = await signInWithPopup(fbAuth, googleProvider);
+
+      // Try the smooth native Firebase Sign-In popup using the user's authorized redirect handler
+      const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       
       if (!credential || !credential.accessToken) {
-        throw new Error("Failed to obtain Google access token from Firebase popup.");
+        throw new Error("Failed to retrieve Google Access Token from Firebase credentials.");
       }
+      
+      // Calculate token expiry (typically 3590 seconds from now)
+      const expiry_date = Date.now() + 3590 * 1000;
       
       const tokens: GoogleTokens = {
         access_token: credential.accessToken,
-        refresh_token: result.user?.refreshToken || undefined,
-        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file openid email profile',
-        token_type: 'Bearer',
-        expiry_date: Date.now() + 3500 * 1000 // Google tokens usually expire in 1 hour
+        token_type: "Bearer",
+        expiry_date: expiry_date,
+        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file"
       };
       
       googleSheetsService.saveTokens(tokens);
+      console.log("Firebase Google Sheets credentials retrieved successfully!");
       return tokens;
-    } catch (error: any) {
-      console.error("Failed to connect Google account via Firebase Auth Service:", error);
-      throw new Error(error.message || "Google Sheets connection failed.");
+    } catch (fbAuthError: any) {
+      console.warn("Client-side Firebase Auth Google connection had a warning or was blocked, trying server OAuth fallback:", fbAuthError);
+      
+      // Ultimate robust server-side OAuth flow fallback if Firebase popup fails
+      const url = getApiUrl('/api/auth/google');
+      
+      const width = 600;
+      const height = 650;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+      
+      const popup = window.open(
+        url,
+        'GoogleSheetsOAuth',
+        `width=${width},height=${height},left=${left},top=${top},status=yes,resizable=yes`
+      );
+
+      if (!popup) {
+        throw new Error("Popup blocked. Please allow popups for this website/iframe to connect Google Sheets.");
+      }
+
+      return new Promise<GoogleTokens>((resolve, reject) => {
+        const messageHandler = (event: MessageEvent) => {
+          if (event.data && event.data.type === 'google-oauth-success' && event.data.tokens) {
+            const tokens = event.data.tokens;
+            localStorage.removeItem('gts_sync_google_tokens_direct');
+            googleSheetsService.saveTokens(tokens);
+            cleanup();
+            resolve(tokens);
+          }
+        };
+
+        const checkTimer = setInterval(() => {
+          // Check for direct localStorage tokens (bypasses popup window communication issues)
+          try {
+            const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+            if (directTokensStr) {
+              const tokens = JSON.parse(directTokensStr);
+              localStorage.removeItem('gts_sync_google_tokens_direct');
+              googleSheetsService.saveTokens(tokens);
+              cleanup();
+              resolve(tokens);
+              try {
+                if (!popup.closed) popup.close();
+              } catch (e) {}
+              return;
+            }
+          } catch (storageErr) {
+            console.warn("Direct storage check encountered a harmless warning:", storageErr);
+          }
+
+          if (popup.closed) {
+            // Give 1 second extension error check to read final tokens from localStorage or Firestore sync
+            setTimeout(() => {
+              try {
+                const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+                if (directTokensStr) {
+                  const tokens = JSON.parse(directTokensStr);
+                  localStorage.removeItem('gts_sync_google_tokens_direct');
+                  googleSheetsService.saveTokens(tokens);
+                  cleanup();
+                  resolve(tokens);
+                  return;
+                }
+              } catch (e) {}
+
+              const tokens = googleSheetsService.getTokens();
+              if (tokens && tokens.access_token) {
+                cleanup();
+                resolve(tokens);
+              } else {
+                cleanup();
+                reject(new Error("Auth window closed before completion. Please try again."));
+              }
+            }, 1000);
+          }
+        }, 500);
+
+        const storageHandler = (e: any) => {
+          if (e.detail) {
+            cleanup();
+            resolve(e.detail);
+          }
+        };
+
+        const cleanup = () => {
+          window.removeEventListener('message', messageHandler);
+          window.removeEventListener('google-auth-changed' as any, storageHandler);
+          clearInterval(checkTimer);
+        };
+
+        window.addEventListener('message', messageHandler);
+        window.addEventListener('google-auth-changed' as any, storageHandler);
+      });
     }
   },
 

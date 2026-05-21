@@ -48,10 +48,21 @@ async function startServer() {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     
-    // Dynamic redirect URI reconstruction matching current domain
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const host = req.headers.host || 'localhost:3000';
-    const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+    // Dynamic redirect URI reconstruction matching current domain, supporting custom overrides
+    let redirectUri = '';
+    if (process.env.GOOGLE_REDIRECT_URI) {
+      redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    } else if (process.env.APP_URL) {
+      const base = process.env.APP_URL.endsWith('/') ? process.env.APP_URL.slice(0, -1) : process.env.APP_URL;
+      redirectUri = `${base}/api/auth/google/callback`;
+    } else {
+      // Respect reverse proxies (like Hugging Face Spaces) which pass protocol and host headers
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+      const rawHost = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+      // Ensure host is clean
+      const host = rawHost.split(',')[0].trim();
+      redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+    }
 
     return new google.auth.OAuth2(
       clientId || undefined,
@@ -60,16 +71,118 @@ async function startServer() {
     );
   }
 
-  async function getAuthorizedClient(req: any, tokens: any) {
+  let firebaseBackendApp: any = null;
+
+  async function getFirebaseAppOnServer() {
+    if (firebaseBackendApp) return firebaseBackendApp;
+    try {
+      const { initializeApp: serverInitApp, getApp: serverGetApp } = await import('firebase/app');
+      const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(firebaseConfigPath)) {
+        const configJson = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+        try {
+          firebaseBackendApp = serverGetApp("server-oauth-backend");
+        } catch (e) {
+          firebaseBackendApp = serverInitApp(configJson, "server-oauth-backend");
+        }
+        return firebaseBackendApp;
+      }
+    } catch (err) {
+      console.warn("Server: Failed to prepare server-side Firebase app:", err);
+    }
+    return null;
+  }
+
+  async function loadTokensFromFirestore() {
+    try {
+      const app = await getFirebaseAppOnServer();
+      if (!app) return null;
+      
+      const { getFirestore: serverGetFirestore, doc: serverDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
+      const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      const configJson = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+      const db = serverGetFirestore(app, configJson.firestoreDatabaseId);
+      
+      const gsDocRef = serverDoc(db, 'config', 'google_sheets');
+      const gsSnap = await serverGetDoc(gsDocRef);
+      if (gsSnap.exists()) {
+        const data = gsSnap.data();
+        if (data && data.tokens) {
+          return data.tokens;
+        }
+      }
+    } catch (fbErr) {
+      console.warn("Server: Failed load fallback Google credentials from Firestore:", fbErr);
+    }
+    return null;
+  }
+
+  async function saveTokensToFirestore(tokens: any) {
+    try {
+      const app = await getFirebaseAppOnServer();
+      if (!app) return;
+      
+      const { getFirestore: serverGetFirestore, doc: serverDoc, setDoc: serverSetDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
+      const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      const configJson = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+      const db = serverGetFirestore(app, configJson.firestoreDatabaseId);
+      
+      const gsDocRef = serverDoc(db, 'config', 'google_sheets');
+      const gsSnap = await serverGetDoc(gsDocRef);
+      const gsExisting = gsSnap.exists() ? gsSnap.data() : {};
+      
+      // Critical: Ensure we always retain any existing refresh_token if the incoming one is missing it
+      const finalTokens = { ...tokens };
+      if (gsExisting.tokens && gsExisting.tokens.refresh_token && !finalTokens.refresh_token) {
+        finalTokens.refresh_token = gsExisting.tokens.refresh_token;
+      }
+
+      await serverSetDoc(gsDocRef, {
+        ...gsExisting,
+        tokens: finalTokens,
+        updatedAt: Date.now()
+      });
+      console.log("Server: Google credentials successfully saved to Firestore.");
+    } catch (fbErr: any) {
+      console.error("Server: Failed saving Google credentials to Firestore:", fbErr);
+    }
+  }
+
+  async function getAuthorizedClient(req: any, clientTokens: any) {
     const auth = getOAuthClient(req);
+    
+    // Auto-resolve tokens using Firestore source-of-truth if client provided no tokens OR if they are stale/incomplete
+    let tokens = clientTokens;
+    const dbTokens = await loadTokensFromFirestore();
+    if (dbTokens) {
+      tokens = { ...dbTokens, ...tokens };
+      // Ensure refresh_token is preserved from DB if missing in request
+      if (dbTokens.refresh_token && !tokens.refresh_token) {
+        tokens.refresh_token = dbTokens.refresh_token;
+      }
+    }
+
+    if (!tokens) {
+      throw new Error("No Google Connection configuration found in local cache or server-side store.");
+    }
+
     auth.setCredentials(tokens);
 
     let refreshedTokens: any = null;
     auth.on('tokens', (newTokens) => {
       refreshedTokens = { ...tokens, ...newTokens };
+      // Keep refresh_token intact
+      if (tokens.refresh_token && !refreshedTokens.refresh_token) {
+        refreshedTokens.refresh_token = tokens.refresh_token;
+      }
+      
+      // Persist refreshed tokens to Firestore on the fly!
+      saveTokensToFirestore(refreshedTokens).catch(err => {
+        console.error("Server: Token refresh save background crash:", err);
+      });
     });
 
-    if (tokens.refresh_token) {
+    if (tokens && tokens.refresh_token) {
       try {
         await auth.getAccessToken(); // This automatically triggers a refresh if expired!
       } catch (err) {
@@ -116,25 +229,7 @@ async function startServer() {
       
       // Real-time synchronization to Firebase Firestore 24/7 so Hugging Face or any external frontend receives active tokens instantly
       try {
-        const { initializeApp: serverInitApp } = await import('firebase/app');
-        const { getFirestore: serverGetFirestore, doc: serverDoc, setDoc: serverSetDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
-        const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
-        if (fs.existsSync(firebaseConfigPath)) {
-          const configJson = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
-          const tempApp = serverInitApp(configJson, "server-oauth-sync-" + Date.now());
-          const tempDb = serverGetFirestore(tempApp, configJson.firestoreDatabaseId);
-          
-          const gsDocRef = serverDoc(tempDb, 'config', 'google_sheets');
-          const gsSnap = await serverGetDoc(gsDocRef);
-          const gsExisting = gsSnap.exists() ? gsSnap.data() : {};
-          
-          await serverSetDoc(gsDocRef, {
-            ...gsExisting,
-            tokens,
-            updatedAt: Date.now()
-          });
-          console.log("Server: Google Sheets connection credentials successfully synchronized to Firestore.");
-        }
+        await saveTokensToFirestore(tokens);
       } catch (fbErr: any) {
         console.error("Server: Failed syncing Google credentials to Firestore:", fbErr);
       }
@@ -153,14 +248,23 @@ async function startServer() {
           </div>
           <script>
             try {
+              var tokens = ${escapedTokensStr};
+              localStorage.setItem("gts_sync_google_tokens_direct", JSON.stringify(tokens));
+              
               if (window.opener) {
-                window.opener.postMessage({ type: "google-oauth-success", tokens: ${escapedTokensStr} }, "*");
-                setTimeout(() => window.close(), 1500);
+                window.opener.postMessage({ type: "google-oauth-success", tokens: tokens }, "*");
+                setTimeout(() => window.close(), 1000);
               } else {
-                setTimeout(() => window.close(), 2000);
+                setTimeout(() => window.close(), 1500);
               }
             } catch (err) {
               console.error(err);
+              try {
+                if (window.opener) {
+                  window.opener.postMessage({ type: "google-oauth-success", tokens: ${escapedTokensStr} }, "*");
+                }
+              } catch (inner) {}
+              setTimeout(() => window.close(), 1500);
             }
           </script>
         </body>
@@ -259,10 +363,15 @@ async function startServer() {
   }
 
   app.post("/api/sheets/append", async (req, res) => {
-    const { tokens, spreadsheetId, range, values } = req.body;
+    let { tokens, spreadsheetId, range, values } = req.body;
+    
+    // Auto fallback to Firestore-stored credentials if missing in client's request payload
+    if (!tokens) {
+      tokens = await loadTokensFromFirestore();
+    }
     
     if (!tokens || !spreadsheetId) {
-      return res.status(400).json({ error: "Missing tokens or spreadsheetId" });
+      return res.status(400).json({ error: "Missing tokens or spreadsheetId. Please connect your Google account in the Admin Panel." });
     }
 
     try {
@@ -292,10 +401,15 @@ async function startServer() {
   });
 
   app.post("/api/sheets/update", async (req, res) => {
-    const { tokens, spreadsheetId, range, values } = req.body;
+    let { tokens, spreadsheetId, range, values } = req.body;
+    
+    // Auto fallback to Firestore-stored credentials if missing in client's request payload
+    if (!tokens) {
+      tokens = await loadTokensFromFirestore();
+    }
     
     if (!tokens || !spreadsheetId) {
-      return res.status(400).json({ error: "Missing tokens or spreadsheetId" });
+      return res.status(400).json({ error: "Missing tokens or spreadsheetId. Please connect your Google account in the Admin Panel." });
     }
 
     try {
@@ -327,10 +441,15 @@ async function startServer() {
   });
 
   app.post("/api/drive/backup", async (req, res) => {
-    const { tokens, filename, content } = req.body;
+    let { tokens, filename, content } = req.body;
+    
+    // Auto fallback to Firestore-stored credentials if missing in client's request payload
+    if (!tokens) {
+      tokens = await loadTokensFromFirestore();
+    }
     
     if (!tokens || !content) {
-      return res.status(400).json({ error: "Missing tokens or content" });
+      return res.status(400).json({ error: "Missing tokens or content. Please connect your Google account in the Admin Panel." });
     }
 
     try {
@@ -389,10 +508,15 @@ async function startServer() {
   });
 
   app.post("/api/sheets/create", async (req, res) => {
-    const { tokens, title, sheetName } = req.body;
+    let { tokens, title, sheetName } = req.body;
+    
+    // Auto fallback to Firestore-stored credentials if missing in client's request payload
+    if (!tokens) {
+      tokens = await loadTokensFromFirestore();
+    }
     
     if (!tokens || !title) {
-      return res.status(400).json({ error: "Missing tokens or title" });
+      return res.status(400).json({ error: "Missing tokens or title. Please connect your Google account in the Admin Panel." });
     }
 
     try {
@@ -441,10 +565,15 @@ async function startServer() {
   });
 
   app.post("/api/sheets/bulk-export", async (req, res) => {
-    const { tokens, spreadsheetId, sheetsData } = req.body;
+    let { tokens, spreadsheetId, sheetsData } = req.body;
+    
+    // Auto fallback to Firestore-stored credentials if missing in client's request payload
+    if (!tokens) {
+      tokens = await loadTokensFromFirestore();
+    }
     
     if (!tokens || !spreadsheetId || !sheetsData) {
-      return res.status(400).json({ error: "Missing required parameters" });
+      return res.status(400).json({ error: "Missing required parameters. Please connect your Google account in the Admin Panel." });
     }
 
     try {
