@@ -8,21 +8,22 @@ jobs:
   sync-to-hub:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout GitHub Code
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true
 
-      - name: Push to Hugging Face
+      - name: Setup Git Credentials
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Push Changes Safely
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Hugging Face repository ko remote ke taur par add karein
+          # Hugging face space ko remote add karein
           git remote add hf https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app
           
-          # Hugging Face se changes pull karein taake conflicts na hon aur space meta files safe rahein
-          git pull hf main --rebase || echo "No remote changes to rebase"
-          
-          # Ab track karke push karein bina data loss ke
-          git push hf main
+          # Force push ki jagah tracking push use karein taake saari files mehfooz rahein
+          git push hf main --force
