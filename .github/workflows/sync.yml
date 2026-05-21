@@ -14,32 +14,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Push Clean Code to HF
+      - name: Push Clean Code to HF safely
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # 1. Purani saari fuzool binary files ko agar workflow runner mein hain to remove karein
-          rm -f *.tgz || true
-          
-          # 2. Git setup configure karein
+          # 1. Git setup configure karein
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # 3. YAHAN ASLI JADOO HAI: Ek temporary naya saaf suthra git setup banayein jismein koi purani kharab history na ho
+          # 2. Ek fresh folder banayein temporary sync ke liye
           cd ..
           mkdir fresh_sync
           cp -r my-wifi-app/* fresh_sync/ 2>/dev/null || cp -r * fresh_sync/ 2>/dev/null || true
           cd fresh_sync
           
-          # Fuzool ya barhi files ko naye setup se delete rakhein
+          # 3. ZAROORI STEP: GitHub par padi hui configurations ko yahan se mita dein
+          # Taaki yeh Hugging Face par maujood sahi files ko overwrite NA KAREIN
+          rm -f README.md || true
+          rm -f Dockerfile || true
+          rm -f vite.config.ts || true
+          rm -f vite.config.js || true
           rm -f *.tgz || true
           rm -rf .git
           
-          # Naya git initialize karein (is se purani kharab history bilkul khatam)
+          # 4. Hugging Face repository ko clone karein taaki uski settings safe rahein
+          git clone https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app hf_space
+          
+          # 5. Hugging Face ki sahi files ko apne naye code ke sath merge (copy) kar lein
+          cp hf_space/README.md . 2>/dev/null || true
+          cp hf_space/Dockerfile . 2>/dev/null || true
+          cp hf_space/vite.config.ts . 2>/dev/null || cp hf_space/vite.config.js . 2>/dev/null || true
+          rm -rf hf_space
+          
+          # 6. Ab naye saaf suthre code aur purani sahi settings ko commit karein
           git init
           git add .
-          git commit -m "Fresh clean deployment without binaries"
+          git commit -m "Smart sync: keeping HF configurations intact"
           
-          # 4. Hugging face par bina kisi history issue ke force push kar dein
+          # 7. Hugging Face par push kar dein
           git remote add hf https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app
-          git push --force hf master:main || git push --force hf main
+          git push --force hf main
