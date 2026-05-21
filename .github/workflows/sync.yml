@@ -9,42 +9,30 @@ jobs:
   sync-to-hub:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout GitHub Code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install HF CLI
-        run: pip install huggingface_hub
-
-      - name: Push to HF (Keep Configs Safe)
+      - name: Sync to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # Fuzool file remove karein
-          rm -f *.tgz || true
+          # 1. Hugging Face repo ko ek alag folder mein clone karein
+          git clone https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app hf_repo
           
-          # Hugging Face Space clone karein taaki configs safe rahen
-          git clone https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app hf_space
+          # 2. .git folder ko safe rakhein, baki sab delete kar dein
+          cd hf_repo
+          find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
           
-          # Sirf git folder aur config files ko bachana hai
-          cd hf_space
-          # Iska matlab hai: .git, Dockerfile, README.md, vite.config.ts ko chhor kar baki sab uda do
-          find . -maxdepth 1 ! -name '.git' ! -name 'Dockerfile' ! -name 'README.md' ! -name 'vite.config.ts' ! -name 'vite.config.js' ! -name '.' -exec rm -rf {} +
+          # 3. GitHub ka sara code (jo action ne checkout kiya tha) wahan copy karein
+          # $GITHUB_WORKSPACE mein hamara GitHub wala code hai
+          cp -r $GITHUB_WORKSPACE/* .
           
-          # GitHub ka naya code yahan copy karein
-          cp -r ../* .
-          rm -rf .git
-          mv .git_temp .git 2>/dev/null || true
+          # 4. Binary/Fuzool files wapis remove karein
+          rm -f *.tgz
           
-          # Ab push kar dein
+          # 5. Push kar dein
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           git add .
-          git commit -m "Auto-sync: keeping config files intact"
+          git commit -m "Auto-sync from GitHub"
           git push --force
