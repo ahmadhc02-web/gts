@@ -14,57 +14,37 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Push Clean Code to HF
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install HF CLI
+        run: pip install huggingface_hub
+
+      - name: Push to HF (Keep Configs Safe)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # 1. Purani saari fuzool binary files ko remove karein
+          # Fuzool file remove karein
           rm -f *.tgz || true
           
-          # 2. Git setup configure karein
+          # Hugging Face Space clone karein taaki configs safe rahen
+          git clone https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app hf_space
+          
+          # Sirf git folder aur config files ko bachana hai
+          cd hf_space
+          # Iska matlab hai: .git, Dockerfile, README.md, vite.config.ts ko chhor kar baki sab uda do
+          find . -maxdepth 1 ! -name '.git' ! -name 'Dockerfile' ! -name 'README.md' ! -name 'vite.config.ts' ! -name 'vite.config.js' ! -name '.' -exec rm -rf {} +
+          
+          # GitHub ka naya code yahan copy karein
+          cp -r ../* .
+          rm -rf .git
+          mv .git_temp .git 2>/dev/null || true
+          
+          # Ab push kar dein
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-          
-          # 3. Ek temporary naya saaf suthra git setup banayein
-          cd ..
-          mkdir fresh_sync
-          cp -r my-wifi-app/* fresh_sync/ 2>/dev/null || cp -r * fresh_sync/ 2>/dev/null || true
-          cd fresh_sync
-          
-          # Fuzool files mita dein
-          rm -f *.tgz || true
-          rm -rf .git
-          
-          # ==========================================
-          # SMART CONFIG PROTECTION WITH FALLBACK
-          # ==========================================
-          # Pehle Hugging Face se download karne ki koshish karein
-          curl -H "Authorization: Bearer $HF_TOKEN" -s https://huggingface.co/api/spaces/mahmad995/my-wifi-app/raw/main/README.md -o README.md || true
-          curl -H "Authorization: Bearer $HF_TOKEN" -s https://huggingface.co/api/spaces/mahmad995/my-wifi-app/raw/main/Dockerfile -o Dockerfile || true
-          curl -H "Authorization: Bearer $HF_TOKEN" -s https://huggingface.co/api/spaces/mahmad995/my-wifi-app/raw/main/vite.config.ts -o vite.config.ts || true
-
-          # FALLBACK JADOO: Agar Hugging Face se files khali milein (404/error), to khud master config inject karein
-          if [ ! -s README.md ] || grep -q "Not Found" README.md; then
-            echo -e "---\ntitle: My Wifi App\nemoji: 🌐\ncolorFrom: green\ncolorTo: blue\nsdk: docker\napp_port: 3000\npinned: false\n---\n" > README.md
-          fi
-
-          if [ ! -s Dockerfile ] || grep -q "Not Found" Dockerfile; then
-            echo -e "FROM node:22\nWORKDIR /usr/src/app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nRUN npm run build\nEXPOSE 3000\nENV PORT=3000\nENV HOST=0.0.0.0\nCMD [ \"npm\", \"start\" ]" > Dockerfile
-          fi
-
-          # Vite config check - allowedHosts lock rehna chahiye
-          if [ -f vite.config.ts ]; then
-            sed -i "s/hmr: process.env.DISABLE_HMR !== 'true',/hmr: process.env.DISABLE_HMR !== 'true',\n      host: '0.0.0.0',\n      port: 3000,\n      allowedHosts: ['mahmad995-my-wifi-app.hf.space', '.hf.space'],/g" vite.config.ts
-          elif [ -f vite.config.js ]; then
-            sed -i "s/hmr: process.env.DISABLE_HMR !== 'true',/hmr: process.env.DISABLE_HMR !== 'true',\n      host: '0.0.0.0',\n      port: 3000,\n      allowedHosts: ['mahmad995-my-wifi-app.hf.space', '.hf.space'],/g" vite.config.js
-          fi
-          # ==========================================
-
-          # Naya git initialize karein
-          git init
           git add .
-          git commit -m "Fresh clean deployment keeping HF configurations intact with safety fallback"
-          
-          # 4. Hugging face par bina kisi history issue ke force push kar dein
-          git remote add hf https://mahmad995:$HF_TOKEN@huggingface.co/spaces/mahmad995/my-wifi-app
-          git push --force hf master:main || git push --force hf main
+          git commit -m "Auto-sync: keeping config files intact"
+          git push --force
