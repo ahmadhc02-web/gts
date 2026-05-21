@@ -10,8 +10,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
-          lfs: true
+          fetch-depth: 1 # Sirf fresh code uthayega, purani heavy history nahi
 
       - name: Push to Hugging Face
         env:
