@@ -390,6 +390,17 @@ export default function App() {
     });
   }, [firebaseAuthReady]);
 
+  // Sync Google Sheets config with real-time updates from Firestore 24/7
+  useEffect(() => {
+    if (!firebaseAuthReady) return;
+    
+    const unsubscribe = googleSheetsService.subscribeGoogleSheetsConfig((data) => {
+      console.log('App: Live Google Sheets config synced from Firestore real-time.');
+    });
+    
+    return () => unsubscribe();
+  }, [firebaseAuthReady]);
+
   useEffect(() => {
     let unsubscribeAuth: (() => void) | undefined;
     let initialized = false;

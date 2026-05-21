@@ -25,6 +25,32 @@ const SHEET_ID_KEY = 'gts_spreadsheet_id';
 const SHEET_NAME_KEY = 'gts_sheet_name';
 const SHEET_RANGE_KEY = 'gts_sheet_range';
 
+interface SheetsConfigCache {
+  tokens: GoogleTokens | null;
+  spreadsheetId: string | null;
+  sheetName: string;
+  sheetRange: string;
+}
+
+// Global in-memory configuration cache, kept fresh via Firestore live subscription 24/7
+const configCache: SheetsConfigCache = {
+  tokens: null,
+  spreadsheetId: null,
+  sheetName: 'Sheet1',
+  sheetRange: 'A1',
+};
+
+// Fill from local storage immediately as a synchronous boot fallback
+try {
+  const localTokens = localStorage.getItem(TOKEN_KEY);
+  if (localTokens) configCache.tokens = JSON.parse(localTokens);
+  configCache.spreadsheetId = localStorage.getItem(SHEET_ID_KEY);
+  configCache.sheetName = localStorage.getItem(SHEET_NAME_KEY) || 'Sheet1';
+  configCache.sheetRange = localStorage.getItem(SHEET_RANGE_KEY) || 'A1';
+} catch (e) {
+  console.warn("Storage fallbacks parsing failed:", e);
+}
+
 // Provider setup for Google Workspace
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
@@ -57,16 +83,20 @@ export const googleSheetsService = {
       if (snap.exists()) {
         const data = snap.data();
         if (data.tokens) {
+          configCache.tokens = data.tokens;
           localStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
           window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: data.tokens }));
         }
         if (data.spreadsheetId) {
+          configCache.spreadsheetId = data.spreadsheetId;
           localStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
         }
         if (data.sheetName) {
+          configCache.sheetName = data.sheetName;
           localStorage.setItem(SHEET_NAME_KEY, data.sheetName);
         }
         if (data.sheetRange) {
+          configCache.sheetRange = data.sheetRange;
           localStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
         }
         return data;
@@ -85,7 +115,44 @@ export const googleSheetsService = {
         const docRef = doc(db, 'config', 'google_sheets');
         unsubscribe = onSnapshot(docRef, (snapshot) => {
           if (snapshot.exists()) {
-            callback(snapshot.data());
+            const data = snapshot.data();
+            
+            // Update the live in-memory global configCache
+            if (data.tokens) {
+              configCache.tokens = data.tokens;
+              localStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
+            } else {
+              configCache.tokens = null;
+              localStorage.removeItem(TOKEN_KEY);
+            }
+            
+            if (data.spreadsheetId) {
+              configCache.spreadsheetId = data.spreadsheetId;
+              localStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
+            } else {
+              configCache.spreadsheetId = null;
+              localStorage.removeItem(SHEET_ID_KEY);
+            }
+            
+            if (data.sheetName) {
+              configCache.sheetName = data.sheetName;
+              localStorage.setItem(SHEET_NAME_KEY, data.sheetName);
+            } else {
+              configCache.sheetName = 'Sheet1';
+              localStorage.removeItem(SHEET_NAME_KEY);
+            }
+            
+            if (data.sheetRange) {
+              configCache.sheetRange = data.sheetRange;
+              localStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
+            } else {
+              configCache.sheetRange = 'A1';
+              localStorage.removeItem(SHEET_RANGE_KEY);
+            }
+
+            // Immediately dispatch the local auth changed state so UI elements re-render with active synchronization badge
+            window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: data.tokens || null }));
+            callback(data);
           } else {
             callback(null);
           }
@@ -99,13 +166,24 @@ export const googleSheetsService = {
   },
 
   getTokens: (): GoogleTokens | null => {
+    if (configCache.tokens) return configCache.tokens;
     const tokens = localStorage.getItem(TOKEN_KEY);
-    return tokens ? JSON.parse(tokens) : null;
+    if (tokens) {
+      try {
+        const parsed = JSON.parse(tokens);
+        configCache.tokens = parsed;
+        return parsed;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
   },
 
   saveTokens: (tokens: GoogleTokens) => {
     const existing = googleSheetsService.getTokens();
     const updated = { ...existing, ...tokens };
+    configCache.tokens = updated;
     localStorage.setItem(TOKEN_KEY, safeStringify(updated));
     window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: updated }));
     googleSheetsService.syncConfigToFirestore({ tokens: updated });
@@ -120,33 +198,40 @@ export const googleSheetsService = {
   },
 
   getSpreadsheetId: (): string | null => {
+    if (configCache.spreadsheetId) return configCache.spreadsheetId;
     return localStorage.getItem(SHEET_ID_KEY);
   },
 
   saveSpreadsheetId: (id: string) => {
+    configCache.spreadsheetId = id;
     localStorage.setItem(SHEET_ID_KEY, id);
     googleSheetsService.syncConfigToFirestore({ spreadsheetId: id });
   },
 
   getSheetName: (): string => {
+    if (configCache.sheetName && configCache.sheetName !== 'Sheet1') return configCache.sheetName;
     return localStorage.getItem(SHEET_NAME_KEY) || 'Sheet1';
   },
 
   saveSheetName: (name: string) => {
+    configCache.sheetName = name;
     localStorage.setItem(SHEET_NAME_KEY, name);
     googleSheetsService.syncConfigToFirestore({ sheetName: name });
   },
 
   getSheetRange: (): string => {
+    if (configCache.sheetRange && configCache.sheetRange !== 'A1') return configCache.sheetRange;
     return localStorage.getItem(SHEET_RANGE_KEY) || 'A1';
   },
 
   saveSheetRange: (range: string) => {
+    configCache.sheetRange = range;
     localStorage.setItem(SHEET_RANGE_KEY, range);
     googleSheetsService.syncConfigToFirestore({ sheetRange: range });
   },
 
   clearAuth: () => {
+    configCache.tokens = null;
     localStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: null }));
     googleSheetsService.syncConfigToFirestore({ tokens: null });
