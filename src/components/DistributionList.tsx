@@ -121,7 +121,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                       const colorIndex = chartType === 'category' ? 3 : 0;
                       return (
                         <div 
-                          key={item.name} 
+                          key={`${item.name}-0`} 
                           className="flex flex-col group/item cursor-pointer w-full"
                           onClick={() => {
                             setViewBy(chartType);
@@ -153,7 +153,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                         const colorIndex = chartType === 'category' ? (idx + 1 + 3) : (idx + 1);
                         return (
                           <div 
-                            key={item.name} 
+                            key={`${item.name}-${idx}`} 
                             className="flex flex-col group/item cursor-pointer"
                             onClick={() => {
                               setViewBy(chartType);
@@ -186,7 +186,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                         const colorIndex = chartType === 'category' ? (idx + 3 + 3) : (idx + 3);
                         return (
                           <div 
-                            key={item.name} 
+                            key={`${item.name}-${idx}`} 
                             className="flex flex-col group/item cursor-pointer"
                             onClick={() => {
                               setViewBy(chartType);
@@ -263,8 +263,8 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                 {complaints
                   .filter(c => (viewBy === 'area' ? c.area || 'Unknown Area' : c.category || 'Unknown Category') === selectedItem)
                   .sort((a, b) => b.createdAt - a.createdAt)
-                  .map((complaint) => (
-                    <div key={complaint.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+                  .map((complaint, idx) => (
+                    <div key={`${complaint.id}-${idx}`} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
                         <div className="flex items-start justify-between gap-4 mb-3">
                           <div className="flex-1">
                              <p className="text-xs font-black uppercase text-slate-900 dark:text-white mb-0.5">{complaint.category}</p>

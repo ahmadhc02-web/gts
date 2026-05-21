@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity, Flame } from 'lucide-react';
-import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile } from '../types';
+import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig } from '../types';
 import ComplaintForm from './ComplaintForm';
 import ComplaintList from './ComplaintList';
 import ClientManagement from './ClientManagement';
@@ -11,6 +11,7 @@ import HighFrequencyNodes from './HighFrequencyNodes';
 import { cn } from '../lib/utils';
 import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
+import { getCardStyle } from '../lib/styleUtils';
 
 interface MemberPanelProps {
   complaints: Complaint[];
@@ -28,7 +29,7 @@ interface MemberPanelProps {
     pkgDetails?: string;
     userNearby?: string;
   }) => Promise<void>;
-  onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string) => Promise<void>;
+  onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
   onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
@@ -43,6 +44,7 @@ interface MemberPanelProps {
   onAuthorizeMic: () => Promise<void>;
   isMicMuted: boolean;
   onToggleMic: () => void;
+  branding: BrandingConfig;
 }
 
 export default function MemberPanel({
@@ -64,7 +66,8 @@ export default function MemberPanel({
   micAuthorized,
   onAuthorizeMic,
   isMicMuted,
-  onToggleMic
+  onToggleMic,
+  branding
 }: MemberPanelProps) {
   const [forcedStatus, setForcedStatus] = useState<ComplaintStatus | 'all'>('all');
   const [forcedPriority, setForcedPriority] = useState<ComplaintPriority | 'all'>('all');
@@ -278,7 +281,13 @@ export default function MemberPanel({
                     className="origin-left"
                   >
                     <div className="max-w-4xl mx-auto pt-2 pb-8">
-                      <ComplaintForm onSubmit={onRegisterComplaint} isLoading={isLoading} appConfig={appConfig} currentUser={currentUser} />
+                      <ComplaintForm 
+                        onSubmit={onRegisterComplaint} 
+                        isLoading={isLoading} 
+                        appConfig={appConfig} 
+                        currentUser={currentUser}
+                        branding={branding}
+                      />
                     </div>
                   </motion.div>
                 )}
@@ -300,6 +309,7 @@ export default function MemberPanel({
                 forcedPriorityFilter={forcedPriority}
                 forcedCategoryFilter={forcedCategory}
                 appConfig={appConfig}
+                branding={branding}
               />
             </section>
           </div>
@@ -364,7 +374,7 @@ export default function MemberPanel({
                         <div className="relative">
                           <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
                           <input
-                            type="password"
+                            type="text"
                             value={newPassword}
                             onChange={(e) => setNewPassword(e.target.value)}
                             className={cn(inputClasses, "pl-11")}

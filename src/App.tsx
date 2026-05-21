@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { signInAnonymously } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import Layout from './components/Layout';
@@ -6,13 +6,15 @@ import LoginForm from './components/LoginForm';
 import AdminPanel from './components/AdminPanel';
 import MemberPanel from './components/MemberPanel';
 import WelcomeOverlay from './components/WelcomeOverlay';
-import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification } from './types';
+import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification, BrandingConfig } from './types';
 import { firebaseService } from './lib/firebaseService';
 import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
-import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig } from './constants';
+import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
 import { safeStringify } from './lib/utils';
+import FiberLoading from './components/FiberLoading';
+import ServiceMonitor from './components/ServiceMonitor';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
@@ -28,6 +30,9 @@ export default function App() {
       });
       // Process pending Google Sheets syncs
       googleSheetsService.syncQueue.process().catch(e => console.error(e instanceof Error ? e.message : String(e)));
+      
+      // Sync local offline complaints
+      syncOfflineComplaints();
     } else {
       toast.error('Connection Severed', {
         description: 'Switching to Local Access Mode. Data will be cached locally.',
@@ -35,6 +40,41 @@ export default function App() {
       });
     }
   }, [isOnline]);
+
+  const syncOfflineComplaints = async () => {
+    const queue = JSON.parse(localStorage.getItem('offline_complaints') || '[]');
+    if (queue.length === 0) return;
+
+    console.log(`App: Initiating sync for ${queue.length} cached complaints...`);
+    setIsLoading(true);
+    
+    // Create a copy to avoid mutation issues during sync
+    const itemsToSync = [...queue];
+    let syncCount = 0;
+
+    for (const item of itemsToSync) {
+      try {
+        await handleRegisterComplaint(item, true); // Silent mode
+        syncCount++;
+      } catch (error) {
+        console.error('App: Failed to sync individual complaint:', error);
+      }
+    }
+
+    setIsLoading(false);
+
+    if (syncCount > 0) {
+      toast.success(`Sync Complete: ${syncCount} records synchronized with cloud database.`);
+      // Remove successfully synced items (in case of partial success)
+      const remaining = JSON.parse(localStorage.getItem('offline_complaints') || '[]');
+      const newQueue = remaining.slice(syncCount);
+      if (newQueue.length === 0) {
+        localStorage.removeItem('offline_complaints');
+      } else {
+        localStorage.setItem('offline_complaints', safeStringify(newQueue));
+      }
+    }
+  };
 
   const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
@@ -56,7 +96,11 @@ export default function App() {
     categories: DEFAULT_CATEGORIES,
     statuses: DEFAULT_STATUSES,
     priorities: DEFAULT_PRIORITIES,
-    zones: DEFAULT_ZONES
+    zones: DEFAULT_ZONES,
+    billingSecurityKey: '786786'
+  });
+  const [branding, setBranding] = useState<BrandingConfig>(() => {
+    return { ...DEFAULT_BRANDING, id: 'global', updatedAt: Date.now(), updatedBy: 'system' } as BrandingConfig;
   });
   const [isLoading, setIsLoading] = useState(true); // Default to true until auth/init is done
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +110,11 @@ export default function App() {
   });
   const [showTimedAlertHub, setShowTimedAlertHub] = useState(false);
 
+  // Latest states ref setup to avoid resetting background backup interval on state changes
+  const backupStateRef = useRef({ complaints, users, appConfig, branding });
+  useEffect(() => {
+    backupStateRef.current = { complaints, users, appConfig, branding };
+  }, [complaints, users, appConfig, branding]);
   const [hideBanner, setHideBanner] = useState(() => {
     return localStorage.getItem('gts_banner_hidden') === 'true';
   });
@@ -304,13 +353,56 @@ export default function App() {
     };
   }, [user]);
 
-  // Auto-login logic and initial data fetch
+  // Sync branding subscriptions
+  useEffect(() => {
+    if (!firebaseAuthReady) return;
+    
+    return firebaseService.subscribeBranding((data) => {
+      if (data) {
+        setBranding(data);
+        // Apply global styles
+        const root = document.documentElement;
+        root.style.setProperty('--brand-accent', data.accentColor);
+        if (data.secondaryColor) root.style.setProperty('--brand-secondary', data.secondaryColor);
+        if (data.fontFamily) root.style.setProperty('--font-sans', data.fontFamily);
+        
+        if (data.borderRadius !== undefined) {
+          const radiusMap: Record<string, string> = {
+            'none': '0px',
+            'sm': '4px',
+            'md': '8px',
+            'lg': '16px',
+            'full': '9999px'
+          };
+          const radiusVal = typeof data.borderRadius === 'string' ? (radiusMap[data.borderRadius] || '8px') : `${data.borderRadius}px`;
+          root.style.setProperty('--radius-global', radiusVal);
+        }
+        
+        if (data.glassOpacity !== undefined) root.style.setProperty('--glass-opacity', String(data.glassOpacity));
+        
+        // Handle animations toggle globally if needed
+        if (data.enableAnimations === false) {
+          root.classList.add('no-animations');
+        } else {
+          root.classList.remove('no-animations');
+        }
+      }
+    });
+  }, [firebaseAuthReady]);
+
   useEffect(() => {
     let unsubscribeAuth: (() => void) | undefined;
     let initialized = false;
 
     const init = async (userAuth: any) => {
       console.log('App: Initializing Data Registry...');
+      
+      // Load Google Sheets config from Firestore to local storage first
+      try {
+        await googleSheetsService.loadConfigFromFirestore();
+      } catch (e) {
+        console.warn("Could not retrieve shared Google Sheets configuration:", e);
+      }
       
       // Test Firestore connection
       firebaseService.testConnection();
@@ -320,54 +412,84 @@ export default function App() {
         const initialUsers = await firebaseService.getUsers();
         let currentUsers = [...initialUsers];
         
-        // Ensure at least one super admin exists, otherwise bootstrap defaults
-        const hasSuperAdmin = currentUsers.some(u => u.role === 'super_admin');
+      // Ensure primary administrator identities are restored to the registry
+      const requiredSeeds = [
+        { id: 'abc-id', user: 'abc', pass: 'abc', role: 'super_admin' as const, name: 'System Bootstrap', dealer: 'main', code: '000', status: 'active' as const },
+        { id: 'yaseen-id', user: 'yaseen', pass: 'yaseen', role: 'super_admin' as const, name: 'System Bootstrap', dealer: 'main', code: '000', status: 'active' as const },
+        { id: 'admin-id', user: 'admin', pass: 'admin', role: 'super_admin' as const, name: 'System Bootstrap', dealer: 'main', code: '000', status: 'active' as const }
+      ];
+
+      let needsSync = false;
+      for (const seed of requiredSeeds) {
+        if (!currentUsers.some(u => u.username === seed.user)) {
+           console.log(`Identity Missing: Restoring protocol ${seed.user}...`);
+           const newUser = await firebaseService.createUser(seed.id, seed.user, seed.pass, seed.role, 'system', seed.name, seed.dealer, seed.code, seed.status);
+           currentUsers.push(newUser);
+           needsSync = true;
+        }
+      }
         
-        if (!hasSuperAdmin) {
-          try {
-            console.log("System is empty or missing administrator protocol. Initiating bootstrap...");
-            
-            // Create default Super Admin accounts
-            const abcAdmin = await firebaseService.createUser('abc-id', 'abc', 'abc', 'super_admin', 'system', 'System Bootstrap', 'main', '000');
-            const yaseenAdmin = await firebaseService.createUser('yaseen-id', 'yaseen', 'yaseen', 'super_admin', 'system', 'System Bootstrap', 'main', '000');
-            const admin = await firebaseService.createUser('admin-id', 'admin', 'admin', 'super_admin', 'system', 'System Bootstrap');
-            
-            currentUsers.push(abcAdmin, yaseenAdmin, admin);
-          } catch (e) {
-            console.error("Critical bootstrap failure:", e);
+        if (needsSync) {
+           setUsers([...currentUsers]);
+        } else {
+           setUsers(currentUsers);
+        }
+
+        // Re-validate current session identity against the fresh registry
+        if (user) {
+          const freshUser = currentUsers.find(u => u.username.toLowerCase() === user.username.toLowerCase());
+          if (freshUser) {
+            if (freshUser.status === 'blocked') {
+              console.warn("Auth Security: Revoking blocked identity session.");
+              setUser(null);
+              localStorage.removeItem('complaint_app_user');
+              toast.error("Access REVOKED: Your account has been blocked by an administrator.");
+            } else if (freshUser.status === 'pending') {
+              console.warn("Auth Security: Restricted pending identity session.");
+              setUser(null);
+              localStorage.removeItem('complaint_app_user');
+              toast.warning("Access RESTRICTED: Your request is still pending approval.");
+            } else if (safeStringify(freshUser) !== safeStringify(user)) {
+               // Update local state if role or profile changes
+               setUser(freshUser);
+               localStorage.setItem('complaint_app_user', safeStringify(freshUser));
+            }
           }
         }
-        
-        setUsers(currentUsers);
       } catch (err) {
         console.error("Initialization error:", err instanceof Error ? err.message : String(err));
         setError("System initialization failed. Some data may be temporarily unavailable.");
       } finally {
-        setIsLoading(false);
+        // Minimum loading time for a "proper" branded experience
+        setTimeout(() => {
+          setIsLoading(false);
+        }, 3000);
       }
     };
 
     import('firebase/auth').then(({ onAuthStateChanged, signInAnonymously }) => {
-      unsubscribeAuth = onAuthStateChanged(auth, (userAuth) => {
+      unsubscribeAuth = onAuthStateChanged(auth, async (userAuth) => {
         if (userAuth) {
           console.log('Firebase Auth: Operational session established', userAuth.uid);
           setFirebaseUser(userAuth);
           setFirebaseAuthReady(true);
           if (!initialized) {
             initialized = true;
-            init(userAuth);
+            await init(userAuth);
           }
         } else {
           console.log('Firebase Auth: No session detected, initiating secure handshake...');
-          signInAnonymously(auth).catch(authErr => {
+          try {
+            await signInAnonymously(auth);
+          } catch (authErr) {
             console.warn("Auth initialization restricted:", authErr);
             setFirebaseAuthReady(true);
             setIsLoading(false);
             if (!initialized) {
               initialized = true;
-              init(null);
+              await init(null);
             }
-          });
+          }
         }
       });
     });
@@ -393,6 +515,7 @@ export default function App() {
           statuses: data.statuses || DEFAULT_STATUSES,
           priorities: data.priorities || DEFAULT_PRIORITIES,
           zones: data.zones || DEFAULT_ZONES,
+          billingSecurityKey: data.billingSecurityKey || '786786',
         });
       } else {
         console.log('No app config found for tenant, initializing with defaults...');
@@ -439,6 +562,68 @@ export default function App() {
 
     return () => unsubscribe();
   }, [user, firebaseAuthReady]);
+
+  // 10-Minute Automatic Background Bulk System Backup Scheduler
+  useEffect(() => {
+    if (!firebaseAuthReady) return;
+
+    let timer: NodeJS.Timeout;
+    const TEN_MINUTES = 10 * 60 * 1000;
+    const CHECK_INTERVAL = 60 * 1000; // Check every 1 minute
+
+    const runCheck = async () => {
+      try {
+        const tokens = googleSheetsService.getTokens();
+        const spreadsheetId = googleSheetsService.getSpreadsheetId();
+        if (!tokens || !spreadsheetId) {
+          // Silent skip if Google Sheets is not configured or connected yet
+          return;
+        }
+
+        // Fetch Google sheets config to check last backup timestamp
+        const configData = await googleSheetsService.loadConfigFromFirestore();
+        const lastBackup = configData?.lastAutoBackupTime || 0;
+        const now = Date.now();
+
+        if (now - lastBackup >= TEN_MINUTES) {
+          console.log('[Auto-Backup] Last backup was more than 10 minutes ago. Performing bulk background system export...');
+          
+          // Optimistically update timestamp to prevent overlapping executions
+          await googleSheetsService.syncConfigToFirestore({ lastAutoBackupTime: now });
+          
+          // Fetch all clients (async)
+          const clients = await firebaseService.getClients().catch((e) => {
+            console.warn("[Auto-Backup] Fetching clients warning:", e);
+            return [];
+          });
+          
+          const backupData = {
+            complaints: backupStateRef.current.complaints || [],
+            users: backupStateRef.current.users || [],
+            clients: clients,
+            config: backupStateRef.current.appConfig || {},
+            branding: backupStateRef.current.branding || {}
+          };
+
+          await googleSheetsService.performBulkSystemBackup(backupData);
+          console.log('[Auto-Backup] Background Bulk System Export Executed Successfully!');
+        }
+      } catch (err) {
+        console.warn('[Auto-Backup] Error running auto-backup check:', err);
+      }
+    };
+
+    // Warm-up delay of 15 seconds to let initial loads settle, then run first check
+    const initialTimeout = setTimeout(() => {
+      runCheck();
+      timer = setInterval(runCheck, CHECK_INTERVAL);
+    }, 15000);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      if (timer) clearInterval(timer);
+    };
+  }, [firebaseAuthReady]);
 
   // Centralized Notifications Subscription
   useEffect(() => {
@@ -577,15 +762,110 @@ export default function App() {
     return () => unsubscribe();
   }, [user, firebaseAuthReady, alertAuthorized, isAudioMuted, chatAudio, userGroups]);
 
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      
+      const email = result.user.email;
+      if (!email) throw new Error("No email associated with this Google account.");
+
+      let effectiveUsers = users;
+      if (effectiveUsers.length === 0) {
+        effectiveUsers = await firebaseService.getUsers();
+        setUsers(effectiveUsers);
+      }
+
+      // Try to find user by username matching email prefix or exact email
+      const emailPrefix = email.split('@')[0].toLowerCase();
+      let foundUser = effectiveUsers.find(u => 
+        u.username.toLowerCase() === email.toLowerCase() || 
+        u.username.toLowerCase() === emailPrefix
+      );
+
+      if (!foundUser) {
+        // Automatically provision them as a generic member/user with main dealer
+        const newUid = result.user.uid; 
+        const autoUsername = emailPrefix;
+        console.log(`Provisioning new identity via Google Auth: ${autoUsername}`);
+        // Defaulting to 'member' role which is basic access
+        // Status set to 'pending' as per request
+        foundUser = await firebaseService.createUser(
+          newUid, 
+          autoUsername, 
+          'google_auth_' + newUid.substring(0, 5), 
+          'member', 
+          'system', 
+          result.user.displayName || autoUsername, 
+          'main',
+          undefined,
+          undefined,
+          'pending'
+        );
+        setUsers(prev => [...prev, foundUser!]);
+      }
+
+      if (foundUser.status === 'pending') {
+        toast.warning("Access Restricted: Request Pending", {
+          description: "Your Google account access request has been sent to the Super Admin. Please wait for approval.",
+          duration: 10000
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (foundUser.status === 'blocked') {
+        setError("Access Denied: Your account has been blocked by an administrator.");
+        setIsLoading(false);
+        return;
+      }
+
+      setUser(foundUser);
+      localStorage.setItem('complaint_app_user', safeStringify(foundUser));
+      setShowWelcome(true);
+      toast.success(`Access Granted: Welcome back, ${foundUser.fullName || foundUser.username}`);
+
+      // Sync Login details to Google Sheet in background
+      googleSheetsService.syncLogin(foundUser, 'Google Identity').catch((err) => {
+        console.error("Failed background sheets login sync:", err);
+      });
+
+    } catch (e: any) {
+      console.error("Google Auth Exception:", e);
+      let errorMessage = 'Google Authentication Failed. Please try again.';
+      if (e.message) {
+         errorMessage = `OAuth Protocol Error: ${e.message}`;
+      }
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleLogin = async (username: string, pass: string, lineCode?: string) => {
     setIsLoading(true);
     setError(null);
     try {
+      // Identity Handshake: Ensure cloud session is operational
+      if (!auth.currentUser) {
+        console.log("No active session detected, establishing secure handshake...");
+        try {
+          const { signInAnonymously } = await import('firebase/auth');
+          await signInAnonymously(auth);
+        } catch (authErr) {
+          console.warn("Handshake restricted by local policy:", authErr);
+          // If we still can't sign in, we'll try to proceed, but Firestore may block us
+        }
+      }
+
       let effectiveUsers = users;
 
-      // If user list is empty, fetch immediately to prevent login blackout
+      // If user list is empty, performing hot fetch
       if (effectiveUsers.length === 0) {
-        console.log("Registry empty, performing hot fetch for login validation...");
+        console.log("Registry empty, synchronizing with primary infrastructure...");
         effectiveUsers = await firebaseService.getUsers();
         setUsers(effectiveUsers);
       }
@@ -612,10 +892,27 @@ export default function App() {
       const foundUser = effectiveUsers.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
       
       if (foundUser && foundUser.password === pass) {
+        if (foundUser.status === 'pending') {
+          setError('Access Restricted: Your account is pending registration approval.');
+          setIsLoading(false);
+          return;
+        }
+
+        if (foundUser.status === 'blocked') {
+          setError('Access Denied: Your account has been blocked by an administrator.');
+          setIsLoading(false);
+          return;
+        }
+
         setUser(foundUser);
         localStorage.setItem('complaint_app_user', safeStringify(foundUser));
         setShowWelcome(true);
         toast.success(`Access Granted: Welcome back, ${foundUser.username}`);
+
+        // Sync Login details to Google Sheet in background
+        googleSheetsService.syncLogin(foundUser, 'Standard Credentials').catch((err) => {
+          console.error("Failed background sheets login sync:", err);
+        });
         
         if (!alertAuthorized) {
           toast("Action Required: Enable Audio Notifications", {
@@ -630,9 +927,26 @@ export default function App() {
       } else {
         setError('Invalid Identity Credentials. Access Denied.');
       }
-    } catch (e) {
-      console.error("Login sequence failure:", e);
-      setError('System authentication failure. Please verify network connectivity.');
+    } catch (e: any) {
+      console.error("Login Handshake Exception:", e);
+      let errorMessage = 'System Identity Bridge Failure. Please verify your network connection and try again.';
+      
+      if (e instanceof Error) {
+        if (e.message.includes('permission') || e.message.includes('Missing or insufficient permissions')) {
+          errorMessage = 'Credential Relay Denied: You do not have the protocol clearances to access the registry.';
+        } else if (e.message.includes('network') || e.message.includes('offline')) {
+          errorMessage = 'Connectivity Severed: The identity relay cannot reach the central cloud infrastructure.';
+        } else {
+          try {
+            const parsed = JSON.parse(e.message);
+            errorMessage = `Infrastructure Protocol Error: ${parsed.error || 'Unknown Exception'}`;
+          } catch {
+            errorMessage = `System Exception: ${e.message}`;
+          }
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -644,27 +958,40 @@ export default function App() {
     toast.info('Logged out successfully');
   };
 
-  const handleRegisterComplaint = async (data: any) => {
+  const handleRegisterComplaint = async (data: any, silent: boolean = false) => {
     if (!user) return;
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
+      if (!navigator.onLine) {
+        // Run in background for Firestore persistence, don't await network resolution
+        firebaseService.createComplaint(data, user).catch(console.error);
+
+        // Treat it as locally persisted for UI
+        const dummyComplaint = { ...data, id: 'temp_' + Date.now(), createdAt: Date.now() };
+        googleSheetsService.syncQueue.add(dummyComplaint);
+
+        if (!silent) toast.success('Offline mode: Saved locally and will sync when connected.');
+        return;
+      }
+
       const newComplaint = await firebaseService.createComplaint(data, user);
-      toast.success('Complaint submitted successfully!');
+      if (!silent) toast.success('Complaint submitted successfully!');
       
-      // Auto-sync to Google Sheets if configured
+      // Auto-sync to Google Sheets if configured (Operational Logs)
       try {
         if (navigator.onLine) {
-          await googleSheetsService.appendComplaint(newComplaint);
+          await googleSheetsService.syncActivity('Operational Logs', newComplaint);
         } else {
           console.warn('Offline: Queueing sheet sync for reconnection.');
-          googleSheetsService.syncQueue.add(newComplaint);
+          googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: newComplaint });
         }
       } catch (err) {
-        console.error('Failed to sync with Google Sheets, queuing...', err instanceof Error ? err.message : String(err));
-        googleSheetsService.syncQueue.add(newComplaint);
+        console.error('Failed to auto-sync with Google Sheets, queuing...', err instanceof Error ? err.message : String(err));
+        googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: newComplaint });
       }
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
+      if (!silent) toast.error('Failed to register complaint.');
     } finally {
       setIsLoading(false);
     }
@@ -677,19 +1004,51 @@ export default function App() {
       const customerName = complaint?.customerName || id;
       await firebaseService.deleteComplaint(id, customerName, user.fullName || user.username);
       toast.success('Complaint deleted successfully!');
+
+      // Log deletion activity in Operational Logs
+      if (complaint) {
+        const deletionLog = { 
+          ...complaint, 
+          status: 'PURGED/DELETED', 
+          description: `ALERT: Record permanently removed from central database by ${user.username}` 
+        };
+        try {
+          if (navigator.onLine) {
+            await googleSheetsService.syncActivity('Operational Logs', deletionLog);
+          } else {
+            googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: deletionLog });
+          }
+        } catch (err) {
+          googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: deletionLog });
+        }
+      }
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to delete complaint.');
     }
   };
 
-  const handleUpdateComplaintStatus = async (id: string, status: ComplaintStatus, remarks?: string) => {
+  const handleUpdateComplaintStatus = async (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => {
     if (!user) return;
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
-      await firebaseService.updateComplaintStatus(id, status, customerName, user.fullName || user.username, user.uid, remarks);
+      await firebaseService.updateComplaintStatus(id, status, customerName, user.fullName || user.username, user.uid, remarks, customerReview);
       toast.success(`Status updated to ${status}`);
+
+      // Auto-sync for Operational Logs (History)
+      if (complaint) {
+        const updatedData = { ...complaint, status, remarks: remarks || complaint.remarks };
+        try {
+          if (navigator.onLine) {
+            await googleSheetsService.syncActivity('Operational Logs', updatedData);
+          } else {
+            googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: updatedData });
+          }
+        } catch (err) {
+          googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: updatedData });
+        }
+      }
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update status.');
@@ -703,6 +1062,20 @@ export default function App() {
       const customerName = complaint?.customerName || id;
       await firebaseService.updateComplaintRemarks(id, remarks, customerName, user.fullName || user.username, user.uid);
       toast.success('Protocol remarks updated successfully');
+
+      // Auto-sync for Operational Logs (History)
+      if (complaint) {
+        const updatedData = { ...complaint, remarks };
+        try {
+          if (navigator.onLine) {
+            await googleSheetsService.syncActivity('Operational Logs', updatedData);
+          } else {
+            googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: updatedData });
+          }
+        } catch (err) {
+          googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: updatedData });
+        }
+      }
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update remarks.');
@@ -716,6 +1089,20 @@ export default function App() {
       const customerName = data.customerName || complaint?.customerName || id;
       await firebaseService.updateComplaint(id, data, customerName, user.fullName || user.username);
       toast.success('Log record updated successfully');
+
+      // Auto-sync for Operational Logs (History/Updates/Remarks)
+      if (complaint) {
+        const updatedData = { ...complaint, ...data };
+        try {
+          if (navigator.onLine) {
+            await googleSheetsService.syncActivity('Operational Logs', updatedData);
+          } else {
+            googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: updatedData });
+          }
+        } catch (err) {
+          googleSheetsService.syncQueue.add({ tabName: 'Operational Logs', data: updatedData });
+        }
+      }
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update record.');
@@ -742,8 +1129,19 @@ export default function App() {
 
     try {
       const uid = Math.random().toString(36).substr(2, 9);
-      await firebaseService.createUser(uid, trimmedName, pass, role, user.uid, user.fullName || user.username, dealerId, lineCode, companyName);
+      const newUser = await firebaseService.createUser(uid, trimmedName, pass, role, user.uid, user.fullName || user.username, dealerId, lineCode, companyName);
       toast.success(`${role === 'dealer' ? 'Dealer' : 'User'} ${trimmedName} created successfully!`);
+
+      // Auto-sync to User Register
+      try {
+        if (navigator.onLine) {
+          await googleSheetsService.syncUser(newUser);
+        } else {
+          googleSheetsService.syncQueue.add({ tabName: 'User Register', data: newUser });
+        }
+      } catch (err) {
+        googleSheetsService.syncQueue.add({ tabName: 'User Register', data: newUser });
+      }
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to create account.');
@@ -769,6 +1167,18 @@ export default function App() {
     try {
       await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode && { lineCode }), ...(companyName && { companyName }) }, user.fullName || user.username);
       
+      const targetUser = users.find(u => u.uid === uid);
+      const updatedUserObj = {
+        ...(targetUser || {}),
+        uid,
+        username,
+        password: pass,
+        fullName,
+        role: role || targetUser?.role || 'user',
+        ...(lineCode && { lineCode }),
+        ...(companyName && { companyName })
+      };
+
       // If updating self, update local user state too
       if (user && user.uid === uid) {
         const updatedUser = { ...user, username, password: pass, fullName, ...(role && { role }), ...(lineCode && { lineCode }), ...(companyName && { companyName }) };
@@ -777,6 +1187,17 @@ export default function App() {
       }
       
       toast.success('User details updated successfully!');
+
+      // Auto-sync user details changes to Google Sheets User Register in background
+      try {
+        if (navigator.onLine) {
+          await googleSheetsService.syncUser(updatedUserObj);
+        } else {
+          googleSheetsService.syncQueue.add({ tabName: 'User Register', data: updatedUserObj });
+        }
+      } catch (err) {
+        googleSheetsService.syncQueue.add({ tabName: 'User Register', data: updatedUserObj });
+      }
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update user details.');
@@ -796,6 +1217,17 @@ export default function App() {
       localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       
       toast.success(`Admin password changed successfully!`);
+
+      // Auto-sync user details changes to Google Sheets User Register in background
+      try {
+        if (navigator.onLine) {
+          await googleSheetsService.syncUser(updatedUser);
+        } else {
+          googleSheetsService.syncQueue.add({ tabName: 'User Register', data: updatedUser });
+        }
+      } catch (err) {
+        googleSheetsService.syncQueue.add({ tabName: 'User Register', data: updatedUser });
+      }
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to change password.');
@@ -819,6 +1251,34 @@ export default function App() {
     const tenantId = firebaseService.getTenantId(user);
     firebaseService.updateConfig(newConfig, user.fullName || user.username, tenantId);
     toast.success('System configuration updated');
+    
+    // Auto-sync to Google Sheets (System Config)
+    googleSheetsService.syncSystemConfig(newConfig, branding);
+  };
+
+  const handleUpdateBranding = async (newBranding: BrandingConfig) => {
+    if (!user) return;
+    try {
+      await firebaseService.updateBranding(newBranding, user.fullName || user.username);
+      toast.success('Global UI Metrics Reconfigured and Synchronized');
+      
+      // Auto-sync to Google Sheets (System Config)
+      googleSheetsService.syncSystemConfig(appConfig, newBranding);
+    } catch (err) {
+      console.error("Branding update failure:", err);
+      toast.error('Failed to update system branding protocols');
+    }
+  };
+
+  const handleUpdateUserStatus = async (uid: string, status: UserProfile['status']) => {
+    if (!user) return;
+    try {
+      await firebaseService.updateUserStatus(uid, status, user.fullName || user.username);
+      toast.success(`User status updated to ${status?.toUpperCase()}`);
+    } catch (err) {
+      console.error("User status update failure:", err);
+      toast.error('Failed to update user status');
+    }
   };
 
   return (
@@ -843,15 +1303,16 @@ export default function App() {
         isAudioMuted={isAudioMuted}
         onToggleAudio={handleToggleAudio}
         onResetBanner={handleResetBanner}
+        onUpdateUser={handleUpdateUser}
+        branding={branding}
       >
         {!firebaseAuthReady ? (
-          <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-400">
-            <div className="w-8 h-8 border-2 border-brand-accent border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="text-sm font-mono tracking-wider">ESTABLISHING SECURE UPLINK...</p>
+          <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950">
+            <FiberLoading fullScreen />
           </div>
         ) : !user ? (
-        <LoginForm onLogin={handleLogin} isLoading={isLoading} error={error} />
-      ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer') ? (
+        <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
+      ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor') ? (
         <AdminPanel
           complaints={complaints}
           users={users}
@@ -867,6 +1328,7 @@ export default function App() {
           onChangeAdminPass={handleChangeAdminPass}
           appConfig={appConfig}
           onUpdateConfig={handleUpdateConfig}
+          onUpdateUserStatus={handleUpdateUserStatus}
           isLoading={isLoading}
           alertAuthorized={alertAuthorized}
           onAuthorizeAlerts={handleAuthorizeAlerts}
@@ -878,6 +1340,8 @@ export default function App() {
           onAuthorizeMic={handleAuthorizeMic}
           isMicMuted={isMicMuted}
           onToggleMic={handleToggleMic}
+          branding={branding}
+          onUpdateBranding={handleUpdateBranding}
         />
       ) : (
         <MemberPanel
@@ -900,6 +1364,7 @@ export default function App() {
           onAuthorizeMic={handleAuthorizeMic}
           isMicMuted={isMicMuted}
           onToggleMic={handleToggleMic}
+          branding={branding}
         />
       )}
     </Layout>

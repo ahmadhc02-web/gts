@@ -29,6 +29,7 @@ export interface Complaint {
   remarks?: string;
   remarkAuthorId?: string;
   remarkAuthorName?: string;
+  customerReview?: string;
   dealerId?: string; // Multi-tenancy support
 }
 
@@ -36,7 +37,7 @@ export interface UserProfile {
   uid: string;
   username: string;
   password?: string; // Added for simplified demo auth
-  role: 'admin' | 'member' | 'dealer' | 'super_admin' | 'liteadmin';
+  role: 'admin' | 'member' | 'dealer' | 'super_admin' | 'liteadmin' | 'editor';
   fullName?: string;
   createdAt: number;
   lastActive?: number;
@@ -45,6 +46,7 @@ export interface UserProfile {
   createdBy?: string; // UID of creator
   createdByName?: string; // Name of creator
   companyName?: string; // Dealer company name
+  status?: 'active' | 'pending' | 'blocked';
 }
 
 export interface Client {
@@ -61,6 +63,8 @@ export interface Client {
   createdBy: string;
   createdAt: number;
   dealerId?: string; // Multi-tenancy support
+  lat?: number;
+  lng?: number;
 }
 
 export interface ChatGroup {
@@ -93,6 +97,31 @@ export interface ChatMessage {
   dealerId?: string; // Multi-tenancy support
 }
 
+export interface BrandingConfig {
+  id: string;
+  projectName: string;
+  accentColor: string;
+  secondaryColor?: string;
+  themeColor: string;
+  fontFamily: string;
+  borderRadius?: 'none' | 'sm' | 'md' | 'lg' | 'full';
+  cardStyle?: 'flat' | 'bordered' | 'elevated' | 'glass';
+  glassOpacity?: number;
+  enableAnimations?: boolean;
+  logoUrl?: string;
+  sidebarTheme?: 'dark' | 'light' | 'accent' | 'glass';
+  mascotPos: { x: number; y: number };
+  hideBot?: boolean;
+  chatWelcomeMsg?: string;
+  dashboardSubtext?: string;
+  customNames?: Record<string, string>; // Legacy
+  tabNames?: Record<string, string>; // For customizing navigation tabs
+  dashboardStats?: string[]; // Array of stat labels to show in order
+  homeSections?: { id: string; visible: boolean; order: number }[]; // For homepage sections (Stats, Charts, Registry)
+  updatedAt: number;
+  updatedBy: string;
+}
+
 export interface Notification {
   id: string;
   type: 'complaint_created' | 'complaint_updated' | 'complaint_deleted' | 'client_added' | 'client_updated' | 'client_deleted' | 'config_updated' | 'user_created' | 'user_updated' | 'user_deleted';
@@ -100,6 +129,17 @@ export interface Notification {
   authorName: string;
   createdAt: number;
   isRead?: boolean;
-  details?: any; // To store associated object data if needed
   dealerId?: string; // Multi-tenancy support
+  details?: any;
+}
+
+export interface MonitorTarget {
+  id: string;
+  domain: string;
+  createdBy: string;
+  createdAt: any;
+  dealerId?: string;
+  lat?: number;
+  lng?: number;
+  label?: string;
 }

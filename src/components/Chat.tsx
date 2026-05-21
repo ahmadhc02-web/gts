@@ -120,7 +120,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       });
 
       unseenMsgs.forEach(msg => {
-        firebaseService.markAsSeen(msg.id, currentUser.uid, currentUser.username);
+        firebaseService.markAsSeen(msg.id, currentUser.uid, currentUser.fullName || currentUser.username);
       });
     }
   }, [viewState, messages, selectedScope, isGroupChat, currentUser]);
@@ -404,7 +404,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       }
 
       unseenMsgs.forEach(msg => {
-        firebaseService.markAsSeen(msg.id, currentUser.uid, currentUser.username);
+        firebaseService.markAsSeen(msg.id, currentUser.uid, currentUser.fullName || currentUser.username);
       });
       toast.success(`Broadcasting SEEN status for ${name}`);
     };
@@ -594,14 +594,14 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
             {isSuperAdmin && users
               .filter(u => u.uid !== currentUser.uid)
               .filter(u => !searchTerm || u.username.toLowerCase().includes(searchTerm.toLowerCase()))
-              .map(user => {
+              .map((user, i) => {
                 const lastM = getLastMessage(user.uid, false);
                 const unseen = getUnseenCount(user.uid, false);
                 // Also check if they have messages with recipientId === undefined (legacy Support messages)
                 const hasLegacySupport = messages.some(m => !m.recipientId && m.senderId === user.uid);
                 
                 if (!lastM && !unseen && !hasLegacySupport) return null; // Only show users who have chatted
-                return <ChatListItem key={user.uid} id={user.uid} name={user.fullName || user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />;
+                return <ChatListItem key={`${user.uid}-${i}`} id={user.uid} name={user.fullName || user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />;
               })
             }
 
@@ -616,8 +616,8 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
             ) : (
               groups
                 .filter(g => !searchTerm || g.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                .map(group => (
-                  <ChatListItem key={group.id} id={group.id} name={group.name} isGroup={true} icon={Users} />
+                .map((group, i) => (
+                  <ChatListItem key={`${group.id}-${i}`} id={group.id} name={group.name} isGroup={true} icon={Users} />
                 ))
             )}
 
@@ -629,8 +629,8 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
               .filter(u => u.uid !== currentUser.uid)
               .filter(u => !searchTerm || u.username.toLowerCase().includes(searchTerm.toLowerCase()))
               .filter(u => !!getLastMessage(u.uid, false))
-              .map(user => (
-                <ChatListItem key={user.uid} id={user.uid} name={user.fullName || user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />
+              .map((user, i) => (
+                <ChatListItem key={`${user.uid}-${i}`} id={user.uid} name={user.fullName || user.username} isOnline={isUserOnline(user.lastActive)} icon={User} />
               ))}
               
             {users
@@ -674,9 +674,9 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                  }
                  return true;
                })
-               .map(user => (
+               .map((user, i) => (
                  <button
-                   key={user.uid}
+                   key={`${user.uid}-${i}`}
                    onClick={() => {
                      setSelectedScope(user.uid);
                      setIsGroupChat(false);
@@ -750,12 +750,12 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                 <div className="max-h-[350px] overflow-y-auto space-y-2 p-1 no-scrollbar">
                    {users
                      .filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase()))
-                     .map(user => {
+                     .map((user, i) => {
                         const isSelected = selectedMembers.includes(user.uid);
                         const isMe = user.uid === currentUser.uid;
                         return (
                           <button
-                            key={user.uid}
+                            key={`${user.uid}-${i}`}
                             onClick={() => {
                                if (isMe) return; // Cannot unselect self
                                if (isSelected) {
@@ -978,7 +978,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                       mass: 0.8,
                       opacity: { duration: 0.2 }
                     }}
-                    key={msg.id}
+                    key={`${msg.id}-${index}`}
                     className={cn(
                       "flex flex-col max-w-[85%] group relative",
                       isMe ? "ml-auto items-end" : "mr-auto items-start",

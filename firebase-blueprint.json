@@ -121,6 +121,24 @@
       },
       "required": ["id", "type", "message", "authorName", "createdAt"]
     },
+    "BrandingConfig": {
+      "title": "Branding Configuration",
+      "description": "Global visual and naming customizations.",
+      "type": "object",
+      "properties": {
+        "projectName": { "type": "string" },
+        "accentColor": { "type": "string" },
+        "themeColor": { "type": "string" },
+        "fontFamily": { "type": "string" },
+        "mascotPos": { 
+          "type": "object", 
+          "properties": { 
+            "x": { "type": "number" }, 
+            "y": { "type": "number" } 
+          } 
+        }
+      }
+    },
     "ChatGroup": {
       "title": "Chat Group",
       "description": "A group of users for team communication.",
@@ -134,6 +152,19 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "name", "members", "createdBy", "createdAt"]
+    },
+    "MonitorTarget": {
+      "title": "Monitor Target",
+      "description": "A website or domain for real-time service monitoring.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "domain": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "dealerId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "domain", "createdBy", "createdAt"]
     }
   },
   "firestore": {
@@ -172,6 +203,14 @@
     "notifications/{notificationId}": {
       "schema": "Notification",
       "description": "Activity broadcast notifications."
+    },
+    "config/branding": {
+      "schema": "BrandingConfig",
+      "description": "Global visual and naming customizations."
+    },
+    "monitor/{targetId}": {
+      "schema": "MonitorTarget",
+      "description": "Real-time service monitoring targets."
     }
   }
 }

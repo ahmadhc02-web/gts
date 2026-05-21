@@ -17,7 +17,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup } from '../types';
+import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget } from '../types';
 import { safeStringify } from './utils';
 
 enum OperationType {
@@ -111,12 +111,13 @@ function sanitize<T>(obj: T): T {
 
 export const firebaseService = {
   testConnection: async () => {
+    if (!navigator.onLine) return;
     try {
       await getDocFromServer(doc(db, 'config', 'app'));
       console.log('Firebase connection verified');
     } catch (error) {
-      if (error instanceof Error && error.message.includes('the client is offline')) {
-        console.error("Please check your Firebase configuration.");
+      if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('within 10 seconds'))) {
+        console.warn("Firebase connection test skipped or failed due to network constraints.");
       }
     }
   },
@@ -150,19 +151,37 @@ export const firebaseService = {
     });
   },
 
+  // Robust comparison for Firestore Timestamps and numbers
+  compareTimestamps: (a: any, b: any, descending: boolean = true) => {
+    const getTime = (val: any) => {
+      if (!val) return 0;
+      if (typeof val === 'number') return val;
+      if (typeof val.toMillis === 'function') return val.toMillis();
+      if (val.seconds !== undefined) return val.seconds * 1000 + (val.nanoseconds || 0) / 1000000;
+      if (val instanceof Date) return val.getTime();
+      return 0;
+    };
+    
+    const timeA = getTime(a);
+    const timeB = getTime(b);
+    
+    // For newly created items with null/serverTimestamp pending, prioritize them at the top
+    if (timeA === 0 && descending) return -1;
+    if (timeB === 0 && descending) return 1;
+    
+    return descending ? timeB - timeA : timeA - timeB;
+  },
+
   // --- Users ---
   getUsers: async (dealerId?: string): Promise<UserProfile[]> => {
     const path = 'users';
     try {
-      const snapshot = await getDocs(collection(db, path));
-      let users = snapshot.docs.map(doc => doc.data() as UserProfile);
-      
-      if (dealerId && dealerId !== 'main') {
-        users = users.filter(u => u.dealerId === dealerId || u.uid === dealerId);
-      } else if (dealerId === 'main') {
-        users = users.filter(u => !u.dealerId || u.dealerId === 'main');
+      let q = query(collection(db, path));
+      if (dealerId && dealerId !== 'all') {
+        q = query(collection(db, path), where('dealerId', '==', dealerId));
       }
-      
+      const snapshot = await getDocs(q);
+      const users = snapshot.docs.map(doc => ({ ...doc.data() as UserProfile, uid: doc.id }));
       return users;
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
@@ -175,7 +194,7 @@ export const firebaseService = {
     try {
       const docRef = doc(db, 'users', uid);
       const snapshot = await getDoc(docRef);
-      return snapshot.exists() ? snapshot.data() as UserProfile : null;
+      return snapshot.exists() ? { ...snapshot.data() as UserProfile, uid: snapshot.id } : null;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
       return null;
@@ -186,7 +205,7 @@ export const firebaseService = {
     const path = 'users';
     try {
       const snapshot = await getDocs(collection(db, path));
-      const users = snapshot.docs.map(doc => doc.data() as UserProfile);
+      const users = snapshot.docs.map(doc => ({ ...doc.data() as UserProfile, uid: doc.id }));
       return users.find(u => u.lineCode === lineCode) || null;
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, path);
@@ -194,7 +213,7 @@ export const firebaseService = {
     }
   },
 
-  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string, companyName?: string): Promise<UserProfile> => {
+  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string, companyName?: string, status: UserProfile['status'] = 'active'): Promise<UserProfile> => {
     const path = `users/${uid}`;
     const newUser: any = {
       uid,
@@ -205,6 +224,7 @@ export const firebaseService = {
       dealerId,
       createdBy: authorId,
       createdByName: authorName,
+      status,
       ...(lineCode && { lineCode }),
       ...(companyName && { companyName })
     };
@@ -213,7 +233,9 @@ export const firebaseService = {
       if (authorName) {
         await firebaseService.createNotification({
           type: 'user_created',
-          message: `New identity registered: ${username} (${role.toUpperCase()})`,
+          message: status === 'pending' 
+            ? `New access request: ${username} via Google Identity (PENDING)`
+            : `New identity registered: ${username} (${role.toUpperCase()})`,
           authorName,
           dealerId
         });
@@ -222,6 +244,21 @@ export const firebaseService = {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
       throw error;
+    }
+  },
+
+  updateUserStatus: async (uid: string, status: UserProfile['status'], authorName: string) => {
+    const path = `users/${uid}`;
+    try {
+      const userRef = doc(db, 'users', uid);
+      await updateDoc(userRef, { status });
+      await firebaseService.createNotification({
+        type: 'user_updated',
+        message: `Identity status updated to ${status?.toUpperCase()} for UID: ${uid}`,
+        authorName
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
     }
   },
 
@@ -310,6 +347,19 @@ export const firebaseService = {
     }
   },
 
+  getAppConfig: async (tenantId: string = 'main'): Promise<any> => {
+    const docId = tenantId === 'main' ? 'app' : tenantId;
+    const path = `config/${docId}`;
+    try {
+      const docRef = doc(db, 'config', docId);
+      const snapshot = await getDoc(docRef);
+      return snapshot.exists() ? snapshot.data() : null;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+      return null;
+    }
+  },
+
   setTypingStatus: async (uid: string, username: string, isTyping: boolean, fullName?: string) => {
     const path = `typing/${uid}`;
     try {
@@ -347,15 +397,13 @@ export const firebaseService = {
 
   subscribeUsers: (callback: (users: UserProfile[]) => void, dealerId?: string) => {
     const path = 'users';
-    return onSnapshot(collection(db, path), (snapshot) => {
-      let users = snapshot.docs.map(doc => doc.data() as UserProfile);
-      
-      if (dealerId && dealerId !== 'main') {
-        users = users.filter(u => u.dealerId === dealerId || u.uid === dealerId);
-      } else if (dealerId === 'main') {
-        users = users.filter(u => !u.dealerId || u.dealerId === 'main');
-      }
-      
+    let q = query(collection(db, path));
+    if (dealerId && dealerId !== 'all') {
+      q = query(collection(db, path), where('dealerId', '==', dealerId));
+    }
+    
+    return onSnapshot(q, (snapshot) => {
+      const users = snapshot.docs.map(doc => ({ ...doc.data() as UserProfile, uid: doc.id }));
       callback(users);
     }, (error) => {
       // Only handle error if we ARE signed in
@@ -407,10 +455,19 @@ export const firebaseService = {
     }
   },
 
+  deleteNotification: async (id: string) => {
+    const path = `notifications/${id}`;
+    try {
+      await deleteDoc(doc(db, 'notifications', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  },
+
   subscribeNotifications: (callback: (notifications: AppNotification[]) => void, dealerId?: string) => {
     const path = 'notifications';
     return onSnapshot(collection(db, path), (snapshot) => {
-      let notifications = snapshot.docs.map(doc => doc.data() as AppNotification);
+      let notifications = snapshot.docs.map(doc => ({ ...doc.data() as AppNotification, id: doc.id }));
       
       if (dealerId && dealerId !== 'main') {
         notifications = notifications.filter(n => n.dealerId === dealerId);
@@ -418,7 +475,7 @@ export const firebaseService = {
         notifications = notifications.filter(n => !n.dealerId || n.dealerId === 'main');
       }
       
-      callback(notifications.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+      callback(notifications.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true)));
     }, (error) => {
       // Only report if we are supposed to be signed in
       if (auth.currentUser) {
@@ -432,16 +489,13 @@ export const firebaseService = {
   getComplaints: async (dealerId?: string): Promise<Complaint[]> => {
     const path = 'complaints';
     try {
-      const snapshot = await getDocs(collection(db, path));
-      let complaints = snapshot.docs.map(doc => doc.data() as Complaint);
-      
-      if (dealerId && dealerId !== 'main') {
-        complaints = complaints.filter(c => c.dealerId === dealerId);
-      } else if (dealerId === 'main') {
-        complaints = complaints.filter(c => !c.dealerId || c.dealerId === 'main');
+      let q = query(collection(db, path));
+      if (dealerId && dealerId !== 'all') {
+        q = query(collection(db, path), where('dealerId', '==', dealerId));
       }
-      
-      return complaints.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      const snapshot = await getDocs(q);
+      const complaints = snapshot.docs.map(doc => ({ ...doc.data() as Complaint, id: doc.id }));
+      return complaints.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
       return [];
@@ -492,7 +546,7 @@ export const firebaseService = {
     }
   },
 
-  updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, remarks?: string) => {
+  updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, remarks?: string, customerReview?: string) => {
     const path = `complaints/${id}`;
     try {
       const complaintRef = doc(db, 'complaints', id);
@@ -502,11 +556,14 @@ export const firebaseService = {
         updateData.remarkAuthorId = authorId;
         updateData.remarkAuthorName = authorName;
       }
+      if (customerReview) {
+        updateData.customerReview = customerReview;
+      }
       
       await updateDoc(complaintRef, updateData);
       await firebaseService.createNotification({
         type: 'complaint_updated',
-        message: `Status updated to ${status.toUpperCase()} for "${customerName}"${remarks ? ` - Remarks: ${remarks}` : ''}`,
+        message: `Status updated to ${status.toUpperCase()} for "${customerName}"${remarks ? ` - Remarks: ${remarks}` : ''}${customerReview ? ` - Review: ${customerReview}` : ''}`,
         authorName
       });
     } catch (error) {
@@ -554,16 +611,14 @@ export const firebaseService = {
 
   subscribeComplaints: (callback: (complaints: Complaint[]) => void, dealerId?: string) => {
     const path = 'complaints';
-    return onSnapshot(collection(db, path), (snapshot) => {
-      let complaints = snapshot.docs.map(doc => doc.data() as Complaint);
-      
-      if (dealerId && dealerId !== 'main') {
-        complaints = complaints.filter(c => c.dealerId === dealerId);
-      } else if (dealerId === 'main') {
-        complaints = complaints.filter(c => !c.dealerId || c.dealerId === 'main');
-      }
-      
-      callback(complaints.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
+    let q = query(collection(db, path));
+    if (dealerId && dealerId !== 'all') {
+      q = query(collection(db, path), where('dealerId', '==', dealerId));
+    }
+    
+    return onSnapshot(q, (snapshot) => {
+      const complaints = snapshot.docs.map(doc => ({ ...doc.data() as Complaint, id: doc.id }));
+      callback(complaints.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true)));
     }, (error) => {
       if (auth.currentUser) {
         handleFirestoreError(error, OperationType.LIST, path);
@@ -613,6 +668,38 @@ export const firebaseService = {
         message: `System matrix configuration updated`,
         authorName,
         dealerId: tenantId === 'main' ? undefined : tenantId
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
+
+  // --- Branding ---
+  subscribeBranding: (callback: (branding: BrandingConfig | null) => void) => {
+    const path = 'config/branding';
+    const docRef = doc(db, 'config', 'branding');
+    return onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.data() as BrandingConfig);
+      } else {
+        callback(null);
+      }
+    }, (error) => {
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.GET, path);
+      }
+    });
+  },
+
+  updateBranding: async (branding: BrandingConfig, authorName: string) => {
+    const path = 'config/branding';
+    try {
+      const cleanBranding = sanitize(branding);
+      await setDoc(doc(db, 'config', 'branding'), cleanBranding);
+      await firebaseService.createNotification({
+        type: 'config_updated',
+        message: `Global UI Branding configuration updated`,
+        authorName
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
@@ -714,7 +801,7 @@ export const firebaseService = {
     const q = query(collection(db, path), where('members', 'array-contains', userId));
     
     return onSnapshot(q, (snapshot) => {
-      let groups = snapshot.docs.map(doc => doc.data() as ChatGroup);
+      let groups = snapshot.docs.map(doc => ({ ...doc.data() as ChatGroup, id: doc.id }));
       
       if (dealerId) {
         if (dealerId === 'main') {
@@ -732,12 +819,12 @@ export const firebaseService = {
     });
   },
 
-  markAsSeen: async (messageId: string, uid: string, username: string) => {
+  markAsSeen: async (messageId: string, uid: string, name: string) => {
     const path = `chat/${messageId}`;
     try {
       const msgRef = doc(db, 'chat', messageId);
       await updateDoc(msgRef, {
-        [`seenBy.${uid}`]: { username, time: Date.now() }
+        [`seenBy.${uid}`]: { username: name, time: Date.now() }
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
@@ -805,16 +892,14 @@ export const firebaseService = {
 
   subscribeMessages: (callback: (messages: ChatMessage[]) => void, dealerId?: string) => {
     const path = 'chat';
-    return onSnapshot(collection(db, path), (snapshot) => {
-      let messages = snapshot.docs.map(doc => doc.data() as ChatMessage);
-      
-      if (dealerId && dealerId !== 'main') {
-        messages = messages.filter(m => m.dealerId === dealerId);
-      } else if (dealerId === 'main') {
-        messages = messages.filter(m => !m.dealerId || m.dealerId === 'main');
-      }
-      
-      callback(messages.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)));
+    let q = query(collection(db, path));
+    if (dealerId && dealerId !== 'all') {
+      q = query(collection(db, path), where('dealerId', '==', dealerId));
+    }
+    
+    return onSnapshot(q, (snapshot) => {
+      const messages = snapshot.docs.map(doc => ({ ...doc.data() as ChatMessage, id: doc.id }));
+      callback(messages.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, false)));
     }, (error) => {
       if (auth.currentUser) {
         handleFirestoreError(error, OperationType.GET, path);
@@ -825,16 +910,13 @@ export const firebaseService = {
   getClients: async (dealerId?: string): Promise<Client[]> => {
     const path = 'clients';
     try {
-      const snapshot = await getDocs(collection(db, path));
-      let clients = snapshot.docs.map(doc => doc.data() as Client);
-      
-      if (dealerId && dealerId !== 'main') {
-        clients = clients.filter(c => c.dealerId === dealerId);
-      } else if (dealerId === 'main') {
-        clients = clients.filter(c => !c.dealerId || c.dealerId === 'main');
+      let q = query(collection(db, path));
+      if (dealerId && dealerId !== 'all') {
+        q = query(collection(db, path), where('dealerId', '==', dealerId));
       }
-      
-      return clients.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      const snapshot = await getDocs(q);
+      const clients = snapshot.docs.map(doc => ({ ...doc.data() as Client, id: doc.id }));
+      return clients.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
       return [];
@@ -898,24 +980,290 @@ export const firebaseService = {
 
   subscribeClients: (callback: (clients: Client[]) => void, dealerId?: string) => {
     const path = 'clients';
-    return onSnapshot(collection(db, path), (snapshot) => {
-      let clients = snapshot.docs.map(doc => ({ ...doc.data() as Client }));
-      
-      if (dealerId) {
-        if (dealerId === 'main') {
-          clients = clients.filter(c => !c.dealerId || c.dealerId === 'main');
-        } else {
-          clients = clients.filter(c => c.dealerId === dealerId);
-        }
-      }
+    let q = query(collection(db, path));
+    if (dealerId && dealerId !== 'all') {
+      q = query(collection(db, path), where('dealerId', '==', dealerId));
+    }
+    
+    return onSnapshot(q, (snapshot) => {
+      const clients = snapshot.docs.map(doc => ({ ...doc.data() as Client, id: doc.id }));
       
       // Robust in-memory sort to avoid composite index requirement
-      clients.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      clients.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true));
       callback(clients);
     }, (error) => {
       if (auth.currentUser) {
         handleFirestoreError(error, OperationType.GET, path);
       }
     });
+  },
+
+  // --- Service Monitor ---
+  createMonitorTarget: async (domain: string, creator: UserProfile, label?: string, lat?: number, lng?: number): Promise<MonitorTarget> => {
+    const id = `target_${Math.random().toString(36).substr(2, 9)}`;
+    const path = `monitor/${id}`;
+    const tenantId = firebaseService.getTenantId(creator);
+
+    const newTarget: MonitorTarget = {
+      id,
+      domain,
+      createdBy: creator.uid,
+      createdAt: serverTimestamp(),
+      dealerId: tenantId,
+      ...(label ? { label } : {}),
+      ...(lat !== undefined ? { lat } : {}),
+      ...(lng !== undefined ? { lng } : {})
+    };
+
+    try {
+      await setDoc(doc(db, 'monitor', id), newTarget);
+      return newTarget;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+      throw error;
+    }
+  },
+
+  deleteMonitorTarget: async (id: string): Promise<void> => {
+    const path = `monitor/${id}`;
+    try {
+      await deleteDoc(doc(db, 'monitor', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  },
+
+  updateMonitorTarget: async (id: string, updates: Partial<MonitorTarget>): Promise<void> => {
+    const path = `monitor/${id}`;
+    try {
+      await setDoc(doc(db, 'monitor', id), updates, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    }
+  },
+
+  subscribeMonitorTargets: (callback: (targets: MonitorTarget[]) => void, dealerId?: string) => {
+    const path = 'monitor';
+    return onSnapshot(collection(db, path), (snapshot) => {
+      let targets = snapshot.docs.map(doc => ({ ...doc.data() as MonitorTarget, id: doc.id }));
+      
+      if (dealerId) {
+        if (dealerId === 'main') {
+          targets = targets.filter(t => !t.dealerId || t.dealerId === 'main');
+        } else {
+          targets = targets.filter(t => t.dealerId === dealerId);
+        }
+      }
+      
+      targets.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, false));
+      callback(targets);
+    }, (error) => {
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.LIST, path);
+      }
+    });
+  },
+
+  // --- A to Z Local System Backup and Restore ---
+  getFullSystemBackup: async (exportedBy: string): Promise<any> => {
+    try {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const complaintsSnap = await getDocs(collection(db, 'complaints'));
+      const clientsSnap = await getDocs(collection(db, 'clients'));
+      const notificationsSnap = await getDocs(collection(db, 'notifications'));
+      const billingSnap = await getDocs(collection(db, 'billing_months'));
+      const configSnap = await getDoc(doc(db, 'config', 'app'));
+      const brandingSnap = await getDoc(doc(db, 'config', 'branding'));
+
+      const users = usersSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+      const complaints = complaintsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+      const clients = clientsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+      const notifications = notificationsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+      const billing = billingSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+      const config = configSnap.exists() ? configSnap.data() : {};
+      const branding = brandingSnap.exists() ? brandingSnap.data() : {};
+
+      return {
+        version: "2.0-full",
+        exportedAt: new Date().toISOString(),
+        metadata: {
+          system: "GreenTech Premium Wifi Complain Management",
+          exportedBy: exportedBy || "Administrator"
+        },
+        data: {
+          users,
+          complaints,
+          clients,
+          notifications,
+          billing,
+          config,
+          branding
+        }
+      };
+    } catch (error) {
+      console.error("Failed to generate full system backup:", error);
+      throw error;
+    }
+  },
+
+  restoreFullSystemBackup: async (backupPkg: any, authorName: string): Promise<void> => {
+    if (!backupPkg || backupPkg.version !== "2.0-full" || !backupPkg.data) {
+      throw new Error("Invalid or incompatible backup file format. Must be a full system panel backup.");
+    }
+
+    const { users = [], complaints = [], clients = [], notifications = [], billing = [], config = {}, branding = {} } = backupPkg.data;
+
+    try {
+      // 1. Purge all current collections to guarantee strict identity replacement
+      const collectionsToPurge = ['users', 'complaints', 'clients', 'notifications', 'billing_months'];
+      
+      for (const collName of collectionsToPurge) {
+        const snapshot = await getDocs(collection(db, collName));
+        const docs = snapshot.docs;
+        
+        for (let i = 0; i < docs.length; i += 400) {
+          const batch = writeBatch(db);
+          const chunk = docs.slice(i, i + 400);
+          chunk.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
+      }
+
+      // 2. Insert new data in batches of 400
+      // Users
+      for (let i = 0; i < users.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = users.slice(i, i + 400);
+        chunk.forEach(u => {
+          const uId = u.id || u.uid;
+          if (uId) {
+            const cleanUser = { ...u };
+            delete cleanUser.id; // standard doc id key cleanup
+            batch.set(doc(db, 'users', uId), cleanUser);
+          }
+        });
+        await batch.commit();
+      }
+
+      // Complaints
+      for (let i = 0; i < complaints.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = complaints.slice(i, i + 400);
+        chunk.forEach(c => {
+          const cId = c.id;
+          if (cId) {
+            const cleanComplaint = { ...c };
+            delete cleanComplaint.id;
+            batch.set(doc(db, 'complaints', cId), cleanComplaint);
+          }
+        });
+        await batch.commit();
+      }
+
+      // Clients
+      for (let i = 0; i < clients.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = clients.slice(i, i + 400);
+        chunk.forEach(cl => {
+          const clId = cl.id;
+          if (clId) {
+            const cleanClient = { ...cl };
+            delete cleanClient.id;
+            batch.set(doc(db, 'clients', clId), cleanClient);
+          }
+        });
+        await batch.commit();
+      }
+
+      // Notifications
+      for (let i = 0; i < notifications.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = notifications.slice(i, i + 400);
+        chunk.forEach(n => {
+          const nId = n.id;
+          if (nId) {
+            const cleanNotif = { ...n };
+            delete cleanNotif.id;
+            batch.set(doc(db, 'notifications', nId), cleanNotif);
+          }
+        });
+        await batch.commit();
+      }
+
+      // Billing Months
+      for (let i = 0; i < billing.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = billing.slice(i, i + 400);
+        chunk.forEach(b => {
+          const bId = b.id;
+          if (bId) {
+            const cleanBill = { ...b };
+            delete cleanBill.id;
+            batch.set(doc(db, 'billing_months', bId), cleanBill);
+          }
+        });
+        await batch.commit();
+      }
+
+      // 3. Set config/app config/branding
+      if (config && Object.keys(config).length > 0) {
+        await setDoc(doc(db, 'config', 'app'), config);
+      }
+      if (branding && Object.keys(branding).length > 0) {
+        await setDoc(doc(db, 'config', 'branding'), branding);
+      }
+
+      // Create a nice system notification marking successful premium backup recovery
+      await setDoc(doc(db, 'notifications', `notif_restore_${Date.now()}`), {
+        type: 'config_updated',
+        message: `Enterprise System restored successfully by ${authorName} from backup dated ${new Date(backupPkg.exportedAt || Date.now()).toLocaleString()}`,
+        authorName,
+        createdAt: serverTimestamp()
+      });
+
+    } catch (error) {
+      console.error("Critical Backup Restore Failure:", error);
+      throw error;
+    }
+  },
+
+  // --- Billing Months Methods ---
+  subscribeBillingMonths: (callback: (months: any[]) => void) => {
+    return onSnapshot(collection(db, 'billing_months'), (snapshot) => {
+      const months = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      }));
+      // Sort months descending or ascending nicely based on name
+      callback(months);
+    }, (error) => {
+      console.error("Failed to subscribe billing months:", error);
+    });
+  },
+
+  createBillingMonth: async (monthId: string, rows: any[], createdBy: string) => {
+    const docRef = doc(db, 'billing_months', monthId);
+    await setDoc(docRef, {
+      id: monthId,
+      rows: rows,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      createdBy: createdBy,
+      updatedBy: createdBy
+    });
+  },
+
+  saveBillingMonth: async (monthId: string, rows: any[], updatedBy: string) => {
+    const docRef = doc(db, 'billing_months', monthId);
+    await setDoc(docRef, {
+      rows: rows,
+      updatedAt: Date.now(),
+      updatedBy: updatedBy
+    }, { merge: true });
+  },
+
+  deleteBillingMonth: async (monthId: string) => {
+    const docRef = doc(db, 'billing_months', monthId);
+    await deleteDoc(docRef);
   }
 };

@@ -6,9 +6,10 @@ import firebaseConfig from '../../firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId);
+}, (firebaseConfig as any).firestoreDatabaseId);
 
-// Enable offline persistence with multi-tab support
+// Persistence can sometimes cause issues in sandboxed frames
+/*
 try {
   enableMultiTabIndexedDbPersistence(db).catch((err) => {
     if (err.code === 'failed-precondition') {
@@ -20,5 +21,6 @@ try {
 } catch (e) {
   console.warn('Firestore persistence initialization failed', e);
 }
+*/
 
 export const auth = getAuth(app);

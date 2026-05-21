@@ -21,103 +21,217 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  // Robust CORS Middleware supporting Netlify/external frontends
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.raw({ limit: '50mb', type: 'application/octet-stream' }));
+
+  // --- Speed Test Upload Endpoint ---
+  app.post("/api/speedtest/upload", (req, res) => {
+    // Just consume the data and return success
+    res.status(200).send({ status: "ok" });
+  });
+  // -----------------------------------
 
   // --- Google Drive & Sheets Integration ---
   
-  const SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.file'
-  ];
-
-  const getBaseUrl = (req: express.Request) => {
-    if (process.env.APP_URL) {
-      return process.env.APP_URL.replace(/\/$/, "");
-    }
-    const protocol = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers.host;
-    const baseUrl = req.headers.origin || (host ? `${protocol}://${host}` : 'http://localhost:3000');
-    return baseUrl.replace(/\/$/, "");
-  };
-
-  const getRedirectUri = (req: express.Request) => {
-    return `${getBaseUrl(req)}/auth/google/callback`;
-  };
-
-  app.get("/api/auth/google/url", (req, res) => {
+  function getOAuthClient(req: any) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    
+    // Dynamic redirect URI reconstruction matching current domain
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.headers.host || 'localhost:3000';
+    const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
 
-    if (!clientId || !clientSecret) {
-      return res.status(400).json({ 
-        error: "Google OAuth credentials missing. Please add your GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the project Settings." 
+    return new google.auth.OAuth2(
+      clientId || undefined,
+      clientSecret || undefined,
+      redirectUri
+    );
+  }
+
+  async function getAuthorizedClient(req: any, tokens: any) {
+    const auth = getOAuthClient(req);
+    auth.setCredentials(tokens);
+
+    let refreshedTokens: any = null;
+    auth.on('tokens', (newTokens) => {
+      refreshedTokens = { ...tokens, ...newTokens };
+    });
+
+    if (tokens.refresh_token) {
+      try {
+        await auth.getAccessToken(); // This automatically triggers a refresh if expired!
+      } catch (err) {
+        console.warn('OAuth token refresh triggered warning:', err);
+      }
+    }
+
+    return { 
+      auth, 
+      getTokens: () => refreshedTokens 
+    };
+  }
+
+  // --- Google OAuth Redirect Flow ---
+  app.get("/api/auth/google", (req, res) => {
+    try {
+      const authClient = getOAuthClient(req);
+      const scopes = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive.file',
+        'openid',
+        'email',
+        'profile'
+      ];
+      const url = authClient.generateAuthUrl({
+        access_type: 'offline', // Requests refresh token
+        prompt: 'consent',      // Forces consent screen to guarantee refresh token is returned
+        scope: scopes
       });
+      res.redirect(url);
+    } catch (error: any) {
+      res.status(500).send(`OAuth initiation error: ${error.message}`);
     }
-
-    const redirectUri = getRedirectUri(req);
-    console.log(`Generating Auth URL with redirectUri: ${redirectUri}`);
-    
-    const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-    
-    const url = client.generateAuthUrl({
-      access_type: 'offline',
-      scope: SCOPES,
-      prompt: 'consent'
-    });
-    res.json({ url });
   });
 
-  app.get("/api/auth/google/config", (req, res) => {
-    res.json({
-      redirectUri: getRedirectUri(req),
-      origin: getBaseUrl(req)
-    });
+  app.get("/api/auth/google/callback", async (req, res) => {
+    const code = req.query.code as string;
+    if (!code) {
+      return res.send("<script>window.close();</script>");
+    }
+    try {
+      const authClient = getOAuthClient(req);
+      const { tokens } = await authClient.getToken(code);
+      
+      const escapedTokensStr = JSON.stringify(tokens).replace(/</g, '\\u003c');
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Google Connection Success</title></head>
+        <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f8fafc;">
+          <div style="text-align: center; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+            <div style="color: #10b981; font-size: 3rem; margin-bottom: 1rem;">✓</div>
+            <h1 style="color: #1e293b; margin: 0 0 0.5rem 0; font-size: 1.5rem;">Connection Successful!</h1>
+            <p style="color: #64748b; margin: 0 0 1.5rem 0;">You have securely connected your Google account permanently.</p>
+            <p style="color: #94a3b8; font-size: 0.875rem; margin: 0;">Closing this window now...</p>
+          </div>
+          <script>
+            try {
+              if (window.opener) {
+                window.opener.postMessage({ type: "google-oauth-success", tokens: ${escapedTokensStr} }, "*");
+                setTimeout(() => window.close(), 1500);
+              } else {
+                setTimeout(() => window.close(), 2000);
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          </script>
+        </body>
+        </html>
+      `);
+    } catch (error: any) {
+      console.error("Callback code exchange error:", error);
+      res.status(500).send(`Authentication helper error: ${error.message}`);
+    }
   });
 
-  app.get("/auth/google/callback", async (req, res) => {
-    const { code } = req.query;
-    const redirectUri = getRedirectUri(req);
+  function getCleanErrorDetails(error: any) {
+    if (!error) return null;
+    const data = error.response?.data;
+    if (data) {
+      if (typeof data === 'object') {
+        return {
+          message: data.error?.message || data.message || null,
+          status: data.error?.status || data.status || null,
+          code: data.error?.code || data.code || null,
+          errors: data.error?.errors || data.errors || null
+        };
+      }
+      return { raw: String(data) };
+    }
+    return { message: error.message || String(error) };
+  }
 
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  function handleRouteError(res: any, error: any, messagePrefix: string) {
+    const errorMsg = error.message || String(error);
+    console.error(`${messagePrefix}:`, error.response?.data || errorMsg);
+    
+    // Safety check for credential or authorization failure
+    const isAuthError = 
+      error.status === 401 || 
+      error.response?.status === 401 || 
+      error.code === 401 || 
+      error.code === '401' ||
+      errorMsg.toLowerCase().includes('credential') || 
+      errorMsg.toLowerCase().includes('auth') || 
+      errorMsg.toLowerCase().includes('invalid authentication') ||
+      (error.response?.data && (
+        String(error.response.data).toLowerCase().includes('credential') ||
+        (error.response.data.error?.message && error.response.data.error.message.toLowerCase().includes('credential'))
+      ));
 
-    if (!clientId || !clientSecret) {
-      return res.status(500).send("Server configuration error: GOOGLE_CLIENT_ID missing");
+    const statusCode = isAuthError ? 401 : 500;
+    
+    res.status(statusCode).json({
+      error: errorMsg,
+      details: getCleanErrorDetails(error)
+    });
+  }
+
+  // Helper to ensure a sheet exists before operating on it
+  async function ensureSheetExists(sheets: any, spreadsheetId: string, range: string) {
+    if (!range) return;
+    
+    // Extract sheet name from range (e.g., 'Sheet Name'!A1 or 'Sheet Name')
+    let sheetName = range;
+    if (range.includes('!')) {
+      sheetName = range.split('!')[0];
+    }
+    
+    // Remove single quotes if present
+    if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
+      sheetName = sheetName.substring(1, sheetName.length - 1);
     }
 
     try {
-      const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-      const { tokens } = await client.getToken(code as string);
-      
-      console.log('Google Auth success, tokens received');
-      
-      // In a real app, we would save these tokens to a database associated with the user/app
-      // For now, we'll return a success page that posts a message back to the opener
-      res.send(`
-        <html>
-          <body>
-            <script>
-              if (window.opener) {
-                window.opener.postMessage({ 
-                  type: 'GOOGLE_AUTH_SUCCESS', 
-                  tokens: ${JSON.stringify(tokens)} 
-                }, '*');
-                setTimeout(() => {
-                  window.close();
-                }, 1000);
-              } else {
-                window.location.href = '/';
+      // Get spreadsheet metadata to check if sheet exists
+      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+      const sheetExists = spreadsheet.data.sheets.some(
+        (s: any) => s.properties.title === sheetName
+      );
+
+      if (!sheetExists) {
+        console.log(`Sheet "${sheetName}" not found in ${spreadsheetId}. Creating it...`);
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                addSheet: {
+                  properties: { title: sheetName }
+                }
               }
-            </script>
-            <p>Authentication successful! You can close this window.</p>
-          </body>
-        </html>
-      `);
-    } catch (error) {
-      console.error('Error exchanging code for tokens:', error);
-      res.status(500).send('Authentication failed');
+            ]
+          }
+        });
+      }
+    } catch (err) {
+      console.warn(`Could not verify/create sheet "${sheetName}":`, err);
+      // Continue anyway, it might fail later but we tried
     }
-  });
+  }
 
   app.post("/api/sheets/append", async (req, res) => {
     const { tokens, spreadsheetId, range, values } = req.body;
@@ -127,17 +241,13 @@ async function startServer() {
     }
 
     try {
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-      if (!clientId || !clientSecret) {
-        throw new Error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not set in environment");
-      }
-
-      const auth = new google.auth.OAuth2(clientId, clientSecret);
-      auth.setCredentials(tokens);
+      const { auth, getTokens } = await getAuthorizedClient(req, tokens);
 
       const sheets = google.sheets({ version: 'v4', auth });
+      
+      // Auto-create sheet if it doesn't exist
+      await ensureSheetExists(sheets, spreadsheetId, range);
+
       const response = await sheets.spreadsheets.values.append({
         spreadsheetId,
         range: range || 'Sheet1!A1',
@@ -147,10 +257,12 @@ async function startServer() {
         },
       });
 
-      res.json(response.data);
+      res.json({
+        ...response.data,
+        refreshedTokens: getTokens()
+      });
     } catch (error: any) {
-      console.error('Error appending to sheet:', error.response?.data || error);
-      res.status(500).json({ error: error.message, details: error.response?.data });
+      handleRouteError(res, error, 'Error appending to sheet');
     }
   });
 
@@ -162,18 +274,13 @@ async function startServer() {
     }
 
     try {
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-      if (!clientId || !clientSecret) {
-        throw new Error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not set in environment");
-      }
-
-      const auth = new google.auth.OAuth2(clientId, clientSecret);
-      auth.setCredentials(tokens);
+      const { auth, getTokens } = await getAuthorizedClient(req, tokens);
 
       const sheets = google.sheets({ version: 'v4', auth });
       
+      // Auto-create sheet if it doesn't exist
+      await ensureSheetExists(sheets, spreadsheetId, range);
+
       console.log(`Updating sheet ${spreadsheetId} at range ${range}`);
       
       const response = await sheets.spreadsheets.values.update({
@@ -185,10 +292,12 @@ async function startServer() {
         },
       });
 
-      res.json(response.data);
+      res.json({
+        ...response.data,
+        refreshedTokens: getTokens()
+      });
     } catch (error: any) {
-      console.error('Error updating sheet:', error.response?.data || error);
-      res.status(500).json({ error: error.message, details: error.response?.data });
+      handleRouteError(res, error, 'Error updating sheet');
     }
   });
 
@@ -200,15 +309,7 @@ async function startServer() {
     }
 
     try {
-      const clientId = process.env.GOOGLE_CLIENT_ID;
-      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-      if (!clientId || !clientSecret) {
-        throw new Error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET not set in environment");
-      }
-
-      const auth = new google.auth.OAuth2(clientId, clientSecret);
-      auth.setCredentials(tokens);
+      const { auth, getTokens } = await getAuthorizedClient(req, tokens);
 
       const drive = google.drive({ version: 'v3', auth });
       
@@ -253,10 +354,123 @@ async function startServer() {
         fields: 'id, name, webViewLink'
       });
 
-      res.json(file.data);
+      res.json({
+        ...file.data,
+        refreshedTokens: getTokens()
+      });
     } catch (error: any) {
-      console.error('Error backing up to Drive:', error.response?.data || error);
-      res.status(500).json({ error: error.message, details: error.response?.data });
+      handleRouteError(res, error, 'Error backing up to Drive');
+    }
+  });
+
+  app.post("/api/sheets/create", async (req, res) => {
+    const { tokens, title, sheetName } = req.body;
+    
+    if (!tokens || !title) {
+      return res.status(400).json({ error: "Missing tokens or title" });
+    }
+
+    try {
+      const { auth, getTokens } = await getAuthorizedClient(req, tokens);
+
+      const sheets = google.sheets({ version: 'v4', auth });
+      const response = await sheets.spreadsheets.create({
+        requestBody: {
+          properties: {
+            title: title || 'WiFi Complaints Log'
+          },
+          // Optionally create with a specific sheet name by renaming the default first sheet
+        }
+      });
+
+      const spreadsheetId = response.data.spreadsheetId;
+
+      if (spreadsheetId && sheetName && sheetName !== 'Sheet1') {
+        // Rename the first sheet (Sheet1) to the desired sheetName
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                updateSheetProperties: {
+                  properties: {
+                    sheetId: 0, // Default first sheet usually has ID 0
+                    title: sheetName
+                  },
+                  fields: 'title'
+                }
+              }
+            ]
+          }
+        });
+      }
+
+      res.json({ 
+        spreadsheetId, 
+        spreadsheetUrl: response.data.spreadsheetUrl,
+        refreshedTokens: getTokens()
+      });
+    } catch (error: any) {
+      handleRouteError(res, error, 'Error creating spreadsheet');
+    }
+  });
+
+  app.post("/api/sheets/bulk-export", async (req, res) => {
+    const { tokens, spreadsheetId, sheetsData } = req.body;
+    
+    if (!tokens || !spreadsheetId || !sheetsData) {
+      return res.status(400).json({ error: "Missing required parameters" });
+    }
+
+    try {
+      const { auth, getTokens } = await getAuthorizedClient(req, tokens);
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      // 1. Ensure all requested sheets exist
+      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+      const existingSheetTitles = spreadsheet.data.sheets.map((s: any) => s.properties.title);
+      
+      const sheetsToCreate = sheetsData.filter((s: any) => !existingSheetTitles.includes(s.title));
+      
+      if (sheetsToCreate.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: sheetsToCreate.map((s: any) => ({
+              addSheet: { properties: { title: s.title } }
+            }))
+          }
+        });
+      }
+
+      // 2. Clear sheets before updating to prevent old data from remaining
+      await sheets.spreadsheets.values.batchClear({
+        spreadsheetId,
+        requestBody: {
+          ranges: sheetsData.map((s: any) => `'${s.title}'!A1:Z10000`)
+        }
+      });
+
+      // 3. Update all sheets with data
+      const dataUpdates = sheetsData.map((s: any) => ({
+        range: `'${s.title}'!A1`,
+        values: s.values
+      }));
+
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          valueInputOption: 'RAW',
+          data: dataUpdates
+        }
+      });
+
+      res.json({ 
+        success: true,
+        refreshedTokens: getTokens()
+      });
+    } catch (error: any) {
+      handleRouteError(res, error, 'Error in bulk export');
     }
   });
 

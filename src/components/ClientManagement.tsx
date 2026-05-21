@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import { Client, UserProfile } from '../types';
 import { firebaseService } from '../lib/firebaseService';
+import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
 import { AppConfig } from '../constants';
@@ -37,6 +38,13 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!area && appConfig.zones.length > 0) {
+      setArea(appConfig.zones[0]);
+    }
+  }, [appConfig, area]);
 
   const currentUserId = currentUser.uid;
 
@@ -101,17 +109,33 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !name.trim()) {
-      toast.error('Client Identity (Name/Username) required');
+    
+    // Hard Validation
+    const trimmedName = name.trim();
+    const trimmedUsername = username.trim();
+    
+    if (!trimmedName || !trimmedUsername) {
+      toast.error('Identity Protocol Error', {
+        description: 'Both Full Name and Access Username are mandatory for registration.'
+      });
+      return;
+    }
+
+    if (trimmedUsername.length < 3) {
+      toast.error('Security Protocol Error', {
+        description: 'Username must be at least 3 characters long.'
+      });
       return;
     }
 
     setIsSubmitting(true);
     try {
+      const currentUserId = currentUser.uid;
+
       if (editingId) {
-        await firebaseService.updateClient(editingId, {
-          name: name.trim(),
-          username: username.trim(),
+        const updatedData = {
+          name: trimmedName,
+          username: trimmedUsername,
           number: number.trim(),
           mobileNumber: mobileNumber.trim(),
           seriesNumber: seriesNumber.trim(),
@@ -119,12 +143,36 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           userNearby: userNearby.trim(),
           panelDetails: panelDetails.trim(),
           area: area,
-        }, name.trim(), currentUserName);
-        toast.success('Client record updated');
+        };
+        await firebaseService.updateClient(editingId, updatedData, trimmedName, currentUserName);
+        toast.success('Matrix Record Synchronized', {
+          description: `Updated details for ${trimmedName} successfully.`
+        });
+        
+        // Auto-sync to Google Sheets Client Database
+        try {
+          const syncData = { id: editingId, ...updatedData };
+          if (navigator.onLine) {
+            await googleSheetsService.syncClient(syncData);
+          } else {
+            googleSheetsService.syncQueue.add({ tabName: 'Client Database', data: syncData });
+          }
+        } catch (err) {
+          googleSheetsService.syncQueue.add({ tabName: 'Client Database', data: { id: editingId, ...updatedData } });
+        }
       } else {
-        await firebaseService.createClient({
-          name: name.trim(),
-          username: username.trim(),
+        // Check for existing username in local list first for fast feedback
+        if (clients.some(c => c.username.toLowerCase() === trimmedUsername.toLowerCase())) {
+          toast.warning('Duplicate Identity Detected', {
+            description: 'This username is already assigned to another client.'
+          });
+          setIsSubmitting(false);
+          return;
+        }
+
+        const newClientData = {
+          name: trimmedName,
+          username: trimmedUsername,
           number: number.trim(),
           mobileNumber: mobileNumber.trim(),
           seriesNumber: seriesNumber.trim(),
@@ -133,25 +181,44 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           panelDetails: panelDetails.trim(),
           area: area,
           createdBy: currentUserId
-        }, currentUserName, firebaseService.getTenantId(currentUser));
-        toast.success('Client record successfully registered');
+        };
+
+        const newClient = await firebaseService.createClient(newClientData, currentUserName, firebaseService.getTenantId(currentUser));
+        
+        toast.success('Client Registration Complete', {
+          description: `${trimmedName} has been fully registered in the infrastructure matrix.`
+        });
+
+        // Auto-sync to Google Sheets Client Database
+        try {
+          if (navigator.onLine) {
+            await googleSheetsService.syncClient(newClient);
+          } else {
+            googleSheetsService.syncQueue.add({ tabName: 'Client Database', data: newClient });
+          }
+        } catch (err) {
+          googleSheetsService.syncQueue.add({ tabName: 'Client Database', data: newClient });
+        }
       }
       resetForm();
     } catch (error) {
-      toast.error('Operation failed');
+      console.error("Client Write Failure:", error);
+      toast.error('Critical Write Failure', {
+        description: 'The registry update could not be committed to the cloud relay.'
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string, clientName: string) => {
-    if (confirm(`Permanently remove client record for ${clientName}?`)) {
-      try {
-        await firebaseService.deleteClient(id, clientName, currentUserName);
-        toast.success('Record purged from primary database');
-      } catch (error) {
-        toast.error('Purge operation failed');
-      }
+    try {
+      await firebaseService.deleteClient(id, clientName, currentUserName);
+      toast.success('Record purged from primary database');
+      setDeletingId(null);
+    } catch (error) {
+      toast.error('Purge operation failed');
+      console.error('Purge error:', error);
     }
   };
 
@@ -341,8 +408,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                         backgroundSize: '1rem' 
                       }}
                     >
-                      {appConfig.zones.map(zone => (
-                        <option key={zone} value={zone}>{zone}</option>
+                      {appConfig.zones.map((zone, i) => (
+                        <option key={`zone-${i}`} value={zone}>{zone}</option>
                       ))}
                     </select>
                   </div>
@@ -392,8 +459,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   className="pl-9 pr-8 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-brand-accent/20 appearance-none"
                 >
                   <option value="all">Global Zones</option>
-                  {appConfig.zones.map(zone => (
-                    <option key={zone} value={zone}>{zone}</option>
+                  {appConfig.zones.map((zone, i) => (
+                    <option key={`zone-filter-${i}`} value={zone}>{zone}</option>
                   ))}
                 </select>
               </div>
@@ -427,7 +494,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
               <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50 text-[11px]">
                 {isLoading ? (
                   Array(5).fill(0).map((_, i) => (
-                    <tr key={i} className="animate-pulse">
+                    <tr key={'skel-'+i} className="animate-pulse">
                       <td colSpan={7} className="px-6 py-6 h-12 bg-slate-50/50 dark:bg-slate-900/10"></td>
                     </tr>
                   ))
@@ -435,8 +502,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   <tr>
                     <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">No client records found matching search parameters</td>
                   </tr>
-                ) : paginatedClients.map((client) => (
-                  <tr key={client.id} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors group">
+                ) : paginatedClients.map((client, idx) => (
+                  <tr key={`${client.id}-${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">{client.name}</span>
@@ -483,35 +550,63 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                        <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 tracking-[0.2em]">{client.seriesNumber || '---'}</span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setViewingClient(client)}
-                          className="p-2 text-slate-400 hover:text-brand-accent hover:bg-brand-accent/5 rounded-lg transition-all"
-                          title="View Intelligence Detail"
-                        >
-                          <Info size={16} />
-                        </button>
-                        {(isAdmin || client.createdBy === currentUserId) && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleEdit(client)}
-                              className="p-2 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition-all"
-                              title="Edit Record"
-                            >
-                              <Edit3 size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(client.id, client.name)}
-                              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all"
-                              title="Purge Record"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </>
-                        )}
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('open-map-for-client', { detail: { clientId: client.id } }));
+                            }}
+                            className="p-2 text-emerald-500/70 hover:text-emerald-500 hover:bg-emerald-500/10 rounded-lg transition-all"
+                            title="Locate on Map"
+                          >
+                            <MapPin size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setViewingClient(client)}
+                            className="p-2 text-slate-400 hover:text-brand-accent hover:bg-brand-accent/5 rounded-lg transition-all"
+                            title="View Intelligence Detail"
+                          >
+                            <Info size={16} />
+                          </button>
+                          {(isAdmin || client.createdBy === currentUserId) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(client)}
+                                className="p-2 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition-all"
+                                title="Edit Record"
+                              >
+                                <Edit3 size={16} />
+                              </button>
+                              
+                              {deletingId === client.id ? (
+                                <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-2 duration-200">
+                                  <button
+                                    onClick={() => handleDelete(client.id, client.name)}
+                                    className="px-2.5 py-1 text-[9px] font-black text-white bg-rose-600 rounded-md hover:bg-rose-700 shadow-lg shadow-rose-500/20 uppercase tracking-widest"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    onClick={() => setDeletingId(null)}
+                                    className="p-1 px-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingId(client.id)}
+                                  className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all"
+                                  title="Purge Record"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
+                            </>
+                          )}
                         {!isAdmin && client.createdBy === currentUserId && (
                           <div className="hidden sm:flex p-1 px-2.5 rounded-full bg-emerald-500/10 text-emerald-500 items-center gap-1">
                             <Check size={10} />
@@ -574,7 +669,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
                     return (
                       <button
-                        key={pageNum}
+                        key={'page-'+pageNum}
                         onClick={() => setCurrentPage(pageNum)}
                         className={cn(
                           "w-8 h-8 rounded-lg text-[10px] font-black uppercase transition-all",

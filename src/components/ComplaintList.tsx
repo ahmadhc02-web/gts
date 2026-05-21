@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned } from 'lucide-react';
-import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile } from '../types';
+import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig } from '../types';
 import { cn } from '../lib/utils';
+import { getCardStyle } from '../lib/styleUtils';
 import { Network, ShieldAlert, Zap, Layers } from 'lucide-react';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
@@ -13,7 +14,7 @@ import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
 interface ComplaintListProps {
   complaints: Complaint[];
   onDelete?: (id: string) => Promise<void>;
-  onStatusChange?: (id: string, status: ComplaintStatus, remarks?: string) => Promise<void>;
+  onStatusChange?: (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => Promise<void>;
   onUpdateRemarks?: (id: string, remarks: string) => Promise<void>;
   onEdit?: (id: string, data: Partial<Complaint>) => Promise<void>;
   isAdmin?: boolean;
@@ -22,6 +23,7 @@ interface ComplaintListProps {
   forcedPriorityFilter?: ComplaintPriority | 'all';
   forcedCategoryFilter?: ComplaintCategory | 'all';
   appConfig: AppConfig;
+  branding: BrandingConfig;
 }
 
 export default function ComplaintList({ 
@@ -35,8 +37,10 @@ export default function ComplaintList({
   forcedStatusFilter = 'all',
   forcedPriorityFilter = 'all',
   forcedCategoryFilter = 'all',
-  appConfig
+  appConfig,
+  branding
 }: ComplaintListProps) {
+  const customNames = branding.customNames || {};
   const currentUserId = currentUser.uid;
   const [startDate, setStartDate] = React.useState('');
   const [endDate, setEndDate] = React.useState('');
@@ -49,6 +53,7 @@ export default function ComplaintList({
   const [itemsPerPage, setItemsPerPage] = React.useState(20);
   const [selectedComplaint, setSelectedComplaint] = React.useState<Complaint | null>(null);
   const [statusRemarks, setStatusRemarks] = React.useState('');
+  const [customerReview, setCustomerReview] = React.useState('');
   const [isEditingRemarks, setIsEditingRemarks] = React.useState(false);
   const [editedRemarks, setEditedRemarks] = React.useState('');
 
@@ -448,9 +453,13 @@ export default function ComplaintList({
 
   const [complaintToDelete, setComplaintToDelete] = React.useState<string | null>(null);
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (complaintToDelete && onDelete) {
-      await onDelete(complaintToDelete);
+      // Execute deletion without awaiting to make UI feel instant
+      onDelete(complaintToDelete).catch(err => {
+        console.error("Delete failed:", err);
+        toast.error("Critical failure during record termination.");
+      });
       setComplaintToDelete(null);
       setSelectedComplaint(null);
     }
@@ -465,13 +474,15 @@ export default function ComplaintList({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.1 }}
               onClick={() => setComplaintToDelete(null)}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px]"
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.97, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              exit={{ opacity: 0, scale: 0.97, y: 10 }}
+              transition={{ duration: 0.1, ease: 'easeOut' }}
               className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-rose-500/30 overflow-hidden"
             >
               <div className="p-8 text-center space-y-6">
@@ -509,7 +520,7 @@ export default function ComplaintList({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="flex flex-col gap-2">
             <h3 className="text-2xl font-black flex items-center gap-3 uppercase tracking-tight">
-              Operational Registry
+              {customNames.complaint || 'Operational Registry'}
               <span className="text-xs font-black px-3 py-1.5 bg-brand-accent/10 border border-brand-accent/20 text-brand-accent rounded leading-none">
                 {filteredComplaints.length} Records
               </span>
@@ -634,8 +645,8 @@ export default function ComplaintList({
               }}
             >
               <option value="all">ALL CATEGORIES</option>
-              {appConfig.categories.map(cat => (
-                <option key={cat} value={cat}>{cat.toUpperCase()}</option>
+              {appConfig.categories.map((cat, i) => (
+                <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
               ))}
             </select>
           </div>
@@ -652,8 +663,8 @@ export default function ComplaintList({
               }}
             >
               <option value="all">ALL ZONES</option>
-              {appConfig.zones?.map(zone => (
-                <option key={zone} value={zone}>{zone.toUpperCase()}</option>
+              {appConfig.zones?.map((zone, i) => (
+                <option key={`zone-${i}`} value={zone}>{zone.toUpperCase()}</option>
               ))}
             </select>
           </div>
@@ -670,8 +681,8 @@ export default function ComplaintList({
               }}
             >
               <option value="all">ALL PRIORITIES</option>
-              {appConfig.priorities.map(pri => (
-                <option key={pri} value={pri}>{pri.toUpperCase()} PRIORITY</option>
+              {appConfig.priorities.map((pri, i) => (
+                <option key={`pri-${i}`} value={pri}>{pri.toUpperCase()} PRIORITY</option>
               ))}
             </select>
           </div>
@@ -689,9 +700,9 @@ export default function ComplaintList({
               >
                 ALL
               </button>
-              {appConfig.statuses.map((s) => (
+              {appConfig.statuses.map((s, i) => (
                 <button
-                  key={s}
+                  key={`stat-${i}`}
                   onClick={() => setStatusFilter(s)}
                   className={cn(
                     "flex-1 px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all whitespace-nowrap",
@@ -714,7 +725,7 @@ export default function ComplaintList({
       <motion.div 
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="business-card overflow-hidden bg-white dark:bg-slate-950 shadow-xl border border-slate-100 dark:border-slate-800/50"
+        className={cn("overflow-hidden shadow-xl", getCardStyle(branding.cardStyle))}
       >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
@@ -725,7 +736,7 @@ export default function ComplaintList({
                   onClick={() => handleSort('client')}
                 >
                   <div className="flex items-center gap-2">
-                    Client Name
+                    {customNames.client || 'Client Name'}
                     {sortConfig.key === 'client' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
                     )}
@@ -736,7 +747,7 @@ export default function ComplaintList({
                   onClick={() => handleSort('category')}
                 >
                   <div className="flex items-center gap-2">
-                    Category
+                    {customNames.category || 'Category'}
                     {sortConfig.key === 'category' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
                     )}
@@ -747,7 +758,7 @@ export default function ComplaintList({
                   onClick={() => handleSort('tactical')}
                 >
                   <div className="flex items-center gap-2">
-                    Sector
+                    {customNames.zone || 'Sector'}
                     {sortConfig.key === 'tactical' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
                     )}
@@ -758,7 +769,7 @@ export default function ComplaintList({
                   onClick={() => handleSort('profile')}
                 >
                   <div className="flex items-center gap-2">
-                    Profile
+                    {customNames.pkg || 'Profile'}
                     {sortConfig.key === 'profile' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
                     )}
@@ -769,7 +780,7 @@ export default function ComplaintList({
                   onClick={() => handleSort('panelDetails' as keyof Complaint)}
                 >
                   <div className="flex items-center gap-2">
-                    Panel Details
+                    {customNames.panel || 'Panel Details'}
                     {sortConfig.key === 'panelDetails' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
                     )}
@@ -780,7 +791,7 @@ export default function ComplaintList({
                   onClick={() => handleSort('description')}
                 >
                   <div className="flex items-center gap-2">
-                    Issue Details
+                    {customNames.description || 'Issue Details'}
                     {sortConfig.key === 'description' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
                     )}
@@ -832,9 +843,9 @@ export default function ComplaintList({
                     </td>
                   </tr>
                 ) : (
-                  paginatedComplaints.map((complaint) => (
+                  paginatedComplaints.map((complaint, idx) => (
                     <motion.tr
-                      key={complaint.id}
+                      key={`${complaint.id}-${idx}`}
                       layout
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -933,7 +944,7 @@ export default function ComplaintList({
                                  setEditData({ ...complaint });
                                  setSelectedComplaint(null); // Close detail modal if open
                                }}
-                               className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all"
+                               className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all duration-75"
                                title="Edit Operational Log"
                              >
                                <Pencil size={16} />
@@ -945,7 +956,7 @@ export default function ComplaintList({
                                  e.stopPropagation();
                                  setComplaintToDelete(complaint.id);
                                }}
-                               className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all"
+                               className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all duration-75"
                                title="Revoke Registry"
                              >
                                <Trash2 size={16} />
@@ -1009,7 +1020,7 @@ export default function ComplaintList({
 
                   return (
                     <button
-                      key={pageNum}
+                      key={'page-'+pageNum}
                       onClick={() => setCurrentPage(pageNum)}
                       className={cn(
                         "w-8 h-8 rounded-lg text-[10px] font-black uppercase transition-all",
@@ -1041,6 +1052,7 @@ export default function ComplaintList({
           <EditModal
             complaint={editData}
             appConfig={appConfig}
+            branding={branding}
             onClose={() => setEditingId(null)}
             onSave={async (data) => {
               if (onEdit) {
@@ -1103,7 +1115,7 @@ export default function ComplaintList({
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 p-3 sm:p-4 rounded-2xl bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800/50">
                   <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
-                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Sector</p>
+                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">{customNames.zone || 'Sector'}</p>
                     <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
                       <MapPin size={12} className="text-brand-accent shrink-0" />
                       <span className="uppercase text-[11px] sm:text-sm truncate">{selectedComplaint.area}</span>
@@ -1117,14 +1129,14 @@ export default function ComplaintList({
                     </div>
                   </div>
                   <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
-                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Profile</p>
+                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">{customNames.pkg || 'Profile'}</p>
                     <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
                       <Package size={12} className="text-brand-accent shrink-0" />
                       <span className="uppercase text-[11px] sm:text-sm truncate">{selectedComplaint.pkgDetails || 'N/A'}</span>
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Panel/Nearby</p>
+                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">{customNames.panel || 'Panel'}/{customNames.nearby || 'Nearby'}</p>
                     <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
                       <Layers size={12} className="text-brand-accent shrink-0" />
                       <span className="uppercase text-[9px] sm:text-[10px] truncate leading-tight">
@@ -1139,7 +1151,7 @@ export default function ComplaintList({
                   <div className="col-span-12 lg:col-span-7 space-y-4">
                     <div className="space-y-2">
                       <div className="flex justify-between items-center px-1">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Operational Log</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{customNames.complaint || 'Operational Log'}</p>
                         <div className="flex items-center gap-2">
                            <Zap size={10} className={cn(getPriorityColor(selectedComplaint.priority || 'Medium'))} />
                            <span className={cn("text-[9px] font-black uppercase tracking-widest", getPriorityColor(selectedComplaint.priority || 'Medium'))}>
@@ -1214,6 +1226,17 @@ export default function ComplaintList({
                       </div>
                     )}
 
+                    {selectedComplaint.customerReview && (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center px-1">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent">Customer Review</p>
+                        </div>
+                        <div className="p-4 bg-brand-accent/5 rounded-2xl border border-brand-accent/20 italic text-brand-accent text-xs sm:text-sm shadow-sm">
+                          "{selectedComplaint.customerReview}"
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 gap-2">
                       <div className="flex items-center gap-2">
                         <User size={12} className="text-slate-400" />
@@ -1233,27 +1256,41 @@ export default function ComplaintList({
                       <div className="flex flex-col h-full space-y-4">
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Tactical Protocol Command</p>
                         
-                        <div className="space-y-2">
-                          <textarea
-                            value={statusRemarks}
-                            onChange={(e) => setStatusRemarks(e.target.value)}
-                            placeholder="Enter resolution protocol..."
-                            className="w-full h-24 sm:h-32 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
-                          />
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Team Resolution Protocol (Required for completion)</label>
+                            <textarea
+                              value={statusRemarks}
+                              onChange={(e) => setStatusRemarks(e.target.value)}
+                              placeholder="Enter resolution protocol details..."
+                              className="w-full h-20 sm:h-24 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Customer Review (Required for completion)</label>
+                            <textarea
+                              value={customerReview}
+                              onChange={(e) => setCustomerReview(e.target.value)}
+                              placeholder="Type customer feedback or review here..."
+                              className="w-full h-20 sm:h-24 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
+                            />
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
-                          {appConfig.statuses.map((s) => (
+                          {appConfig.statuses.map((s, i) => (
                             <button
-                              key={s}
+                              key={`stat-${i}`}
                               onClick={() => {
-                                if (s === 'complete' && !statusRemarks.trim()) {
-                                  toast.error('Tactical remarks required for completion.');
+                                if (s === 'complete' && (!statusRemarks.trim() || !customerReview.trim())) {
+                                  toast.error('Both Resolution Protocol and Customer Review are required for completion.');
                                   return;
                                 }
-                                onStatusChange(selectedComplaint.id, s, statusRemarks);
-                                setSelectedComplaint({ ...selectedComplaint, status: s, remarks: statusRemarks });
+                                onStatusChange(selectedComplaint.id, s, statusRemarks, customerReview);
+                                setSelectedComplaint({ ...selectedComplaint, status: s, remarks: statusRemarks, customerReview: customerReview });
                                 setStatusRemarks('');
+                                setCustomerReview('');
                               }}
                               className={cn(
                                 "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
@@ -1296,14 +1333,17 @@ export default function ComplaintList({
 function EditModal({ 
   complaint, 
   appConfig,
+  branding,
   onClose, 
   onSave 
 }: { 
   complaint: Partial<Complaint>, 
   appConfig: AppConfig,
+  branding: BrandingConfig,
   onClose: () => void, 
   onSave: (data: Partial<Complaint>) => Promise<void> 
 }) {
+  const customNames = branding.customNames || {};
   const [data, setData] = React.useState({ ...complaint });
   const [isSaving, setIsSaving] = React.useState(false);
 
@@ -1353,7 +1393,7 @@ function EditModal({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-1.5">
-              <label className={labelClasses}>Client Name</label>
+              <label className={labelClasses}>{customNames.client || 'Client Name'}</label>
               <input
                 type="text"
                 value={data.customerName || ''}
@@ -1363,7 +1403,7 @@ function EditModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className={labelClasses}>Client Username</label>
+              <label className={labelClasses}>{customNames.username || 'Client Username'}</label>
               <input
                 type="text"
                 value={data.customerUsername || ''}
@@ -1373,19 +1413,19 @@ function EditModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className={labelClasses}>Tactical Sector (Area)</label>
+              <label className={labelClasses}>{customNames.zone || 'Tactical Sector (Area)'}</label>
               <select
                 value={data.area || (appConfig.zones?.[0] || '')}
                 onChange={(e) => setData({ ...data, area: e.target.value })}
                 className={cn(inputClasses, "appearance-none")}
               >
-                {appConfig.zones?.map(zone => (
-                  <option key={zone} value={zone}>{zone}</option>
+                {appConfig.zones?.map((zone, i) => (
+                  <option key={`edit-zone-${i}`} value={zone}>{zone}</option>
                 ))}
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className={labelClasses}>Communication No.</label>
+              <label className={labelClasses}>{customNames.number || 'Communication No.'}</label>
               <input
                 type="text"
                 value={data.number || ''}
@@ -1395,7 +1435,7 @@ function EditModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className={labelClasses}>Profile (Package)</label>
+              <label className={labelClasses}>{customNames.pkg || 'Profile (Package)'}</label>
               <input
                 type="text"
                 value={data.pkgDetails || ''}
@@ -1404,7 +1444,7 @@ function EditModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className={labelClasses}>User Nearby</label>
+              <label className={labelClasses}>{customNames.nearby || 'User Nearby'}</label>
               <input
                 type="text"
                 value={data.userNearby || ''}
@@ -1413,7 +1453,7 @@ function EditModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className={labelClasses}>Pannal Details</label>
+              <label className={labelClasses}>{customNames.panel || 'Pannal Details'}</label>
               <input
                 type="text"
                 value={data.panelDetails || ''}
@@ -1422,25 +1462,25 @@ function EditModal({
               />
             </div>
             <div className="space-y-1.5">
-              <label className={labelClasses}>Service Category</label>
+              <label className={labelClasses}>{customNames.category || 'Service Category'}</label>
               <select
                 value={data.category || (appConfig.categories[0])}
                 onChange={(e) => setData({ ...data, category: e.target.value as ComplaintCategory })}
                 className={cn(inputClasses, "appearance-none")}
               >
-                {appConfig.categories.map(cat => (
-                  <option key={cat} value={cat}>{cat.toUpperCase()}</option>
+                {appConfig.categories.map((cat, i) => (
+                  <option key={`edit-cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
                 ))}
               </select>
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className={labelClasses}>Urgency Rating</label>
+            <label className={labelClasses}>{customNames.priority || 'Urgency Rating'}</label>
             <div className="grid grid-cols-4 gap-2">
-              {appConfig.priorities.map((p) => (
+              {appConfig.priorities.map((p, i) => (
                 <button
-                  key={p}
+                  key={`edit-pri-${i}`}
                   type="button"
                   onClick={() => setData({ ...data, priority: p })}
                   className={cn(
@@ -1457,7 +1497,7 @@ function EditModal({
           </div>
 
           <div className="space-y-1.5">
-            <label className={labelClasses}>Log Dispatch Details</label>
+            <label className={labelClasses}>{customNames.description || 'Log Dispatch Details'}</label>
             <textarea
               value={data.description || ''}
               onChange={(e) => setData({ ...data, description: e.target.value })}

@@ -231,7 +231,7 @@ export default function VoiceRecorder({ onSend, onCancel, isAudioMuted = false, 
             <div className="flex-1 overflow-hidden h-8 flex items-center justify-center gap-0.5 px-2">
               {visualizerData.map((val, i) => (
                 <div 
-                  key={i}
+                  key={'vr-'+i}
                   style={{ height: `${val}px` }}
                   className="w-1 bg-blue-500 rounded-full transition-all duration-75"
                 />

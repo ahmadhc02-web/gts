@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned, Layers } from 'lucide-react';
-import { ComplaintStatus, ComplaintCategory, ComplaintPriority, Client, UserProfile } from '../types';
-import { cn } from '../lib/utils';
+import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned, Layers, CloudOff, WifiOff, RefreshCw } from 'lucide-react';
+import { ComplaintStatus, ComplaintCategory, ComplaintPriority, Client, UserProfile, BrandingConfig } from '../types';
+import { cn, safeStringify } from '../lib/utils';
 import { Network, Wifi, ShieldAlert, Zap, Search } from 'lucide-react';
+import { Toaster, toast } from 'sonner';
 import { AppConfig } from '../constants';
 import { firebaseService } from '../lib/firebaseService';
 
@@ -24,9 +25,11 @@ interface ComplaintFormProps {
   isLoading: boolean;
   appConfig: AppConfig;
   currentUser: UserProfile;
+  branding: BrandingConfig;
 }
 
-export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentUser }: ComplaintFormProps) {
+export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentUser, branding }: ComplaintFormProps) {
+  const customNames = branding.customNames || {};
   const [customerName, setCustomerName] = useState('');
   const [customerUsername, setCustomerUsername] = useState('');
   const [area, setArea] = useState('');
@@ -39,9 +42,34 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
   const [category, setCategory] = useState<ComplaintCategory>('');
   const [priority, setPriority] = useState<ComplaintPriority>('');
   
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  
   const [clients, setClients] = useState<Client[]>([]);
   const [showClientList, setShowClientList] = useState(false);
   const clientListRef = React.useRef<HTMLDivElement>(null);
+
+  // Check pending count on load
+  useEffect(() => {
+    const queue = JSON.parse(localStorage.getItem('offline_complaints') || '[]');
+    setPendingCount(queue.length);
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Removed sync logic from here - moved to App.tsx for global reliability
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -100,7 +128,8 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSubmit({ 
+    
+    const formData = { 
       customerName, 
       customerUsername,
       area: area || (appConfig.zones?.[0] || ''), 
@@ -112,7 +141,24 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
       status: status || appConfig.statuses[0],
       category: category || appConfig.categories[0],
       priority: priority || appConfig.priorities[0]
-    });
+    };
+
+    if (isOffline) {
+      // Offline mode: cache to localStorage
+      const queue = JSON.parse(localStorage.getItem('offline_complaints') || '[]');
+      queue.push(formData);
+      localStorage.setItem('offline_complaints', safeStringify(queue));
+      setPendingCount(queue.length);
+      
+      // Still show success feel but note it's local
+      toast.info('Offline Cache Entry: Data stored locally. System will synchronize once communication link is re-established.', {
+        duration: 5000,
+        icon: '📦'
+      });
+    } else {
+      await onSubmit(formData);
+    }
+
     // Reset form
     setCustomerName('');
     setCustomerUsername('');
@@ -146,16 +192,30 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           </motion.div>
           
           <h3 className="text-2xl sm:text-3xl font-black uppercase tracking-tighter text-slate-900 dark:text-white mb-2">
-            Service Request
+            {customNames.complaint || 'Service Request'}
           </h3>
           <div className="flex flex-col items-center gap-2">
             <p className="text-[9px] font-black text-brand-accent uppercase tracking-[0.3em]">
               Operational Terminal Portal
             </p>
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-1">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Secure Network Link: Active
-            </div>
+            {isOffline ? (
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 text-[8px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest mt-1">
+                <WifiOff size={10} className="animate-pulse" />
+                Offline Mode: Local Caching Active
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Secure Network Link: Active
+              </div>
+            )}
+
+            {pendingCount > 0 && (
+              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 text-[8px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest">
+                <RefreshCw size={10} className={cn(isSyncing && "animate-spin")} />
+                {pendingCount} Pending Sync{pendingCount > 1 ? 's' : ''}
+              </div>
+            )}
           </div>
         </motion.div>
 
@@ -170,7 +230,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
 
             <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>Full Legal Name</label>
+                <label className={labelClasses}>{customNames.client || 'Full Legal Name'}</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -184,7 +244,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               </motion.div>
 
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>System Username</label>
+                <label className={labelClasses}>{customNames.username || 'System Username'}</label>
                 <div className="relative" ref={clientListRef}>
                   <input
                     type="text"
@@ -228,7 +288,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               </motion.div>
               
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>Contact Number</label>
+                <label className={labelClasses}>{customNames.number || 'Contact Number'}</label>
                 <div className="relative">
                   <input
                     type="tel"
@@ -242,7 +302,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               </motion.div>
 
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>Deployment Zone</label>
+                <label className={labelClasses}>{customNames.zone || 'Deployment Zone'}</label>
                 <div className="relative">
                   <select
                     value={area}
@@ -250,15 +310,15 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                     className={cn(inputClasses, "appearance-none cursor-pointer")}
                     required
                   >
-                    {appConfig.zones?.map(zone => (
-                      <option key={zone} value={zone}>{zone.toUpperCase()}</option>
+                    {appConfig.zones?.map((zone, i) => (
+                      <option key={`zone-${i}`} value={zone}>{zone.toUpperCase()}</option>
                     ))}
                   </select>
                 </div>
               </motion.div>
 
               <motion.div layout className="space-y-1 group/field sm:col-span-2">
-                <label className={labelClasses}>Distribution Node / Panel</label>
+                <label className={labelClasses}>{customNames.panel || 'Distribution Node / Panel'}</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -271,7 +331,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               </motion.div>
               
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>Profile (Package)</label>
+                <label className={labelClasses}>{customNames.pkg || 'Profile (Package)'}</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -284,7 +344,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               </motion.div>
 
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>Locality Landmark</label>
+                <label className={labelClasses}>{customNames.nearby || 'Locality Landmark'}</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -307,45 +367,45 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
 
             <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>Category</label>
+                <label className={labelClasses}>{customNames.category || 'Category'}</label>
                 <div className="relative">
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
                     className={cn(inputClasses, "appearance-none cursor-pointer")}
                   >
-                    {appConfig.categories.map(cat => (
-                      <option key={cat} value={cat}>{cat.toUpperCase()}</option>
+                    {appConfig.categories.map((cat, i) => (
+                      <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
                     ))}
                   </select>
                 </div>
               </motion.div>
 
               <motion.div layout className="space-y-1 group/field">
-                <label className={labelClasses}>Security Priority</label>
+                <label className={labelClasses}>{customNames.priority || 'Security Priority'}</label>
                 <div className="relative">
                   <select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value as ComplaintPriority)}
                     className={cn(inputClasses, "appearance-none cursor-pointer")}
                   >
-                    {appConfig.priorities.map(pri => (
-                      <option key={pri} value={pri}>{pri.toUpperCase()}</option>
+                    {appConfig.priorities.map((pri, i) => (
+                      <option key={`pri-${i}`} value={pri}>{pri.toUpperCase()}</option>
                     ))}
                   </select>
                 </div>
               </motion.div>
 
               <motion.div layout className="space-y-1 sm:col-span-2 group/field">
-                <label className={labelClasses}>Current Status</label>
+                <label className={labelClasses}>{customNames.status || 'Current Status'}</label>
                 <div className="relative">
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value as ComplaintStatus)}
                     className={cn(inputClasses, "appearance-none cursor-pointer")}
                   >
-                    {appConfig.statuses.map(stat => (
-                      <option key={stat} value={stat}>{stat.toUpperCase()}</option>
+                    {appConfig.statuses.map((stat, i) => (
+                      <option key={`stat-${i}`} value={stat}>{stat.toUpperCase()}</option>
                     ))}
                   </select>
                 </div>
@@ -353,7 +413,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </motion.div>
 
             <motion.div layout className="space-y-1 group/field">
-              <label className={labelClasses}>Mission Objectives / Details</label>
+              <label className={labelClasses}>{customNames.description || 'Mission Objectives / Details'}</label>
               <div className="relative">
                 <textarea
                   value={description}
@@ -369,19 +429,31 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             <motion.div layout className="pt-2">
               <button
                 type="submit"
-                disabled={isLoading}
-                className="group relative w-full overflow-hidden rounded-[1.5rem] bg-slate-950 dark:bg-brand-accent p-px font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 shadow-lg"
+                disabled={isLoading || isSyncing}
+                className={cn(
+                  "group relative w-full overflow-hidden rounded-[1.5rem] p-px font-bold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 shadow-lg",
+                  isOffline ? "bg-amber-600" : "bg-slate-950 dark:bg-brand-accent"
+                )}
               >
-                <div className="relative flex items-center justify-center gap-3 rounded-[1.4375rem] bg-slate-950 dark:bg-brand-accent px-6 py-4.5 text-white transition-all group-hover:bg-transparent dark:group-hover:bg-blue-700">
-                  {isLoading ? (
+                <div className={cn(
+                  "relative flex items-center justify-center gap-3 rounded-[1.4375rem] px-6 py-4.5 text-white transition-all group-hover:bg-transparent",
+                  isOffline ? "bg-amber-600 dark:bg-amber-700 hover:bg-amber-500" : "bg-slate-950 dark:bg-brand-accent dark:group-hover:bg-blue-700"
+                )}>
+                  {isLoading || isSyncing ? (
                     <>
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                      <span className="text-[10px] uppercase tracking-[0.4em]">Syncing...</span>
+                      <span className="text-[10px] uppercase tracking-[0.4em]">{isSyncing ? "Syncing Logic..." : "Syncing..."}</span>
                     </>
                   ) : (
                     <>
-                      <span className="text-[10px] uppercase tracking-[0.4em] font-black">Register Operations Log</span>
-                      <Send size={15} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
+                      <span className="text-[10px] uppercase tracking-[0.4em] font-black">
+                        {isOffline ? "Store Locally (Offline)" : "Register Operations Log"}
+                      </span>
+                      {isOffline ? (
+                        <CloudOff size={15} />
+                      ) : (
+                        <Send size={15} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
+                      )}
                     </>
                   )}
                 </div>

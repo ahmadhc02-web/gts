@@ -1,5 +1,16 @@
 // src/services/googleSheetsService.ts
+import { auth } from '../lib/firebase';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { safeStringify } from '../lib/utils';
+
+const getApiUrl = (endpoint: string): string => {
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host.includes('.run.app')) {
+    return endpoint;
+  }
+  // Production URL of the provisioned Cloud Run backend
+  return `https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app${endpoint}`;
+};
 
 export interface GoogleTokens {
   access_token?: string;
@@ -14,19 +25,98 @@ const SHEET_ID_KEY = 'gts_spreadsheet_id';
 const SHEET_NAME_KEY = 'gts_sheet_name';
 const SHEET_RANGE_KEY = 'gts_sheet_range';
 
+// Provider setup for Google Workspace
+const provider = new GoogleAuthProvider();
+provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+provider.addScope('https://www.googleapis.com/auth/drive.file');
+
 export const googleSheetsService = {
+  syncConfigToFirestore: async (updates: any) => {
+    try {
+      const { db } = await import('../lib/firebase');
+      const { doc, setDoc, getDoc } = await import('firebase/firestore');
+      const docRef = doc(db, 'config', 'google_sheets');
+      const snap = await getDoc(docRef);
+      const existing = snap.exists() ? snap.data() : {};
+      await setDoc(docRef, {
+        ...existing,
+        ...updates,
+        updatedAt: Date.now()
+      });
+    } catch (e) {
+      console.warn("Failed syncing Google Sheets config to Firestore or permission denied:", e);
+    }
+  },
+
+  loadConfigFromFirestore: async () => {
+    try {
+      const { db } = await import('../lib/firebase');
+      const { doc, getDoc } = await import('firebase/firestore');
+      const docRef = doc(db, 'config', 'google_sheets');
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.tokens) {
+          localStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
+          window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: data.tokens }));
+        }
+        if (data.spreadsheetId) {
+          localStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
+        }
+        if (data.sheetName) {
+          localStorage.setItem(SHEET_NAME_KEY, data.sheetName);
+        }
+        if (data.sheetRange) {
+          localStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
+        }
+        return data;
+      }
+    } catch (e) {
+      console.warn("Failed loading Google Sheets config from Firestore:", e);
+    }
+    return null;
+  },
+
+  subscribeGoogleSheetsConfig: (callback: (data: any) => void) => {
+    let unsubscribe = () => {};
+    // Dynamic import to stay clean and modular
+    import('../lib/firebase').then(({ db }) => {
+      import('firebase/firestore').then(({ doc, onSnapshot }) => {
+        const docRef = doc(db, 'config', 'google_sheets');
+        unsubscribe = onSnapshot(docRef, (snapshot) => {
+          if (snapshot.exists()) {
+            callback(snapshot.data());
+          } else {
+            callback(null);
+          }
+        }, (error) => {
+          console.warn("Error subscribing to Google Sheets config:", error);
+        });
+      }).catch(err => console.warn("Failed loading firestore inside subscription:", err));
+    }).catch(err => console.warn("Failed loading firebase inside subscription:", err));
+
+    return () => unsubscribe();
+  },
+
   getTokens: (): GoogleTokens | null => {
     const tokens = localStorage.getItem(TOKEN_KEY);
     return tokens ? JSON.parse(tokens) : null;
   },
 
   saveTokens: (tokens: GoogleTokens) => {
-    // If we already have a refresh token, preserve it if the new response doesn't have one
-    // (Google only sends refresh_token on the first consent)
     const existing = googleSheetsService.getTokens();
     const updated = { ...existing, ...tokens };
-    localStorage.setItem(TOKEN_KEY, JSON.stringify(updated));
+    localStorage.setItem(TOKEN_KEY, safeStringify(updated));
     window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: updated }));
+    googleSheetsService.syncConfigToFirestore({ tokens: updated });
+  },
+
+  processResponseJson: (json: any) => {
+    if (json && json.refreshedTokens) {
+      console.log('Successfully captured auto-refreshed Google credentials.');
+      googleSheetsService.saveTokens(json.refreshedTokens);
+    }
+    return json;
   },
 
   getSpreadsheetId: (): string | null => {
@@ -35,6 +125,7 @@ export const googleSheetsService = {
 
   saveSpreadsheetId: (id: string) => {
     localStorage.setItem(SHEET_ID_KEY, id);
+    googleSheetsService.syncConfigToFirestore({ spreadsheetId: id });
   },
 
   getSheetName: (): string => {
@@ -43,6 +134,7 @@ export const googleSheetsService = {
 
   saveSheetName: (name: string) => {
     localStorage.setItem(SHEET_NAME_KEY, name);
+    googleSheetsService.syncConfigToFirestore({ sheetName: name });
   },
 
   getSheetRange: (): string => {
@@ -51,116 +143,173 @@ export const googleSheetsService = {
 
   saveSheetRange: (range: string) => {
     localStorage.setItem(SHEET_RANGE_KEY, range);
+    googleSheetsService.syncConfigToFirestore({ sheetRange: range });
   },
 
   clearAuth: () => {
     localStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: null }));
+    googleSheetsService.syncConfigToFirestore({ tokens: null });
   },
 
-  initiateAuth: async () => {
-    const response = await fetch('/api/auth/google/url');
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to get auth URL from server');
-    }
-    const { url } = await response.json();
-    
-    return new Promise<GoogleTokens>((resolve, reject) => {
-      const authWindow = window.open(url, 'google_auth', 'width=600,height=700');
+  initiateAuth: async (): Promise<GoogleTokens> => {
+    return new Promise((resolve, reject) => {
+      const width = 500;
+      const height = 620;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
       
-      if (!authWindow) {
-        reject(new Error('Popup blocked. Please allow popups for this site.'));
+      const popup = window.open(
+        getApiUrl('/api/auth/google'),
+        'Connect Google Account',
+        `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`
+      );
+      
+      if (!popup) {
+        reject(new Error('Popup blocked! Please allow popups for this website to connect your Google account properly.'));
         return;
       }
-
-      let checkClosed: NodeJS.Timeout;
-      let isHandled = false;
-
-      const handleMessage = (event: MessageEvent) => {
-        console.log('Received message event:', event);
-        
-        // In AI Studio, we trust messages with the correct type
-        if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-          console.log('Google Auth Success message received');
-          isHandled = true;
-          const tokens = event.data.tokens as GoogleTokens;
-          googleSheetsService.saveTokens(tokens);
-          if (checkClosed) clearInterval(checkClosed);
-          window.removeEventListener('message', handleMessage);
-          resolve(tokens);
-        }
-      };
-
-      window.addEventListener('message', handleMessage);
       
-      // Basic check if window is closed
-      checkClosed = setInterval(() => {
-        if (authWindow?.closed) {
-          clearInterval(checkClosed);
-          console.log('Auth window closed, checking if handled...');
-          
-          // Wait a bit to see if the message event fires (popups close themselves on success)
-          setTimeout(() => {
-            if (!isHandled) {
-              console.warn('Auth window closed without success message');
-              window.removeEventListener('message', handleMessage);
-              reject(new Error('Auth process cancelled: window closed before completion.'));
-            }
-          }, 1500);
+      const isIframe = window.self !== window.top;
+      
+      const maxTimeout = setTimeout(() => {
+        clearInterval(timer);
+        window.removeEventListener('message', handleMessage);
+        reject(new Error('Authentication timed out. If you have signed in, please refresh the page and try again.'));
+      }, 180000); // 3-minute timeout
+      
+      const timer = setInterval(() => {
+        try {
+          // In iframe context, popup.closed is highly unreliable (often returns true falsely due to sandboxing/cross-origin redirects).
+          // Therefore, we bypass the closed window check when in an iframe.
+          if (!isIframe && (!popup || popup.closed)) {
+            clearInterval(timer);
+            clearTimeout(maxTimeout);
+            window.removeEventListener('message', handleMessage);
+            reject(new Error('Auth window closed'));
+          }
+        } catch (e) {
+          console.warn("Unable to access popup window.closed status:", e);
         }
       }, 1000);
+      
+      function handleMessage(event: MessageEvent) {
+        // Support dev and prod URLs for safety
+        if (event.data && event.data.type === 'google-oauth-success') {
+          clearInterval(timer);
+          clearTimeout(maxTimeout);
+          window.removeEventListener('message', handleMessage);
+          
+          const tokens = event.data.tokens as GoogleTokens;
+          if (tokens) {
+            googleSheetsService.saveTokens(tokens);
+            resolve(tokens);
+          } else {
+            reject(new Error('OAuth failed: No tokens received'));
+          }
+        }
+      }
+      
+      window.addEventListener('message', handleMessage);
     });
   },
 
   appendComplaint: async (complaint: any) => {
+    return googleSheetsService.syncActivity('Operational Logs', complaint);
+  },
+
+  syncActivity: async (tabName: string, data: any) => {
     const tokens = googleSheetsService.getTokens();
     const spreadsheetId = googleSheetsService.getSpreadsheetId();
-    const sheetName = googleSheetsService.getSheetName();
-    const subRange = googleSheetsService.getSheetRange();
 
     if (!tokens || !spreadsheetId) {
-      console.warn('Google Sheets not configured. Skipping sync.');
+      console.warn(`Google Sheets not configured. Skipping sync to ${tabName}.`);
       return;
     }
 
-    const fullRange = `'${sheetName}'!${subRange}`;
-
-    const values = [
-      complaint.createdAt ? new Date(complaint.createdAt).toLocaleString() : new Date().toLocaleString(),
-      complaint.id || 'N/A',
-      complaint.memberName || 'System',
-      complaint.customerName || 'N/A',
-      complaint.number || 'N/A',
-      complaint.area || 'N/A',
-      complaint.category || 'N/A',
-      complaint.priority || 'Medium',
-      complaint.status || 'Resolved',
-      complaint.description || ''
-    ];
+    let values: any[] = [];
+    
+    if (tabName === 'Operational Logs') {
+      values = [
+        data.createdAt ? new Date(data.createdAt).toLocaleString() : new Date().toLocaleString(),
+        data.id || 'N/A',
+        data.memberName || 'System',
+        data.customerName || 'N/A',
+        data.number || 'N/A',
+        data.area || 'N/A',
+        data.category || 'N/A',
+        data.priority || 'Medium',
+        data.status || 'Active',
+        data.description || data.message || ''
+      ];
+    } else if (tabName === 'User Register') {
+      values = [
+        data.uid || 'N/A',
+        data.username || 'N/A',
+        data.fullName || 'N/A',
+        data.role || 'user',
+        data.dealerId || 'main',
+        data.companyName || 'N/A',
+        data.lineCode || 'N/A',
+        new Date().toLocaleString(),
+        data.createdAt ? new Date(data.createdAt).toLocaleString() : new Date().toLocaleString()
+      ];
+    } else if (tabName === 'Client Database') {
+      values = [
+        data.id || 'N/A',
+        data.username || 'N/A',
+        data.name || 'N/A',
+        data.number || data.mobileNumber || 'N/A',
+        data.area || 'N/A',
+        data.address || 'N/A',
+        data.priority || 'N/A',
+        data.assignedTo || 'N/A',
+        data.createdAt ? new Date(data.createdAt).toLocaleString() : new Date().toLocaleString()
+      ];
+    } else if (tabName === 'Login Logs') {
+      values = [
+        data.timestamp ? new Date(data.timestamp).toLocaleString() : new Date().toLocaleString(),
+        data.uid || 'N/A',
+        data.username || 'N/A',
+        data.fullName || 'N/A',
+        data.role || 'user',
+        data.authType || 'Standard Credentials',
+        data.lineCode || 'N/A',
+        data.companyName || 'N/A',
+        data.status || 'Success'
+      ];
+    }
 
     try {
-      const payload = {
-        tokens,
-        spreadsheetId,
-        range: fullRange,
-        values
-      };
-
-      const response = await fetch('/api/sheets/append', {
+      const response = await fetch(getApiUrl('/api/sheets/append'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: safeStringify(payload)
+        body: safeStringify({
+          tokens,
+          spreadsheetId,
+          range: `'${tabName}'!A1`,
+          values
+        })
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to append to Google Sheets');
+        let errorMsg = `Failed to append to ${tabName}`;
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch (e) {}
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
+          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        }
+        throw new Error(errorMsg);
       }
 
-      return await response.json();
+      const json = await response.json();
+      return googleSheetsService.processResponseJson(json);
     } catch (error) {
-      console.error('Error syncing to Google Sheets:', error instanceof Error ? error.message : String(error));
+      console.error(`Error syncing to ${tabName}:`, error instanceof Error ? error.message : String(error));
+      // Queue for offline sync if it failed
+      googleSheetsService.syncQueue.add({ tabName, data });
       throw error;
     }
   },
@@ -207,10 +356,10 @@ export const googleSheetsService = {
     const fullRange = `'${sheetName}'!A1`;
 
     try {
-      const response = await fetch('/api/sheets/update', {
+      const response = await fetch(getApiUrl('/api/sheets/update'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: safeStringify({
           tokens,
           spreadsheetId,
           range: fullRange,
@@ -219,11 +368,19 @@ export const googleSheetsService = {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to export to Google Sheets');
+        let errorMsg = 'Failed to export to Google Sheets';
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch (e) {}
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
+          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        }
+        throw new Error(errorMsg);
       }
 
-      return await response.json();
+      const json = await response.json();
+      return googleSheetsService.processResponseJson(json);
     } catch (error) {
       console.error('Error exporting to Google Sheets:', error instanceof Error ? error.message : String(error));
       throw error;
@@ -238,10 +395,10 @@ export const googleSheetsService = {
     }
 
     try {
-      const response = await fetch('/api/drive/backup', {
+      const response = await fetch(getApiUrl('/api/drive/backup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: safeStringify({
           tokens,
           filename,
           content: csvContent
@@ -249,23 +406,267 @@ export const googleSheetsService = {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to backup to Google Drive');
+        let errorMsg = 'Failed to backup to Google Drive';
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch (e) {}
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
+          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        }
+        throw new Error(errorMsg);
       }
 
-      return await response.json();
+      const json = await response.json();
+      return googleSheetsService.processResponseJson(json);
     } catch (error) {
       console.error('Error backing up to Google Drive:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   },
 
+  createNewSpreadsheet: async (title: string) => {
+    const tokens = googleSheetsService.getTokens();
+    const sheetName = googleSheetsService.getSheetName();
+    
+    if (!tokens) {
+      throw new Error('Google account not connected. Please connect your account first.');
+    }
+
+    try {
+      const response = await fetch(getApiUrl('/api/sheets/create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({
+          tokens,
+          title,
+          sheetName
+        })
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'Failed to create Google Sheet';
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch (e) {}
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
+          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        }
+        throw new Error(errorMsg);
+      }
+
+      const result = await response.json();
+      googleSheetsService.processResponseJson(result);
+      if (result.spreadsheetId) {
+        googleSheetsService.saveSpreadsheetId(result.spreadsheetId);
+      }
+      return result;
+    } catch (error) {
+      console.error('Error creating Google Sheet:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  },
+
+  performBulkSystemBackup: async (data: { 
+    complaints: any[], 
+    users: any[], 
+    clients: any[], 
+    config: any,
+    branding?: any
+  }) => {
+    const tokens = googleSheetsService.getTokens();
+    const spreadsheetId = googleSheetsService.getSpreadsheetId();
+    
+    if (!tokens || !spreadsheetId) {
+      throw new Error('Google Sheets not configured. Please connect your account and set a Spreadsheet ID.');
+    }
+
+    // 1. Complaints Sheet
+    const complaintHeaders = ['Date', 'ID', 'Logged By', 'Client', 'Contact', 'Area', 'Category', 'Priority', 'Status', 'Description'];
+    const complaintRows = data.complaints.map(c => [
+      c.createdAt ? new Date(c.createdAt).toLocaleString() : 'N/A',
+      c.id || 'N/A',
+      c.memberName || 'N/A',
+      c.customerName || 'N/A',
+      c.number || 'N/A',
+      c.area || 'N/A',
+      c.category || 'N/A',
+      c.priority || 'N/A',
+      c.status || 'N/A',
+      c.description || ''
+    ]);
+
+    // 2. Users Sheet (User Register)
+    const userHeaders = ['UID', 'Username', 'Full Name', 'Role', 'Dealer ID', 'Company', 'Line Code', 'Last Active', 'Created At'];
+    const userRows = data.users.map(u => [
+      u.uid || 'N/A',
+      u.username || 'N/A',
+      u.fullName || 'N/A',
+      u.role || 'N/A',
+      u.dealerId || 'main',
+      u.companyName || 'N/A',
+      u.lineCode || 'N/A',
+      u.lastActive ? new Date(u.lastActive).toLocaleString() : 'Never',
+      u.createdAt ? new Date(u.createdAt).toLocaleString() : 'N/A'
+    ]);
+
+    // 3. Clients Sheet (Client Database)
+    const clientHeaders = ['ID', 'Username', 'Name', 'Contact', 'Area', 'Address', 'Priority', 'Assigned To', 'Created At'];
+    const clientRows = data.clients.map(c => [
+      c.id || 'N/A',
+      c.username || 'N/A',
+      c.name || 'N/A',
+      c.number || c.mobileNumber || 'N/A',
+      c.area || 'N/A',
+      c.address || 'N/A',
+      c.priority || 'N/A',
+      c.assignedTo || 'N/A',
+      c.createdAt ? new Date(c.createdAt).toLocaleString() : 'N/A'
+    ]);
+
+    // 4. Config & Branding Sheet (System Config)
+    const configHeaders = ['Section', 'Setting Key', 'Value'];
+    const configRows: any[][] = [];
+    
+    // Add App Config
+    Object.entries(data.config || {}).forEach(([key, value]) => {
+      configRows.push([
+        'Application',
+        key,
+        typeof value === 'object' ? safeStringify(value) : String(value)
+      ]);
+    });
+
+    // Add Branding Config
+    Object.entries(data.branding || {}).forEach(([key, value]) => {
+      configRows.push([
+        'Branding',
+        key,
+        typeof value === 'object' ? safeStringify(value) : String(value)
+      ]);
+    });
+
+    const sheetsData = [
+      { title: 'Operational Logs', values: [complaintHeaders, ...complaintRows] },
+      { title: 'User Register', values: [userHeaders, ...userRows] },
+      { title: 'Client Database', values: [clientHeaders, ...clientRows] },
+      { title: 'System Config', values: [configHeaders, ...configRows] }
+    ];
+
+    try {
+      const response = await fetch(getApiUrl('/api/sheets/bulk-export'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({
+          tokens,
+          spreadsheetId,
+          sheetsData
+        })
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'Failed to perform bulk export';
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch (e) {}
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
+          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        }
+        throw new Error(errorMsg);
+      }
+
+      const resJson = await response.json();
+      googleSheetsService.processResponseJson(resJson);
+      try {
+        await googleSheetsService.syncConfigToFirestore({ lastAutoBackupTime: Date.now() });
+      } catch (err) {
+        console.warn("Could not save lastAutoBackupTime to Firestore config, skipping...", err);
+      }
+      return resJson;
+    } catch (error) {
+      console.error('Bulk Export Error:', error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  },
+
+  syncUser: async (user: any) => {
+    return googleSheetsService.syncActivity('User Register', user);
+  },
+
+  syncClient: async (client: any) => {
+    return googleSheetsService.syncActivity('Client Database', client);
+  },
+
+  syncLogin: async (user: any, authType: string = 'Standard Credentials') => {
+    return googleSheetsService.syncActivity('Login Logs', {
+      ...user,
+      authType,
+      timestamp: Date.now()
+    });
+  },
+
+  syncSystemConfig: async (config: any, branding: any) => {
+    const tokens = googleSheetsService.getTokens();
+    const spreadsheetId = googleSheetsService.getSpreadsheetId();
+
+    if (!tokens || !spreadsheetId) return;
+
+    try {
+      const configRows = [
+        ['APPLICATION CONFIGURATION', 'VALUE'],
+        ['Complaints Count', config.totalComplaints || 0],
+        ['Zones/Areas', (config.zones || []).join(', ')],
+        ['Categories', (config.categories || []).join(', ')],
+        ['Priorities', (config.priorities || []).join(', ')],
+        ['', ''],
+        ['BRANDING CONFIGURATION', 'VALUE'],
+        ['App Name', branding.appName || 'N/A'],
+        ['Main Color', branding.mainColor || 'N/A'],
+        ['Secondary Color', branding.secondaryColor || 'N/A']
+      ];
+
+      const response = await fetch(getApiUrl('/api/sheets/bulk-export'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({
+          tokens,
+          spreadsheetId,
+          sheetsData: [
+            {
+              title: 'System Config',
+              values: configRows
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'Failed auto-syncing config';
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch (e) {}
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
+          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        }
+        throw new Error(errorMsg);
+      }
+
+      const json = await response.json();
+      googleSheetsService.processResponseJson(json);
+    } catch (err) {
+      console.error('Error auto-syncing config:', err);
+    }
+  },
+
   // Offline Sync Queue for Sheets
   syncQueue: {
-    add: (complaint: any) => {
+    add: (item: any) => {
       const queue = JSON.parse(localStorage.getItem('gts_sheet_sync_queue') || '[]');
-      queue.push(complaint);
-      localStorage.setItem('gts_sheet_sync_queue', JSON.stringify(queue));
+      queue.push(item);
+      localStorage.setItem('gts_sheet_sync_queue', safeStringify(queue));
     },
     get: () => {
       return JSON.parse(localStorage.getItem('gts_sheet_sync_queue') || '[]');
@@ -279,12 +680,18 @@ export const googleSheetsService = {
       const queue = googleSheetsService.syncQueue.get();
       if (queue.length === 0) return;
 
-      console.log(`Processing ${queue.length} queued records for Google Sheets...`);
+      console.log(`Processing ${queue.length} queued records for Google Sheets sync categories...`);
       
       const remaining: any[] = [];
       for (const item of queue) {
         try {
-          await googleSheetsService.appendComplaint(item);
+          if (item.tabName && item.data) {
+            // New categorized sync format
+            await googleSheetsService.syncActivity(item.tabName, item.data);
+          } else {
+            // Legacy format (just the complaint)
+            await googleSheetsService.syncActivity('Operational Logs', item);
+          }
         } catch (err) {
           console.error('Failed to sync queued item:', err instanceof Error ? err.message : String(err));
           remaining.push(item);
@@ -292,7 +699,7 @@ export const googleSheetsService = {
       }
 
       if (remaining.length > 0) {
-        localStorage.setItem('gts_sheet_sync_queue', JSON.stringify(remaining));
+        localStorage.setItem('gts_sheet_sync_queue', safeStringify(remaining));
       } else {
         googleSheetsService.syncQueue.clear();
       }

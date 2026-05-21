@@ -81,7 +81,7 @@ export default function VoiceMsgPlayer({ audioUrl, duration, isMe, isAudioMuted 
             const height = 15 + Math.abs(Math.sin(i * 0.7 + (isPlaying ? Date.now() / 200 : 0))) * 70; 
             return (
               <motion.div 
-                key={i} 
+                key={'vmp-'+i} 
                 animate={{ height: `${height}%` }}
                 className={cn(
                   "flex-1 rounded-full transition-colors duration-200",

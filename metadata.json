@@ -1,6 +1,6 @@
 {
   "name": "Green Tech Services ISP Management",
-  "description": "Comprehensive customer complaint management system for Green Tech Services Internet WiFi service, featuring member registration and admin oversight.",
-  "requestFramePermissions": ["microphone", "screen-wake-lock"],
-  "majorCapabilities": []
+  "description": "ISP Service Management Dashboard with real-time network latency monitoring, ISP diagnostics, and customer complaint tracking.",
+  "requestFramePermissions": ["microphone", "screen-wake-lock", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

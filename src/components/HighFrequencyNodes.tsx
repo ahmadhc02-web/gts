@@ -84,7 +84,7 @@ export default function HighFrequencyNodes({ complaints = [] }: HighFrequencyNod
         <div className="space-y-2">
           {topUsers.length > 0 ? (
             topUsers.map((user, idx) => (
-              <div key={user.name} className="space-y-2">
+              <div key={user.name + '-' + idx} className="space-y-2">
                 <motion.button 
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -128,9 +128,9 @@ export default function HighFrequencyNodes({ complaints = [] }: HighFrequencyNod
                         {complaints
                           .filter(c => (c.customerName || 'Unknown User') === user.name)
                           .sort((a, b) => b.createdAt - a.createdAt)
-                          .map((complaint) => (
+                          .map((complaint, cIdx) => (
                             <button 
-                              key={complaint.id} 
+                              key={`${complaint.id}-${cIdx}`} 
                               onClick={() => setSelectedComplaint(complaint)}
                               className="w-full text-left p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3 hover:border-amber-500/30 transition-all active:scale-[0.98]"
                             >
