@@ -254,13 +254,13 @@ export const googleSheetsService = {
         throw new Error("You are currently offline. Please connect to the internet first.");
       }
 
-      // Configure provider with custom prompt to always ensure consent is requested
+      // Configure provider with custom parameters
       provider.setCustomParameters({
         prompt: 'consent',
         access_type: 'offline'
       });
 
-      // Try the smooth native Firebase Sign-In popup using the user's authorized redirect handler
+      // Execute smooth native Firebase Sign-In popup using Google Auth Provider
       const result = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       
@@ -268,7 +268,7 @@ export const googleSheetsService = {
         throw new Error("Failed to retrieve Google Access Token from Firebase credentials.");
       }
       
-      // Calculate token expiry (typically 3590 seconds from now)
+      // Calculate token expiry (typically 3600 seconds from now)
       const expiry_date = Date.now() + 3590 * 1000;
       
       const tokens: GoogleTokens = {
@@ -279,102 +279,26 @@ export const googleSheetsService = {
       };
       
       googleSheetsService.saveTokens(tokens);
-      console.log("Firebase Google Sheets credentials retrieved successfully!");
+      console.log("Firebase Google Sheets credentials retrieved and saved successfully!");
       return tokens;
     } catch (fbAuthError: any) {
-      console.warn("Client-side Firebase Auth Google connection had a warning or was blocked, trying server OAuth fallback:", fbAuthError);
+      console.error("Firebase Auth Google connection failed:", fbAuthError);
       
-      // Ultimate robust server-side OAuth flow fallback if Firebase popup fails
-      const url = getApiUrl('/api/auth/google');
+      let friendlyMessage = fbAuthError.message || "Google Sheets connection failed.";
       
-      const width = 600;
-      const height = 650;
-      const left = window.screen.width / 2 - width / 2;
-      const top = window.screen.height / 2 - height / 2;
-      
-      const popup = window.open(
-        url,
-        'GoogleSheetsOAuth',
-        `width=${width},height=${height},left=${left},top=${top},status=yes,resizable=yes`
-      );
-
-      if (!popup) {
-        throw new Error("Popup blocked. Please allow popups for this website/iframe to connect Google Sheets.");
+      // Construct intuitive instructions for common iframe & environment blockers
+      if (fbAuthError.code === 'auth/popup-blocked') {
+        friendlyMessage = "Popup blocked. Please allow popups for this website/iframe to connect Google Sheets.";
+      } else if (fbAuthError.code === 'auth/popup-closed-by-user') {
+        friendlyMessage = "Auth window closed before completion. Please try again.";
+      } else if (window.self !== window.top) {
+        // App is residing inside an iframe (like Hugging Face Space parent wrapper)
+        friendlyMessage = "Hugging Face runs this app inside an iframe, which restricts popups. Please open the app directly in a new tab (e.g., click the 'Open in new tab' button or visit the direct URL) and connect Google Sheets successfully there!";
+      } else if (fbAuthError.code === 'auth/unauthorized-domain') {
+        friendlyMessage = `This domain is not authorized in your Firebase Console. Please add '${window.location.hostname}' to the Authorized Domains list in Firebase Auth Settings.`;
       }
-
-      return new Promise<GoogleTokens>((resolve, reject) => {
-        const messageHandler = (event: MessageEvent) => {
-          if (event.data && event.data.type === 'google-oauth-success' && event.data.tokens) {
-            const tokens = event.data.tokens;
-            localStorage.removeItem('gts_sync_google_tokens_direct');
-            googleSheetsService.saveTokens(tokens);
-            cleanup();
-            resolve(tokens);
-          }
-        };
-
-        const checkTimer = setInterval(() => {
-          // Check for direct localStorage tokens (bypasses popup window communication issues)
-          try {
-            const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
-            if (directTokensStr) {
-              const tokens = JSON.parse(directTokensStr);
-              localStorage.removeItem('gts_sync_google_tokens_direct');
-              googleSheetsService.saveTokens(tokens);
-              cleanup();
-              resolve(tokens);
-              try {
-                if (!popup.closed) popup.close();
-              } catch (e) {}
-              return;
-            }
-          } catch (storageErr) {
-            console.warn("Direct storage check encountered a harmless warning:", storageErr);
-          }
-
-          if (popup.closed) {
-            // Give 1 second extension error check to read final tokens from localStorage or Firestore sync
-            setTimeout(() => {
-              try {
-                const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
-                if (directTokensStr) {
-                  const tokens = JSON.parse(directTokensStr);
-                  localStorage.removeItem('gts_sync_google_tokens_direct');
-                  googleSheetsService.saveTokens(tokens);
-                  cleanup();
-                  resolve(tokens);
-                  return;
-                }
-              } catch (e) {}
-
-              const tokens = googleSheetsService.getTokens();
-              if (tokens && tokens.access_token) {
-                cleanup();
-                resolve(tokens);
-              } else {
-                cleanup();
-                reject(new Error("Auth window closed before completion. Please try again."));
-              }
-            }, 1000);
-          }
-        }, 500);
-
-        const storageHandler = (e: any) => {
-          if (e.detail) {
-            cleanup();
-            resolve(e.detail);
-          }
-        };
-
-        const cleanup = () => {
-          window.removeEventListener('message', messageHandler);
-          window.removeEventListener('google-auth-changed' as any, storageHandler);
-          clearInterval(checkTimer);
-        };
-
-        window.addEventListener('message', messageHandler);
-        window.addEventListener('google-auth-changed' as any, storageHandler);
-      });
+      
+      throw new Error(friendlyMessage);
     }
   },
 

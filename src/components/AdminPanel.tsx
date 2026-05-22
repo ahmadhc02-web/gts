@@ -2218,6 +2218,34 @@ export default function AdminPanel({
         {activeTab === 'integrations' && (currentUser.role === 'super_admin' || currentUser.role === 'admin') && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className={cn("p-8 sm:p-12", getCardStyle(branding.cardStyle))}>
+              {window.self !== window.top && !googleTokens && (
+                <div className="mb-8 p-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-slate-800 dark:text-slate-200">
+                  <div className="flex gap-4 items-start">
+                    <span className="text-2xl mt-0.5">⚠️</span>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                        Running Inside iframe / Hugging Face
+                      </h4>
+                      <p className="text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
+                        Hugging Face runs this app inside a sandboxed iframe, which blocks Google login popups. 
+                        To authorize your Google account smoothly without any blockers, click the button below to open this app directly in a separate browser tab:
+                      </p>
+                      <div className="pt-2">
+                        <a
+                          href={window.location.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-widest text-[10px] transition-all shadow-lg active:scale-95"
+                        >
+                          Open in Direct Tab
+                          <ExternalLink size={12} />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
                 <div className="flex items-center gap-5">
                   <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-center text-emerald-600">
