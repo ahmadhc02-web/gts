@@ -776,14 +776,8 @@ export default function App() {
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError(null);
-    try {
-      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      
-      const email = result.user.email;
-      if (!email) throw new Error("No email associated with this Google account.");
 
+    const loginUser = async (email: string, displayName: string, uid: string) => {
       let effectiveUsers = users;
       if (effectiveUsers.length === 0) {
         effectiveUsers = await firebaseService.getUsers();
@@ -799,18 +793,14 @@ export default function App() {
 
       if (!foundUser) {
         // Automatically provision them as a generic member/user with main dealer
-        const newUid = result.user.uid; 
-        const autoUsername = emailPrefix;
-        console.log(`Provisioning new identity via Google Auth: ${autoUsername}`);
-        // Defaulting to 'member' role which is basic access
-        // Status set to 'pending' as per request
+        console.log(`Provisioning new identity via Google Auth: ${emailPrefix}`);
         foundUser = await firebaseService.createUser(
-          newUid, 
-          autoUsername, 
-          'google_auth_' + newUid.substring(0, 5), 
+          uid, 
+          emailPrefix, 
+          'google_auth_' + uid.substring(0, 5), 
           'member', 
           'system', 
-          result.user.displayName || autoUsername, 
+          displayName || emailPrefix, 
           'main',
           undefined,
           undefined,
@@ -824,14 +814,12 @@ export default function App() {
           description: "Your Google account access request has been sent to the Super Admin. Please wait for approval.",
           duration: 10000
         });
-        setIsLoading(false);
-        return;
+        return false;
       }
 
       if (foundUser.status === 'blocked') {
         setError("Access Denied: Your account has been blocked by an administrator.");
-        setIsLoading(false);
-        return;
+        return false;
       }
 
       setUser(foundUser);
@@ -843,14 +831,152 @@ export default function App() {
       googleSheetsService.syncLogin(foundUser, 'Google Identity').catch((err) => {
         console.error("Failed background sheets login sync:", err);
       });
+      return true;
+    };
 
+    const processOAuthTokens = async (tokens: any) => {
+      try {
+        const { signInWithCredential, GoogleAuthProvider } = await import('firebase/auth');
+        
+        if (!tokens || !tokens.id_token) {
+          throw new Error("No ID Token found in retrieved authorization tokens.");
+        }
+        
+        const credential = GoogleAuthProvider.credential(tokens.id_token, tokens.access_token);
+        const result = await signInWithCredential(auth, credential);
+        
+        const email = result.user.email;
+        if (!email) throw new Error("No email associated with this Google account.");
+
+        await loginUser(email, result.user.displayName || '', result.user.uid);
+      } catch (authErr: any) {
+        console.error("Firebase sign in with credential failed:", authErr);
+        setError(`Firebase Credential Login Failed: ${authErr.message || authErr}`);
+      }
+    };
+
+    const runServerOAuthFallback = () => {
+      return new Promise<void>((resolve, reject) => {
+        const host = window.location.hostname;
+        const oauthUrl = (host === 'localhost' || host === '127.0.0.1' || host.includes('.run.app'))
+          ? '/api/auth/google'
+          : 'https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google';
+        
+        const width = 600;
+        const height = 650;
+        const left = window.screen.width / 2 - width / 2;
+        const top = window.screen.height / 2 - height / 2;
+        
+        console.log("Opening Google Auth redirect popup:", oauthUrl);
+        const popup = window.open(
+          oauthUrl,
+          'GoogleIdentityOAuth',
+          `width=${width},height=${height},left=${left},top=${top},status=yes,resizable=yes`
+        );
+
+        if (!popup) {
+          setError("Popup blocked. Please allow popups for this website to connect Google Identity.");
+          reject(new Error("Popup blocked"));
+          return;
+        }
+
+        const messageHandler = async (event: MessageEvent) => {
+          if (event.data && event.data.type === 'google-oauth-success' && event.data.tokens) {
+            const tokens = event.data.tokens;
+            console.log("Received Google Auth tokens via message!");
+            googleSheetsService.saveTokens(tokens);
+            cleanup();
+            await processOAuthTokens(tokens);
+            resolve();
+          }
+        };
+
+        const checkTimer = setInterval(async () => {
+          try {
+            const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+            if (directTokensStr) {
+              const tokens = JSON.parse(directTokensStr);
+              localStorage.removeItem('gts_sync_google_tokens_direct');
+              googleSheetsService.saveTokens(tokens);
+              console.log("Found direct Google Auth tokens in storage fallback.");
+              cleanup();
+              await processOAuthTokens(tokens);
+              try { if (!popup.closed) popup.close(); } catch (e) {}
+              resolve();
+              return;
+            }
+          } catch (e) {}
+
+          if (popup.closed) {
+            setTimeout(async () => {
+              try {
+                const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+                if (directTokensStr) {
+                  const tokens = JSON.parse(directTokensStr);
+                  localStorage.removeItem('gts_sync_google_tokens_direct');
+                  googleSheetsService.saveTokens(tokens);
+                  cleanup();
+                  await processOAuthTokens(tokens);
+                  resolve();
+                  return;
+                }
+              } catch (e) {}
+              cleanup();
+              setError("Auth window closed before completion. Please try again.");
+              reject(new Error("Popup closed"));
+            }, 1000);
+          }
+        }, 500);
+
+        const cleanup = () => {
+          window.removeEventListener('message', messageHandler);
+          clearInterval(checkTimer);
+        };
+
+        window.addEventListener('message', messageHandler);
+      });
+    };
+
+    const host = window.location.hostname;
+    const isHuggingFace = host.includes('.hf.space') || host.includes('.huggingface.co');
+
+    if (isHuggingFace) {
+      console.log("Hugging Face environment detected. Initiating secure cloud-run server OAuth proxy directly...");
+      try {
+        await runServerOAuthFallback();
+      } catch (err) {
+        console.error("Hugging Face OAuth direct failed:", err);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    try {
+      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      
+      const email = result.user.email;
+      if (!email) throw new Error("No email associated with this Google account.");
+
+      await loginUser(email, result.user.displayName || '', result.user.uid);
     } catch (e: any) {
       console.error("Google Auth Exception:", e);
-      let errorMessage = 'Google Authentication Failed. Please try again.';
-      if (e.message) {
-         errorMessage = `OAuth Protocol Error: ${e.message}`;
+      if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain')) {
+        console.log("Domain is unauthorized in Firebase Auth. Activating robust server-side callback fallback...");
+        try {
+          await runServerOAuthFallback();
+        } catch (fallbackError: any) {
+          console.error("OAuth fallback also failed:", fallbackError);
+        }
+      } else {
+        let errorMessage = 'Google Authentication Failed. Please try again.';
+        if (e.message) {
+           errorMessage = `OAuth Protocol Error: ${e.message}`;
+        }
+        setError(errorMessage);
       }
-      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
