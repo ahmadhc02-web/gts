@@ -628,6 +628,206 @@ async function startServer() {
     }
   });
 
+  // --- Server-Side 10-Minute Automatic Background Google Sheets Sync Worker ---
+  async function startServerSideAutoBackupScheduler() {
+    console.log("[Server Auto-Backup] Initializing 10-minute continuous background sync daemon...");
+
+    async function checkAndRunServerAutoBackup() {
+      try {
+        const app = await getFirebaseAppOnServer();
+        if (!app) {
+          console.warn("[Server Auto-Backup] Firebase app not initialized yet. Skipping check.");
+          return;
+        }
+
+        const { getFirestore: serverGetFirestore, doc: serverDoc, getDoc: serverGetDoc, setDoc: serverSetDoc, collection: serverCollection, getDocs: serverGetDocs } = await import('firebase/firestore');
+        const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+        if (!fs.existsSync(firebaseConfigPath)) {
+          console.warn("[Server Auto-Backup] firebase-applet-config.json not found on disk. Skipping background check.");
+          return;
+        }
+
+        const configJson = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+        const db = serverGetFirestore(app, configJson.firestoreDatabaseId);
+
+        // Load the sheets configuration doc
+        const gsDocRef = serverDoc(db, 'config', 'google_sheets');
+        const gsSnap = await serverGetDoc(gsDocRef);
+        if (!gsSnap.exists()) {
+          console.log("[Server Auto-Backup] Google Sheets has not been configured in the system. Skipping.");
+          return;
+        }
+
+        const configData = gsSnap.data();
+        if (!configData || !configData.tokens || !configData.spreadsheetId) {
+          console.log("[Server Auto-Backup] Google Sheets configuration or authorization credentials missing/under-construction. Skipping.");
+          return;
+        }
+
+        const TEN_MINUTES = 10 * 60 * 1000;
+        const lastBackup = configData.lastAutoBackupTime || 0;
+        const now = Date.now();
+
+        if (now - lastBackup < TEN_MINUTES) {
+          console.log(`[Server Auto-Backup] Next automatic loop run skipped. Last execution was ${Math.round((now - lastBackup) / 1000)}s ago (needs 10M check).`);
+          return;
+        }
+
+        console.log("[Server Auto-Backup] Last execution was more than 10 minutes ago. Triggering 24/7 background system sync...");
+
+        // Fetch users, complaints, clients, config, and branding
+        const [usersSnap, complaintsSnap, clientsSnap, configSnap, brandingSnap] = await Promise.all([
+          serverGetDocs(serverCollection(db, 'users')),
+          serverGetDocs(serverCollection(db, 'complaints')),
+          serverGetDocs(serverCollection(db, 'clients')),
+          serverGetDoc(serverDoc(db, 'config', 'app')),
+          serverGetDoc(serverDoc(db, 'config', 'branding'))
+        ]);
+
+        const users = usersSnap.docs.map(d => ({ ...d.data(), uid: d.id }));
+        const complaints = complaintsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        const clients = clientsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        const appConfig = configSnap.exists() ? configSnap.data() : {};
+        const branding = brandingSnap.exists() ? brandingSnap.data() : {};
+
+        // Format to spreadsheet rows (Operational Logs, User Register, Client Database, System Config)
+        const complaintHeaders = ['Date', 'ID', 'Logged By', 'Client', 'Contact', 'Area', 'Category', 'Priority', 'Status', 'Description'];
+        const complaintRows = complaints.map((c: any) => [
+          c.createdAt ? new Date(c.createdAt).toLocaleString() : 'N/A',
+          c.id || 'N/A',
+          c.memberName || 'N/A',
+          c.customerName || 'N/A',
+          c.number || 'N/A',
+          c.area || 'N/A',
+          c.category || 'N/A',
+          c.priority || 'N/A',
+          c.status || 'N/A',
+          c.description || ''
+        ]);
+
+        const userHeaders = ['UID', 'Username', 'Full Name', 'Role', 'Dealer ID', 'Company', 'Line Code', 'Last Active', 'Created At'];
+        const userRows = users.map((u: any) => [
+          u.uid || 'N/A',
+          u.username || 'N/A',
+          u.fullName || 'N/A',
+          u.role || 'N/A',
+          u.dealerId || 'main',
+          u.companyName || 'N/A',
+          u.lineCode || 'N/A',
+          u.lastActive ? new Date(u.lastActive).toLocaleString() : 'Never',
+          u.createdAt ? new Date(u.createdAt).toLocaleString() : 'N/A'
+        ]);
+
+        const clientHeaders = ['ID', 'Username', 'Name', 'Contact', 'Area', 'Address', 'Priority', 'Assigned To', 'Created At'];
+        const clientRows = clients.map((c: any) => [
+          c.id || 'N/A',
+          c.username || 'N/A',
+          c.name || 'N/A',
+          c.number || c.mobileNumber || 'N/A',
+          c.area || 'N/A',
+          c.address || 'N/A',
+          c.priority || 'N/A',
+          c.assignedTo || 'N/A',
+          c.createdAt ? new Date(c.createdAt).toLocaleString() : 'N/A'
+        ]);
+
+        const configHeaders = ['Section', 'Setting Key', 'Value'];
+        const configRows: any[][] = [];
+        
+        Object.entries(appConfig || {}).forEach(([key, value]) => {
+          configRows.push([
+            'Application',
+            key,
+            typeof value === 'object' ? JSON.stringify(value) : String(value)
+          ]);
+        });
+
+        Object.entries(branding || {}).forEach(([key, value]) => {
+          configRows.push([
+            'Branding',
+            key,
+            typeof value === 'object' ? JSON.stringify(value) : String(value)
+          ]);
+        });
+
+        const sheetsData = [
+          { title: 'Operational Logs', values: [complaintHeaders, ...complaintRows] },
+          { title: 'User Register', values: [userHeaders, ...userRows] },
+          { title: 'Client Database', values: [clientHeaders, ...clientRows] },
+          { title: 'System Config', values: [configHeaders, ...configRows] }
+        ];
+
+        // Authorize sheets API using getAuthorizedClient mock req
+        const mockReq = { headers: {} };
+        const { auth, getTokens: refreshTokensCb } = await getAuthorizedClient(mockReq, configData.tokens);
+        const sheets = google.sheets({ version: 'v4', auth });
+        const spreadsheetId = configData.spreadsheetId;
+
+        // Ensure all sheets exist
+        const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
+        const existingSheetTitles = spreadsheet.data.sheets.map((s: any) => s.properties.title);
+        
+        const sheetsToCreate = sheetsData.filter((s: any) => !existingSheetTitles.includes(s.title));
+        
+        if (sheetsToCreate.length > 0) {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+              requests: sheetsToCreate.map((s: any) => ({
+                addSheet: { properties: { title: s.title } }
+              }))
+            }
+          });
+        }
+
+        // Clear existing rows
+        await sheets.spreadsheets.values.batchClear({
+          spreadsheetId,
+          requestBody: {
+            ranges: sheetsData.map((s: any) => `'${s.title}'!A1:Z10000`)
+          }
+        });
+
+        // Write row data
+        const dataUpdates = sheetsData.map((s: any) => ({
+          range: `'${s.title}'!A1`,
+          values: s.values
+        }));
+
+        await sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            valueInputOption: 'RAW',
+            data: dataUpdates
+          }
+        });
+
+        // Sync local updated tokens if produced, and update timestamp
+        const finalTokens = refreshTokensCb() || configData.tokens;
+        await serverSetDoc(gsDocRef, {
+          ...configData,
+          tokens: finalTokens,
+          lastAutoBackupTime: now,
+          updatedAt: Date.now()
+        });
+
+        console.log(`[Server Auto-Backup] 10-Minute Google Sheets background sync successful on server: ${spreadsheetId}`);
+      } catch (err) {
+        console.error("[Server Auto-Backup] Server-side loop failed:", err);
+      }
+    }
+
+    // Delay run by 30s to let server startup settle
+    setTimeout(() => {
+      checkAndRunServerAutoBackup();
+      setInterval(checkAndRunServerAutoBackup, 60000); // Check once every minute
+    }, 30000);
+  }
+
+  startServerSideAutoBackupScheduler().catch(daemonErr => {
+    console.error("[Server Auto-Backup Daemon] Background sync scheduler startup failed:", daemonErr);
+  });
+
   // --- End Google Drive & Sheets Integration ---
 
   // Vite middleware for development

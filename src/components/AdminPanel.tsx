@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig } from '../types';
@@ -319,20 +319,23 @@ export default function AdminPanel({
     return () => unsubscribe();
   }, [currentUser]);
 
-  // Real-time sub for billing months
+  // Real-time sub for billing months (subscribes only once)
   useEffect(() => {
     const unsubscribe = firebaseService.subscribeBillingMonths((data) => {
-      const sorted = data.sort((a, b) => {
+      const sorted = [...data].sort((a, b) => {
         // Sort newest first by parsing e.g. "MAY-26" or using epoch createdAt
         return (b.createdAt || 0) - (a.createdAt || 0);
       });
       setBillingMonths(sorted);
-      if (sorted.length > 0 && !currentMonthId) {
-        setCurrentMonthId(sorted[0].id);
-      }
+      setCurrentMonthId(prev => {
+        if (!prev && sorted.length > 0) {
+          return sorted[0].id;
+        }
+        return prev;
+      });
     });
     return () => unsubscribe();
-  }, [currentMonthId]);
+  }, []);
 
   const handleAddMonth = async () => {
     if (!isBillingUnlocked) {
@@ -978,31 +981,52 @@ export default function AdminPanel({
   };
 
   // --- Billing Computed Statistics and Formulas ---
-  const activeMonthDoc = billingMonths.find(m => m.id === currentMonthId);
-  const activeRows = activeMonthDoc?.rows || [];
+  const activeMonthDoc = useMemo(() => {
+    return billingMonths.find(m => m.id === currentMonthId);
+  }, [billingMonths, currentMonthId]);
 
-  const filteredRows = activeRows.filter((row: any) => {
-    const matchesSearch = 
-      !billingSearchQuery ||
-      row.name?.toLowerCase().includes(billingSearchQuery.toLowerCase()) || 
-      row.username?.toLowerCase().includes(billingSearchQuery.toLowerCase()) || 
-      row.mobileNumber?.includes(billingSearchQuery) ||
-      row.serNam?.toLowerCase().includes(billingSearchQuery.toLowerCase());
-    
-    const matchesStatus = billingStatusFilter === 'all' || row.paymentStatus === billingStatusFilter;
-    const matchesArea = billingAreaFilter === 'all' || row.area === billingAreaFilter;
-    
-    return matchesSearch && matchesStatus && matchesArea;
-  });
+  const activeRows = useMemo(() => {
+    return activeMonthDoc?.rows || [];
+  }, [activeMonthDoc]);
 
-  const totalExpected = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0);
-  const totalBase = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.baseAmount) || 0), 0);
-  const totalCr = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.cr) || 0), 0);
-  const totalRecovered = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.paymentReceived) || 0), 0);
-  const totalOutstanding = totalExpected - totalRecovered;
-  const totalTDC = activeRows.filter((r: any) => r.paymentStatus === 'tdc').length;
-  const totalPending = activeRows.filter((r: any) => r.paymentStatus === 'unpaid').length;
-  const recoveryRate = totalExpected > 0 ? (totalRecovered / totalExpected) * 100 : 0;
+  const filteredRows = useMemo(() => {
+    const query = billingSearchQuery.toLowerCase().trim();
+    return activeRows.filter((row: any) => {
+      const matchesSearch = 
+        !query ||
+        row.name?.toLowerCase().includes(query) || 
+        row.username?.toLowerCase().includes(query) || 
+        row.mobileNumber?.includes(query) ||
+        row.serNam?.toLowerCase().includes(query);
+      
+      const matchesStatus = billingStatusFilter === 'all' || row.paymentStatus === billingStatusFilter;
+      const matchesArea = billingAreaFilter === 'all' || row.area === billingAreaFilter;
+      
+      return matchesSearch && matchesStatus && matchesArea;
+    });
+  }, [activeRows, billingSearchQuery, billingStatusFilter, billingAreaFilter]);
+
+  const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalPending, recoveryRate } = useMemo(() => {
+    const expected = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0);
+    const base = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.baseAmount) || 0), 0);
+    const arrears = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.cr) || 0), 0);
+    const recovered = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.paymentReceived) || 0), 0);
+    const outstanding = expected - recovered;
+    const tdc = activeRows.filter((r: any) => r.paymentStatus === 'tdc').length;
+    const pending = activeRows.filter((r: any) => r.paymentStatus === 'unpaid').length;
+    const rate = expected > 0 ? (recovered / expected) * 100 : 0;
+
+    return {
+      totalExpected: expected,
+      totalBase: base,
+      totalCr: arrears,
+      totalRecovered: recovered,
+      totalOutstanding: outstanding,
+      totalTDC: tdc,
+      totalPending: pending,
+      recoveryRate: rate
+    };
+  }, [activeRows]);
 
   const handleDownloadCSV = () => {
     if (!currentMonthId || !activeRows.length) return;

@@ -82,7 +82,15 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(() => {
     try {
       const savedUser = localStorage.getItem('complaint_app_user');
-      return savedUser ? JSON.parse(savedUser) : null;
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        if (parsed && parsed.uid && ['abc-id', 'yaseen-id', 'admin-id'].includes(parsed.uid)) {
+          localStorage.removeItem('complaint_app_user');
+          return null;
+        }
+        return parsed;
+      }
+      return null;
     } catch (e) {
       console.error("Failed to parse saved user:", e);
       return null;
@@ -423,33 +431,40 @@ export default function App() {
         const initialUsers = await firebaseService.getUsers();
         let currentUsers = [...initialUsers];
         
-      // Ensure primary administrator identities are restored to the registry
-      const requiredSeeds = [
-        { id: 'abc-id', user: 'abc', pass: 'abc', role: 'super_admin' as const, name: 'System Bootstrap', dealer: 'main', code: '000', status: 'active' as const },
-        { id: 'yaseen-id', user: 'yaseen', pass: 'yaseen', role: 'super_admin' as const, name: 'System Bootstrap', dealer: 'main', code: '000', status: 'active' as const },
-        { id: 'admin-id', user: 'admin', pass: 'admin', role: 'super_admin' as const, name: 'System Bootstrap', dealer: 'main', code: '000', status: 'active' as const }
-      ];
-
-      let needsSync = false;
-      for (const seed of requiredSeeds) {
-        if (!currentUsers.some(u => u.username === seed.user)) {
-           console.log(`Identity Missing: Restoring protocol ${seed.user}...`);
-           const newUser = await firebaseService.createUser(seed.id, seed.user, seed.pass, seed.role, 'system', seed.name, seed.dealer, seed.code, seed.status);
-           currentUsers.push(newUser);
-           needsSync = true;
+      // Explicitly purge legacy bootstrap/seed users permanently if found in Registry with legacy UIDs
+      const uidsToPurge = ['abc-id', 'yaseen-id', 'admin-id'];
+      const cleanUsersList = [];
+      let deletedAny = false;
+      
+      for (const u of currentUsers) {
+        if (uidsToPurge.includes(u.uid)) {
+          console.warn(`[System Clean] Permanently purging legacy bootstrap user ID: ${u.uid}`);
+          const targetUid = u.uid;
+          firebaseService.deleteUser(targetUid, u.username, 'System Clean')
+            .catch(err => console.error(`Failed to delete legacy user ID ${u.uid}:`, err));
+          deletedAny = true;
+        } else {
+          cleanUsersList.push(u);
         }
       }
-        
-        if (needsSync) {
-           setUsers([...currentUsers]);
-        } else {
-           setUsers(currentUsers);
-        }
+      
+      if (deletedAny) {
+        currentUsers = cleanUsersList;
+      }
+      
+      setUsers(currentUsers);
 
         // Re-validate current session identity against the fresh registry
         if (user) {
+          const isLegacyUser = uidsToPurge.includes(user.uid);
           const freshUser = currentUsers.find(u => u.username.toLowerCase() === user.username.toLowerCase());
-          if (freshUser) {
+          
+          if (isLegacyUser || !freshUser) {
+            console.warn("Auth Security: Revoking legacy or purged identity session.");
+            setUser(null);
+            localStorage.removeItem('complaint_app_user');
+            toast.error("Session Deactivated: This legacy account has been permanently removed.");
+          } else if (freshUser) {
             if (freshUser.status === 'blocked') {
               console.warn("Auth Security: Revoking blocked identity session.");
               setUser(null);
@@ -858,7 +873,7 @@ export default function App() {
     const runServerOAuthFallback = () => {
       return new Promise<void>((resolve, reject) => {
         const host = window.location.hostname;
-        const oauthUrl = (host === 'localhost' || host === '127.0.0.1' || host.includes('.run.app'))
+        const oauthUrl = (host === 'localhost' || host === '127.0.0.1' || host.includes('.run.app') || host.includes('.hf.space') || host.includes('.huggingface.co'))
           ? '/api/auth/google'
           : 'https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google';
         
@@ -985,6 +1000,7 @@ export default function App() {
   const handleLogin = async (username: string, pass: string, lineCode?: string) => {
     setIsLoading(true);
     setError(null);
+
     try {
       // Identity Handshake: Ensure cloud session is operational
       if (!auth.currentUser) {
