@@ -662,11 +662,22 @@ export default function AdminPanel({
     setTimeout(() => setCopiedText(null), 2000);
   };
 
-  const handleGoogleConnect = async () => {
+  const handleGoogleConnect = async (mode: 'server' | 'firebase') => {
     setIsConnecting(true);
     try {
-      const tokens = await googleSheetsService.initiateAuth();
+      const tokens = mode === 'server'
+        ? await googleSheetsService.initiateAuth()
+        : await googleSheetsService.initiateFirebaseAuth();
       setGoogleTokens(tokens);
+      if (mode === 'firebase') {
+        toast.success('Connected via Firebase Google Login!', {
+          description: 'Note: This fast connection will expire in 1 hour. Use Permanent connection for 24/7 background sync.'
+        });
+      } else {
+        toast.success('Connected via Permanent Google Sync!', {
+          description: 'Secure background credentials generated. High-integrity data stream is now persistent 24/7!'
+        });
+      }
     } catch (err: any) {
       console.error(err instanceof Error ? err.message : String(err));
       if (err.message === 'Auth window closed') {
@@ -2292,14 +2303,24 @@ export default function AdminPanel({
                 </div>
 
                 {!googleTokens ? (
-                  <button
-                    onClick={handleGoogleConnect}
-                    disabled={isConnecting}
-                    className="inline-flex items-center justify-center gap-3 px-8 py-5 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs transition-all shadow-xl shadow-brand-accent/30 active:scale-95 disabled:opacity-50"
-                  >
-                    {isConnecting ? 'Linking Service...' : 'Authorize Google Account'}
-                    <ExternalLink size={16} />
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <button
+                      onClick={() => handleGoogleConnect('server')}
+                      disabled={isConnecting}
+                      className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-xl shadow-brand-accent/20 active:scale-95 disabled:opacity-50"
+                    >
+                      <Zap size={14} className="text-amber-400" />
+                      {isConnecting ? 'Linking Permanent...' : 'Connect Permanent Sync'}
+                    </button>
+                    <button
+                      onClick={() => handleGoogleConnect('firebase')}
+                      disabled={isConnecting}
+                      className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[11px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <ExternalLink size={14} />
+                      {isConnecting ? 'Linking Firebase...' : 'Fast Connect (Firebase)'}
+                    </button>
+                  </div>
                 ) : (
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                     {googleTokens && !googleTokens.refresh_token ? (
@@ -2476,15 +2497,26 @@ export default function AdminPanel({
                 </div>
                 <div>
                   <h3 className="text-lg font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">
-                    Google Connection & Login Setup Guide
+                    Google Connection & Login Setup Guide (Error 400 Solution)
                   </h3>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 mt-1">
-                    Urdu / Roman Urdu & English Step-by-Step Instructions to Fix mismatch issues
+                    Urdu / Roman Urdu & English Step-by-Step Instructions to Fix mismatch issues permanently
                   </p>
                 </div>
               </div>
 
               <div className="space-y-8">
+                {/* Visual Explanation of the Issue */}
+                <div className="p-5 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-2">
+                  <h4 className="text-xs font-black uppercase text-amber-600 dark:text-amber-400">
+                    ⚠️ Automatic Disconnect & Redirect Mismatch Kyun Hota Hai?
+                  </h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-semibold">
+                    1. <strong>Fast Connect (Firebase):</strong> Yeh sirf temporaray <strong>1 hour</strong> click provide karta hai kyun ke browser popup se automatic background sync ke liye offline refresh token nahi mil sakta. Is liye 1 hour baad connect automatic cancel ho jata hai.<br />
+                    2. <strong>Error 400 redirect_uri_mismatch:</strong> Is ko theek karne ke liye, aap ko Google Cloud Console par ja kar nichay diye gaye standard aur Hugging Face callbacks ko manually update karna hoga taake permanent sync background mein 24/7 bina manual intervention ke chalti rahe!
+                  </p>
+                </div>
+
                 {/* Urdu Section */}
                 <div className="space-y-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
                   <span className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -2492,14 +2524,17 @@ export default function AdminPanel({
                   </span>
                   <div className="text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-400 space-y-3">
                     <p>
-                      Agar aap ko <strong>"Error 400: redirect_uri_mismatch"</strong> ya Firebase login domain error aa raha hai, to iska matlab hai ke redirects Google Console aur Firebase mein register nahi hain. Inheen permanently theek karne ke liye niche diye gae steps follow karen:
+                      Agar aap ko <strong>"Error 400: redirect_uri_mismatch"</strong> aa raha hai, to iska matlab hai ke redirects Google Console aur Firebase mein register nahi hain. Inheen permanently theek karne ke liye niche diye gae steps follow karen:
                     </p>
                     <ul className="list-decimal pl-5 space-y-2">
                       <li>
-                        <strong>Google Cloud Console setup:</strong> <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-brand-accent hover:underline inline-flex items-center gap-1">console.cloud.google.com <ExternalLink size={10} /></a> par jaen. Apne OAuth 2.0 Client ID ko edit karen aur wahan <strong>"Authorized redirect URIs"</strong> ke andar dono niche diye gae URLs copy karkay paste karen aur save par click karen.
+                        <strong>Google Cloud Console setup:</strong> <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-brand-accent hover:underline inline-flex items-center gap-1">console.cloud.google.com <ExternalLink size={10} /></a> par jaen. Apne OAuth 2.0 Client ID ko edit (pencil icon) par click karen.
                       </li>
                       <li>
-                        <strong>Firebase Configuration Setup:</strong> Apne Firebase console mein jaen, phr <strong>Authentication</strong> &gt; <strong>Settings</strong> &gt; <strong>Authorized domains</strong> par jaen aur wahan niche diye gye dynamic hosts ko add karen.
+                        Wahan <strong>"Authorized redirect URIs"</strong> section ke andar niche diye gaye dono callback URLs copy karke paste karein aur **SAVE** par click karein.
+                      </li>
+                      <li>
+                        Iske baad **1 se 2 minutes wait karein** aur phr page ko refresh kar ke **"Connect Permanent Sync"** button par click karein.
                       </li>
                     </ul>
                   </div>
@@ -2534,16 +2569,16 @@ export default function AdminPanel({
                     </h5>
                     
                     <div className="space-y-4">
-                      {/* Dev Redirect */}
+                      {/* Active Redirect 1: General Origin */}
                       <div className="space-y-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Development / Preview Callback</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">General Origin Callback URI</span>
                         <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                          <code className="text-[10px] font-mono select-all break-all flex-1 text-slate-600 dark:text-slate-400">
-                            https://ais-dev-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                            {typeof window !== 'undefined' ? `${window.location.origin}/api/auth/google/callback` : 'https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback'}
                           </code>
                           <button
                             type="button"
-                            onClick={() => handleCopyText("https://ais-dev-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback", "Dev Callback URL")}
+                            onClick={() => handleCopyText(typeof window !== 'undefined' ? `${window.location.origin}/api/auth/google/callback` : 'https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback', "Google Callback URL 1")}
                             className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
                             title="Copy Callback URL"
                           >
@@ -2552,16 +2587,16 @@ export default function AdminPanel({
                         </div>
                       </div>
 
-                      {/* Deployed Redirect */}
+                      {/* Active Redirect 2: Hugging Face Specific */}
                       <div className="space-y-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Deployed / Shared Callback</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Hugging Face Space Callback URI (LATEST)</span>
                         <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                          <code className="text-[10px] font-mono select-all break-all flex-1 text-slate-600 dark:text-slate-400">
-                            https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-blue-600 dark:text-blue-400 font-bold">
+                            https://mahmad995-my-wifi-app.hf.space/api/auth/google/callback
                           </code>
                           <button
                             type="button"
-                            onClick={() => handleCopyText("https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback", "Shared Callback URL")}
+                            onClick={() => handleCopyText("https://mahmad995-my-wifi-app.hf.space/api/auth/google/callback", "Hugging Face Callback URL")}
                             className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
                             title="Copy Callback URL"
                           >
@@ -2579,36 +2614,36 @@ export default function AdminPanel({
                     </h5>
                     
                     <div className="space-y-4">
-                      {/* Dev Domain */}
+                      {/* Active Domain 1: General Host */}
                       <div className="space-y-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Development / Preview Domain</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">General Authorized Host</span>
                         <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                          <code className="text-[10px] font-mono select-all break-all flex-1 text-slate-600 dark:text-slate-400">
-                            ais-dev-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                            {typeof window !== 'undefined' ? window.location.hostname : 'ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app'}
                           </code>
                           <button
                             type="button"
-                            onClick={() => handleCopyText("ais-dev-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app", "Dev Domain")}
+                            onClick={() => handleCopyText(typeof window !== 'undefined' ? window.location.hostname : 'ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app', "Firebase Admin Hostname 1")}
                             className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
-                            title="Copy Domain"
+                            title="Copy Domain Hostname"
                           >
                             <Copy size={14} />
                           </button>
                         </div>
                       </div>
 
-                      {/* Deployed Domain */}
+                      {/* Active Domain 2: Hugging Face Host */}
                       <div className="space-y-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Deployed / Shared Domain</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Hugging Face Space Hostname</span>
                         <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                          <code className="text-[10px] font-mono select-all break-all flex-1 text-slate-600 dark:text-slate-400">
-                            ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-blue-600 dark:text-blue-400 font-bold">
+                            mahmad995-my-wifi-app.hf.space
                           </code>
                           <button
                             type="button"
-                            onClick={() => handleCopyText("ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app", "Shared Domain")}
+                            onClick={() => handleCopyText("mahmad995-my-wifi-app.hf.space", "Hugging Face Hostname")}
                             className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
-                            title="Copy Domain"
+                            title="Copy Domain Hostname"
                           >
                             <Copy size={14} />
                           </button>

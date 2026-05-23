@@ -57,10 +57,30 @@ async function startServer() {
       redirectUri = `${base}/api/auth/google/callback`;
     } else {
       // Respect reverse proxies (like Hugging Face Spaces) which pass protocol and host headers
-      const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+      const protocolRaw = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+      let protocol = 'https';
+      if (typeof protocolRaw === 'string') {
+        const parts = protocolRaw.split(',');
+        protocol = parts[0].trim();
+      }
+      
       const rawHost = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
       // Ensure host is clean
       const host = rawHost.split(',')[0].trim();
+      
+      // Force HTTPS for external cloud hosting / spaces environments to match public URLs exactly
+      if (
+        host.includes('hf.space') || 
+        host.includes('huggingface.co') || 
+        host.includes('run.app') || 
+        host.includes('netlify.app') || 
+        host.includes('vercel.app') || 
+        host.includes('render.com') ||
+        host.includes('herokuapp.com')
+      ) {
+        protocol = 'https';
+      }
+      
       redirectUri = `${protocol}://${host}/api/auth/google/callback`;
     }
 
@@ -247,33 +267,64 @@ async function startServer() {
       res.send(`
         <!DOCTYPE html>
         <html>
-        <head><title>Google Connection Success</title></head>
-        <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f8fafc;">
-          <div style="text-align: center; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
-            <div style="color: #10b981; font-size: 3rem; margin-bottom: 1rem;">✓</div>
-            <h1 style="color: #1e293b; margin: 0 0 0.5rem 0; font-size: 1.5rem;">Connection Successful!</h1>
-            <p style="color: #64748b; margin: 0 0 1.5rem 0;">You have securely connected your Google account permanently.</p>
-            <p style="color: #94a3b8; font-size: 0.875rem; margin: 0;">Closing this window now...</p>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Google Connection Success</title>
+        </head>
+        <body style="font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #0f172a; color: #f8fafc;">
+          <div style="text-align: center; padding: 2.5rem; background: #1e293b; border-radius: 1.5rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); max-width: 420px; width: 90%; border: 1px solid #334155;">
+            <div style="background: rgba(16, 185, 129, 0.1); color: #10b981; width: 4.5rem; height: 4.5rem; border-radius: 50vw; display: inline-flex; align-items: center; justify-content: center; font-size: 2.5rem; font-weight: bold; margin-bottom: 1.5rem; border: 2px solid rgba(16, 185, 129, 0.3);">✓</div>
+            
+            <h1 style="color: #ffffff; margin: 0 0 0.75rem 0; font-size: 1.75rem; font-weight: 900; letter-spacing: -0.025em; text-transform: uppercase;">LINK SYSTEM OK!</h1>
+            
+            <p style="color: #34d399; margin: 0 0 1rem 0; font-size: 0.95rem; font-weight: 800; line-height: 1.5; direction: rtl; font-family: sans-serif;">
+              Aap ka Google Sheets account kamyabi se connect ho chuka hai!
+            </p>
+            
+            <p style="color: #94a3b8; margin: 0 0 2rem 0; font-size: 0.85rem; line-height: 1.6; font-weight: 500;">
+              Google account integration successfully completed. The background synchronization stream is now active 24/7.
+            </p>
+
+            <button onclick="window.close()" style="width: 100%; cursor: pointer; color: #ffffff; background: #10b981; border: none; padding: 1rem 1.5rem; border-radius: 0.75rem; font-size: 0.85rem; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; transition: all 0.2s ease; box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3); outline: none;" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10b981'">
+              CLOSE WINDOW / BUND KAREIN
+            </button>
+            
+            <p style="color: #64748b; font-size: 0.75rem; margin: 1.5rem 0 0 0; font-weight: 600;">
+              This window should close automatically in 2 seconds...
+            </p>
           </div>
+          
           <script>
             try {
               var tokens = ${escapedTokensStr};
               localStorage.setItem("gts_sync_google_tokens_direct", JSON.stringify(tokens));
               
+              // Direct dispatch of postMessage
               if (window.opener) {
                 window.opener.postMessage({ type: "google-oauth-success", tokens: tokens }, "*");
-                setTimeout(() => window.close(), 1000);
-              } else {
-                setTimeout(() => window.close(), 1500);
               }
+              
+              // Try to force close after brief delay
+              setTimeout(function() {
+                try {
+                  window.close();
+                } catch(e) {
+                  console.warn("Auto close blocked:", e);
+                }
+              }, 2000);
             } catch (err) {
-              console.error(err);
+              console.error("Popup storage execution error:", err);
               try {
                 if (window.opener) {
                   window.opener.postMessage({ type: "google-oauth-success", tokens: ${escapedTokensStr} }, "*");
                 }
               } catch (inner) {}
-              setTimeout(() => window.close(), 1500);
+              setTimeout(function() {
+                try {
+                  window.close();
+                } catch(e) {}
+              }, 2000);
             }
           </script>
         </body>
@@ -281,7 +332,52 @@ async function startServer() {
       `);
     } catch (error: any) {
       console.error("Callback code exchange error:", error);
-      res.status(500).send(`Authentication helper error: ${error.message}`);
+      
+      let redirectUriUsed = 'Unknown';
+      try {
+        const client = getOAuthClient(req);
+        redirectUriUsed = (client as any).redirectUri || 'Unknown';
+      } catch (e) {}
+
+      res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Google Connection Error</title>
+        </head>
+        <body style="font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #0f172a; color: #f8fafc; padding: 1rem;">
+          <div style="text-align: left; padding: 2.5rem; background: #1e293b; border-radius: 1.5rem; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); max-width: 500px; width: 100%; border: 1px solid #f43f5e;">
+            <div style="background: rgba(244, 63, 94, 0.1); color: #f43f5e; width: 4.5rem; height: 4.5rem; border-radius: 50vw; display: inline-flex; align-items: center; justify-content: center; font-size: 2.5rem; font-weight: bold; margin-bottom: 1.5rem; border: 2px solid rgba(244, 63, 94, 0.3);">!</div>
+            
+            <h1 style="color: #ffffff; margin: 0 0 0.75rem 0; font-size: 1.5rem; font-weight: 900; letter-spacing: -0.025em; text-transform: uppercase;">CONNECTION ERROR / MISHAP!</h1>
+            
+            <p style="color: #f43f5e; margin: 0 0 1rem 0; font-size: 0.95rem; font-weight: 800; line-height: 1.5; direction: rtl; font-family: sans-serif;">
+              Google account se secure token exchange fail ho gaya hai.
+            </p>
+            
+            <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 0.75rem; border: 1px solid #334155; margin-bottom: 1.5rem;">
+              <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-bottom: 0.25rem;">Server Code Exchange Error:</div>
+              <div style="font-family: monospace; font-size: 0.85rem; color: #f43f5e; word-break: break-all;">${error.message || error}</div>
+            </div>
+
+            <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 0.75rem; border: 1px solid #334155; margin-bottom: 1.5rem;">
+              <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-bottom: 0.25rem;">Redirect URI Used by Server:</div>
+              <div style="font-family: monospace; font-size: 0.85rem; color: #38bdf8; word-break: break-all;">${redirectUriUsed}</div>
+            </div>
+
+            <p style="color: #94a3b8; margin: 0 0 1.5rem 0; font-size: 0.85rem; line-height: 1.5; font-weight: 500;">
+              Google require karta hai ke exchange ke waqt dynamic redirect URI exact match kare client configs se. Google Console mein check karein ke upar diya gaya URI authorized callback list mein saved hai.
+            </p>
+
+            <button onclick="window.close()" style="width: 100%; cursor: pointer; color: #ffffff; background: #334155; border: none; padding: 0.85rem 1.5rem; border-radius: 0.75rem; font-size: 0.85rem; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; transition: all 0.2s ease;" onmouseover="this.style.background='#475569'" onmouseout="this.style.background='#334155'">
+              CLOSE WINDOW
+            </button>
+          </div>
+        </body>
+        </html>
+      `);
     }
   });
 

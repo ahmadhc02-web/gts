@@ -901,6 +901,7 @@ export default function App() {
             console.log("Received Google Auth tokens via message!");
             googleSheetsService.saveTokens(tokens);
             cleanup();
+            try { if (popup && !popup.closed) popup.close(); } catch (e) {}
             await processOAuthTokens(tokens);
             resolve();
           }

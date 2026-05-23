@@ -247,6 +247,90 @@ export const googleSheetsService = {
   },
 
   initiateAuth: async (): Promise<GoogleTokens> => {
+    return new Promise<GoogleTokens>((resolve, reject) => {
+      try {
+        console.log("Initiating server-side Google OAuth for permanent offline refresh access token...");
+        // Check if user is offline
+        if (!navigator.onLine) {
+          throw new Error("You are currently offline. Please connect to the internet first.");
+        }
+
+        const oauthUrl = getApiUrl('/api/auth/google');
+        const width = 600;
+        const height = 650;
+        const left = window.screen.width / 2 - width / 2;
+        const top = window.screen.height / 2 - height / 2;
+
+        console.log("Opening Google Sheets OAuth popup:", oauthUrl);
+        const popup = window.open(
+          oauthUrl,
+          'GoogleSheetsOAuth',
+          `width=${width},height=${height},left=${left},top=${top},status=yes,resizable=yes`
+        );
+
+        if (!popup) {
+          throw new Error("Popup blocked. Please allow popups for this website/iframe to connect your Google Account.");
+        }
+
+        const messageHandler = (event: MessageEvent) => {
+          if (event.data && event.data.type === 'google-oauth-success' && event.data.tokens) {
+            const tokens = event.data.tokens;
+            console.log("googleSheetsService: Received Google Auth tokens via message!");
+            googleSheetsService.saveTokens(tokens);
+            cleanup();
+            try { if (popup && !popup.closed) popup.close(); } catch (e) {}
+            resolve(tokens);
+          }
+        };
+
+        const checkTimer = setInterval(() => {
+          try {
+            const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+            if (directTokensStr) {
+              const tokens = JSON.parse(directTokensStr);
+              localStorage.removeItem('gts_sync_google_tokens_direct');
+              googleSheetsService.saveTokens(tokens);
+              console.log("googleSheetsService: Found direct Google Auth tokens in localStorage fallback.");
+              cleanup();
+              try { if (!popup.closed) popup.close(); } catch (e) {}
+              resolve(tokens);
+              return;
+            }
+          } catch (e) {}
+
+          if (popup.closed) {
+            setTimeout(() => {
+              try {
+                const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+                if (directTokensStr) {
+                  const tokens = JSON.parse(directTokensStr);
+                  localStorage.removeItem('gts_sync_google_tokens_direct');
+                  googleSheetsService.saveTokens(tokens);
+                  cleanup();
+                  resolve(tokens);
+                  return;
+                }
+              } catch (e) {}
+              cleanup();
+              reject(new Error("Google connection window was closed before completion. Please try again."));
+            }, 1000);
+          }
+        }, 500);
+
+        const cleanup = () => {
+          window.removeEventListener('message', messageHandler);
+          clearInterval(checkTimer);
+        };
+
+        window.addEventListener('message', messageHandler);
+      } catch (err: any) {
+        console.error("InitiateAuth Error:", err);
+        reject(err);
+      }
+    });
+  },
+
+  initiateFirebaseAuth: async (): Promise<GoogleTokens> => {
     try {
       console.log("Initiating Google connection via native Firebase Auth service...");
       // Check if user is offline
