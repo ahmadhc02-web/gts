@@ -952,21 +952,6 @@ export default function App() {
       });
     };
 
-    const host = window.location.hostname;
-    const isHuggingFace = host.includes('.hf.space') || host.includes('.huggingface.co');
-
-    if (isHuggingFace) {
-      console.log("Hugging Face environment detected. Initiating secure cloud-run server OAuth proxy directly...");
-      try {
-        await runServerOAuthFallback();
-      } catch (err) {
-        console.error("Hugging Face OAuth direct failed:", err);
-      } finally {
-        setIsLoading(false);
-      }
-      return;
-    }
-
     try {
       const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
       const provider = new GoogleAuthProvider();
