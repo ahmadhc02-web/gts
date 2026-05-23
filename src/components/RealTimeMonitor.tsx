@@ -17,7 +17,7 @@ interface RealTimeMonitorProps {
 }
 
 export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProps) {
-  const [reportType, setReportType] = useState<'monthly' | 'daily'>('monthly');
+  const [reportType, setReportType] = useState<'monthly' | 'daily'>('daily');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -99,7 +99,7 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-6 bg-blue-600 rounded-full" />
             <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">
-              Tactical Analysis <span className="text-slate-400 dark:text-slate-500 font-normal">/</span> <span className="text-blue-600">{reportType === 'monthly' ? 'Monthly' : 'Daily'}</span>
+              Analysis <span className="text-slate-400 dark:text-slate-500 font-normal">/</span> <span className="text-blue-600">{reportType === 'monthly' ? 'Monthly' : 'Daily'}</span>
             </h3>
           </div>
 

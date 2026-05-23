@@ -72,6 +72,49 @@ export default function Layout({
     return () => window.removeEventListener('open-map-for-client', handleOpenMap as EventListener);
   }, []);
 
+  // Automatically close sidebar if clicked anywhere outside of the sidebar on the viewport
+  useEffect(() => {
+    if (!isSidebarOpen) return;
+
+    const handleGlobalClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('aside') && !target.closest('#sidebar-toggle-btn')) {
+        setIsSidebarOpen(false);
+      }
+    };
+
+    // Delay setting listener slightly to avoid handling the opening click
+    const timer = setTimeout(() => {
+      document.addEventListener('click', handleGlobalClick);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handleGlobalClick);
+    };
+  }, [isSidebarOpen]);
+
+  // Automatically close profile panel if clicked anywhere outside of it
+  useEffect(() => {
+    if (!isProfileOpen) return;
+
+    const handleGlobalClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('#profile-panel') && !target.closest('#profile-toggle-btn')) {
+        setIsProfileOpen(false);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      document.addEventListener('click', handleGlobalClick);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handleGlobalClick);
+    };
+  }, [isProfileOpen]);
+
   // Profile Edit State
   const [editFullName, setEditFullName] = useState(user?.fullName || '');
   const [editUsername, setEditUsername] = useState(user?.username || '');
@@ -712,6 +755,7 @@ export default function Layout({
               className="fixed inset-0 bg-slate-950/20 backdrop-blur-[2px] z-[150]"
             />
             <motion.div
+              id="profile-panel"
               initial={{ opacity: 0, y: -20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -20, scale: 0.95 }}
@@ -777,7 +821,10 @@ export default function Layout({
               <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-800/50 flex items-center justify-between">
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Role: {user.role}</span>
                 <button
-                  onClick={onLogout}
+                  onClick={() => {
+                    setIsProfileOpen(false);
+                    if (onLogout) onLogout();
+                  }}
                   className="text-[9px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-600 transition-colors"
                 >
                   Terminate Session
@@ -803,6 +850,7 @@ export default function Layout({
           >
             {user && (
               <button 
+                id="sidebar-toggle-btn"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={cn(
                   "p-2 rounded-xl transition-all mr-1",
@@ -934,6 +982,7 @@ export default function Layout({
 
             {user && (
               <button 
+                id="profile-toggle-btn"
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 className={cn(
                   "flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 rounded-lg border transition-all hover:scale-[1.02] active:scale-95",

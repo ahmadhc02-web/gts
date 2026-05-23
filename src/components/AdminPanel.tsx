@@ -651,6 +651,16 @@ export default function AdminPanel({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isCreatingSheet, setIsCreatingSheet] = useState(false);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  const handleCopyText = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(label);
+    toast.success('Copied successfully!', {
+      description: `${label} copied to clipboard.`
+    });
+    setTimeout(() => setCopiedText(null), 2000);
+  };
 
   const handleGoogleConnect = async () => {
     setIsConnecting(true);
@@ -2291,14 +2301,26 @@ export default function AdminPanel({
                     <ExternalLink size={16} />
                   </button>
                 ) : (
-                  <div className="flex items-center gap-4">
-                    <div className="px-4 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Sync Active</span>
-                    </div>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                    {googleTokens && !googleTokens.refresh_token ? (
+                      <div className="px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                          Reconnect Required for Background Sync
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Sync Active</span>
+                      </div>
+                    )}
                     <button 
                       onClick={() => { googleSheetsService.clearAuth(); setGoogleTokens(null); }} 
-                      className="text-xs font-black uppercase tracking-widest text-rose-500 hover:text-rose-600 transition-colors"
+                      className="text-xs font-black uppercase tracking-widest text-rose-500 hover:text-rose-600 transition-colors py-2 px-3 hover:bg-rose-500/5 rounded-xl border border-transparent hover:border-rose-500/15"
                     >
                       Disconnect
                     </button>
@@ -2397,18 +2419,37 @@ export default function AdminPanel({
                   <CloudUpload size={14} className={isExporting ? "animate-bounce" : ""} />
                 </button>
                 <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/60 max-w-sm w-full text-center">
-                  <div className="flex items-center gap-2 mb-1 justify-center">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Background Auto Sync: Active
-                    </span>
-                  </div>
-                  <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                    Saves full system logs, users, clients, and configuration automatically to Google Sheets every 10 minutes.
-                  </p>
+                  {googleTokens && !googleTokens.refresh_token ? (
+                    <>
+                      <div className="flex items-center gap-2 mb-1 justify-center">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                          Background Auto Sync: Idle
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                        Automatic background backup is currently paused because your account has not been granted offline refresh permissions yet. Please disconnect and reconnect your Google Account to automatically sync.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 mb-1 justify-center">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                          Background Auto Sync: Active
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                        Saves full system logs, users, clients, and configuration automatically to Google Sheets every 10 minutes.
+                      </p>
+                    </>
+                  )}
                   {lastAutoBackupTime ? (
                     <div className="mt-3 flex flex-col gap-0.5">
                       <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
@@ -2426,6 +2467,162 @@ export default function AdminPanel({
                 </div>
               </div>
             )}
+
+            {/* Beautiful, Comprehensive Google Connection Setup Guide */}
+            <div className={cn("p-8 sm:p-12 border-l-4 border-amber-500", getCardStyle(branding.cardStyle))}>
+              <div className="flex gap-4 items-start mb-6">
+                <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500 shrink-0">
+                  <ShieldAlert size={28} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">
+                    Google Connection & Login Setup Guide
+                  </h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 mt-1">
+                    Urdu / Roman Urdu & English Step-by-Step Instructions to Fix mismatch issues
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                {/* Urdu Section */}
+                <div className="space-y-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    🇵🇰 Roman Urdu Instructions
+                  </span>
+                  <div className="text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-400 space-y-3">
+                    <p>
+                      Agar aap ko <strong>"Error 400: redirect_uri_mismatch"</strong> ya Firebase login domain error aa raha hai, to iska matlab hai ke redirects Google Console aur Firebase mein register nahi hain. Inheen permanently theek karne ke liye niche diye gae steps follow karen:
+                    </p>
+                    <ul className="list-decimal pl-5 space-y-2">
+                      <li>
+                        <strong>Google Cloud Console setup:</strong> <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-brand-accent hover:underline inline-flex items-center gap-1">console.cloud.google.com <ExternalLink size={10} /></a> par jaen. Apne OAuth 2.0 Client ID ko edit karen aur wahan <strong>"Authorized redirect URIs"</strong> ke andar dono niche diye gae URLs copy karkay paste karen aur save par click karen.
+                      </li>
+                      <li>
+                        <strong>Firebase Configuration Setup:</strong> Apne Firebase console mein jaen, phr <strong>Authentication</strong> &gt; <strong>Settings</strong> &gt; <strong>Authorized domains</strong> par jaen aur wahan niche diye gye dynamic hosts ko add karen.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* English Section */}
+                <div className="space-y-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    🇬🇧 English Instructions
+                  </span>
+                  <div className="text-xs font-semibold leading-relaxed text-slate-600 dark:text-slate-400 space-y-3">
+                    <p>
+                      To prevent redirect errors and guarantee seamless 24/7 background operation of the automatic Google Sheets synchronization, register the values below:
+                    </p>
+                    <ul className="list-decimal pl-5 space-y-2">
+                      <li>
+                        <strong>In your Google Cloud Console:</strong> Paste both redirect URIs below into the <strong>Authorized redirect URIs</strong> field of your OAuth 2.0 Web Client.
+                      </li>
+                      <li>
+                        <strong>In your Firebase Console:</strong> Add both hostnames below to the Authorized Domains section of your Authentication settings.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Coordinates & Copy Commands */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Google Console Callbacks */}
+                  <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 space-y-4">
+                    <h5 className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      🔑 CALLBACK REDIRECT URIs FOR GOOGLE CONSOLE
+                    </h5>
+                    
+                    <div className="space-y-4">
+                      {/* Dev Redirect */}
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Development / Preview Callback</span>
+                        <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-slate-600 dark:text-slate-400">
+                            https://ais-dev-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText("https://ais-dev-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback", "Dev Callback URL")}
+                            className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+                            title="Copy Callback URL"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Deployed Redirect */}
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Deployed / Shared Callback</span>
+                        <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-slate-600 dark:text-slate-400">
+                            https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText("https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google/callback", "Shared Callback URL")}
+                            className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+                            title="Copy Callback URL"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Firebase Authorized Domains */}
+                  <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 space-y-4">
+                    <h5 className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      🛡️ AUTHORIZED DOMAINS FOR FIREBASE AUTH
+                    </h5>
+                    
+                    <div className="space-y-4">
+                      {/* Dev Domain */}
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Development / Preview Domain</span>
+                        <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-slate-600 dark:text-slate-400">
+                            ais-dev-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText("ais-dev-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app", "Dev Domain")}
+                            className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+                            title="Copy Domain"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Deployed Domain */}
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Deployed / Shared Domain</span>
+                        <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-slate-600 dark:text-slate-400">
+                            ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText("ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app", "Shared Domain")}
+                            className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+                            title="Copy Domain"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-bold text-slate-700 dark:text-slate-300 leading-relaxed text-center">
+                  ✨ Yeh credentials configurations update karne ke baad system automatic backgrounds refresh handle karega aur offline credentials hamesha database ke sath synchronized rahin gay!
+                </div>
+              </div>
+            </div>
 
             {/* Real Offline A to Z Local Backup and Restore Panel */}
             <div className={cn("p-8 sm:p-12", getCardStyle(branding.cardStyle))}>

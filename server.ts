@@ -152,17 +152,26 @@ async function startServer() {
     const auth = getOAuthClient(req);
     
     // Auto-resolve tokens using Firestore source-of-truth if client provided no tokens OR if they are stale/incomplete
-    let tokens = clientTokens;
-    const dbTokens = await loadTokensFromFirestore();
-    if (dbTokens) {
-      tokens = { ...dbTokens, ...tokens };
-      // Ensure refresh_token is preserved from DB if missing in request
-      if (dbTokens.refresh_token && !tokens.refresh_token) {
-        tokens.refresh_token = dbTokens.refresh_token;
-      }
+    const dbTokens = await loadTokensFromFirestore() || {};
+    
+    // Clean any empty, null or undefined fields from clientTokens to keep them from overwriting valid db values
+    const cleanClientTokens: any = {};
+    if (clientTokens) {
+      Object.entries(clientTokens).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '' && val !== 'undefined') {
+          cleanClientTokens[key] = val;
+        }
+      });
     }
 
-    if (!tokens) {
+    const tokens = { ...dbTokens, ...cleanClientTokens };
+
+    // Guarantee refresh_token is preserved from DB baseline if missing in request
+    if (dbTokens.refresh_token && (!tokens.refresh_token || tokens.refresh_token === 'undefined')) {
+      tokens.refresh_token = dbTokens.refresh_token;
+    }
+
+    if (!tokens || !tokens.access_token) {
       throw new Error("No Google Connection configuration found in local cache or server-side store.");
     }
 
@@ -305,16 +314,27 @@ async function startServer() {
       error.code === '401' ||
       errorMsg.toLowerCase().includes('credential') || 
       errorMsg.toLowerCase().includes('auth') || 
+      errorMsg.toLowerCase().includes('refresh token') || 
+      errorMsg.toLowerCase().includes('refresh_token') || 
       errorMsg.toLowerCase().includes('invalid authentication') ||
       (error.response?.data && (
         String(error.response.data).toLowerCase().includes('credential') ||
-        (error.response.data.error?.message && error.response.data.error.message.toLowerCase().includes('credential'))
+        String(error.response.data).toLowerCase().includes('refresh token') ||
+        (error.response.data.error?.message && (
+          error.response.data.error.message.toLowerCase().includes('credential') ||
+          error.response.data.error.message.toLowerCase().includes('refresh token')
+        ))
       ));
 
     const statusCode = isAuthError ? 401 : 500;
     
+    let finalErrorMsg = errorMsg;
+    if (isAuthError && (errorMsg.toLowerCase().includes('refresh token') || errorMsg.toLowerCase().includes('refresh_token') || errorMsg.toLowerCase().includes('no refresh_token'))) {
+      finalErrorMsg = "Google Account Connection lacks offline refresh permissions or has expired. Please Disconnect and Reconnect your Google Account inside the Admin Panel to refresh credentials.";
+    }
+
     res.status(statusCode).json({
-      error: errorMsg,
+      error: finalErrorMsg,
       details: getCleanErrorDetails(error)
     });
   }
@@ -661,6 +681,11 @@ async function startServer() {
         const configData = gsSnap.data();
         if (!configData || !configData.tokens || !configData.spreadsheetId) {
           console.log("[Server Auto-Backup] Google Sheets configuration or authorization credentials missing/under-construction. Skipping.");
+          return;
+        }
+
+        if (!configData.tokens.refresh_token) {
+          console.warn("[Server Auto-Backup] Saved Google connection lacks an offline refresh_token. Please disconnect and reconnect your Google Account in the Admin Panel to grant permanent offline refresh permissions. Skipping continuous background backup.");
           return;
         }
 

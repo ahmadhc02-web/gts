@@ -172,6 +172,19 @@ export const firebaseService = {
     return descending ? timeB - timeA : timeA - timeB;
   },
 
+  parseTimestampToMillis: (val: any): number => {
+    if (!val) return Date.now();
+    if (typeof val === 'number') return val;
+    if (typeof val.toMillis === 'function') return val.toMillis();
+    if (val.seconds !== undefined) return val.seconds * 1000 + (val.nanoseconds || 0) / 1000000;
+    if (val instanceof Date) return val.getTime();
+    if (typeof val === 'string') {
+      const parsed = Date.parse(val);
+      return isNaN(parsed) ? Date.now() : parsed;
+    }
+    return Date.now();
+  },
+
   // --- Users ---
   getUsers: async (dealerId?: string): Promise<UserProfile[]> => {
     const path = 'users';
@@ -421,17 +434,25 @@ export const firebaseService = {
     // Clean potential undefined values
     const cleanData = sanitize(data);
     
-    const newNotification: any = {
+    const firestoreNotification: any = {
       ...cleanData,
       id,
       createdAt: serverTimestamp(),
       isRead: false,
       dealerId: data.dealerId || 'main'
     };
+
+    const clientNotification: AppNotification = {
+      ...cleanData,
+      id,
+      createdAt: Date.now(),
+      isRead: false,
+      dealerId: data.dealerId || 'main'
+    };
     
     try {
-      await setDoc(doc(db, 'notifications', id), newNotification);
-      return newNotification;
+      await setDoc(doc(db, 'notifications', id), firestoreNotification);
+      return clientNotification;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
       throw error;
@@ -467,7 +488,14 @@ export const firebaseService = {
   subscribeNotifications: (callback: (notifications: AppNotification[]) => void, dealerId?: string) => {
     const path = 'notifications';
     return onSnapshot(collection(db, path), (snapshot) => {
-      let notifications = snapshot.docs.map(doc => ({ ...doc.data() as AppNotification, id: doc.id }));
+      let notifications = snapshot.docs.map(doc => {
+        const item = doc.data() as AppNotification;
+        return {
+          ...item,
+          id: doc.id,
+          createdAt: firebaseService.parseTimestampToMillis(item.createdAt)
+        };
+      });
       
       if (dealerId && dealerId !== 'main') {
         notifications = notifications.filter(n => n.dealerId === dealerId);
@@ -494,7 +522,15 @@ export const firebaseService = {
         q = query(collection(db, path), where('dealerId', '==', dealerId));
       }
       const snapshot = await getDocs(q);
-      const complaints = snapshot.docs.map(doc => ({ ...doc.data() as Complaint, id: doc.id }));
+      const complaints = snapshot.docs.map(doc => {
+        const item = doc.data() as Complaint;
+        return {
+          ...item,
+          id: doc.id,
+          createdAt: firebaseService.parseTimestampToMillis(item.createdAt),
+          updatedAt: item.updatedAt ? firebaseService.parseTimestampToMillis(item.updatedAt) : undefined
+        };
+      });
       return complaints.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, path);
@@ -508,7 +544,7 @@ export const firebaseService = {
     
     const tenantId = firebaseService.getTenantId(member);
     
-    const newComplaint: any = sanitize({
+    const firestoreData: any = sanitize({
       ...data,
       id,
       memberId: member.uid,
@@ -516,16 +552,26 @@ export const firebaseService = {
       createdAt: serverTimestamp(),
       dealerId: tenantId
     });
+
+    const clientComplaint: Complaint = {
+      ...data,
+      id,
+      memberId: member.uid,
+      memberName: member.fullName || member.username,
+      createdAt: Date.now(),
+      dealerId: tenantId
+    };
+
     try {
-      await setDoc(doc(db, 'complaints', id), newComplaint);
+      await setDoc(doc(db, 'complaints', id), firestoreData);
       await firebaseService.createNotification({
         type: 'complaint_created',
-        message: `New registry: ${newComplaint.customerName} - ${newComplaint.category}`,
+        message: `New registry: ${clientComplaint.customerName} - ${clientComplaint.category}`,
         authorName: member.fullName || member.username,
-        details: newComplaint,
+        details: clientComplaint,
         dealerId: tenantId || undefined
       });
-      return newComplaint;
+      return clientComplaint;
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
       throw error;
@@ -617,7 +663,15 @@ export const firebaseService = {
     }
     
     return onSnapshot(q, (snapshot) => {
-      const complaints = snapshot.docs.map(doc => ({ ...doc.data() as Complaint, id: doc.id }));
+      const complaints = snapshot.docs.map(doc => {
+        const item = doc.data() as Complaint;
+        return {
+          ...item,
+          id: doc.id,
+          createdAt: firebaseService.parseTimestampToMillis(item.createdAt),
+          updatedAt: item.updatedAt ? firebaseService.parseTimestampToMillis(item.updatedAt) : undefined
+        };
+      });
       callback(complaints.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true)));
     }, (error) => {
       if (auth.currentUser) {

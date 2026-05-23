@@ -248,20 +248,23 @@ export const googleSheetsService = {
 
   initiateAuth: async (): Promise<GoogleTokens> => {
     try {
-      console.log("Initiating Google Sheets connection using Firebase Auth...");
+      console.log("Initiating Google connection via native Firebase Auth service...");
       // Check if user is offline
       if (!navigator.onLine) {
         throw new Error("You are currently offline. Please connect to the internet first.");
       }
 
-      // Configure provider with custom parameters
-      provider.setCustomParameters({
+      // Configure provider with custom parameters for a smooth popup experience
+      const customProvider = new GoogleAuthProvider();
+      customProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+      customProvider.addScope('https://www.googleapis.com/auth/drive.file');
+      customProvider.setCustomParameters({
         prompt: 'consent',
         access_type: 'offline'
       });
 
-      // Execute smooth native Firebase Sign-In popup using Google Auth Provider
-      const result = await signInWithPopup(auth, provider);
+      // Execute smooth native Firebase Sign-In popup with Google Provider
+      const result = await signInWithPopup(auth, customProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       
       if (!credential || !credential.accessToken) {
@@ -271,8 +274,10 @@ export const googleSheetsService = {
       // Calculate token expiry (typically 3600 seconds from now)
       const expiry_date = Date.now() + 3590 * 1000;
       
+      // Retrieve modern credentials tokens
       const tokens: GoogleTokens = {
         access_token: credential.accessToken,
+        refresh_token: (credential as any).refreshToken || undefined,
         token_type: "Bearer",
         expiry_date: expiry_date,
         scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file"
@@ -292,8 +297,7 @@ export const googleSheetsService = {
       } else if (fbAuthError.code === 'auth/popup-closed-by-user') {
         friendlyMessage = "Auth window closed before completion. Please try again.";
       } else if (window.self !== window.top) {
-        // App is residing inside an iframe (like Hugging Face Space parent wrapper)
-        friendlyMessage = "Hugging Face runs this app inside an iframe, which restricts popups. Please open the app directly in a new tab (e.g., click the 'Open in new tab' button or visit the direct URL) and connect Google Sheets successfully there!";
+        friendlyMessage = "This app is running in an iframe, which restricts popups. Please open the app directly in a new tab to authorize with Firebase!";
       } else if (fbAuthError.code === 'auth/unauthorized-domain') {
         friendlyMessage = `This domain is not authorized in your Firebase Console. Please add '${window.location.hostname}' to the Authorized Domains list in Firebase Auth Settings.`;
       }
@@ -386,8 +390,8 @@ export const googleSheetsService = {
           const error = await response.json();
           errorMsg = error.error || errorMsg;
         } catch (e) {}
-        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
-          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth') || errorMsg.toLowerCase().includes('refresh token') || errorMsg.toLowerCase().includes('refresh_token')) {
+          errorMsg = 'Google authentication has expired or lacks offline permission. Please disconnect and reconnect your Google Account in the Admin Panel.';
         }
         throw new Error(errorMsg);
       }
@@ -461,8 +465,8 @@ export const googleSheetsService = {
           const error = await response.json();
           errorMsg = error.error || errorMsg;
         } catch (e) {}
-        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
-          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth') || errorMsg.toLowerCase().includes('refresh token') || errorMsg.toLowerCase().includes('refresh_token')) {
+          errorMsg = 'Google authentication has expired or lacks offline permission. Please disconnect and reconnect your Google Account in the Admin Panel.';
         }
         throw new Error(errorMsg);
       }
@@ -499,8 +503,8 @@ export const googleSheetsService = {
           const error = await response.json();
           errorMsg = error.error || errorMsg;
         } catch (e) {}
-        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
-          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth') || errorMsg.toLowerCase().includes('refresh token') || errorMsg.toLowerCase().includes('refresh_token')) {
+          errorMsg = 'Google authentication has expired or lacks offline permission. Please disconnect and reconnect your Google Account in the Admin Panel.';
         }
         throw new Error(errorMsg);
       }
@@ -538,8 +542,8 @@ export const googleSheetsService = {
           const error = await response.json();
           errorMsg = error.error || errorMsg;
         } catch (e) {}
-        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
-          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth') || errorMsg.toLowerCase().includes('refresh token') || errorMsg.toLowerCase().includes('refresh_token')) {
+          errorMsg = 'Google authentication has expired or lacks offline permission. Please disconnect and reconnect your Google Account in the Admin Panel.';
         }
         throw new Error(errorMsg);
       }
@@ -659,8 +663,8 @@ export const googleSheetsService = {
           const error = await response.json();
           errorMsg = error.error || errorMsg;
         } catch (e) {}
-        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
-          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth') || errorMsg.toLowerCase().includes('refresh token') || errorMsg.toLowerCase().includes('refresh_token')) {
+          errorMsg = 'Google authentication has expired or lacks offline permission. Please disconnect and reconnect your Google Account in the Admin Panel.';
         }
         throw new Error(errorMsg);
       }
@@ -736,8 +740,8 @@ export const googleSheetsService = {
           const error = await response.json();
           errorMsg = error.error || errorMsg;
         } catch (e) {}
-        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth')) {
-          errorMsg = 'Google authentication has expired or is invalid. Please connect your Google Account again in the Admin Panel.';
+        if (response.status === 401 || errorMsg.toLowerCase().includes('credential') || errorMsg.toLowerCase().includes('auth') || errorMsg.toLowerCase().includes('refresh token') || errorMsg.toLowerCase().includes('refresh_token')) {
+          errorMsg = 'Google authentication has expired or lacks offline permission. Please disconnect and reconnect your Google Account in the Admin Panel.';
         }
         throw new Error(errorMsg);
       }

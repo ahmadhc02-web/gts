@@ -614,7 +614,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
             </div>
 
             <div className="flex items-center gap-2 pointer-events-auto">
-              <button 
+              {/* Targets Monitor panel toggle buttons hidden by request */}
+              {/* <button 
                 onClick={() => {
                   setIsTargetsPanelOpen(!isTargetsPanelOpen);
                   if (!isTargetsPanelOpen) {
@@ -634,7 +635,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     {monitorTargets.length}
                   </span>
                 )}
-              </button>
+              </button> */}
 
               <button 
                 onClick={onClose}
@@ -727,8 +728,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 <Polyline positions={routePolyline} color="#3b82f6" weight={6} opacity={0.8} lineCap="round" lineJoin="round" />
               )}
 
-              {/* Custom Target Markers */}
-              {monitorTargets.map((target, idx) => {
+              {/* Custom Target Markers (Hidden by request) */}
+              {/* {monitorTargets.map((target, idx) => {
                 if (!target.lat || !target.lng) return null;
                 const latencyInfo = targetLatencies[target.id];
                 const latencyStr = latencyInfo 
@@ -822,7 +823,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     </Popup>
                   </Marker>
                 );
-              })}
+              })} */}
 
               {/* Client Markers */}
               {filteredClients.map((client, markerIdx) => {
