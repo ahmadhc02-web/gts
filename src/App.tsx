@@ -873,9 +873,10 @@ export default function App() {
     const runServerOAuthFallback = () => {
       return new Promise<void>((resolve, reject) => {
         const host = window.location.hostname;
-        const oauthUrl = (host === 'localhost' || host === '127.0.0.1' || host.includes('.run.app') || host.includes('.hf.space') || host.includes('.huggingface.co'))
+        const oauthBaseUrl = (host === 'localhost' || host === '127.0.0.1' || host.includes('.run.app') || host.includes('hf.space') || host.includes('huggingface.co'))
           ? '/api/auth/google'
           : 'https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app/api/auth/google';
+        const oauthUrl = `${oauthBaseUrl}?origin=${encodeURIComponent(window.location.origin)}`;
         
         const width = 600;
         const height = 650;

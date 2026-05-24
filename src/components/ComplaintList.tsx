@@ -10,6 +10,7 @@ import { Network, ShieldAlert, Zap, Layers } from 'lucide-react';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
+import { calculateProtocolProgress } from '../utils/protocolProgress';
 
 interface ComplaintListProps {
   complaints: Complaint[];
@@ -916,7 +917,7 @@ export default function ComplaintList({
                         </div>
                       </td>
                       <td className="px-6 py-5">
-                        <div className="flex justify-center">
+                        <div className="flex flex-col items-center justify-center gap-1.5 matches-status-cell">
                           <div className={cn(
                             "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border shadow-sm",
                             getStatusColor(complaint.status)
@@ -924,6 +925,26 @@ export default function ComplaintList({
                             {getStatusIcon(complaint.status)}
                             {complaint.status}
                           </div>
+                          
+                          {complaint.status === 'in process' && (() => {
+                            const prog = calculateProtocolProgress(complaint.remarks);
+                            if (prog.percentage <= 0) return null;
+                            return (
+                              <div className="w-24 flex flex-col items-center gap-1" title={prog.stepText}>
+                                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40 shadow-inner">
+                                  <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${prog.percentage}%` }}
+                                    transition={{ duration: 0.5, ease: "easeOut" }}
+                                    className="bg-blue-500 dark:bg-blue-400 h-full rounded-full shadow-sm"
+                                  />
+                                </div>
+                                <span className="text-[8px] font-mono font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0">
+                                  {prog.percentage}% Complete
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </td>
                       <td className="px-6 py-5 text-right">
@@ -1083,12 +1104,34 @@ export default function ComplaintList({
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                   <div className="flex items-center gap-3 sm:gap-6">
                     <div className="space-y-1">
-                      <div className={cn(
-                        "inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest border mb-1 sm:mb-2",
-                        getStatusColor(selectedComplaint.status)
-                      )}>
-                        {getStatusIcon(selectedComplaint.status)}
-                        {selectedComplaint.status}
+                      <div className="flex flex-wrap items-center gap-3 mb-1 sm:mb-2">
+                        <div className={cn(
+                          "inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest border",
+                          getStatusColor(selectedComplaint.status)
+                        )}>
+                          {getStatusIcon(selectedComplaint.status)}
+                          {selectedComplaint.status}
+                        </div>
+                        
+                        {selectedComplaint.status === 'in process' && (() => {
+                          const prog = calculateProtocolProgress(selectedComplaint.remarks);
+                          if (prog.percentage <= 0) return null;
+                          return (
+                            <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/5 border border-blue-500/10 rounded-full">
+                              <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40 shadow-inner">
+                                <motion.div 
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${prog.percentage}%` }}
+                                  transition={{ duration: 0.5, ease: "easeOut" }}
+                                  className="bg-blue-500 dark:bg-blue-400 h-full rounded-full shadow-sm"
+                                />
+                              </div>
+                              <span className="text-[9px] font-mono font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none">
+                                {prog.stepText}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <h2 className="text-lg sm:text-2xl font-black text-slate-950 dark:text-white uppercase tracking-tighter leading-none">
                         {selectedComplaint.customerName}
@@ -1166,76 +1209,84 @@ export default function ComplaintList({
                       </div>
                     </div>
 
-                    {selectedComplaint.remarks && (
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center px-1">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Team Resolution Protocol</p>
-                          {(isAdmin || (selectedComplaint.remarkAuthorId && selectedComplaint.remarkAuthorId === currentUserId)) && !isEditingRemarks && (
-                            <button 
-                              onClick={() => {
-                                setEditedRemarks(selectedComplaint.remarks || '');
-                                setIsEditingRemarks(true);
-                              }}
-                              className="text-[9px] font-black uppercase text-brand-accent hover:underline flex items-center gap-1"
-                            >
-                              <Pencil size={10} />
-                              Edit
-                            </button>
-                          )}
-                        </div>
-                        
-                        {isEditingRemarks ? (
-                          <div className="space-y-2">
-                            <textarea
-                              value={editedRemarks}
-                              onChange={(e) => setEditedRemarks(e.target.value)}
-                              className="w-full p-4 bg-white dark:bg-slate-900 rounded-2xl border border-brand-accent/30 text-xs sm:text-sm focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none"
-                              autoFocus
-                            />
-                            <div className="flex justify-end gap-2">
-                              <button 
-                                onClick={() => setIsEditingRemarks(false)}
-                                className="px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600"
-                              >
-                                Cancel
-                              </button>
-                              <button 
-                                onClick={async () => {
-                                  if (onUpdateRemarks) {
-                                    await onUpdateRemarks(selectedComplaint.id, editedRemarks);
-                                    setSelectedComplaint({ ...selectedComplaint, remarks: editedRemarks });
-                                    setIsEditingRemarks(false);
-                                  }
-                                }}
-                                className="px-4 py-1 bg-brand-accent text-white rounded-lg text-[9px] font-black uppercase tracking-widest"
-                              >
-                                Save Changes
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="p-4 bg-emerald-50/50 dark:bg-emerald-500/5 rounded-2xl border border-emerald-500/20 italic text-emerald-700 dark:text-emerald-400 text-xs sm:text-sm shadow-sm">
-                            "{selectedComplaint.remarks}"
-                          </div>
-                        )}
-                        {selectedComplaint.remarkAuthorName && !isEditingRemarks && (
-                          <p className="text-[8px] font-bold text-slate-400 text-right uppercase tracking-widest pr-2">
-                            By: {selectedComplaint.remarkAuthorName}
-                          </p>
+                    {/* ALWAYS SHOW Group 2: Team Resolution Protocol */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center px-1">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Team Resolution Protocol</p>
+                        {isAdmin && !isEditingRemarks && (
+                          <button 
+                            onClick={() => {
+                              setEditedRemarks(selectedComplaint.remarks || '');
+                              setIsEditingRemarks(true);
+                            }}
+                            className="text-[9px] font-black uppercase text-brand-accent hover:underline flex items-center gap-1"
+                          >
+                            <Pencil size={10} />
+                            {selectedComplaint.remarks ? 'Edit' : 'Add Protocol'}
+                          </button>
                         )}
                       </div>
-                    )}
-
-                    {selectedComplaint.customerReview && (
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center px-1">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent">Customer Review</p>
+                      
+                      {isEditingRemarks ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editedRemarks}
+                            onChange={(e) => setEditedRemarks(e.target.value)}
+                            className="w-full p-4 bg-white dark:bg-slate-900 rounded-2xl border border-brand-accent/30 text-xs sm:text-sm focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none"
+                            autoFocus
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button 
+                              onClick={() => setIsEditingRemarks(false)}
+                              className="px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600"
+                            >
+                              Cancel
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                if (onUpdateRemarks) {
+                                  await onUpdateRemarks(selectedComplaint.id, editedRemarks);
+                                  setSelectedComplaint({ ...selectedComplaint, remarks: editedRemarks });
+                                  setIsEditingRemarks(false);
+                                }
+                              }}
+                              className="px-4 py-1 bg-brand-accent text-white rounded-lg text-[9px] font-black uppercase tracking-widest"
+                            >
+                              Save Changes
+                            </button>
+                          </div>
                         </div>
-                        <div className="p-4 bg-brand-accent/5 rounded-2xl border border-brand-accent/20 italic text-brand-accent text-xs sm:text-sm shadow-sm">
+                      ) : selectedComplaint.remarks ? (
+                        <div className="p-4 bg-emerald-50/50 dark:bg-emerald-500/5 rounded-2xl border border-emerald-500/20 italic text-emerald-700 dark:text-emerald-400 text-xs sm:text-sm shadow-sm font-semibold">
+                          "{selectedComplaint.remarks}"
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-amber-500/5 rounded-2xl border border-dashed border-amber-500/20 text-xs text-amber-600 dark:text-amber-400 font-bold uppercase italic tracking-wide text-center">
+                          ⚠️ Awaiting Team Action / Technical Resolution Protocol Pending
+                        </div>
+                      )}
+                      {selectedComplaint.remarkAuthorName && !isEditingRemarks && (
+                        <p className="text-[8px] font-bold text-slate-400 text-right uppercase tracking-widest pr-2">
+                          By: {selectedComplaint.remarkAuthorName}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* ALWAYS SHOW Group 3: Customer Review */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center px-1">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent">Customer Review</p>
+                      </div>
+                      {selectedComplaint.customerReview ? (
+                        <div className="p-4 bg-brand-accent/5 rounded-2xl border border-brand-accent/20 italic text-brand-accent text-xs sm:text-sm shadow-sm font-semibold font-sans">
                           "{selectedComplaint.customerReview}"
                         </div>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wide text-center">
+                          💬 No Customer Review Registered Yet (Awaiting final checkout telemetry)
+                        </div>
+                      )}
+                    </div>
 
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 gap-2">
                       <div className="flex items-center gap-2">

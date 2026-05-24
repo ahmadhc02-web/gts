@@ -63,8 +63,34 @@ const updateSW = registerSW({
   },
 });
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+let shouldRender = true;
+if (typeof window !== 'undefined') {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('google_oauth_success') === 'true') {
+    shouldRender = false;
+    const tokensStr = urlParams.get('tokens');
+    if (tokensStr) {
+      try {
+        const tokens = JSON.parse(decodeURIComponent(tokensStr));
+        localStorage.setItem('gts_sync_google_tokens_direct', JSON.stringify(tokens));
+        if (window.opener) {
+          window.opener.postMessage({ type: 'google-oauth-success', tokens: tokens }, '*');
+        }
+        console.log("OAuth credentials captured from URL state on client origin.");
+      } catch (err) {
+        console.error("Popup token parsing error:", err);
+      }
+    }
+    try {
+      window.close();
+    } catch (e) {}
+  }
+}
+
+if (shouldRender) {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}

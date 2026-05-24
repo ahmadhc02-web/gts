@@ -4,6 +4,7 @@ import { MapPin, Tag, ChevronDown, BarChart2, X, Info, User, Calendar, Clock, Pi
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { Complaint } from '../types';
 import { cn } from '../lib/utils';
+import { calculateProtocolProgress } from '../utils/protocolProgress';
 
 interface DistributionListProps {
   complaints: Complaint[];
@@ -279,12 +280,31 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                              </div>
                           </div>
                           
-                          <div className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${
-                            complaint.status === 'resolved' ? 'bg-green-500/10 text-green-600' :
-                            complaint.status === 'pending' ? 'bg-amber-500/10 text-amber-600' :
-                            'bg-blue-500/10 text-blue-600'
-                          }`}>
-                            {complaint.status}
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <div className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${
+                              complaint.status === 'resolved' || complaint.status === 'complete' ? 'bg-green-500/10 text-green-600' :
+                              complaint.status === 'pending' ? 'bg-amber-500/10 text-amber-600' :
+                              'bg-blue-500/10 text-blue-600'
+                            }`}>
+                              {complaint.status}
+                            </div>
+                            {complaint.status === 'in process' && (() => {
+                              const prog = calculateProtocolProgress(complaint.remarks);
+                              if (prog.percentage <= 0) return null;
+                              return (
+                                <div className="w-16 flex flex-col items-end gap-0.5" title={prog.stepText}>
+                                  <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40">
+                                    <div 
+                                      className="bg-blue-500 h-full rounded-full"
+                                      style={{ width: `${prog.percentage}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[7px] font-mono font-black text-blue-500 dark:text-blue-400">
+                                    {prog.percentage}%
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
 

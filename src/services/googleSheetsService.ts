@@ -9,8 +9,8 @@ const getApiUrl = (endpoint: string): string => {
     host === 'localhost' || 
     host === '127.0.0.1' || 
     host.includes('.run.app') ||
-    host.includes('.hf.space') ||
-    host.includes('.huggingface.co')
+    host.includes('hf.space') ||
+    host.includes('huggingface.co')
   ) {
     return endpoint;
   }
@@ -255,7 +255,8 @@ export const googleSheetsService = {
           throw new Error("You are currently offline. Please connect to the internet first.");
         }
 
-        const oauthUrl = getApiUrl('/api/auth/google');
+        const oauthBaseUrl = getApiUrl('/api/auth/google');
+        const oauthUrl = `${oauthBaseUrl}${oauthBaseUrl.includes('?') ? '&' : '?'}origin=${encodeURIComponent(window.location.origin)}`;
         const width = 600;
         const height = 650;
         const left = window.screen.width / 2 - width / 2;

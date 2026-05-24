@@ -2587,22 +2587,25 @@ export default function AdminPanel({
                         </div>
                       </div>
 
-                      {/* Active Redirect 2: Hugging Face Specific */}
+                      {/* Active Redirect 2: Hugging Face Specific (Central Backend Support) */}
                       <div className="space-y-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Hugging Face Space Callback URI (LATEST)</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Hugging Face Space Callback URI (Direct Backend Route)</span>
                         <div className="flex gap-2 items-center bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                          <code className="text-[10px] font-mono select-all break-all flex-1 text-blue-600 dark:text-blue-400 font-bold">
+                          <code className="text-[10px] font-mono select-all break-all flex-1 text-emerald-600 dark:text-emerald-400 font-bold">
                             https://mahmad995-my-wifi-app.hf.space/api/auth/google/callback
                           </code>
                           <button
                             type="button"
-                            onClick={() => handleCopyText("https://mahmad995-my-wifi-app.hf.space/api/auth/google/callback", "Hugging Face Callback URL")}
-                            className="p-2 text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+                            onClick={() => handleCopyText("https://mahmad995-my-wifi-app.hf.space/api/auth/google/callback", "Hugging Face Space Callback URL")}
+                            className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
                             title="Copy Callback URL"
                           >
                             <Copy size={14} />
                           </button>
                         </div>
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 leading-snug font-semibold mt-1">
+                          ✅ <strong>HUGGING FACE DIRECT SYNC ACTIVE:</strong> Is application mein full Docker/Node.js dynamic server context integrate ho chuka hai. Aap jab is app ko copy karke Hugging Face Space par deploy karenge, to background call automatically aapke custom Hugging Face backend proxy se run hogi aur perfect connection sheet se maintain rahega. Apne Google Developer console mein upar diya gaya callback URL register karein!
+                        </p>
                       </div>
                     </div>
                   </div>

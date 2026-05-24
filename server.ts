@@ -236,10 +236,13 @@ async function startServer() {
         'email',
         'profile'
       ];
+      
+      const originParam = req.query.origin as string || '';
       const url = authClient.generateAuthUrl({
         access_type: 'offline', // Requests refresh token
         prompt: 'consent',      // Forces consent screen to guarantee refresh token is returned
-        scope: scopes
+        scope: scopes,
+        state: originParam      // Pass original client origin to state
       });
       res.redirect(url);
     } catch (error: any) {
@@ -249,6 +252,7 @@ async function startServer() {
 
   app.get("/api/auth/google/callback", async (req, res) => {
     const code = req.query.code as string;
+    const origin = req.query.state as string || '';
     if (!code) {
       return res.send("<script>window.close();</script>");
     }
@@ -261,6 +265,14 @@ async function startServer() {
         await saveTokensToFirestore(tokens);
       } catch (fbErr: any) {
         console.error("Server: Failed syncing Google credentials to Firestore:", fbErr);
+      }
+
+      // If client origin was passed (e.g. Hugging Face), redirect the popup back to that origin with token parameters.
+      // The client application loaded in the popup will save the tokens to localStorage, post a same-origin message,
+      // and close immediately.
+      if (origin && (origin.startsWith('http://') || origin.startsWith('https://'))) {
+        const redirectUrl = `${origin.endsWith('/') ? origin.slice(0, -1) : origin}/?google_oauth_success=true&tokens=${encodeURIComponent(JSON.stringify(tokens))}`;
+        return res.redirect(redirectUrl);
       }
       
       const escapedTokensStr = JSON.stringify(tokens).replace(/</g, '\\u003c');
@@ -305,14 +317,18 @@ async function startServer() {
                 window.opener.postMessage({ type: "google-oauth-success", tokens: tokens }, "*");
               }
               
-              // Try to force close after brief delay
+              // Try to force close immediately
+              try {
+                window.close();
+              } catch(e) {
+                console.warn("Auto close blocked:", e);
+              }
+              
               setTimeout(function() {
                 try {
                   window.close();
-                } catch(e) {
-                  console.warn("Auto close blocked:", e);
-                }
-              }, 2000);
+                } catch(e) {}
+              }, 50);
             } catch (err) {
               console.error("Popup storage execution error:", err);
               try {
@@ -320,11 +336,16 @@ async function startServer() {
                   window.opener.postMessage({ type: "google-oauth-success", tokens: ${escapedTokensStr} }, "*");
                 }
               } catch (inner) {}
+              
+              try {
+                window.close();
+              } catch(e) {}
+              
               setTimeout(function() {
                 try {
                   window.close();
                 } catch(e) {}
-              }, 2000);
+              }, 50);
             }
           </script>
         </body>
