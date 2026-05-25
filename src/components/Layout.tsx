@@ -973,23 +973,7 @@ export default function Layout({
               </div>
             )}
             
-            {user && user.role === 'super_admin' && (
-              <button
-                onClick={() => setIsInlineEditingActive(!isInlineEditingActive)}
-                className={cn(
-                  "p-1.5 sm:p-2 rounded-lg transition-all relative",
-                  isInlineEditingActive 
-                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-105" 
-                    : (isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400")
-                )}
-                title={isInlineEditingActive ? 'Deactivate Text Editing Mode' : 'Activate Inline Text Editing'}
-              >
-                <PenLine size={18} className={cn("sm:w-[20px] sm:h-[20px]", isInlineEditingActive && "animate-pulse")} />
-                {isInlineEditingActive && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border border-white dark:border-slate-950 shadow" />
-                )}
-              </button>
-            )}
+
 
             <button
               onClick={toggleTheme}
