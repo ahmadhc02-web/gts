@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -2307,23 +2307,49 @@ export default function AdminPanel({
                 </div>
 
                 {!googleTokens ? (
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <button
-                      onClick={() => handleGoogleConnect('server')}
-                      disabled={isConnecting}
-                      className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-xl shadow-brand-accent/20 active:scale-95 disabled:opacity-50"
-                    >
-                      <Zap size={14} className="text-amber-400" />
-                      {isConnecting ? 'Linking Permanent...' : 'Connect Permanent Sync'}
-                    </button>
-                    <button
-                      onClick={() => handleGoogleConnect('firebase')}
-                      disabled={isConnecting}
-                      className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[11px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
-                    >
-                      <ExternalLink size={14} />
-                      {isConnecting ? 'Linking Firebase...' : 'Fast Connect (Firebase)'}
-                    </button>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <button
+                        onClick={() => handleGoogleConnect('server')}
+                        disabled={isConnecting}
+                        className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-xl shadow-brand-accent/20 active:scale-95 disabled:opacity-50"
+                      >
+                        <Zap size={14} className="text-amber-400" />
+                        {isConnecting ? 'Linking Permanent...' : 'Connect Permanent Sync'}
+                      </button>
+                      <button
+                        onClick={() => handleGoogleConnect('firebase')}
+                        disabled={isConnecting}
+                        className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[11px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
+                      >
+                        <ExternalLink size={14} />
+                        {isConnecting ? 'Linking Firebase...' : 'Fast Connect (Firebase)'}
+                      </button>
+                    </div>
+
+                    {/* Secure Webview / IFrame Google Connection Helper */}
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-3 max-w-xl">
+                      <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                        <AlertTriangle size={16} className="shrink-0" />
+                        <span className="text-[10px] font-black uppercase tracking-wider font-mono">
+                          Google Connection Fix Inside Preview
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
+                        If Google displays a security block (<strong>"This browser or app may not be secure"</strong>), it is because Google blocks authentication inside embedded frames or code sandboxes.
+                      </p>
+                      <p className="text-[11px] text-amber-800 dark:text-amber-300 font-black leading-relaxed text-right font-sans">
+                        اگر گوگل شیٹس کنیکٹ کرتے ہوئے "browser or app may not be secure" کا ایرر آئے، تو نیچے دیے گئے بٹن پر کلک کر کے اس ویب سائٹ کو نئے ٹیب میں کھولیں اور پھر کنیکٹ کریں:
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => window.open(window.location.origin, '_blank')}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm"
+                      >
+                        <Globe size={13} />
+                        Open In New Tab to Connect / نئے ٹیب میں کھولیں
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
