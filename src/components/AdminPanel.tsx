@@ -2813,7 +2813,7 @@ export default function AdminPanel({
         )}
 
         {activeTab === 'billing' && (
-          <div className="max-w-[100rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-[115rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
             {/* Advanced Billing Recovery Header and Config Controls */}
             <div className={cn("p-8 sm:p-10", getCardStyle(branding.cardStyle), "space-y-6")}>
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">

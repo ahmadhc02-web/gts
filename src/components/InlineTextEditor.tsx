@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Save, RotateCcw, AlertCircle, Edit, Sparkles, Check } from 'lucide-react';
 import { BrandingConfig } from '../types';
 import { firebaseService } from '../lib/firebaseService';
+import { safeLocalStorage } from '../lib/safeLocalStorage';
 import { toast } from 'sonner';
 
 interface InlineTextEditorProps {
@@ -18,7 +19,7 @@ interface EditingNodeInfo {
   currentValue: string;
 }
 
-// Global DOM translator helper that finds and replaces matching text nodes
+// Global DOM translator helper that finds and replaces matching text nodes and leaf element containers
 export const translateDOM = (translations: Record<string, string>) => {
   if (!translations || Object.keys(translations).length === 0) return;
 
@@ -33,6 +34,16 @@ export const translateDOM = (translations: Record<string, string>) => {
       // Skip our own editor components
       if (el.closest('.inline-editor-ui')) {
         return;
+      }
+
+      // 1. Matched Entire Container Leaf Elements (e.g., spans/labels with split dynamic children, or GT/S logo split)
+      const txt = (el.textContent || '').trim();
+      if (txt && translations[txt]) {
+        // If it does not contain block layout elements, translate its textContent directly
+        if (!el.querySelector('div, p, h1, h2, h3, h4, h5, h6, table, form, main, section, header, footer, aside, nav, ul, ol')) {
+          el.textContent = translations[txt];
+          return; // Skip walking children because content was replaced
+        }
       }
     }
 
@@ -198,33 +209,69 @@ export default function InlineTextEditor({
   }, [isActive, branding?.translations]);
 
   // Realtime Live translation observer to render customized translations dynamically
+  // Realtime Live translation observer to render customized translations dynamically
   useEffect(() => {
     if (!branding?.translations || Object.keys(branding.translations).length === 0) return;
 
-    // Run active translation on load
-    translateDOM(branding.translations);
+    let isTranslating = false;
+    let pendingTranslateTimeout: number | null = null;
 
-    // Watch dynamic updates of matching leaves in React virtual DOM Tree
+    const runTranslation = () => {
+      if (isTranslating) return;
+      isTranslating = true;
+      try {
+        observer.disconnect();
+        translateDOM(branding.translations || {});
+      } catch (err) {
+        console.error("Observer translation error:", err);
+      } finally {
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true
+        });
+        isTranslating = false;
+      }
+    };
+
+    const scheduleTranslation = () => {
+      if (pendingTranslateTimeout) {
+        cancelAnimationFrame(pendingTranslateTimeout);
+      }
+      pendingTranslateTimeout = requestAnimationFrame(() => {
+        runTranslation();
+      });
+    };
+
     const observer = new MutationObserver((mutations) => {
-      let isDOMModified = false;
-      for (const mutation of mutations) {
-        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-          isDOMModified = true;
+      let shouldTranslate = false;
+      for (const m of mutations) {
+        if (m.type === 'childList' && m.addedNodes.length > 0) {
+          shouldTranslate = true;
           break;
         }
+        if (m.type === 'characterData') {
+          const tar = m.target.parentElement;
+          if (tar && !tar.closest('.inline-editor-ui')) {
+            shouldTranslate = true;
+            break;
+          }
+        }
       }
-      if (isDOMModified && branding?.translations) {
-        translateDOM(branding.translations);
+
+      if (shouldTranslate) {
+        scheduleTranslation();
       }
     });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    // Run initial translation immediately
+    runTranslation();
 
     return () => {
       observer.disconnect();
+      if (pendingTranslateTimeout) {
+        cancelAnimationFrame(pendingTranslateTimeout);
+      }
     };
   }, [branding?.translations]);
 
@@ -252,6 +299,12 @@ export default function InlineTextEditor({
         updatedAt: Date.now(),
         updatedBy: userFullName
       };
+
+      try {
+        safeLocalStorage.setItem('gts_branding', JSON.stringify(updatedBranding));
+      } catch (cacheErr) {
+        console.warn("Failed to update branding local cache", cacheErr);
+      }
 
       await firebaseService.updateBranding(updatedBranding, userFullName);
       
@@ -293,6 +346,12 @@ export default function InlineTextEditor({
         updatedAt: Date.now(),
         updatedBy: userFullName
       };
+
+      try {
+        safeLocalStorage.setItem('gts_branding', JSON.stringify(updatedBranding));
+      } catch (cacheErr) {
+        console.warn("Failed to clear local cache for default", cacheErr);
+      }
 
       await firebaseService.updateBranding(updatedBranding, userFullName);
       

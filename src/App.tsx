@@ -109,6 +109,14 @@ export default function App() {
     billingSecurityKey: '786786'
   });
   const [branding, setBranding] = useState<BrandingConfig>(() => {
+    try {
+      const cached = safeLocalStorage.getItem('gts_branding');
+      if (cached) {
+        return JSON.parse(cached) as BrandingConfig;
+      }
+    } catch (e) {
+      console.warn("Failed to load cached branding:", e);
+    }
     return { ...DEFAULT_BRANDING, id: 'global', updatedAt: Date.now(), updatedBy: 'system' } as BrandingConfig;
   });
   const [isLoading, setIsLoading] = useState(true); // Default to true until auth/init is done
@@ -369,35 +377,48 @@ export default function App() {
     return firebaseService.subscribeBranding((data) => {
       if (data) {
         setBranding(data);
-        // Apply global styles
-        const root = document.documentElement;
-        root.style.setProperty('--brand-accent', data.accentColor);
-        if (data.secondaryColor) root.style.setProperty('--brand-secondary', data.secondaryColor);
-        if (data.fontFamily) root.style.setProperty('--font-sans', data.fontFamily);
-        
-        if (data.borderRadius !== undefined) {
-          const radiusMap: Record<string, string> = {
-            'none': '0px',
-            'sm': '4px',
-            'md': '8px',
-            'lg': '16px',
-            'full': '9999px'
-          };
-          const radiusVal = typeof data.borderRadius === 'string' ? (radiusMap[data.borderRadius] || '8px') : `${data.borderRadius}px`;
-          root.style.setProperty('--radius-global', radiusVal);
-        }
-        
-        if (data.glassOpacity !== undefined) root.style.setProperty('--glass-opacity', String(data.glassOpacity));
-        
-        // Handle animations toggle globally if needed
-        if (data.enableAnimations === false) {
-          root.classList.add('no-animations');
-        } else {
-          root.classList.remove('no-animations');
+        try {
+          safeLocalStorage.setItem('gts_branding', JSON.stringify(data));
+        } catch (e) {
+          console.warn("Failed to cache branding locally:", e);
         }
       }
     });
   }, [firebaseAuthReady]);
+
+  // Apply branding design parameters and styles dynamically (both from cache and Firestore)
+  useEffect(() => {
+    if (!branding) return;
+    try {
+      const root = document.documentElement;
+      if (branding.accentColor) root.style.setProperty('--brand-accent', branding.accentColor);
+      if (branding.secondaryColor) root.style.setProperty('--brand-secondary', branding.secondaryColor);
+      if (branding.fontFamily) root.style.setProperty('--font-sans', branding.fontFamily);
+      
+      if (branding.borderRadius !== undefined) {
+        const radiusMap: Record<string, string> = {
+          'none': '0px',
+          'sm': '4px',
+          'md': '8px',
+          'lg': '16px',
+          'full': '9999px'
+        };
+        const radiusVal = typeof branding.borderRadius === 'string' ? (radiusMap[branding.borderRadius] || '8px') : `${branding.borderRadius}px`;
+        root.style.setProperty('--radius-global', radiusVal);
+      }
+      
+      if (branding.glassOpacity !== undefined) root.style.setProperty('--glass-opacity', String(branding.glassOpacity));
+      
+      // Handle animations toggle globally if needed
+      if (branding.enableAnimations === false) {
+        root.classList.add('no-animations');
+      } else {
+        root.classList.remove('no-animations');
+      }
+    } catch (e) {
+      console.warn("Failed to set styling root variables:", e);
+    }
+  }, [branding]);
 
   // Sync Google Sheets config with real-time updates from Firestore 24/7
   useEffect(() => {
@@ -1400,11 +1421,28 @@ export default function App() {
   const handleUpdateBranding = async (newBranding: BrandingConfig) => {
     if (!user) return;
     try {
-      await firebaseService.updateBranding(newBranding, user.fullName || user.username);
+      // Merge translations to guarantee visual editor updates do not clear translations
+      const mergedBranding = {
+        ...newBranding,
+        translations: {
+          ...(branding?.translations || {}),
+          ...(newBranding.translations || {})
+        }
+      };
+      
+      await firebaseService.updateBranding(mergedBranding, user.fullName || user.username);
+      setBranding(mergedBranding);
+
+      try {
+        safeLocalStorage.setItem('gts_branding', JSON.stringify(mergedBranding));
+      } catch (e) {
+        console.warn("Failed to cache merged branding:", e);
+      }
+
       toast.success('Global UI Metrics Reconfigured and Synchronized');
       
       // Auto-sync to Google Sheets (System Config)
-      googleSheetsService.syncSystemConfig(appConfig, newBranding);
+      googleSheetsService.syncSystemConfig(appConfig, mergedBranding);
     } catch (err) {
       console.error("Branding update failure:", err);
       toast.error('Failed to update system branding protocols');

@@ -844,7 +844,7 @@ export default function Layout({
         branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
         "bg-white/80 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800"
       )}>
-        <div className="container mx-auto px-2 sm:px-4 h-16 flex items-center justify-between">
+        <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -1042,7 +1042,7 @@ export default function Layout({
       </header>
 
       {/* Main Content */}
-      <main className={cn("mx-auto py-4 sm:py-8 transition-all duration-500", user ? "container px-4" : "w-full max-w-none px-0 sm:px-0")}>
+      <main className={cn("mx-auto py-4 sm:py-8 transition-all duration-500", user ? "max-w-[1850px] w-full px-4 sm:px-6 lg:px-8" : "w-full max-w-none px-0 sm:px-0")}>
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1054,7 +1054,7 @@ export default function Layout({
 
       {/* Footer */}
       <footer className="py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-        <div className="container mx-auto px-4">
+        <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center">
              <div className="relative group mb-3 sm:mb-4">
                 <div className="absolute -inset-1 bg-gradient-to-r from-brand-accent to-blue-500 rounded-lg blur opacity-25 group-hover:opacity-50 transition" />
