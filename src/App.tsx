@@ -1488,20 +1488,27 @@ export default function App() {
   const handleUpdateBranding = async (newBranding: BrandingConfig) => {
     if (!user) return;
     try {
-      // Merge translations to guarantee visual editor updates do not clear translations
+      // Intelligently preserve or update translations based on presence of caller edits
+      const mergedTranslations = newBranding.translations !== undefined 
+        ? newBranding.translations 
+        : (branding?.translations || {});
+
       const mergedBranding = {
         ...newBranding,
-        translations: {
-          ...(branding?.translations || {}),
-          ...(newBranding.translations || {})
-        }
+        translations: mergedTranslations
       };
       
       await firebaseService.updateBranding(mergedBranding, user.fullName || user.username);
+      
+      if (newBranding.translations !== undefined) {
+        await firebaseService.updateTranslations(mergedTranslations);
+      }
+
       setBranding(mergedBranding);
 
       try {
         safeLocalStorage.setItem('gts_branding', JSON.stringify(mergedBranding));
+        safeLocalStorage.setItem('gts_translations', JSON.stringify(mergedTranslations));
       } catch (e) {
         console.warn("Failed to cache merged branding:", e);
       }
@@ -1551,6 +1558,7 @@ export default function App() {
         onResetBanner={handleResetBanner}
         onUpdateUser={handleUpdateUser}
         branding={branding}
+        onUpdateBranding={handleUpdateBranding}
       >
         {!firebaseAuthReady ? (
           <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950">

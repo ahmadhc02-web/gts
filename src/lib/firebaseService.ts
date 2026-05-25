@@ -1326,7 +1326,16 @@ export const firebaseService = {
     const docRef = doc(db, 'config', 'translations');
     return onSnapshot(docRef, (snapshot) => {
       if (snapshot.exists()) {
-        callback(snapshot.data() as Record<string, string>);
+        const payload = snapshot.data();
+        if (payload && typeof payload.dataJson === 'string') {
+          try {
+            callback(JSON.parse(payload.dataJson));
+            return;
+          } catch (e) {
+            console.error("Failed to parse of dataJson translations:", e);
+          }
+        }
+        callback(payload as Record<string, string>);
       } else {
         callback(null);
       }
@@ -1337,7 +1346,10 @@ export const firebaseService = {
 
   updateTranslations: async (translations: Record<string, string>) => {
     const docRef = doc(db, 'config', 'translations');
-    const cleanTranslations = sanitize(translations);
-    await setDoc(docRef, cleanTranslations);
+    const payload = {
+      dataJson: JSON.stringify(translations),
+      updatedAt: Date.now()
+    };
+    await setDoc(docRef, payload);
   }
 };

@@ -11,6 +11,7 @@ interface InlineTextEditorProps {
   onToggle: () => void;
   branding?: BrandingConfig;
   userFullName?: string;
+  onUpdateBranding?: (newBranding: BrandingConfig) => void;
 }
 
 interface EditingNodeInfo {
@@ -82,7 +83,8 @@ export default function InlineTextEditor({
   isActive,
   onToggle,
   branding,
-  userFullName = 'Super Admin'
+  userFullName = 'Super Admin',
+  onUpdateBranding
 }: InlineTextEditorProps) {
   const [editingNode, setEditingNode] = useState<EditingNodeInfo | null>(null);
   const [customValue, setCustomValue] = useState('');
@@ -330,6 +332,10 @@ export default function InlineTextEditor({
       await firebaseService.updateTranslations(existingTranslations);
       await firebaseService.updateBranding(updatedBranding, userFullName);
       
+      if (onUpdateBranding) {
+        onUpdateBranding(updatedBranding);
+      }
+      
       // Update element directly in the local viewport for immediate response
       if (editingNode.element) {
         editingNode.element.innerText = cleanedInput || editingNode.originalKey;
@@ -378,6 +384,10 @@ export default function InlineTextEditor({
 
       await firebaseService.updateTranslations(existingTranslations);
       await firebaseService.updateBranding(updatedBranding, userFullName);
+      
+      if (onUpdateBranding) {
+        onUpdateBranding(updatedBranding);
+      }
       
       if (editingNode.element) {
         editingNode.element.innerText = editingNode.originalKey;

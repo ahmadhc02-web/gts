@@ -31,6 +31,7 @@ interface LayoutProps {
   onResetBanner?: () => void;
   onUpdateUser?: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => Promise<void>;
   branding?: BrandingConfig;
+  onUpdateBranding?: (newBranding: BrandingConfig) => Promise<void>;
 }
 
 export default function Layout({ 
@@ -49,7 +50,8 @@ export default function Layout({
   onToggleMic,
   onResetBanner,
   onUpdateUser,
-  branding
+  branding,
+  onUpdateBranding
 }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const [isChatOpen, setIsChatOpen] = React.useState(false);
@@ -1119,6 +1121,7 @@ export default function Layout({
         onToggle={() => setIsInlineEditingActive(!isInlineEditingActive)} 
         branding={branding} 
         userFullName={user?.fullName || user?.username || 'Super Admin'} 
+        onUpdateBranding={onUpdateBranding}
       />
     </div>
   );
