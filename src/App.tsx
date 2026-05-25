@@ -84,12 +84,7 @@ export default function App() {
     try {
       const savedUser = safeLocalStorage.getItem('complaint_app_user');
       if (savedUser) {
-        const parsed = JSON.parse(savedUser);
-        if (parsed && parsed.uid && ['abc-id', 'yaseen-id', 'admin-id'].includes(parsed.uid)) {
-          safeLocalStorage.removeItem('complaint_app_user');
-          return null;
-        }
-        return parsed;
+        return JSON.parse(savedUser);
       }
       return null;
     } catch (e) {
@@ -503,39 +498,61 @@ export default function App() {
         const initialUsers = await firebaseService.getUsers();
         let currentUsers = [...initialUsers];
         
-      // Explicitly purge legacy bootstrap/seed users permanently if found in Registry with legacy UIDs
-      const uidsToPurge = ['abc-id', 'yaseen-id', 'admin-id'];
-      const cleanUsersList = [];
-      let deletedAny = false;
-      
-      for (const u of currentUsers) {
-        if (uidsToPurge.includes(u.uid)) {
-          console.warn(`[System Clean] Permanently purging legacy bootstrap user ID: ${u.uid}`);
-          const targetUid = u.uid;
-          firebaseService.deleteUser(targetUid, u.username, 'System Clean')
-            .catch(err => console.error(`Failed to delete legacy user ID ${u.uid}:`, err));
-          deletedAny = true;
-        } else {
-          cleanUsersList.push(u);
+        // Self-Healing Boot Seed: Ensure core operational systems users exist matching standard credentials
+        const requiredCoreUsers = [
+          { uid: 'admin_sys_node', username: 'admin', password: 'admin', role: 'super_admin' as const, status: 'active' as const },
+          { uid: 'yaseen_sys_node', username: 'yaseen', password: 'yaseen', role: 'super_admin' as const, status: 'active' as const },
+          { uid: 'abc_sys_node', username: 'abc', password: 'abc', role: 'super_admin' as const, status: 'active' as const }
+        ];
+
+        let seededAny = false;
+        for (const req of requiredCoreUsers) {
+          const exists = currentUsers.some(u => u.username.toLowerCase() === req.username.toLowerCase());
+          if (!exists) {
+            console.log(`[Database Self-Heal] Seeding default core user: ${req.username}`);
+            try {
+              const seededUser = await firebaseService.createUser(
+                req.uid,
+                req.username,
+                req.password,
+                req.role,
+                'system',
+                'System Core Boot',
+                'main',
+                undefined,
+                undefined,
+                req.status
+              );
+              currentUsers.push({
+                ...seededUser,
+                uid: req.uid,
+                username: req.username,
+                password: req.password,
+                role: req.role,
+                status: req.status,
+                createdAt: Date.now()
+              });
+              seededAny = true;
+            } catch (seedErr) {
+              console.error(`Failed to seed user ${req.username}:`, seedErr);
+            }
+          }
         }
-      }
-      
-      if (deletedAny) {
-        currentUsers = cleanUsersList;
-      }
-      
-      setUsers(currentUsers);
+
+        if (seededAny) {
+          setUsers([...currentUsers]);
+        } else {
+          setUsers(currentUsers);
+        }
 
         // Re-validate current session identity against the fresh registry
         if (user) {
-          const isLegacyUser = uidsToPurge.includes(user.uid);
           const freshUser = currentUsers.find(u => u.username.toLowerCase() === user.username.toLowerCase());
           
-          if (isLegacyUser || !freshUser) {
-            console.warn("Auth Security: Revoking legacy or purged identity session.");
+          if (!freshUser) {
+            console.warn("Auth Security: Revoking stale or missing session identity.");
             setUser(null);
             safeLocalStorage.removeItem('complaint_app_user');
-            toast.error("Session Deactivated: This legacy account has been permanently removed.");
           } else if (freshUser) {
             if (freshUser.status === 'blocked') {
               console.warn("Auth Security: Revoking blocked identity session.");

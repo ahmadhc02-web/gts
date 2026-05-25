@@ -363,29 +363,7 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
                 Google Identity
               </motion.button>
 
-              {/* Secure Webview / IFrame Resolution Helper */}
-              <div className="mt-4 p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/20 text-left space-y-2.5 shadow-inner">
-                <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
-                  <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                  <div className="text-[9px] font-black uppercase tracking-wider font-mono leading-none">
-                    Security Webview Detection & Fix
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold leading-relaxed">
-                  Google blocks login inside embedded app panels ("This browser or app may not be secure").
-                </p>
-                <p className="text-[10px] text-amber-800 dark:text-amber-300 font-bold leading-relaxed text-right font-sans">
-                  اگر آپ کو "App or browser may not be secure" کا ایرر آ رہا ہو، تو نیچے دیے گئے بٹن پر کلک کر کے ایپ کو نئے براؤزر ٹیب میں کھولیں:
-                </p>
-                <button
-                  type="button"
-                  onClick={() => window.open(window.location.origin, '_blank')}
-                  className="w-full py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-widest text-[8px] flex items-center justify-center gap-1.5 transition-colors shadow-sm"
-                >
-                  <Globe size={11} />
-                  Open App In New Tab / نئے ٹیب میں کھولیں
-                </button>
-              </div>
+
             </div>
           )}
         </form>
