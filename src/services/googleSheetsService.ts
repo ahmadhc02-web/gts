@@ -247,8 +247,13 @@ export const googleSheetsService = {
     googleSheetsService.syncConfigToFirestore({ tokens: null });
   },
 
+  getOAuthUrl: (): string => {
+    const oauthBaseUrl = getApiUrl('/api/auth/google');
+    return `${oauthBaseUrl}${oauthBaseUrl.includes('?') ? '&' : '?'}origin=${encodeURIComponent(window.location.origin)}`;
+  },
+
   initiateAuth: async (): Promise<GoogleTokens> => {
-    return new Promise<GoogleTokens>((resolve, reject) => {
+    return new Promise<GoogleTokens>(async (resolve, reject) => {
       try {
         console.log("Initiating server-side Google OAuth for permanent offline refresh access token...");
         // Check if user is offline
@@ -256,6 +261,7 @@ export const googleSheetsService = {
           throw new Error("You are currently offline. Please connect to the internet first.");
         }
 
+        const startTime = Date.now();
         const oauthBaseUrl = getApiUrl('/api/auth/google');
         const oauthUrl = `${oauthBaseUrl}${oauthBaseUrl.includes('?') ? '&' : '?'}origin=${encodeURIComponent(window.location.origin)}`;
         const width = 600;
@@ -264,14 +270,40 @@ export const googleSheetsService = {
         const top = window.screen.height / 2 - height / 2;
 
         console.log("Opening Google Sheets OAuth popup:", oauthUrl);
-        const popup = window.open(
-          oauthUrl,
-          'GoogleSheetsOAuth',
-          `width=${width},height=${height},left=${left},top=${top},status=yes,resizable=yes`
-        );
+        
+        // Try opening popup. In Electron context or inside certain frames, this might fail or open a restricted frame.
+        let popup: Window | null = null;
+        try {
+          popup = window.open(
+            oauthUrl,
+            'GoogleSheetsOAuth',
+            `width=${width},height=${height},left=${left},top=${top},status=yes,resizable=yes`
+          );
+        } catch (popupErr) {
+          console.warn("Standard popup blocked or failed:", popupErr);
+        }
 
-        if (!popup) {
-          throw new Error("Popup blocked. Please allow popups for this website/iframe to connect your Google Account.");
+        // Active Firestore synchronization listener so that even if the popup was opened in Chrome/Brave/Edge or externally,
+        // we detect the new tokens written to Firestore immediately!
+        let unsubFirestore = () => {};
+        try {
+          const { db } = await import('../lib/firebase');
+          const { doc, onSnapshot } = await import('firebase/firestore');
+          const docRef = doc(db, 'config', 'google_sheets');
+          unsubFirestore = onSnapshot(docRef, (snap) => {
+            if (snap.exists()) {
+              const data = snap.data();
+              if (data && data.tokens && data.updatedAt && data.updatedAt >= startTime - 15000) {
+                console.log("googleSheetsService: Detected fresh tokens written to Firestore in real-time!");
+                googleSheetsService.saveTokens(data.tokens);
+                cleanup();
+                try { if (popup && !popup.closed) popup.close(); } catch (e) {}
+                resolve(data.tokens);
+              }
+            }
+          });
+        } catch (fsErr) {
+          console.warn("Could not register live Firestore oauth listener fallback:", fsErr);
         }
 
         const messageHandler = (event: MessageEvent) => {
@@ -294,13 +326,14 @@ export const googleSheetsService = {
               googleSheetsService.saveTokens(tokens);
               console.log("googleSheetsService: Found direct Google Auth tokens in localStorage fallback.");
               cleanup();
-              try { if (!popup.closed) popup.close(); } catch (e) {}
+              try { if (popup && !popup.closed) popup.close(); } catch (e) {}
               resolve(tokens);
               return;
             }
           } catch (e) {}
 
-          if (popup.closed) {
+          if (popup && popup.closed) {
+            // Wait 2 more seconds in case Firestore pushes the fresh tokens or directTokensStr is arriving
             setTimeout(() => {
               try {
                 const directTokensStr = safeLocalStorage.getItem('gts_sync_google_tokens_direct');
@@ -313,15 +346,14 @@ export const googleSheetsService = {
                   return;
                 }
               } catch (e) {}
-              cleanup();
-              reject(new Error("Google connection window was closed before completion. Please try again."));
-            }, 1000);
+            }, 2000);
           }
         }, 500);
 
         const cleanup = () => {
           window.removeEventListener('message', messageHandler);
           clearInterval(checkTimer);
+          unsubFirestore();
         };
 
         window.addEventListener('message', messageHandler);

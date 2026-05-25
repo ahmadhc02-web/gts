@@ -177,10 +177,16 @@ export default function InlineTextEditor({
         // Trace and retrieve original translation key from config if already customized
         let originalTextKey = currentText;
         if (branding?.translations) {
-          for (const [key, val] of Object.entries(branding.translations)) {
-            if (val === currentText || key === currentText) {
-              originalTextKey = key;
-              break;
+          // If the current text is already a key in the translations dictionary mapping to itself or something else,
+          // then the current text itself has established itself as the original/default reference standard!
+          if (branding.translations[currentText] !== undefined) {
+            originalTextKey = currentText;
+          } else {
+            for (const [key, val] of Object.entries(branding.translations)) {
+              if (val === currentText) {
+                originalTextKey = key;
+                break;
+              }
             }
           }
         }
@@ -288,9 +294,22 @@ export default function InlineTextEditor({
       if (cleanedInput === '' || cleanedInput === editingNode.originalKey) {
         // Remove customization if empty, reverting back to code default
         delete existingTranslations[editingNode.originalKey];
+        delete existingTranslations[editingNode.currentValue];
       } else {
         // Enforce translation pairing
+        // 1. Map the original key to the newest input value so it applies globally
         existingTranslations[editingNode.originalKey] = cleanedInput;
+
+        // 2. Scan and update all existing translations that mapped to either originalKey or old currentValue,
+        // so they now all target the new cleanedInput. This creates a permanent, solid reference tree.
+        for (const [key, val] of Object.entries(existingTranslations)) {
+          if (val === editingNode.originalKey || val === editingNode.currentValue) {
+            existingTranslations[key] = cleanedInput;
+          }
+        }
+
+        // 3. Keep a self-mapping of the new input to itself so it is instantly recognized as a default/original reference.
+        existingTranslations[cleanedInput] = cleanedInput;
       }
 
       const updatedBranding: BrandingConfig = {

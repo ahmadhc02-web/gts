@@ -122,6 +122,10 @@ export default function AdminPanel({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
+  // --- Google Connect Multi-Browser Helper State ---
+  const [showGoogleConnectModal, setShowGoogleConnectModal] = useState(false);
+  const [googleConnectUrl, setGoogleConnectUrl] = useState('');
+
   // --- Local Enterprise Backup & Restore state ---
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
@@ -664,6 +668,18 @@ export default function AdminPanel({
 
   const handleGoogleConnect = async (mode: 'server' | 'firebase') => {
     setIsConnecting(true);
+    
+    if (mode === 'server') {
+      const oauthUrl = googleSheetsService.getOAuthUrl();
+      setGoogleConnectUrl(oauthUrl);
+      setShowGoogleConnectModal(true);
+      try {
+        window.open(oauthUrl, '_blank');
+      } catch (browserErr) {
+        console.warn("Auto browser redirect blocked by system/popup policy:", browserErr);
+      }
+    }
+
     try {
       const tokens = mode === 'server'
         ? await googleSheetsService.initiateAuth()
@@ -674,13 +690,14 @@ export default function AdminPanel({
           description: 'Note: This fast connection will expire in 1 hour. Use Permanent connection for 24/7 background sync.'
         });
       } else {
+        setShowGoogleConnectModal(false);
         toast.success('Connected via Permanent Google Sync!', {
           description: 'Secure background credentials generated. High-integrity data stream is now persistent 24/7!'
         });
       }
     } catch (err: any) {
       console.error(err instanceof Error ? err.message : String(err));
-      if (err.message === 'Auth window closed') {
+      if (err.message && (err.message.includes('closed') || err.message.includes('cancel'))) {
         toast.error('Authentication cancelled', {
           description: 'Please keep the window open until the process completes.'
         });
@@ -689,6 +706,7 @@ export default function AdminPanel({
       }
     } finally {
       setIsConnecting(false);
+      setShowGoogleConnectModal(false);
     }
   };
 
@@ -1106,6 +1124,109 @@ export default function AdminPanel({
   return (
     <>
       <AnimatePresence>
+        {showGoogleConnectModal && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowGoogleConnectModal(false);
+                setIsConnecting(false);
+              }}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-amber-500/30 overflow-hidden"
+            >
+              <div className="p-8 space-y-6">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500">
+                      <Zap size={20} className="animate-bounce" />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Google Sheet Connection</h3>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Permanent Background Sync</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGoogleConnectModal(false);
+                      setIsConnecting(false);
+                    }}
+                    className="p-1 rounded-full text-slate-450 hover:text-slate-650 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 bg-transparent border-none transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Explanatory notes */}
+                  <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-xs text-slate-650 dark:text-slate-350 leading-relaxed font-semibold">
+                    <p className="font-extrabold text-amber-600 dark:text-amber-400 mb-1">ℹ️ Google Webview Security Notice:</p>
+                    Google blocks direct login within specialized embedded web frame panels or Electron custom wrappers with <strong className="text-rose-500 font-bold">"This browser or app may not be secure"</strong>.
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/45 border border-slate-100 dark:border-slate-850 space-y-3">
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 font-extrabold leading-relaxed text-right font-sans">
+                      برائے مہربانی نیچے دیے گئے بٹن پر کلک کر کے گوگل لاگ ان پیج کو اپنے اصل کمپیوٹر براؤزر (جیسے کروم، برائیو، یا ایج) میں کھولیں اور وہاں سے لاگ ان کریں:
+                    </p>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          window.open(googleConnectUrl, '_blank');
+                        } catch (e) {
+                          toast.error("Failed to trigger browser window automatically. Please copy the link manually.");
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-amber-550 hover:bg-amber-600 active:scale-[0.99] text-slate-950 font-black uppercase tracking-widest text-[9px] transition-all shadow-md shadow-brand-accent/5 cursor-pointer"
+                    >
+                      <Globe size={13} />
+                      Open in Default Browser / کروم / ڈیفالٹ براؤزر میں کھولیں
+                    </button>
+                  </div>
+
+                  {/* Manual link copying as robust fallback */}
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black uppercase tracking-wider text-slate-450 ml-1">Or Copy Direct Authorization Link:</label>
+                    <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-250/30 dark:border-slate-850 focus-within:ring-2 focus-within:ring-amber-500/30 transition-all">
+                      <input
+                        type="text"
+                        readOnly
+                        value={googleConnectUrl}
+                        className="flex-1 bg-transparent border-none text-[10px] font-mono font-semibold text-slate-500 dark:text-slate-400 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(googleConnectUrl, 'Google Auth Link')}
+                        className="py-1.5 px-3 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700 text-[9px] font-black uppercase tracking-wider transition-colors shrink-0 cursor-pointer"
+                      >
+                        Copy Link
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live sync pulse status */}
+                  <div className="flex items-center justify-center gap-3 py-3 border-t border-slate-50 dark:border-slate-850/50 text-[10px] uppercase font-bold tracking-widest text-slate-450 dark:text-slate-500">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
+                    <span>Waiting for your desktop browser authorization...</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {userToDelete && (
           <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
             <motion.div 
@@ -2307,49 +2428,23 @@ export default function AdminPanel({
                 </div>
 
                 {!googleTokens ? (
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <button
-                        onClick={() => handleGoogleConnect('server')}
-                        disabled={isConnecting}
-                        className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-xl shadow-brand-accent/20 active:scale-95 disabled:opacity-50"
-                      >
-                        <Zap size={14} className="text-amber-400" />
-                        {isConnecting ? 'Linking Permanent...' : 'Connect Permanent Sync'}
-                      </button>
-                      <button
-                        onClick={() => handleGoogleConnect('firebase')}
-                        disabled={isConnecting}
-                        className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[11px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
-                      >
-                        <ExternalLink size={14} />
-                        {isConnecting ? 'Linking Firebase...' : 'Fast Connect (Firebase)'}
-                      </button>
-                    </div>
-
-                    {/* Secure Webview / IFrame Google Connection Helper */}
-                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-3 max-w-xl">
-                      <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-                        <AlertTriangle size={16} className="shrink-0" />
-                        <span className="text-[10px] font-black uppercase tracking-wider font-mono">
-                          Google Connection Fix Inside Preview
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-400 font-semibold leading-relaxed">
-                        If Google displays a security block (<strong>"This browser or app may not be secure"</strong>), it is because Google blocks authentication inside embedded frames or code sandboxes.
-                      </p>
-                      <p className="text-[11px] text-amber-800 dark:text-amber-300 font-black leading-relaxed text-right font-sans">
-                        اگر گوگل شیٹس کنیکٹ کرتے ہوئے "browser or app may not be secure" کا ایرر آئے، تو نیچے دیے گئے بٹن پر کلک کر کے اس ویب سائٹ کو نئے ٹیب میں کھولیں اور پھر کنیکٹ کریں:
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => window.open(window.location.origin, '_blank')}
-                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm"
-                      >
-                        <Globe size={13} />
-                        Open In New Tab to Connect / نئے ٹیب میں کھولیں
-                      </button>
-                    </div>
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <button
+                      onClick={() => handleGoogleConnect('server')}
+                      disabled={isConnecting}
+                      className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-xl shadow-brand-accent/20 active:scale-95 disabled:opacity-50"
+                    >
+                      <Zap size={14} className="text-amber-400" />
+                      {isConnecting ? 'Linking Permanent...' : 'Connect Permanent Sync'}
+                    </button>
+                    <button
+                      onClick={() => handleGoogleConnect('firebase')}
+                      disabled={isConnecting}
+                      className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[11px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      <ExternalLink size={14} />
+                      {isConnecting ? 'Linking Firebase...' : 'Fast Connect (Firebase)'}
+                    </button>
                   </div>
                 ) : (
                   <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
