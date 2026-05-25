@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { signInAnonymously } from 'firebase/auth';
 import { auth } from './lib/firebase';
+import { safeLocalStorage } from './lib/safeLocalStorage';
 import Layout from './components/Layout';
 import LoginForm from './components/LoginForm';
 import AdminPanel from './components/AdminPanel';
@@ -42,7 +43,7 @@ export default function App() {
   }, [isOnline]);
 
   const syncOfflineComplaints = async () => {
-    const queue = JSON.parse(localStorage.getItem('offline_complaints') || '[]');
+    const queue = JSON.parse(safeLocalStorage.getItem('offline_complaints') || '[]');
     if (queue.length === 0) return;
 
     console.log(`App: Initiating sync for ${queue.length} cached complaints...`);
@@ -66,12 +67,12 @@ export default function App() {
     if (syncCount > 0) {
       toast.success(`Sync Complete: ${syncCount} records synchronized with cloud database.`);
       // Remove successfully synced items (in case of partial success)
-      const remaining = JSON.parse(localStorage.getItem('offline_complaints') || '[]');
+      const remaining = JSON.parse(safeLocalStorage.getItem('offline_complaints') || '[]');
       const newQueue = remaining.slice(syncCount);
       if (newQueue.length === 0) {
-        localStorage.removeItem('offline_complaints');
+        safeLocalStorage.removeItem('offline_complaints');
       } else {
-        localStorage.setItem('offline_complaints', safeStringify(newQueue));
+        safeLocalStorage.setItem('offline_complaints', safeStringify(newQueue));
       }
     }
   };
@@ -81,11 +82,11 @@ export default function App() {
 
   const [user, setUser] = useState<UserProfile | null>(() => {
     try {
-      const savedUser = localStorage.getItem('complaint_app_user');
+      const savedUser = safeLocalStorage.getItem('complaint_app_user');
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
         if (parsed && parsed.uid && ['abc-id', 'yaseen-id', 'admin-id'].includes(parsed.uid)) {
-          localStorage.removeItem('complaint_app_user');
+          safeLocalStorage.removeItem('complaint_app_user');
           return null;
         }
         return parsed;
@@ -114,7 +115,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [alertAuthorized, setAlertAuthorized] = useState(() => {
-    return localStorage.getItem('gts_alerts_authorized') === 'true';
+    return safeLocalStorage.getItem('gts_alerts_authorized') === 'true';
   });
   const [showTimedAlertHub, setShowTimedAlertHub] = useState(false);
 
@@ -124,19 +125,19 @@ export default function App() {
     backupStateRef.current = { complaints, users, appConfig, branding };
   }, [complaints, users, appConfig, branding]);
   const [hideBanner, setHideBanner] = useState(() => {
-    return localStorage.getItem('gts_banner_hidden') === 'true';
+    return safeLocalStorage.getItem('gts_banner_hidden') === 'true';
   });
 
   const [isAudioMuted, setIsAudioMuted] = useState(() => {
-    return localStorage.getItem('gts_audio_muted') === 'true';
+    return safeLocalStorage.getItem('gts_audio_muted') === 'true';
   });
 
   const [isMicMuted, setIsMicMuted] = useState(() => {
-    return localStorage.getItem('gts_mic_muted') === 'true';
+    return safeLocalStorage.getItem('gts_mic_muted') === 'true';
   });
 
   const [micAuthorized, setMicAuthorized] = useState(() => {
-    return localStorage.getItem('gts_mic_authorized') === 'true';
+    return safeLocalStorage.getItem('gts_mic_authorized') === 'true';
   });
 
   // Global Audio Objects to prevent garbage collection issues
@@ -178,7 +179,7 @@ export default function App() {
   const handleToggleAudio = () => {
     const newState = !isAudioMuted;
     setIsAudioMuted(newState);
-    localStorage.setItem('gts_audio_muted', newState.toString());
+    safeLocalStorage.setItem('gts_audio_muted', newState.toString());
     
     // Explicitly update muted state on global audio objects
     notificationAudio.muted = newState;
@@ -192,7 +193,7 @@ export default function App() {
   const handleToggleMic = () => {
     const newState = !isMicMuted;
     setIsMicMuted(newState);
-    localStorage.setItem('gts_mic_muted', newState.toString());
+    safeLocalStorage.setItem('gts_mic_muted', newState.toString());
     toast.info(newState ? "Microphone Deactivated" : "Microphone Activated", {
       icon: newState ? '🎙️' : '🎤'
     });
@@ -200,7 +201,7 @@ export default function App() {
 
   const handleResetBanner = () => {
     setHideBanner(false);
-    localStorage.removeItem('gts_banner_hidden');
+    safeLocalStorage.removeItem('gts_banner_hidden');
     toast.success("System Management Banner Restored");
   };
 
@@ -241,9 +242,9 @@ export default function App() {
       }
       
       setAlertAuthorized(true);
-      localStorage.setItem('gts_alerts_authorized', 'true');
+      safeLocalStorage.setItem('gts_alerts_authorized', 'true');
       setIsAudioMuted(false);
-      localStorage.setItem('gts_audio_muted', 'false');
+      safeLocalStorage.setItem('gts_audio_muted', 'false');
       toast.success("System Alerts Enabled", { description: "You will now receive sound and background notifications." });
     } catch (err) {
       console.error("Authorization failed:", err instanceof Error ? err.message : String(err));
@@ -268,9 +269,9 @@ export default function App() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach(track => track.stop()); // Stop immediately
       setMicAuthorized(true);
-      localStorage.setItem('gts_mic_authorized', 'true');
+      safeLocalStorage.setItem('gts_mic_authorized', 'true');
       setIsMicMuted(false);
-      localStorage.setItem('gts_mic_muted', 'false');
+      safeLocalStorage.setItem('gts_mic_muted', 'false');
       toast.success("Microphone Authorized", { description: "Tactical voice transmission is now unlocked." });
     } catch (err: any) {
       console.error("Mic Auth Logic Failure:", err instanceof Error ? err.message : String(err));
@@ -462,23 +463,23 @@ export default function App() {
           if (isLegacyUser || !freshUser) {
             console.warn("Auth Security: Revoking legacy or purged identity session.");
             setUser(null);
-            localStorage.removeItem('complaint_app_user');
+            safeLocalStorage.removeItem('complaint_app_user');
             toast.error("Session Deactivated: This legacy account has been permanently removed.");
           } else if (freshUser) {
             if (freshUser.status === 'blocked') {
               console.warn("Auth Security: Revoking blocked identity session.");
               setUser(null);
-              localStorage.removeItem('complaint_app_user');
+              safeLocalStorage.removeItem('complaint_app_user');
               toast.error("Access REVOKED: Your account has been blocked by an administrator.");
             } else if (freshUser.status === 'pending') {
               console.warn("Auth Security: Restricted pending identity session.");
               setUser(null);
-              localStorage.removeItem('complaint_app_user');
+              safeLocalStorage.removeItem('complaint_app_user');
               toast.warning("Access RESTRICTED: Your request is still pending approval.");
             } else if (safeStringify(freshUser) !== safeStringify(user)) {
                // Update local state if role or profile changes
                setUser(freshUser);
-               localStorage.setItem('complaint_app_user', safeStringify(freshUser));
+               safeLocalStorage.setItem('complaint_app_user', safeStringify(freshUser));
             }
           }
         }
@@ -838,7 +839,7 @@ export default function App() {
       }
 
       setUser(foundUser);
-      localStorage.setItem('complaint_app_user', safeStringify(foundUser));
+      safeLocalStorage.setItem('complaint_app_user', safeStringify(foundUser));
       setShowWelcome(true);
       toast.success(`Access Granted: Welcome back, ${foundUser.fullName || foundUser.username}`);
 
@@ -910,10 +911,10 @@ export default function App() {
 
         const checkTimer = setInterval(async () => {
           try {
-            const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+            const directTokensStr = safeLocalStorage.getItem('gts_sync_google_tokens_direct');
             if (directTokensStr) {
               const tokens = JSON.parse(directTokensStr);
-              localStorage.removeItem('gts_sync_google_tokens_direct');
+              safeLocalStorage.removeItem('gts_sync_google_tokens_direct');
               googleSheetsService.saveTokens(tokens);
               console.log("Found direct Google Auth tokens in storage fallback.");
               cleanup();
@@ -927,10 +928,10 @@ export default function App() {
           if (popup.closed) {
             setTimeout(async () => {
               try {
-                const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+                const directTokensStr = safeLocalStorage.getItem('gts_sync_google_tokens_direct');
                 if (directTokensStr) {
                   const tokens = JSON.parse(directTokensStr);
-                  localStorage.removeItem('gts_sync_google_tokens_direct');
+                  safeLocalStorage.removeItem('gts_sync_google_tokens_direct');
                   googleSheetsService.saveTokens(tokens);
                   cleanup();
                   await processOAuthTokens(tokens);
@@ -1045,7 +1046,7 @@ export default function App() {
         }
 
         setUser(foundUser);
-        localStorage.setItem('complaint_app_user', safeStringify(foundUser));
+        safeLocalStorage.setItem('complaint_app_user', safeStringify(foundUser));
         setShowWelcome(true);
         toast.success(`Access Granted: Welcome back, ${foundUser.username}`);
 
@@ -1094,7 +1095,7 @@ export default function App() {
 
   const handleLogout = () => {
     setUser(null);
-    localStorage.removeItem('complaint_app_user');
+    safeLocalStorage.removeItem('complaint_app_user');
     toast.info('Logged out successfully');
   };
 
@@ -1323,7 +1324,7 @@ export default function App() {
       if (user && user.uid === uid) {
         const updatedUser = { ...user, username, password: pass, fullName, ...(role && { role }), ...(lineCode && { lineCode }), ...(companyName && { companyName }) };
         setUser(updatedUser);
-        localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
+        safeLocalStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }
       
       toast.success('User details updated successfully!');
@@ -1354,7 +1355,7 @@ export default function App() {
       // Update local state and persistence
       const updatedUser = { ...user, password: newPass };
       setUser(updatedUser);
-      localStorage.setItem('complaint_app_user', safeStringify(updatedUser));
+      safeLocalStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       
       toast.success(`Admin password changed successfully!`);
 

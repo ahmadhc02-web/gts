@@ -2,6 +2,7 @@
 import { auth } from '../lib/firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { safeStringify } from '../lib/utils';
+import { safeLocalStorage } from '../lib/safeLocalStorage';
 
 const getApiUrl = (endpoint: string): string => {
   const host = window.location.hostname;
@@ -48,11 +49,11 @@ const configCache: SheetsConfigCache = {
 
 // Fill from local storage immediately as a synchronous boot fallback
 try {
-  const localTokens = localStorage.getItem(TOKEN_KEY);
+  const localTokens = safeLocalStorage.getItem(TOKEN_KEY);
   if (localTokens) configCache.tokens = JSON.parse(localTokens);
-  configCache.spreadsheetId = localStorage.getItem(SHEET_ID_KEY);
-  configCache.sheetName = localStorage.getItem(SHEET_NAME_KEY) || 'Sheet1';
-  configCache.sheetRange = localStorage.getItem(SHEET_RANGE_KEY) || 'A1';
+  configCache.spreadsheetId = safeLocalStorage.getItem(SHEET_ID_KEY);
+  configCache.sheetName = safeLocalStorage.getItem(SHEET_NAME_KEY) || 'Sheet1';
+  configCache.sheetRange = safeLocalStorage.getItem(SHEET_RANGE_KEY) || 'A1';
 } catch (e) {
   console.warn("Storage fallbacks parsing failed:", e);
 }
@@ -90,20 +91,20 @@ export const googleSheetsService = {
         const data = snap.data();
         if (data.tokens) {
           configCache.tokens = data.tokens;
-          localStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
+          safeLocalStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
           window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: data.tokens }));
         }
         if (data.spreadsheetId) {
           configCache.spreadsheetId = data.spreadsheetId;
-          localStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
+          safeLocalStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
         }
         if (data.sheetName) {
           configCache.sheetName = data.sheetName;
-          localStorage.setItem(SHEET_NAME_KEY, data.sheetName);
+          safeLocalStorage.setItem(SHEET_NAME_KEY, data.sheetName);
         }
         if (data.sheetRange) {
           configCache.sheetRange = data.sheetRange;
-          localStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
+          safeLocalStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
         }
         return data;
       }
@@ -126,34 +127,34 @@ export const googleSheetsService = {
             // Update the live in-memory global configCache
             if (data.tokens) {
               configCache.tokens = data.tokens;
-              localStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
+              safeLocalStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
             } else {
               configCache.tokens = null;
-              localStorage.removeItem(TOKEN_KEY);
+              safeLocalStorage.removeItem(TOKEN_KEY);
             }
             
             if (data.spreadsheetId) {
               configCache.spreadsheetId = data.spreadsheetId;
-              localStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
+              safeLocalStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
             } else {
               configCache.spreadsheetId = null;
-              localStorage.removeItem(SHEET_ID_KEY);
+              safeLocalStorage.removeItem(SHEET_ID_KEY);
             }
             
             if (data.sheetName) {
               configCache.sheetName = data.sheetName;
-              localStorage.setItem(SHEET_NAME_KEY, data.sheetName);
+              safeLocalStorage.setItem(SHEET_NAME_KEY, data.sheetName);
             } else {
               configCache.sheetName = 'Sheet1';
-              localStorage.removeItem(SHEET_NAME_KEY);
+              safeLocalStorage.removeItem(SHEET_NAME_KEY);
             }
             
             if (data.sheetRange) {
               configCache.sheetRange = data.sheetRange;
-              localStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
+              safeLocalStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
             } else {
               configCache.sheetRange = 'A1';
-              localStorage.removeItem(SHEET_RANGE_KEY);
+              safeLocalStorage.removeItem(SHEET_RANGE_KEY);
             }
 
             // Immediately dispatch the local auth changed state so UI elements re-render with active synchronization badge
@@ -173,7 +174,7 @@ export const googleSheetsService = {
 
   getTokens: (): GoogleTokens | null => {
     if (configCache.tokens) return configCache.tokens;
-    const tokens = localStorage.getItem(TOKEN_KEY);
+    const tokens = safeLocalStorage.getItem(TOKEN_KEY);
     if (tokens) {
       try {
         const parsed = JSON.parse(tokens);
@@ -193,7 +194,7 @@ export const googleSheetsService = {
       updated.refresh_token = existing.refresh_token;
     }
     configCache.tokens = updated;
-    localStorage.setItem(TOKEN_KEY, safeStringify(updated));
+    safeLocalStorage.setItem(TOKEN_KEY, safeStringify(updated));
     window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: updated }));
     googleSheetsService.syncConfigToFirestore({ tokens: updated });
   },
@@ -208,40 +209,40 @@ export const googleSheetsService = {
 
   getSpreadsheetId: (): string | null => {
     if (configCache.spreadsheetId) return configCache.spreadsheetId;
-    return localStorage.getItem(SHEET_ID_KEY);
+    return safeLocalStorage.getItem(SHEET_ID_KEY);
   },
 
   saveSpreadsheetId: (id: string) => {
     configCache.spreadsheetId = id;
-    localStorage.setItem(SHEET_ID_KEY, id);
+    safeLocalStorage.setItem(SHEET_ID_KEY, id);
     googleSheetsService.syncConfigToFirestore({ spreadsheetId: id });
   },
 
   getSheetName: (): string => {
     if (configCache.sheetName && configCache.sheetName !== 'Sheet1') return configCache.sheetName;
-    return localStorage.getItem(SHEET_NAME_KEY) || 'Sheet1';
+    return safeLocalStorage.getItem(SHEET_NAME_KEY) || 'Sheet1';
   },
 
   saveSheetName: (name: string) => {
     configCache.sheetName = name;
-    localStorage.setItem(SHEET_NAME_KEY, name);
+    safeLocalStorage.setItem(SHEET_NAME_KEY, name);
     googleSheetsService.syncConfigToFirestore({ sheetName: name });
   },
 
   getSheetRange: (): string => {
     if (configCache.sheetRange && configCache.sheetRange !== 'A1') return configCache.sheetRange;
-    return localStorage.getItem(SHEET_RANGE_KEY) || 'A1';
+    return safeLocalStorage.getItem(SHEET_RANGE_KEY) || 'A1';
   },
 
   saveSheetRange: (range: string) => {
     configCache.sheetRange = range;
-    localStorage.setItem(SHEET_RANGE_KEY, range);
+    safeLocalStorage.setItem(SHEET_RANGE_KEY, range);
     googleSheetsService.syncConfigToFirestore({ sheetRange: range });
   },
 
   clearAuth: () => {
     configCache.tokens = null;
-    localStorage.removeItem(TOKEN_KEY);
+    safeLocalStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: null }));
     googleSheetsService.syncConfigToFirestore({ tokens: null });
   },
@@ -286,10 +287,10 @@ export const googleSheetsService = {
 
         const checkTimer = setInterval(() => {
           try {
-            const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+            const directTokensStr = safeLocalStorage.getItem('gts_sync_google_tokens_direct');
             if (directTokensStr) {
               const tokens = JSON.parse(directTokensStr);
-              localStorage.removeItem('gts_sync_google_tokens_direct');
+              safeLocalStorage.removeItem('gts_sync_google_tokens_direct');
               googleSheetsService.saveTokens(tokens);
               console.log("googleSheetsService: Found direct Google Auth tokens in localStorage fallback.");
               cleanup();
@@ -302,10 +303,10 @@ export const googleSheetsService = {
           if (popup.closed) {
             setTimeout(() => {
               try {
-                const directTokensStr = localStorage.getItem('gts_sync_google_tokens_direct');
+                const directTokensStr = safeLocalStorage.getItem('gts_sync_google_tokens_direct');
                 if (directTokensStr) {
                   const tokens = JSON.parse(directTokensStr);
-                  localStorage.removeItem('gts_sync_google_tokens_direct');
+                  safeLocalStorage.removeItem('gts_sync_google_tokens_direct');
                   googleSheetsService.saveTokens(tokens);
                   cleanup();
                   resolve(tokens);
@@ -841,15 +842,15 @@ export const googleSheetsService = {
   // Offline Sync Queue for Sheets
   syncQueue: {
     add: (item: any) => {
-      const queue = JSON.parse(localStorage.getItem('gts_sheet_sync_queue') || '[]');
+      const queue = JSON.parse(safeLocalStorage.getItem('gts_sheet_sync_queue') || '[]');
       queue.push(item);
-      localStorage.setItem('gts_sheet_sync_queue', safeStringify(queue));
+      safeLocalStorage.setItem('gts_sheet_sync_queue', safeStringify(queue));
     },
     get: () => {
-      return JSON.parse(localStorage.getItem('gts_sheet_sync_queue') || '[]');
+      return JSON.parse(safeLocalStorage.getItem('gts_sheet_sync_queue') || '[]');
     },
     clear: () => {
-      localStorage.removeItem('gts_sheet_sync_queue');
+      safeLocalStorage.removeItem('gts_sheet_sync_queue');
     },
     process: async () => {
       if (!navigator.onLine) return;
@@ -876,7 +877,7 @@ export const googleSheetsService = {
       }
 
       if (remaining.length > 0) {
-        localStorage.setItem('gts_sheet_sync_queue', safeStringify(remaining));
+        safeLocalStorage.setItem('gts_sheet_sync_queue', safeStringify(remaining));
       } else {
         googleSheetsService.syncQueue.clear();
       }

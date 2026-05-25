@@ -1,14 +1,21 @@
 import { Complaint, UserProfile, ComplaintStatus } from '../types';
 import { safeStringify } from './utils';
+import { safeLocalStorage } from './safeLocalStorage';
 
 // Simple persistence helper for mock environment
 const storage = {
   get: (key: string, fallback: any) => {
-    const val = localStorage.getItem(key);
-    return val ? JSON.parse(val) : fallback;
+    try {
+      const val = safeLocalStorage.getItem(key);
+      return val ? JSON.parse(val) : fallback;
+    } catch {
+      return fallback;
+    }
   },
   set: (key: string, val: any) => {
-    localStorage.setItem(key, safeStringify(val));
+    try {
+      safeLocalStorage.setItem(key, safeStringify(val));
+    } catch {}
   }
 };
 

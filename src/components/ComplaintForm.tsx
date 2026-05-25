@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned, Layers, CloudOff, WifiOff, RefreshCw } from 'lucide-react';
 import { ComplaintStatus, ComplaintCategory, ComplaintPriority, Client, UserProfile, BrandingConfig } from '../types';
 import { cn, safeStringify } from '../lib/utils';
+import { safeLocalStorage } from '../lib/safeLocalStorage';
 import { Network, Wifi, ShieldAlert, Zap, Search } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { AppConfig } from '../constants';
@@ -52,7 +53,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
 
   // Check pending count on load
   useEffect(() => {
-    const queue = JSON.parse(localStorage.getItem('offline_complaints') || '[]');
+    const queue = JSON.parse(safeLocalStorage.getItem('offline_complaints') || '[]');
     setPendingCount(queue.length);
   }, []);
 
@@ -145,9 +146,9 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
 
     if (isOffline) {
       // Offline mode: cache to localStorage
-      const queue = JSON.parse(localStorage.getItem('offline_complaints') || '[]');
+      const queue = JSON.parse(safeLocalStorage.getItem('offline_complaints') || '[]');
       queue.push(formData);
-      localStorage.setItem('offline_complaints', safeStringify(queue));
+      safeLocalStorage.setItem('offline_complaints', safeStringify(queue));
       setPendingCount(queue.length);
       
       // Still show success feel but note it's local

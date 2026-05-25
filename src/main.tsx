@@ -51,6 +51,29 @@ patchConsole('warn');
 patchConsole('error');
 patchConsole('info');
 
+import {safeLocalStorage} from './lib/safeLocalStorage';
+
+// Force clear stale service worker cache once to bypass previous OAuth popup interception issue
+if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  const isSwFixed = safeLocalStorage.getItem('gts_sw_v2_fixed');
+  if (!isSwFixed) {
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+      if (registrations.length > 0) {
+        for (const registration of registrations) {
+          registration.unregister();
+        }
+        safeLocalStorage.setItem('gts_sw_v2_fixed', 'true');
+        console.log("Stale Service Worker successfully unregistered for API bypass.");
+        window.location.reload();
+      } else {
+        safeLocalStorage.setItem('gts_sw_v2_fixed', 'true');
+      }
+    }).catch(err => {
+      console.error("Service worker unregistration error:", err);
+    });
+  }
+}
+
 import { registerSW } from 'virtual:pwa-register';
 
 // Register Service Worker with automatic updates
@@ -72,7 +95,7 @@ if (typeof window !== 'undefined') {
     if (tokensStr) {
       try {
         const tokens = JSON.parse(decodeURIComponent(tokensStr));
-        localStorage.setItem('gts_sync_google_tokens_direct', JSON.stringify(tokens));
+        safeLocalStorage.setItem('gts_sync_google_tokens_direct', JSON.stringify(tokens));
         if (window.opener) {
           window.opener.postMessage({ type: 'google-oauth-success', tokens: tokens }, '*');
         }

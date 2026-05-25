@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { UserProfile, Notification, BrandingConfig } from '../types';
@@ -10,6 +10,7 @@ import ServiceMonitor from './ServiceMonitor';
 import MapViewer from './MapViewer';
 import RefreshControl from './RefreshControl';
 import FiberLoading from './FiberLoading';
+import InlineTextEditor from './InlineTextEditor';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { firebaseService } from '../lib/firebaseService';
 
@@ -62,6 +63,7 @@ export default function Layout({
   const [selectedNotif, setSelectedNotif] = React.useState<Notification | null>(null);
   const isOnline = useOnlineStatus();
   const [showSyncStatus, setShowSyncStatus] = useState(false);
+  const [isInlineEditingActive, setIsInlineEditingActive] = useState(false);
 
   useEffect(() => {
     const handleOpenMap = (e: CustomEvent) => {
@@ -969,6 +971,24 @@ export default function Layout({
               </div>
             )}
             
+            {user && user.role === 'super_admin' && (
+              <button
+                onClick={() => setIsInlineEditingActive(!isInlineEditingActive)}
+                className={cn(
+                  "p-1.5 sm:p-2 rounded-lg transition-all relative",
+                  isInlineEditingActive 
+                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-105" 
+                    : (isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400")
+                )}
+                title={isInlineEditingActive ? 'Deactivate Text Editing Mode' : 'Activate Inline Text Editing'}
+              >
+                <PenLine size={18} className={cn("sm:w-[20px] sm:h-[20px]", isInlineEditingActive && "animate-pulse")} />
+                {isInlineEditingActive && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border border-white dark:border-slate-950 shadow" />
+                )}
+              </button>
+            )}
+
             <button
               onClick={toggleTheme}
               className={cn(
@@ -1091,6 +1111,14 @@ export default function Layout({
         isOpen={isMonitorOpen} 
         onClose={() => setIsMonitorOpen(false)} 
         user={user}
+      />
+
+      {/* Global Inline Editor Trigger for Super Admins */}
+      <InlineTextEditor 
+        isActive={isInlineEditingActive} 
+        onToggle={() => setIsInlineEditingActive(!isInlineEditingActive)} 
+        branding={branding} 
+        userFullName={user?.fullName || user?.username || 'Super Admin'} 
       />
     </div>
   );

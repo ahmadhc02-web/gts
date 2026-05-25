@@ -837,8 +837,12 @@ export default function AdminPanel({
 
   const handleResetAppData = () => {
     if (confirm('WARNING: This will delete ALL local accounts and complaints permanently. Are you absolutely sure?')) {
-      localStorage.removeItem('gts_users');
-      localStorage.removeItem('gts_complaints');
+      try {
+        localStorage.removeItem('gts_users');
+        localStorage.removeItem('gts_complaints');
+      } catch (e) {
+        console.warn("Could not clear local caches under current sandbox security:", e);
+      }
       window.location.reload();
     }
   };
