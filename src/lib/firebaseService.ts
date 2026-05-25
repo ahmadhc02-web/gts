@@ -1319,5 +1319,25 @@ export const firebaseService = {
   deleteBillingMonth: async (monthId: string) => {
     const docRef = doc(db, 'billing_months', monthId);
     await deleteDoc(docRef);
+  },
+
+  // --- Dedicated Unbreakable Inline Translations storage ---
+  subscribeTranslations: (callback: (translations: Record<string, string> | null) => void) => {
+    const docRef = doc(db, 'config', 'translations');
+    return onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.data() as Record<string, string>);
+      } else {
+        callback(null);
+      }
+    }, (error) => {
+      console.error("Failed to subscribe inline translations:", error);
+    });
+  },
+
+  updateTranslations: async (translations: Record<string, string>) => {
+    const docRef = doc(db, 'config', 'translations');
+    const cleanTranslations = sanitize(translations);
+    await setDoc(docRef, cleanTranslations);
   }
 };

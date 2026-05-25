@@ -302,10 +302,13 @@ export default function InlineTextEditor({
 
       try {
         safeLocalStorage.setItem('gts_branding', JSON.stringify(updatedBranding));
+        safeLocalStorage.setItem('gts_translations', JSON.stringify(existingTranslations));
       } catch (cacheErr) {
         console.warn("Failed to update branding local cache", cacheErr);
       }
 
+      // Save to dedicated unbreakable translations storage and the global configuration document
+      await firebaseService.updateTranslations(existingTranslations);
       await firebaseService.updateBranding(updatedBranding, userFullName);
       
       // Update element directly in the local viewport for immediate response
@@ -349,10 +352,12 @@ export default function InlineTextEditor({
 
       try {
         safeLocalStorage.setItem('gts_branding', JSON.stringify(updatedBranding));
+        safeLocalStorage.setItem('gts_translations', JSON.stringify(existingTranslations));
       } catch (cacheErr) {
         console.warn("Failed to clear local cache for default", cacheErr);
       }
 
+      await firebaseService.updateTranslations(existingTranslations);
       await firebaseService.updateBranding(updatedBranding, userFullName);
       
       if (editingNode.element) {

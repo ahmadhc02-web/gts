@@ -111,9 +111,24 @@ export default function App() {
   const [branding, setBranding] = useState<BrandingConfig>(() => {
     try {
       const cached = safeLocalStorage.getItem('gts_branding');
-      if (cached) {
-        return JSON.parse(cached) as BrandingConfig;
+      const cachedTranslations = safeLocalStorage.getItem('gts_translations');
+      
+      let brandingData: BrandingConfig = cached 
+        ? JSON.parse(cached) 
+        : { ...DEFAULT_BRANDING, id: 'global', updatedAt: Date.now(), updatedBy: 'system' } as BrandingConfig;
+      
+      if (cachedTranslations) {
+        try {
+          brandingData.translations = {
+            ...(brandingData.translations || {}),
+            ...JSON.parse(cachedTranslations)
+          };
+        } catch (e) {
+          console.warn("Failed to parse cached translations:", e);
+        }
       }
+      
+      return brandingData;
     } catch (e) {
       console.warn("Failed to load cached branding:", e);
     }
@@ -376,11 +391,46 @@ export default function App() {
     
     return firebaseService.subscribeBranding((data) => {
       if (data) {
-        setBranding(data);
+        setBranding((prev) => {
+          const mergedTranslations = {
+            ...(prev?.translations || {}),
+            ...(data.translations || {})
+          };
+          return {
+            ...prev,
+            ...data,
+            translations: mergedTranslations
+          };
+        });
         try {
           safeLocalStorage.setItem('gts_branding', JSON.stringify(data));
         } catch (e) {
           console.warn("Failed to cache branding locally:", e);
+        }
+      }
+    });
+  }, [firebaseAuthReady]);
+
+  // Synchronize unbreakable lifetime translations from Firestore and merge them into branding
+  useEffect(() => {
+    if (!firebaseAuthReady) return;
+
+    return firebaseService.subscribeTranslations((data) => {
+      if (data) {
+        setBranding((prev) => {
+          const mergedTranslations = {
+            ...(prev?.translations || {}),
+            ...data
+          };
+          return {
+            ...prev,
+            translations: mergedTranslations
+          };
+        });
+        try {
+          safeLocalStorage.setItem('gts_translations', JSON.stringify(data));
+        } catch (e) {
+          console.warn("Failed to cache translations locally:", e);
         }
       }
     });
