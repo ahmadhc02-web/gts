@@ -1,6 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { TrendingUp, BarChart3, Users, Flame, Calendar, Clock, X, Hash, MapPin, Tag, Info, User, Wifi, WifiOff } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Complaint } from '../types';
 import { 
   AreaChart, 
@@ -33,11 +31,10 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     };
   }, []);
   
-  // Process data for Chart
+  // Process data for Chart precisely
   const { chartData } = useMemo(() => {
     if (!complaints || complaints.length === 0) return { chartData: [] };
     
-    // 1. Chart Data
     let data: { name: string; total: number }[] = [];
     const now = new Date();
 
@@ -78,38 +75,31 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     return { chartData: data };
   }, [complaints, reportType]);
 
-  const totalComplaints = complaints.length;
-  const resolvedCount = complaints.filter(c => c.status === 'resolved' || c.status === 'closed').length;
-  const resolutionRate = totalComplaints > 0 ? Math.round((resolvedCount / totalComplaints) * 100) : 0;
-
-  useEffect(() => {
-    return () => {
-    };
-  }, []);
-
   return (
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100">
-      {/* Report & Stats Section */}
-      <div className="flex-1 bg-gradient-to-br from-slate-50/50 to-slate-100/30 dark:from-slate-800/30 dark:to-slate-800/10 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 p-6 shadow-sm flex flex-col relative overflow-hidden transition-colors">
-         {/* Decorative background elements */}
-        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none" />
-        <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-64 h-64 bg-emerald-500/5 blur-[80px] rounded-full pointer-events-none" />
-        
-        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-4 mb-2 relative z-10">
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-6 bg-blue-600 rounded-full" />
-            <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">
-              Analysis <span className="text-slate-400 dark:text-slate-500 font-normal">/</span> <span className="text-blue-600">{reportType === 'monthly' ? 'Monthly' : 'Daily'}</span>
+      {/* Container Card utilizing same deep shadow and white design */}
+      <div className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col relative overflow-hidden shadow-[0_12px_45px_-8px_rgba(30,41,59,0.04),0_4px_16px_-4px_rgba(30,41,59,0.02)] transition-colors">
+         {/* Dual ambient blobs: left: mint green, right: bluish lavender precisely like image */}
+         <div className="absolute bottom-4 left-4 w-44 h-44 bg-teal-400/8 blur-[48px] rounded-full pointer-events-none z-0" />
+         <div className="absolute top-4 right-4 w-48 h-48 bg-indigo-400/8 blur-[48px] rounded-full pointer-events-none z-0" />
+         
+        <div className="flex items-center justify-between gap-4 mb-2 relative z-10 w-full">
+          {/* Header Title with vertical accent line matching template precisely */}
+          <div className="flex items-center gap-2.5">
+            <div className="w-[3px] h-4 bg-blue-600 rounded-full shrink-0" />
+            <h3 className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">
+              ANALYSIS <span className="text-blue-600">/ {reportType}</span>
             </h3>
           </div>
 
           <div className="flex items-center">
-            <div className="flex items-center p-1 bg-slate-200/50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 backdrop-blur-md">
+            {/* Elegant Daily/Monthly switch pill styling matching mockup */}
+            <div className="flex items-center p-1 bg-slate-100/80 dark:bg-slate-900/80 rounded-xl border border-slate-200/50 dark:border-slate-800/80 backdrop-blur-md">
               <button
                 onClick={() => setReportType('daily')}
-                className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-300 ${
+                className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-[0.15em] transition-all duration-300 ${
                   reportType === 'daily' 
-                    ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-lg shadow-blue-500/10' 
+                    ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
@@ -117,9 +107,9 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
               </button>
               <button
                 onClick={() => setReportType('monthly')}
-                className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] transition-all duration-300 ${
+                className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-[0.15em] transition-all duration-300 ${
                   reportType === 'monthly' 
-                    ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-lg shadow-blue-500/10' 
+                    ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-sm' 
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
@@ -129,12 +119,8 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
           </div>
         </div>
 
-        <div className="flex-1 w-full mt-4 h-full relative z-10 -ml-4 group">
-          {/* Enhanced Chart Frame Decoration - Pointer Line */}
-          <div className="absolute inset-x-8 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent z-20 opacity-50" />
-          <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-32 h-[8px] bg-blue-600/30 rounded-full blur-md z-10 animate-pulse" />
-          <div className="absolute bottom-[-1px] left-1/2 -translate-x-1/2 w-1 h-1 bg-blue-500 rounded-full z-30" />
-          
+        {/* Chart Frame */}
+        <div className="flex-1 w-full mt-4 h-full relative z-10 -ml-4">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
@@ -143,27 +129,27 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                   <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="rgba(148, 163, 184, 0.1)" />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.15)" />
               <XAxis 
                 dataKey="name" 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 9, fontWeight: 800, fill: '#64748b' }}
+                tick={{ fontSize: 9, fontWeight: 900, fill: '#475569' }}
                 dy={12}
               />
               <YAxis 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 9, fontWeight: 800, fill: '#64748b' }}
+                tick={{ fontSize: 9, fontWeight: 900, fill: '#475569' }}
                 dx={-8}
               />
               <Tooltip 
                 contentStyle={{ 
-                  backgroundColor: 'rgba(15, 23, 42, 0.95)', 
+                  backgroundColor: 'rgba(15, 23, 42, 0.98)', 
                   backdropFilter: 'blur(8px)',
-                  border: '1px solid rgba(51, 65, 85, 0.4)', 
+                  border: '1px solid rgba(51, 65, 85, 0.6)', 
                   borderRadius: '12px',
-                  boxShadow: '0 15px 30px -10px rgba(0, 0, 0, 0.3)',
+                  boxShadow: '0 15px 30px -10px rgba(0, 0, 0, 0.35)',
                   fontSize: '11px',
                   fontWeight: '900',
                   color: '#fff',
@@ -182,7 +168,7 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                 fillOpacity={1} 
                 fill="url(#colorTotal)" 
                 animationDuration={1200}
-                activeDot={{ r: 5, strokeWidth: 0, fill: '#3b82f6', shadow: '0 0 10px rgba(59, 130, 246, 0.5)' }}
+                activeDot={{ r: 5, strokeWidth: 0, fill: '#3b82f6' }}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -191,4 +177,3 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     </div>
   );
 }
-

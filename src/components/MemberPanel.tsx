@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity, Flame } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig } from '../types';
@@ -45,6 +45,8 @@ interface MemberPanelProps {
   isMicMuted: boolean;
   onToggleMic: () => void;
   branding: BrandingConfig;
+  activeTab?: string;
+  onNavigate?: (id: string) => void;
 }
 
 export default function MemberPanel({
@@ -67,7 +69,9 @@ export default function MemberPanel({
   onAuthorizeMic,
   isMicMuted,
   onToggleMic,
-  branding
+  branding,
+  activeTab: activeTabProp,
+  onNavigate: onNavigateProp
 }: MemberPanelProps) {
   const [forcedStatus, setForcedStatus] = useState<ComplaintStatus | 'all'>('all');
   const [forcedPriority, setForcedPriority] = useState<ComplaintPriority | 'all'>('all');
@@ -77,9 +81,49 @@ export default function MemberPanel({
   const [newPassword, setNewPassword] = useState(currentUser.password);
   const [newFullName, setNewFullName] = useState(currentUser.fullName || '');
   const [isUpdating, setIsUpdating] = useState(false);
-  const [activeTab, setActiveTab] = useState<'ops' | 'clients' | 'profile' | 'monitor'>('ops');
+  
+  const [localActiveTab, setLocalActiveTab] = useState<'ops' | 'clients' | 'profile' | 'monitor' | 'nodes'>('ops');
+  
+  // Resolve activeTab from either prop or local state
+  const activeTab = activeTabProp !== undefined
+    ? (activeTabProp === 'complaints' ? 'ops' : activeTabProp === 'settings' ? 'profile' : activeTabProp) as any
+    : localActiveTab;
+
+  // Custom setter that updates the parent or local state
+  const setActiveTab = (tabId: 'ops' | 'clients' | 'profile' | 'monitor' | 'nodes') => {
+    if (onNavigateProp) {
+      let layoutId = tabId as string;
+      if (tabId === 'ops') layoutId = 'complaints';
+      if (tabId === 'profile') layoutId = 'settings';
+      onNavigateProp(layoutId);
+    } else {
+      setLocalActiveTab(tabId);
+    }
+  };
+
   const [isFormVisible, setIsFormVisible] = useState(true);
   const [isChartsVisible, setIsChartsVisible] = useState(true);
+
+  // Synchronize navigation state with Layout dynamic sidebar
+  useEffect(() => {
+    const handleAdminNav = (e: any) => {
+      const id = e.detail;
+      if (id === 'complaints' || id === 'ops') {
+        setActiveTab('ops');
+      } else if (id === 'submit') {
+        setActiveTab('ops');
+        setIsFormVisible(true);
+      } else if (id === 'clients') {
+        setActiveTab('clients');
+      } else if (id === 'nodes') {
+        setActiveTab('nodes');
+      } else if (id === 'settings' || id === 'profile') {
+        setActiveTab('profile');
+      }
+    };
+    window.addEventListener('admin-nav', handleAdminNav as EventListener);
+    return () => window.removeEventListener('admin-nav', handleAdminNav as EventListener);
+  }, [setActiveTab]);
   const stats = [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Global volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
@@ -163,8 +207,39 @@ export default function MemberPanel({
                   {React.cloneElement(stat.icon as React.ReactElement, { size: window.innerWidth < 640 ? 14 : 18 })}
                 </motion.div>
             </div>
-            <div className={cn("text-2xl sm:text-4xl font-black tracking-tighter", stat.textColor)}>
-              {stat.value.toString().padStart(2, '0')}
+            <div className="flex items-end justify-between gap-2">
+              <div className={cn("text-2xl sm:text-3xl xl:text-4xl font-black tracking-tight leading-none", stat.textColor)}>
+                {stat.value.toString().padStart(2, '0')}
+              </div>
+              {/* Micro Sparklines matching the uploaded mockup dashboard design perfectly */}
+              {(stat.label === 'New Connection' || stat.label === branding?.tabNames?.new_connection_pending) && (
+                <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
+                  <svg viewBox="0 0 80 30" width="100%" height="100%" className="overflow-visible">
+                    <path
+                      d="M 0,22 Q 15,4 32,18 T 64,8 T 80,12"
+                      fill="none"
+                      stroke="#3b82f6"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    />
+                    <circle cx="80" cy="12" r="3" fill="#3b82f6" className="animate-pulse" />
+                  </svg>
+                </div>
+              )}
+              {(stat.label === 'In Operation' || stat.label === branding?.tabNames?.in_operation) && (
+                <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
+                  <svg viewBox="0 0 80 30" width="100%" height="100%" className="overflow-visible">
+                    <path
+                      d="M 0,20 Q 12,28 28,10 T 56,18 T 80,4"
+                      fill="none"
+                      stroke="#1d4ed8"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    />
+                    <circle cx="80" cy="4" r="3" fill="#1d4ed8" className="animate-pulse" />
+                  </svg>
+                </div>
+              )}
             </div>
           </motion.div>
         ))}
@@ -214,30 +289,6 @@ export default function MemberPanel({
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl w-fit border border-slate-200 dark:border-slate-800">
-        {[
-          { id: 'ops', label: 'Operations', icon: ClipboardList },
-          { id: 'clients', label: 'User Details', icon: Contact },
-          { id: 'nodes', label: 'Active Nodes', icon: Flame },
-          { id: 'profile', label: 'Security', icon: Shield },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={cn(
-              "flex items-center gap-2.5 px-6 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-              activeTab === tab.id
-                ? "bg-slate-950 dark:bg-brand-accent text-white shadow-lg" 
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800"
-            )}
-          >
-            <tab.icon size={14} />
-            {tab.label}
-          </button>
-        ))}
       </div>
 
       <motion.div

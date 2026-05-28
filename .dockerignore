@@ -1,5 +1,5 @@
 node_modules
-dist
+# dist removed from ignore list to allow build artifact uploads
 .git
 .gitignore
 README.md

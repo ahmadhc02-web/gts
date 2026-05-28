@@ -20,18 +20,6 @@ export function useTheme() {
     safeLocalStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Listen for system theme changes
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e: MediaQueryListEvent) => {
-      const newTheme = e.matches ? 'dark' : 'light';
-      setTheme(newTheme);
-    };
-
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, []);
-
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };

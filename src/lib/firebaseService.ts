@@ -1018,6 +1018,30 @@ export const firebaseService = {
     }
   },
 
+  updateClientComplaints: async (originalUsername: string, updatedData: { name: string; username: string; number: string; mobileNumber: string; pkgDetails: string; userNearby: string; panelDetails: string; area: string }) => {
+    try {
+      const q = query(collection(db, 'complaints'), where('customerUsername', '==', originalUsername));
+      const snapshot = await getDocs(q);
+      const batch = writeBatch(db);
+      
+      snapshot.docs.forEach((docSnap) => {
+        batch.update(docSnap.ref, {
+          customerName: updatedData.name,
+          customerUsername: updatedData.username,
+          number: updatedData.mobileNumber || updatedData.number || '',
+          pkgDetails: updatedData.pkgDetails || '',
+          userNearby: updatedData.userNearby || '',
+          panelDetails: updatedData.panelDetails || '',
+          area: updatedData.area || ''
+        });
+      });
+      
+      await batch.commit();
+    } catch (error) {
+      console.error("Failed to update complaints for edited client username:", originalUsername, error);
+    }
+  },
+
   deleteClient: async (id: string, clientName: string, authorName: string) => {
     const path = `clients/${id}`;
     try {

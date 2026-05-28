@@ -59,6 +59,8 @@ interface AdminPanelProps {
   branding: BrandingConfig;
   onUpdateBranding: (data: Partial<BrandingConfig>) => Promise<void>;
   onUpdateUserStatus: (uid: string, status: UserProfile['status']) => Promise<void>;
+  activeTab?: string;
+  onNavigate?: (id: string) => void;
 }
 
 export default function AdminPanel({
@@ -90,9 +92,19 @@ export default function AdminPanel({
   onChatUser,
   branding,
   onUpdateBranding,
-  onUpdateUserStatus
+  onUpdateUserStatus,
+  activeTab: activeTabProp,
+  onNavigate: onNavigateProp
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing'>('complaints');
+  const [localActiveTab, setLocalActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing'>('complaints');
+  const activeTab = activeTabProp !== undefined ? activeTabProp as any : localActiveTab;
+  const setActiveTab = (tabId: 'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing') => {
+    if (onNavigateProp) {
+      onNavigateProp(tabId);
+    } else {
+      setLocalActiveTab(tabId);
+    }
+  };
   const customNames = branding.customNames || {};
   const [isFormVisible, setIsFormVisible] = useState(true);
   const [isChartsVisible, setIsChartsVisible] = useState(true);
@@ -893,30 +905,69 @@ export default function AdminPanel({
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.05, duration: 0.3, ease: "easeOut" }}
-                  whileHover={{ y: -5, transition: { duration: 0.2 } }}
+                  whileHover={{ 
+                    y: -6, 
+                    scale: 1.025,
+                    boxShadow: "0 25px 45px -10px rgba(0, 0, 0, 0.08), 0 10px 20px -8px rgba(0, 0, 0, 0.04)"
+                  }}
+                  whileTap={{ scale: 0.98 }}
                   onClick={() => handleTileClick(stat.filter)}
                   title={stat.tooltip}
                   className={cn(
-                    "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-slate-200/20 dark:shadow-none flex flex-col justify-between transition-all group cursor-pointer active:scale-95",
+                    "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.03),0_4px_12px_-3px_rgba(0,0,0,0.01)] dark:shadow-[0_15px_45px_-10px_rgba(0,0,0,0.35),0_6px_20px_-6px_rgba(0,0,0,0.2)] border-slate-100 dark:border-slate-900 flex flex-col justify-between transition-all duration-300 group cursor-pointer",
                     stat.color,
                     (forcedStatus === stat.filter.status && forcedPriority === stat.filter.priority && stat.label !== 'Total Registry') ? "ring-2 ring-brand-accent scale-105" : ""
                   )}
                 >
                   <div className="flex justify-between items-start mb-2 sm:mb-4">
-                    <span className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-100 transition-colors leading-tight">
+                    <span className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-100 transition-colors leading-tight">
                       {stat.label}
                     </span>
-                    <div className={cn("p-1.5 sm:p-2 rounded-lg transition-colors shrink-0", 
-                      stat.textColor === 'text-rose-500' ? "bg-rose-500/10" :
-                      stat.textColor === 'text-blue-600' ? "bg-blue-600/10" :
-                      stat.textColor === 'text-emerald-500' ? "bg-emerald-500/10" :
-                      "bg-slate-100 dark:bg-slate-900"
+                    <div className={cn("p-1.5 sm:p-2 rounded-lg transition-all duration-300 shrink-0 group-hover:scale-110 group-hover:rotate-6", 
+                      stat.textColor === 'text-rose-500' ? "bg-rose-500/10 text-rose-500 group-hover:bg-rose-500/20" :
+                      stat.textColor === 'text-blue-600' ? "bg-blue-600/10 text-blue-600 group-hover:bg-blue-600/20" :
+                      stat.textColor === 'text-emerald-500' ? "bg-emerald-500/10 text-emerald-500 group-hover:bg-emerald-500/20" :
+                      stat.textColor === 'text-brand-accent' ? "bg-brand-accent/10 text-brand-accent group-hover:bg-brand-accent/20" :
+                      stat.textColor === 'text-cyan-500' ? "bg-cyan-500/10 text-cyan-500 group-hover:bg-cyan-500/20" :
+                      stat.textColor === 'text-amber-500' ? "bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20 animate-pulse" :
+                      "bg-slate-100 dark:bg-slate-900 group-hover:bg-slate-200 dark:group-hover:bg-slate-800"
                     )}>
                       {React.cloneElement(stat.icon as React.ReactElement, { size: window.innerWidth < 640 ? 14 : 18 })}
                     </div>
                   </div>
-                  <div className={cn("text-2xl sm:text-4xl font-black tracking-tighter", stat.textColor)}>
-                    {stat.value.toString().padStart(2, '0')}
+                  <div className="flex items-end justify-between gap-2">
+                    <div className={cn("text-2xl sm:text-3xl xl:text-4xl font-black tracking-tight leading-none transition-transform duration-300 group-hover:scale-105 origin-left", stat.textColor)}>
+                      {stat.value.toString().padStart(2, '0')}
+                    </div>
+                    {/* Micro Sparklines matching the uploaded mockup dashboard design perfectly */}
+                    {(stat.label === 'New Connection' || stat.label === branding.tabNames?.new_connection_pending) && (
+                      <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
+                        <svg viewBox="0 0 80 30" width="100%" height="100%" className="overflow-visible">
+                          <path
+                            d="M 0,22 Q 15,4 32,18 T 64,8 T 80,12"
+                            fill="none"
+                            stroke="#3b82f6"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                          />
+                          <circle cx="80" cy="12" r="3" fill="#3b82f6" className="animate-pulse" />
+                        </svg>
+                      </div>
+                    )}
+                    {(stat.label === 'In Operation' || stat.label === branding.tabNames?.in_operation) && (
+                      <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
+                        <svg viewBox="0 0 80 30" width="100%" height="100%" className="overflow-visible">
+                          <path
+                            d="M 0,20 Q 12,28 28,10 T 56,18 T 80,4"
+                            fill="none"
+                            stroke="#1d4ed8"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                          />
+                          <circle cx="80" cy="4" r="3" fill="#1d4ed8" className="animate-pulse" />
+                        </svg>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               ))}
@@ -955,13 +1006,13 @@ export default function AdminPanel({
                     }}
                     className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-6 origin-right"
                   >
-                    <div className="h-[300px] sm:h-[400px] shadow-sm rounded-2xl">
+                    <div className="h-[300px] sm:h-[400px] transition-all duration-300">
                       <DistributionList complaints={complaints} chartType="area" />
                     </div>
-                    <div className="h-[300px] sm:h-[400px] shadow-sm rounded-2xl md:col-span-1 lg:col-span-2 xl:col-span-1">
+                    <div className="h-[300px] sm:h-[400px] md:col-span-1 lg:col-span-2 xl:col-span-1 transition-all duration-300">
                       <RealTimeMonitor complaints={complaints} />
                     </div>
-                    <div className="h-[300px] sm:h-[400px] shadow-sm rounded-2xl">
+                    <div className="h-[300px] sm:h-[400px] transition-all duration-300">
                       <DistributionList complaints={complaints} chartType="category" />
                     </div>
                   </motion.div>
@@ -3167,7 +3218,7 @@ export default function AdminPanel({
 
                             return (
                               <tr
-                                key={rowRef.clientId || rowRef.username}
+                                key={`${rowRef.clientId || rowRef.username || 'row'}-${localIdx}`}
                                 className={cn(
                                   "hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors whitespace-nowrap",
                                   isTdc && "bg-rose-500/5 text-rose-500"

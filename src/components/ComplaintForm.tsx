@@ -274,12 +274,17 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                           key={client.id}
                           type="button"
                           onClick={() => handleSelectClient(client)}
-                          className="w-full px-6 py-4 flex flex-col items-center hover:bg-brand-accent text-center group/item transition-all"
+                          className="w-full px-6 py-4 flex flex-col items-center hover:bg-brand-accent text-center group/item transition-all border-b border-slate-100 dark:border-slate-800/40 last:border-0"
                         >
                           <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight group-hover/item:text-white">{client.name}</span>
-                          <div className="flex items-center gap-3 mt-1 justify-center">
+                          <div className="flex flex-wrap items-center gap-2 mt-2 justify-center">
                             <span className="text-[10px] font-bold text-brand-accent group-hover/item:text-white/80 uppercase">@{client.username}</span>
-                            <span className="text-[9px] font-medium text-slate-400 group-hover/item:text-white/60 uppercase tracking-widest border-l border-slate-200 dark:border-slate-800 group-hover/item:border-white/20 pl-3">{client.area}</span>
+                            <span className="text-[9px] font-medium text-slate-400 group-hover/item:text-white/60 uppercase tracking-widest border-l border-slate-200 dark:border-slate-800 group-hover/item:border-white/20 pl-2">{client.area}</span>
+                            {client.pkgDetails && (
+                              <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-900/40 px-2 py-0.5 rounded-md group-hover/item:text-white group-hover/item:bg-white/20 group-hover/item:border-transparent uppercase">
+                                {client.pkgDetails}
+                              </span>
+                            )}
                           </div>
                         </button>
                       ))}

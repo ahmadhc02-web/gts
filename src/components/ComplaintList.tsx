@@ -226,7 +226,9 @@ export default function ComplaintList({
     setEndDate('');
   };
 
-  const filteredComplaints = getFilteredComplaints();
+  const filteredComplaints = React.useMemo(() => {
+    return getFilteredComplaints();
+  }, [complaints, searchQuery, statusFilter, priorityFilter, categoryFilter, zoneFilter, startDate, endDate, sortConfig]);
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredComplaints.length / itemsPerPage);
@@ -835,81 +837,121 @@ export default function ComplaintList({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800/40">
-              <AnimatePresence mode="popLayout">
+               <AnimatePresence mode="popLayout">
                 {paginatedComplaints.length === 0 ? (
                    <tr>
                      <td colSpan={10} className="py-24 text-center">
-                       <Clock size={40} className="text-slate-200 mx-auto mb-4" />
+                       <Clock size={40} className="text-slate-200 mx-auto mb-4 animate-bounce" style={{ animationDuration: '3s' }} />
                        <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No records meet current parameters</p>
                     </td>
                   </tr>
                 ) : (
-                  paginatedComplaints.map((complaint, idx) => (
+                  paginatedComplaints.map((complaint, index) => (
                     <motion.tr
-                      key={`${complaint.id}-${idx}`}
-                      layout
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
+                      key={complaint.id}
+                      layout="position"
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ 
+                        opacity: 1, 
+                        y: 0,
+                        transition: {
+                          type: "spring",
+                          stiffness: 120,
+                          damping: 14,
+                          delay: index * 0.03
+                        }
+                      }}
+                      exit={{ 
+                        opacity: 0, 
+                        scale: 0.96,
+                        transition: { duration: 0.15 }
+                      }}
                       onClick={() => setSelectedComplaint(complaint)}
-                      className="group hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-all cursor-pointer"
+                      className={cn(
+                        "group hover:scale-[1.004] active:scale-[0.998] hover:shadow-md dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.4)] border-y border-slate-100/80 dark:border-slate-800/40 transition-all duration-300 cursor-pointer relative",
+                        complaint.status === 'complete' 
+                          ? 'bg-white dark:bg-slate-950/20 hover:bg-emerald-500/[0.03] dark:hover:bg-emerald-500/[0.04] hover:border-emerald-500/20' 
+                          : complaint.status === 'in process'
+                            ? 'bg-white dark:bg-slate-950/20 hover:bg-blue-500/[0.03] dark:hover:bg-blue-500/[0.04] hover:border-blue-500/20'
+                            : complaint.status === 'important'
+                              ? 'bg-white dark:bg-slate-950/20 hover:bg-amber-500/[0.03] dark:hover:bg-amber-500/[0.04] hover:border-amber-500/20'
+                              : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.03] dark:hover:bg-slate-500/[0.04] hover:border-slate-500/15'
+                      )}
                     >
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-4">
-                          <div className="shrink-0 w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:bg-brand-accent/10 group-hover:text-brand-accent transition-colors">
-                            {complaint.category === 'Fiber Break' ? <Zap size={20} /> : <Wifi size={20} />}
+                      <td className="px-6 py-5 relative">
+                        {/* Interactive Status Color Bar on Left Margin */}
+                        <div className={cn(
+                          "absolute left-0 top-2 bottom-2 w-1 rounded-r-full transition-all duration-300 group-hover:w-1.5",
+                          complaint.status === 'complete' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' :
+                          complaint.status === 'in process' ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.4)]' :
+                          complaint.status === 'important' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : 
+                          'bg-slate-400 dark:bg-slate-500 shadow-none'
+                        )} />
+                        
+                        <div className="flex items-center gap-4 pl-1">
+                          <div className="shrink-0 w-[42px] h-[42px] rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/40 dark:border-slate-800/50 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover:scale-105 group-hover:bg-brand-accent/10 group-hover:text-brand-accent group-hover:border-brand-accent/20 transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
+                            {complaint.category === 'Fiber Break' ? (
+                              <Zap size={18} className="text-rose-500 dark:text-rose-400 shrink-0 group-hover:animate-pulse" />
+                            ) : (
+                              <Wifi size={18} className="text-indigo-500 dark:text-indigo-400 shrink-0 group-hover:animate-pulse" />
+                            )}
                           </div>
                           <div className="flex flex-col">
-                            <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight leading-none mb-1">
+                            <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight leading-snug group-hover:text-brand-accent transition-colors duration-300 text-[13px]">
                               {complaint.customerName}
                             </span>
-                            <span className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">{complaint.customerUsername || '---'}</span>
+                            <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase tracking-widest">{complaint.customerUsername || '---'}</span>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-5">
-                        <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-widest bg-slate-100/50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50">
+                        <span className={cn(
+                          "text-[10px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg border transition-all duration-300 inline-block",
+                          complaint.category === 'Fiber Break' 
+                            ? 'bg-rose-500/5 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/10' 
+                            : 'bg-indigo-500/5 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/10'
+                        )}>
                           {complaint.category}
                         </span>
                       </td>
                       <td className="px-6 py-5">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest">
-                             <MapPin size={12} className="text-brand-accent/60" />
-                             {complaint.area}
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest group-hover:translate-x-0.5 transition-transform duration-300">
+                             <MapPin size={11} className="text-brand-accent/75 shrink-0" />
+                             <span className="truncate max-w-[120px]">{complaint.area}</span>
                           </div>
                           {complaint.userNearby && (
-                            <span className="text-[10px] font-bold text-brand-accent/70 uppercase tracking-widest flex items-center gap-1">
-                              <MapPinned size={10} /> {complaint.userNearby}
+                            <span className="text-[9px] font-bold text-amber-500/90 dark:text-amber-400/90 uppercase tracking-wider flex items-center gap-1 mt-0.5">
+                              <MapPinned size={10} className="shrink-0" /> {complaint.userNearby}
                             </span>
                           )}
-                          <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{complaint.number}</span>
+                          <span className="text-[10.5px] font-mono text-slate-500 dark:text-slate-400 mt-1">{complaint.number}</span>
                         </div>
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-md bg-brand-accent/10 border border-brand-accent/20">
-                            <Package size={14} className="text-brand-accent" />
+                          <div className="p-1.5 rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/40 dark:border-slate-800/40 shadow-sm">
+                            <Package size={13} className="text-slate-500 dark:text-slate-400 group-hover:rotate-12 transition-transform duration-300" />
                           </div>
-                          <span className="text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
                             {complaint.pkgDetails || 'N/A'}
                           </span>
                         </div>
                       </td>
                       <td className="px-6 py-5">
-                        <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+                        <span className="text-[11px] text-slate-600 dark:text-slate-300 font-bold tracking-tight bg-slate-50/50 dark:bg-slate-900/20 border border-dashed border-slate-200/50 dark:border-slate-800/60 px-2 py-1 rounded-md shrink-0 truncate max-w-[140px] block">
                           {complaint.panelDetails || 'N/A'}
                         </span>
                       </td>
                       <td className="px-6 py-5">
-                        <span className="text-sm text-slate-700 dark:text-slate-300 font-medium line-clamp-2 max-w-[200px]">
+                        <span className="text-xs text-slate-600 dark:text-slate-350 font-medium line-clamp-2 max-w-[180px] bg-slate-50/30 dark:bg-slate-900/10 px-2.5 py-1.5 rounded-lg border border-transparent group-hover:border-slate-100/50 dark:group-hover:border-slate-800/50 transition-colors block">
                           {complaint.description}
                         </span>
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex justify-center">
                           <div className={cn(
-                            "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest border",
+                            "px-2.5 py-1.5 rounded-lg text-[9.5px] font-black uppercase tracking-widest border transition-all duration-300 group-hover:scale-105",
                             getPriorityColor(complaint.priority || 'Medium')
                           )}>
                             {complaint.priority || 'Medium'}
@@ -919,11 +961,11 @@ export default function ComplaintList({
                       <td className="px-6 py-5">
                         <div className="flex flex-col items-center justify-center gap-1.5 matches-status-cell">
                           <div className={cn(
-                            "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest border shadow-sm",
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)] transition-all duration-300 group-hover:scale-105",
                             getStatusColor(complaint.status)
                           )}>
                             {getStatusIcon(complaint.status)}
-                            {complaint.status}
+                            <span className="leading-none">{complaint.status}</span>
                           </div>
                           
                           {complaint.status === 'in process' && (() => {
@@ -931,15 +973,15 @@ export default function ComplaintList({
                             if (prog.percentage <= 0) return null;
                             return (
                               <div className="w-24 flex flex-col items-center gap-1" title={prog.stepText}>
-                                <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40 shadow-inner">
+                                <div className="w-full bg-slate-100 dark:bg-slate-800/80 h-1 rounded-full overflow-hidden border border-slate-200/20 dark:border-slate-700/30">
                                   <motion.div 
                                     initial={{ width: 0 }}
                                     animate={{ width: `${prog.percentage}%` }}
-                                    transition={{ duration: 0.5, ease: "easeOut" }}
+                                    transition={{ duration: 0.6, ease: "easeOut" }}
                                     className="bg-blue-500 dark:bg-blue-400 h-full rounded-full shadow-sm"
                                   />
                                 </div>
-                                <span className="text-[8px] font-mono font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0">
+                                <span className="text-[8px] font-mono font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0 animate-pulse">
                                   {prog.percentage}% Complete
                                 </span>
                               </div>
@@ -949,14 +991,14 @@ export default function ComplaintList({
                       </td>
                       <td className="px-6 py-5 text-right">
                         <div className="flex flex-col items-end">
-                          <span className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-tighter">
+                          <span className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-tighter">
                             {new Date(complaint.createdAt).toLocaleDateString()}
                           </span>
-                          <span className="text-xs font-mono text-slate-400">{new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5">{new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                       </td>
                       <td className="px-6 py-5 text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-1.5">
                            {(isAdmin || (currentUserId && complaint.memberId === currentUserId)) && (
                              <button
                                onClick={(e) => {
@@ -965,10 +1007,10 @@ export default function ComplaintList({
                                  setEditData({ ...complaint });
                                  setSelectedComplaint(null); // Close detail modal if open
                                }}
-                               className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all duration-75"
+                               className="p-1.5 text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-transparent hover:border-blue-100 dark:hover:border-blue-900 rounded-lg transition-all duration-200 cursor-pointer"
                                title="Edit Operational Log"
                              >
-                               <Pencil size={16} />
+                               <Pencil size={14} />
                              </button>
                            )}
                            {isAdmin && onDelete && (
@@ -977,10 +1019,10 @@ export default function ComplaintList({
                                  e.stopPropagation();
                                  setComplaintToDelete(complaint.id);
                                }}
-                               className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all duration-75"
+                               className="p-1.5 text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-100 dark:hover:border-rose-900 rounded-lg transition-all duration-200 cursor-pointer"
                                title="Revoke Registry"
                              >
-                               <Trash2 size={16} />
+                               <Trash2 size={14} />
                              </button>
                            )}
                         </div>

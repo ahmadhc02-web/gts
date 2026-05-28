@@ -47,6 +47,7 @@ export interface UserProfile {
   createdByName?: string; // Name of creator
   companyName?: string; // Dealer company name
   status?: 'active' | 'pending' | 'blocked';
+  profilePicture?: string;
 }
 
 export interface Client {

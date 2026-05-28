@@ -133,6 +133,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       const currentUserId = currentUser.uid;
 
       if (editingId) {
+        const originalClient = clients.find(c => c.id === editingId);
+        const originalUsername = originalClient ? originalClient.username : trimmedUsername;
+
         const updatedData = {
           name: trimmedName,
           username: trimmedUsername,
@@ -145,6 +148,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           area: area,
         };
         await firebaseService.updateClient(editingId, updatedData, trimmedName, currentUserName);
+        
+        // Propagate updates to all active and historic complaints for this client username
+        try {
+          await firebaseService.updateClientComplaints(originalUsername, updatedData);
+        } catch (complaintErr) {
+          console.warn("Failed to propagate client updates back to complaint tickets:", complaintErr);
+        }
+
         toast.success('Matrix Record Synchronized', {
           description: `Updated details for ${trimmedName} successfully.`
         });

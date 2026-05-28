@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { UserProfile, Notification, BrandingConfig } from '../types';
 import Chat from './Chat';
+import AIHelpPanel from './AIHelpPanel';
 import FloatingMascot from './FloatingMascot';
 import ServiceMonitor from './ServiceMonitor';
 import MapViewer from './MapViewer';
@@ -29,9 +30,11 @@ interface LayoutProps {
   micAuthorized?: boolean;
   onToggleMic?: () => void;
   onResetBanner?: () => void;
-  onUpdateUser?: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => Promise<void>;
+  onUpdateUser?: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role'], profilePicture?: string) => Promise<void>;
   branding?: BrandingConfig;
   onUpdateBranding?: (newBranding: BrandingConfig) => Promise<void>;
+  activeTab?: string;
+  onNavigate?: (id: string) => void;
 }
 
 export default function Layout({ 
@@ -51,7 +54,9 @@ export default function Layout({
   onResetBanner,
   onUpdateUser,
   branding,
-  onUpdateBranding
+  onUpdateBranding,
+  activeTab: activeTabProp,
+  onNavigate: onNavigateProp
 }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const [isChatOpen, setIsChatOpen] = React.useState(false);
@@ -66,6 +71,20 @@ export default function Layout({
   const isOnline = useOnlineStatus();
   const [showSyncStatus, setShowSyncStatus] = useState(false);
   const [isInlineEditingActive, setIsInlineEditingActive] = useState(false);
+  
+  const [localActiveTab, setLocalActiveTab] = useState<string>('complaints');
+  const activeTab = activeTabProp !== undefined ? activeTabProp : localActiveTab;
+  const setActiveTab = onNavigateProp !== undefined ? onNavigateProp : setLocalActiveTab;
+
+  useEffect(() => {
+    const handleAdminTab = (e: any) => {
+      if (e.detail) {
+        setActiveTab(e.detail);
+      }
+    };
+    window.addEventListener('admin-nav', handleAdminTab);
+    return () => window.removeEventListener('admin-nav', handleAdminTab);
+  }, [setActiveTab]);
 
   useEffect(() => {
     const handleOpenMap = (e: CustomEvent) => {
@@ -123,15 +142,29 @@ export default function Layout({
   const [editFullName, setEditFullName] = useState(user?.fullName || '');
   const [editUsername, setEditUsername] = useState(user?.username || '');
   const [editPassword, setEditPassword] = useState(user?.password || '');
+  const [editProfilePicture, setEditProfilePicture] = useState(user?.profilePicture || '');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
       setEditFullName(user.fullName || '');
       setEditUsername(user.username || '');
       setEditPassword(user.password || '');
+      setEditProfilePicture(user.profilePicture || '');
     }
   }, [user]);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditProfilePicture(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,7 +179,8 @@ export default function Layout({
         user.lineCode, 
         user.companyName, 
         editFullName, 
-        user.role
+        user.role,
+        editProfilePicture
       );
       setIsProfileOpen(false);
     } catch (error) {
@@ -155,6 +189,27 @@ export default function Layout({
       setIsUpdatingProfile(false);
     }
   };
+
+  const [intervalTime, setIntervalTime] = useState<number>(0);
+  const [showRefreshOptions, setShowRefreshOptions] = useState(false);
+  const [lastRefreshedTime, setLastRefreshedTime] = useState<string>("06:05:10");
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      setLastRefreshedTime(`${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`);
+    };
+    updateTime();
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (intervalTime === 0) return;
+    const timer = setInterval(() => {
+      if (onRefresh) onRefresh();
+    }, intervalTime);
+    return () => clearInterval(timer);
+  }, [intervalTime, onRefresh]);
 
   const getBrandingText = () => {
     // If global branding provides a custom name, use it as primary unless dealer overrides
@@ -226,7 +281,7 @@ export default function Layout({
     }
   };
 
-  const [expandedCats, setExpandedCats] = useState<string[]>(['ops']);
+  const [expandedCats, setExpandedCats] = useState<string[]>(['ops', 'analytics', 'system']);
 
   const categories = [
     {
@@ -305,6 +360,82 @@ export default function Layout({
 
   return (
     <div className="min-h-screen transition-colors duration-500 overflow-x-hidden">
+      {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
+      {user && (
+        <div className="hidden lg:flex fixed top-0 left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 z-[51] shadow-[1px_0_15px_rgba(0,0,0,0.02)] select-none">
+          {/* Menu Trigger Button Container (aligned with Header H-16 perfectly) */}
+          <div className="w-full h-16 flex items-center justify-center shrink-0 border-b border-slate-100/50 dark:border-slate-900/40">
+            <button
+              id="rail-menu-btn"
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
+              title="Toggle Detailed Menu"
+            >
+              <Menu size={20} />
+            </button>
+          </div>
+
+          {/* Dynamic Icon groups */}
+          <div className="flex-1 w-full px-3 flex flex-col gap-5 items-center pt-6 overflow-y-auto no-scrollbar">
+            {filteredCategories.flatMap(cat => cat.items).map((item) => {
+              const isItemActive = activeTab === item.id || 
+                                   (item.id === 'complaints' && activeTab === 'ops') ||
+                                   (item.id === 'settings' && activeTab === 'profile');
+              
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleSidebarNav(item.id)}
+                  className={cn(
+                    "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 hover:scale-[1.05] active:scale-95 relative group cursor-pointer border",
+                    isItemActive
+                      ? "bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 border-blue-100/50 dark:border-blue-900/30"
+                      : "border-transparent text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-900/50 hover:text-slate-800 dark:hover:text-white"
+                  )}
+                  title={item.label}
+                >
+                  <item.icon size={20} />
+                  {isItemActive && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-600 dark:bg-blue-400 rounded-r-full" />
+                  )}
+                  {/* Tooltip */}
+                  <span className="absolute left-16 scale-0 group-hover:scale-100 transition-all duration-200 z-[100] bg-slate-900 dark:bg-slate-800 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Bottom Help Question Icon & Logout */}
+          <div className="mt-auto px-3 w-full flex flex-col items-center gap-3">
+            <button
+              onClick={() => setIsChatOpen(true)}
+              className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 hover:scale-[1.05] active:scale-95 relative group cursor-pointer text-blue-500 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-900"
+              title="Launch AI Help Portal"
+            >
+              <Sparkles size={20} className="animate-pulse" />
+              <span className="absolute left-16 scale-0 group-hover:scale-100 transition-all duration-200 z-50 bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
+                AI Help
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                if (onLogout) onLogout();
+              }}
+              className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 hover:scale-[1.05] active:scale-95 relative group cursor-pointer text-slate-400 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-600 dark:hover:bg-red-500/20 dark:hover:text-red-400"
+              title="Sign Out"
+            >
+              <LogOut size={20} />
+              <span className="absolute left-16 scale-0 group-hover:scale-100 transition-all duration-200 z-50 bg-red-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
+                Logout
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -326,8 +457,9 @@ export default function Layout({
           x: isSidebarOpen ? 0 : -50,
           opacity: isSidebarOpen ? 1 : 0
         }}
+        transition={{ type: 'spring', damping: 25, stiffness: 220 }}
         className={cn(
-          "fixed top-0 bottom-0 left-0 z-[160] overflow-hidden bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col transition-all duration-300 ease-in-out",
+          "fixed top-0 bottom-0 left-0 z-[160] overflow-hidden bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col",
           !isSidebarOpen && "pointer-events-none"
         )}
       >
@@ -598,19 +730,14 @@ export default function Layout({
         )}
       </AnimatePresence>
 
-      {/* Chat Sidebar */}
+      {/* Chat Sidebar / AI Help Panel */}
       <AnimatePresence>
         {isChatOpen && user && (
-          <Chat 
+          <AIHelpPanel 
             currentUser={user} 
-            users={users}
             onClose={() => {
               setIsChatOpen(false);
-              setSelectedChatId(null);
             }} 
-            isAudioMuted={isAudioMuted} 
-            isMicMuted={isMicMuted}
-            selectedId={selectedChatId}
           />
         )}
       </AnimatePresence>
@@ -778,6 +905,57 @@ export default function Layout({
               </div>
 
               <form onSubmit={handleUpdateProfile} className="p-5 space-y-4">
+                <div className="flex flex-col items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800/40">
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="relative w-20 h-20 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-center overflow-hidden cursor-pointer group transition-all"
+                  >
+                    {editProfilePicture ? (
+                      <img 
+                        src={editProfilePicture} 
+                        alt="Profile Preview" 
+                        className="w-full h-full object-cover" 
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-brand-accent transition-colors">
+                        <User size={24} className="opacity-70 group-hover:scale-105 transition-transform" />
+                        <span className="text-[7.5px] font-black uppercase mt-1 tracking-tight">Setup Photo</span>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all text-white text-[8px] font-black uppercase tracking-widest text-center select-none">
+                      UPLOAD
+                    </div>
+                  </div>
+                  
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleImageUpload} 
+                    accept="image/*" 
+                    className="hidden" 
+                  />
+                  
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-lg text-[9px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                    >
+                      Choose Image
+                    </button>
+                    {editProfilePicture && (
+                      <button
+                        type="button"
+                        onClick={() => setEditProfilePicture('')}
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 text-rose-500 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Full Display Name</label>
                   <input
@@ -840,11 +1018,12 @@ export default function Layout({
       </AnimatePresence>
 
       <header className={cn(
-        "sticky top-0 z-50 w-full border-b backdrop-blur-md",
-        branding?.sidebarTheme === 'dark' ? "bg-slate-950 border-slate-800 text-white" :
-        branding?.sidebarTheme === 'accent' ? "bg-brand-accent border-white/20 text-white" :
+        "sticky top-0 z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
+        user && "lg:pl-[68px]",
+        branding?.sidebarTheme === 'dark' ? "bg-slate-950/95 border-slate-900 text-white" :
+        branding?.sidebarTheme === 'accent' ? "bg-brand-accent/95 border-white/10 text-white" :
         branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
-        "bg-white/80 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800"
+        "bg-white/95 dark:bg-slate-950/95 border-slate-200/80 dark:border-slate-900/80"
       )}>
         <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <motion.div 
@@ -857,169 +1036,227 @@ export default function Layout({
                 id="sidebar-toggle-btn"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={cn(
-                  "p-2 rounded-xl transition-all mr-1",
+                  "p-2 rounded-xl transition-all mr-1 lg:hidden flex items-center justify-center",
                   isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500"
                 )}
               >
                 {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
             )}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="relative group shrink-0">
-                {/* Modern Mesh Gradient Background */}
-                <div className="absolute -inset-1.5 bg-gradient-to-r from-brand-accent via-blue-500 to-emerald-500 rounded-xl blur-lg opacity-25 group-hover:opacity-60 transition-opacity duration-500 animate-pulse" />
-                
-                {/* Main Logo Container */}
-                <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950 flex items-center justify-center shadow-2xl border border-white/10 overflow-hidden group/logo">
-                  {branding?.logoUrl ? (
-                    <img src={branding.logoUrl} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    <>
-                      {/* Internal Animated Mesh */}
-                      <div className="absolute inset-0 opacity-40">
-                        <div className="absolute top-0 -left-1/4 w-1/2 h-1/2 bg-brand-accent/40 blur-2xl rounded-full animate-blob" />
-                        <div className="absolute bottom-0 -right-1/4 w-1/2 h-1/2 bg-blue-500/40 blur-2xl rounded-full animate-blob animation-delay-2000" />
-                      </div>
-                      
-                      {/* Subtle Grid Pattern */}
-                      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay" />
-                      
-                      {/* Shimmer Effect */}
-                      <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full group-hover/logo:translate-x-full transition-transform duration-1000 ease-in-out" />
-                      
-                      {/* Text with modern styling */}
-                      <div className="relative flex items-baseline">
-                        <span className="text-white font-black text-xl sm:text-2xl tracking-tighter italic leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
-                          G
-                        </span>
-                        <span className="text-brand-accent font-black text-xl sm:text-2xl tracking-tighter italic leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
-                          TS
-                        </span>
-                      </div>
-
-                      {/* Corner Accents */}
-                      <div className="absolute top-1 left-1 w-2 h-0.5 bg-white/20 rounded-full" />
-                      <div className="absolute top-1 left-1 w-0.5 h-2 bg-white/20 rounded-full" />
-                      <div className="absolute bottom-1 right-1 w-2 h-0.5 bg-white/20 rounded-full" />
-                      <div className="absolute bottom-1 right-1 w-0.5 h-2 bg-white/20 rounded-full" />
-                    </>
-                  )}
+            
+            <div className="flex items-center gap-2.5">
+              {/* Branded box size and aura matching screenshot */}
+              <div className="relative shrink-0 select-none group">
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-40 transition duration-1000 animate-pulse" />
+                <div className="relative w-11 h-11 rounded-2xl bg-slate-950 flex items-center justify-center border border-white/10 shadow-lg">
+                  <span className="text-white font-black text-lg tracking-tighter italic leading-none">
+                    G<span className="text-emerald-500">TS</span>
+                  </span>
                 </div>
               </div>
               
-              <div className="hidden xs:block sm:block">
-                <h1 className={cn(
-                  "text-xs sm:text-lg font-black tracking-tight uppercase leading-none font-mono",
-                  isColoredHeader ? "text-white" : "text-emerald-600 dark:text-emerald-400"
-                )}>
+              <div className="hidden xs:flex sm:flex flex-col justify-center select-none h-11 mt-0">
+                <h1 className="text-xs md:text-sm font-black tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-sans">
                   {brandingText}
                 </h1>
-                <p className={cn(
-                  "text-[8px] sm:text-[10px] font-bold uppercase tracking-[0.2em] mt-0.5 sm:mt-1 flex items-center gap-1.5 opacity-90",
-                  isColoredHeader ? "text-white/70" : "text-emerald-500/80"
-                )}>
-                  <span className={cn("w-1.5 h-1.5 rounded-full animate-pulse", isColoredHeader ? "bg-white" : "bg-emerald-500")} />
-                  Powered by Green Net {user && user.role === 'super_admin' && <span className="text-brand-accent ml-1 font-black px-1.5 py-0.5 rounded bg-brand-accent/10 border border-brand-accent/20">ROOT ADMIN</span>}
-                  {user && user.role === 'dealer' && <span className="text-blue-500 ml-1 font-black px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20">MAIN DEALER PANEL</span>}
-                  {user && (user.role === 'admin' || (user.role === 'member' && user.dealerId && user.dealerId !== 'main')) && <span className="text-purple-500 ml-1 font-black px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20">{user.role === 'admin' ? 'LITE ADMIN PANEL' : 'OPERATIONAL MEMBER'}</span>}
-                </p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-[7.5px] md:text-[8.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1 leading-none">
+                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse mr-0.5" />
+                    POWERED BY GREEN NET
+                  </span>
+                </div>
               </div>
             </div>
           </motion.div>
 
-          <div className="flex items-center gap-1 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {user && onRefresh && (
-              <div className="hidden md:block scale-90 sm:scale-100">
-                <RefreshControl onRefresh={onRefresh} isLoading={isLoading} />
+              <div className="hidden md:flex items-center gap-2 h-9">
+                {/* AUTO - OFF dropdown pill matching mockup */}
+                <div className="relative h-9 flex items-center">
+                  <button
+                    onClick={() => setShowRefreshOptions(!showRefreshOptions)}
+                    className={cn(
+                      "flex items-center gap-1 px-2.5 h-9 rounded-xl border bg-white dark:bg-slate-900 text-[10px] font-extrabold uppercase tracking-wider transition-all focus:outline-none select-none shadow-sm cursor-pointer",
+                      showRefreshOptions 
+                        ? "border-brand-accent text-brand-accent" 
+                        : "border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700"
+                    )}
+                  >
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full mr-1 transition-all duration-300", 
+                      intervalTime === 0 
+                        ? "bg-slate-300 dark:bg-slate-600" 
+                        : "bg-brand-accent animate-pulse shadow-[0_0_8px_rgba(var(--brand-accent),0.5)]"
+                    )} />
+                    <span>{intervalTime === 0 ? 'AUTO - OFF' : `AUTO - ${intervalTime === 30000 ? '30S' : intervalTime === 60000 ? '1M' : '5M'}`}</span>
+                    <ChevronDown size={11} className={cn("text-slate-400 transition-transform ml-1", showRefreshOptions && "rotate-180")} />
+                  </button>
+
+                  <AnimatePresence>
+                    {showRefreshOptions && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 8 }}
+                        className="absolute top-full left-0 mt-1.5 w-36 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)] z-[100] overflow-hidden py-1"
+                      >
+                        {[
+                          { label: 'AUTO - OFF', value: 0 },
+                          { label: 'AUTO - 30S', value: 30000 },
+                          { label: 'AUTO - 1M', value: 60000 },
+                          { label: 'AUTO - 5M', value: 300000 },
+                        ].map((opt) => (
+                          <button
+                            key={opt.value}
+                            onClick={() => {
+                              setIntervalTime(opt.value);
+                              setShowRefreshOptions(false);
+                            }}
+                            className={cn(
+                              "w-full text-left px-4 py-2 text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                              intervalTime === opt.value 
+                                ? "text-brand-accent bg-brand-accent/5 dark:bg-brand-accent/10" 
+                                : "text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 hover:text-slate-900 dark:hover:text-white"
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* REFRESH button pill matching brand-accent theme */}
+                <button
+                  onClick={() => {
+                    if (onRefresh) onRefresh();
+                  }}
+                  disabled={isLoading}
+                  className="flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-brand-accent hover:opacity-90 active:scale-[0.97] text-white transition-all shadow-md shadow-brand-accent/10 border-none disabled:opacity-40 select-none cursor-pointer"
+                >
+                  <RefreshCw size={11} className={cn("text-white/90", isLoading && "animate-spin")} />
+                  <span className="text-[9px] font-black uppercase tracking-wider font-sans">REFRESH</span>
+                </button>
+
+                {/* LASTCHK timer */}
+                <div className="flex items-center px-2.5 h-9 bg-slate-50 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 rounded-xl text-[9px] font-extrabold text-slate-400 dark:text-slate-500 font-mono tracking-tight uppercase shadow-sm select-none">
+                  LASTCHK:{lastRefreshedTime}
+                </div>
               </div>
             )}
 
-            {user && (
-              <div className="flex items-center gap-0.5 sm:gap-1.5">
+             {user && (
+              <div className="flex items-center gap-1.5 h-9">
+                {/* Audio voice toggle indicator */}
                 <button
                   onClick={onToggleAudio}
                   className={cn(
-                    "p-1.5 sm:p-2 rounded-lg transition-all",
+                    "w-8 h-8 rounded-full border flex items-center justify-center transition-all bg-white dark:bg-slate-900 shadow-sm cursor-pointer hover:scale-105 active:scale-95",
                     isAudioMuted 
-                      ? "text-slate-400 hover:text-amber-500 bg-black/5" 
-                      : (isColoredHeader ? "text-white bg-white/10 hover:bg-white/20" : "text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10")
+                      ? "border-slate-200 dark:border-slate-800 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" 
+                      : "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10"
                   )}
-                  title={isAudioMuted ? "Unmute Audio Alerts" : "Mute Audio Alerts"}
+                  title={isAudioMuted ? "Unmute Alerts" : "Mute Alerts"}
                 >
-                  {isAudioMuted ? <VolumeX size={16} className="sm:w-[18px] sm:h-[18px]" /> : <Volume2 size={16} className="sm:w-[18px] sm:h-[18px]" />}
+                  {isAudioMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
                 </button>
 
+                {/* Alerts/Bell notification indicator */}
                 <button
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                   className={cn(
-                    "p-1.5 sm:p-2 rounded-lg transition-all relative",
+                    "w-8 h-8 rounded-full border flex items-center justify-center relative transition-all bg-white dark:bg-slate-900 shadow-sm cursor-pointer hover:scale-105 active:scale-95",
                     alertAuthorized 
-                      ? (isAudioMuted 
-                          ? "text-slate-400 bg-black/5 hover:bg-black/10" 
-                          : (isColoredHeader ? "text-white bg-white/10 hover:bg-white/20" : "text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10"))
-                      : "text-amber-500 bg-amber-500/5 hover:bg-amber-500/10 shadow-sm"
+                      ? "border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10"
+                      : "border-slate-200 dark:border-slate-800 text-amber-500 bg-amber-500/5 hover:bg-amber-500/10"
                   )}
-                  title={alertAuthorized ? (isAudioMuted ? "Open Notifications (Muted)" : "Open Notification History") : "Operation History (Alerts Restricted)"}
+                  title={alertAuthorized ? (isAudioMuted ? "Alert History (Muted)" : "Alert History") : "Alert Restricted"}
                 >
                   {isAudioMuted && alertAuthorized ? (
-                    <BellOff size={16} className="sm:w-[18px] sm:h-[18px]" />
+                    <BellOff size={14} />
                   ) : (
-                    <Bell size={16} className={cn("sm:w-[18px] sm:h-[18px]", !alertAuthorized && "opacity-60")} />
+                    <Bell size={14} className={!alertAuthorized ? "opacity-60" : ""} />
                   )}
                   {notifications.length > 0 && (
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-950 shadow-sm" />
+                    <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
+                    </span>
                   )}
                 </button>
               </div>
             )}
             
-
-
-            <button
-              onClick={toggleTheme}
-              className={cn(
-                "p-1.5 sm:p-2 rounded-lg transition-all",
-                isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
-              )}
-              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {theme === 'dark' ? <Sun size={18} className="sm:w-[20px] sm:h-[20px]" /> : <Moon size={18} className="sm:w-[20px] sm:h-[20px]" />}
-            </button>
+            {/* Sliding oval toggle theme switch */}
+            <div className="flex items-center h-9 select-none" title="Toggle Theme Modes">
+              <button
+                onClick={toggleTheme}
+                className={cn(
+                  "relative w-12 h-6 rounded-full transition-colors duration-300 outline-none flex items-center shrink-0 border",
+                  theme === 'dark' 
+                    ? "bg-slate-900 border-slate-800" 
+                    : "bg-slate-100 border-slate-300/60"
+                )}
+              >
+                <div
+                  className={cn(
+                    "absolute w-4 h-4 rounded-full transition-all duration-300 shadow-md",
+                    theme === 'dark' 
+                      ? "left-[22px] bg-slate-200" 
+                      : "left-[4px] bg-slate-800"
+                  )}
+                />
+              </button>
+            </div>
 
             {user && (
               <button 
                 id="profile-toggle-btn"
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className={cn(
-                  "flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1.5 rounded-lg border transition-all hover:scale-[1.02] active:scale-95",
-                  isProfileOpen 
-                    ? "border-brand-accent bg-brand-accent/20 text-brand-accent shadow-lg shadow-brand-accent/10" 
-                    : (isColoredHeader 
-                        ? "border-white/20 bg-white/10 text-white"
-                        : "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900")
-                )}
+                className="h-9 flex items-center gap-2.5 px-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-200/50 dark:border-slate-800/80 shadow-sm cursor-pointer select-none"
               >
-                <User size={16} className={cn("transition-transform duration-300", isProfileOpen && "rotate-12")} />
-                <span className="text-sm font-semibold hidden sm:block">{user.fullName || user.username}</span>
+                <div className="hidden sm:flex flex-col items-end justify-center select-none">
+                  <span className="text-[10px] font-black tracking-tight text-slate-800 dark:text-slate-200 leading-none">
+                    {user.fullName || user.username || "Muhammad Ahmad"}
+                  </span>
+                  <span className="text-[7.5px] font-bold text-slate-450 dark:text-slate-500 tracking-wider mt-0.5 uppercase leading-none">
+                    {user.role === 'super_admin' ? 'SUPER ADMIN' : 
+                     user.role === 'liteadmin' ? 'LITE ADMIN' : 
+                     user.role === 'member' ? 'MEMBER' : 
+                     user.role === 'dealer' ? 'MAIN DEALER' : 
+                     user.role ? user.role.replace('_', ' ').toUpperCase() : 'USER'}
+                  </span>
+                </div>
+                {/* avatar photo matching profile image */}
+                <div className="w-6.5 h-6.5 rounded-lg overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 border border-slate-200/55 dark:border-slate-750 flex items-center justify-center">
+                  {user.profilePicture ? (
+                    <img 
+                      src={user.profilePicture} 
+                      alt="User Profile" 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <User size={12} className="text-slate-400 dark:text-slate-500" />
+                  )}
+                </div>
               </button>
             )}
 
+            {/* Glowing Live Relay Badge */}
             <div className={cn(
-              "hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all",
+              "hidden lg:flex items-center gap-1.5 px-3 h-9 rounded-xl border transition-all select-none shadow-sm",
               isOnline 
-                ? "border-emerald-500/20 bg-emerald-500/10 opacity-100" 
-                : "border-amber-500/20 bg-amber-500/10 opacity-100"
+                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" 
+                : "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-500"
             )}>
               <div className={cn(
-                "w-2 h-2 rounded-full animate-pulse",
+                "w-1.5 h-1.5 rounded-full animate-pulse",
                 isOnline ? "bg-emerald-500" : "bg-amber-500"
               )} />
-              <span className={cn(
-                "text-[10px] uppercase font-black tracking-widest",
-                isOnline 
-                  ? (isColoredHeader ? "text-white" : "text-emerald-600 dark:text-emerald-500") 
-                  : "text-amber-600 dark:text-amber-500"
-              )}>
+              <span className="text-[9px] uppercase font-black tracking-widest leading-none">
                 {isOnline ? 'Live Relay' : 'Offline Access'}
               </span>
             </div>
@@ -1028,7 +1265,7 @@ export default function Layout({
       </header>
 
       {/* Main Content */}
-      <main className={cn("mx-auto py-4 sm:py-8 transition-all duration-500", user ? "max-w-[1850px] w-full px-4 sm:px-6 lg:px-8" : "w-full max-w-none px-0 sm:px-0")}>
+      <main className={cn("mx-auto py-4 sm:py-8 transition-all duration-500", user ? "max-w-[1850px] w-full px-4 sm:px-6 lg:px-8 lg:pl-[84px]" : "w-full max-w-none px-0 sm:px-0")}>
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1039,7 +1276,7 @@ export default function Layout({
       </main>
 
       {/* Footer */}
-      <footer className="py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+      <footer className={cn("py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950", user && "lg:pl-[68px]")}>
         <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center">
              <div className="relative group mb-3 sm:mb-4">
@@ -1067,20 +1304,7 @@ export default function Layout({
         </div>
       </footer>
 
-      {/* Funny Walking Mascot */}
-      {user && !isChatOpen && (
-        <FloatingMascot 
-          branding={branding}
-          onOpenChat={() => setIsChatOpen(true)} 
-          onNotificationClick={async () => {
-            setIsNotificationsOpen(true);
-          }}
-          onServicesClick={() => setIsMonitorOpen(true)}
-          onMapClick={() => setIsMapOpen(true)}
-          latestNotification={notifications.length > 0 ? (notifications[0].message as string) : null}
-          unseenMessages={notifications.length}
-        />
-      )}
+      {/* Funny Walking Mascot Removed */}
 
       <MapViewer 
         isOpen={isMapOpen} 

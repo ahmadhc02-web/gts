@@ -92,6 +92,7 @@ export default function App() {
       return null;
     }
   });
+  const [activeTab, setActiveTab] = useState<string>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
@@ -1183,6 +1184,7 @@ export default function App() {
 
   const handleLogout = () => {
     setUser(null);
+    setActiveTab('complaints');
     safeLocalStorage.removeItem('complaint_app_user');
     toast.info('Logged out successfully');
   };
@@ -1391,10 +1393,10 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => {
+  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role'], profilePicture?: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode && { lineCode }), ...(companyName && { companyName }) }, user.fullName || user.username);
+      await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode && { lineCode }), ...(companyName && { companyName }), ...(profilePicture && { profilePicture }) }, user.fullName || user.username);
       
       const targetUser = users.find(u => u.uid === uid);
       const updatedUserObj = {
@@ -1405,12 +1407,13 @@ export default function App() {
         fullName,
         role: role || targetUser?.role || 'user',
         ...(lineCode && { lineCode }),
-        ...(companyName && { companyName })
+        ...(companyName && { companyName }),
+        ...(profilePicture && { profilePicture })
       };
 
       // If updating self, update local user state too
       if (user && user.uid === uid) {
-        const updatedUser = { ...user, username, password: pass, fullName, ...(role && { role }), ...(lineCode && { lineCode }), ...(companyName && { companyName }) };
+        const updatedUser = { ...user, username, password: pass, fullName, ...(role && { role }), ...(lineCode && { lineCode }), ...(companyName && { companyName }), ...(profilePicture && { profilePicture }) };
         setUser(updatedUser);
         safeLocalStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }
@@ -1541,6 +1544,8 @@ export default function App() {
         {showWelcome && user && (
           <WelcomeOverlay 
             username={user.username} 
+            fullName={user.fullName}
+            profilePicture={user.profilePicture}
             onComplete={() => setShowWelcome(false)} 
           />
         )}
@@ -1559,6 +1564,8 @@ export default function App() {
         onUpdateUser={handleUpdateUser}
         branding={branding}
         onUpdateBranding={handleUpdateBranding}
+        activeTab={activeTab}
+        onNavigate={setActiveTab}
       >
         {!firebaseAuthReady ? (
           <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950">
@@ -1596,6 +1603,8 @@ export default function App() {
           onToggleMic={handleToggleMic}
           branding={branding}
           onUpdateBranding={handleUpdateBranding}
+          activeTab={activeTab}
+          onNavigate={setActiveTab}
         />
       ) : (
         <MemberPanel
@@ -1619,6 +1628,8 @@ export default function App() {
           isMicMuted={isMicMuted}
           onToggleMic={handleToggleMic}
           branding={branding}
+          activeTab={activeTab}
+          onNavigate={setActiveTab}
         />
       )}
     </Layout>

@@ -76,10 +76,10 @@ export default function RefreshControl({ onRefresh, isLoading }: RefreshControlP
       <button
         onClick={handleManualRefresh}
         disabled={isLoading}
-        className="group flex items-center gap-2 px-4 py-1.5 rounded-lg bg-slate-900 dark:bg-brand-accent text-white hover:bg-black dark:hover:bg-blue-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+        className="group flex items-center gap-2 px-4 py-1.5 rounded-xl bg-brand-accent hover:opacity-90 active:scale-[0.97] text-white transition-all shadow-md shadow-brand-accent/10 border-none disabled:opacity-40 select-none cursor-pointer"
       >
-        <RefreshCw size={14} className={cn(isLoading ? "animate-spin" : "group-hover:rotate-180 transition-transform duration-500")} />
-        <span className="text-[10px] font-black uppercase tracking-widest">Refresh</span>
+        <RefreshCw size={13} className={cn(isLoading ? "animate-spin" : "group-hover:rotate-180 transition-all duration-500")} />
+        <span className="text-[10px] font-black uppercase tracking-widest font-sans">Refresh</span>
       </button>
 
       <div className="hidden sm:block">

@@ -181,7 +181,7 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
               <div className="w-px h-5 sm:h-8 bg-slate-200 dark:bg-slate-800" />
               <div className="flex flex-col">
                 <span className="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Authorization</span>
-                <span className="text-[10px] sm:text-lg font-black text-brand-accent italic">v2.5.4</span>
+                <span className="text-[10px] sm:text-lg font-black text-brand-accent italic">v2.6.5</span>
               </div>
             </div>
           </motion.div>
