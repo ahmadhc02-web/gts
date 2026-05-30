@@ -1375,5 +1375,74 @@ export const firebaseService = {
       updatedAt: Date.now()
     };
     await setDoc(docRef, payload);
+  },
+
+  // --- Recovery Ledger Sheets Database Methods ---
+  saveLedgerSheet: async (sheet: any) => {
+    try {
+      const sheetId = sheet.id || `sheet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const docRef = doc(db, 'ledger_sheets', sheetId);
+      const dataToSave = {
+        ...sheet,
+        id: sheetId,
+        createdAt: sheet.createdAt || Date.now()
+      };
+      await setDoc(docRef, dataToSave);
+      return dataToSave;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'ledger_sheets');
+    }
+  },
+
+  subscribeLedgerSheets: (callback: (sheets: any[]) => void, dealerId?: string) => {
+    try {
+      let q = collection(db, 'ledger_sheets');
+      let finalQuery: any = q;
+      if (dealerId) {
+        finalQuery = query(q, where('dealerId', '==', dealerId), orderBy('createdAt', 'desc'));
+      } else {
+        finalQuery = query(q, orderBy('createdAt', 'desc'));
+      }
+      return onSnapshot(finalQuery, (snapshot) => {
+        const sheets = snapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id
+        }));
+        callback(sheets);
+      }, (error) => {
+        console.error("Failed to subscribe ledger sheets collection:", error);
+      });
+    } catch (e) {
+      console.error("Failed to subscribe ledger sheets:", e);
+      return () => {};
+    }
+  },
+
+  deleteLedgerSheet: async (sheetId: string) => {
+    try {
+      const docRef = doc(db, 'ledger_sheets', sheetId);
+      await deleteDoc(docRef);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `ledger_sheets/${sheetId}`);
+    }
+  },
+
+  terminateAllLedgerSheets: async (dealerId: string) => {
+    try {
+      let q = collection(db, 'ledger_sheets');
+      let finalQuery: any = q;
+      if (dealerId) {
+        finalQuery = query(q, where('dealerId', '==', dealerId));
+      }
+      const snapshot = await getDocs(finalQuery);
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, 'ledger_sheets_terminate_all');
+    }
   }
 };
+

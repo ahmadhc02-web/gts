@@ -145,3 +145,43 @@ export interface MonitorTarget {
   lng?: number;
   label?: string;
 }
+
+export interface LedgerTable1Row {
+  sr: number;
+  cId: string;
+  name: string;
+  comments: string;
+  amount: number;
+  ch: boolean;
+  originalAmount?: number;
+}
+
+export interface LedgerTable2Row {
+  sr: number;
+  name: string;
+  amount: number;
+  ch: boolean;
+}
+
+export interface LedgerSheet {
+  id: string;
+  recOfficer: string;
+  recOfficerLabel: string;
+  area: string;
+  areaLabel: string;
+  sheetDate: string;
+  dateLabel: string;
+  table1Rows: LedgerTable1Row[];
+  table2Rows: LedgerTable2Row[];
+  cashReceived: string;
+  sign: string;
+  submitted: string;
+  cashReceivedLabel: string;
+  signLabel: string;
+  submittedLabel: string;
+  footnoteLeft: string;
+  footnoteRight: string;
+  dealerId: string;
+  createdAt: number;
+}
+

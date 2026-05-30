@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -17,6 +17,8 @@ import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
 import { getCardStyle } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
+import EntrySheet from './EntrySheet';
+import BatchPrintModal from './BatchPrintModal';
 
 interface AdminPanelProps {
   complaints: Complaint[];
@@ -288,6 +290,8 @@ export default function AdminPanel({
   const [billingStatusFilter, setBillingStatusFilter] = useState<string>('all');
   const [billingAreaFilter, setBillingAreaFilter] = useState<string>('all');
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
+  const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
+  const [isBatchPrintOpen, setIsBatchPrintOpen] = useState(false);
 
   // --- Billing Security Key States and Controls ---
   const [isBillingUnlocked, setIsBillingUnlocked] = useState(false);
@@ -2831,8 +2835,26 @@ export default function AdminPanel({
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
+                    onClick={() => setIsEntrySheetOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-brand-accent hover:opacity-90 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md shadow-brand-accent/20"
+                  >
+                    <ClipboardList size={14} />
+                    Entry Sheet
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsBatchPrintOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 hover:opacity-95 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md shadow-blue-500/10"
+                  >
+                    <Printer size={14} />
+                    Batch Print
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setIsConfiguringNewMonth(true)}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md"
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-black dark:bg-slate-800 dark:hover:bg-slate-700/80 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md"
                   >
                     <PlusSquare size={14} />
                     New Billing Month
@@ -3516,6 +3538,21 @@ export default function AdminPanel({
       </motion.div>
         </>
       )}
+
+      {/* Interactive A4 Ledger Entry Sheet Modal overlay */}
+      <EntrySheet
+        isOpen={isEntrySheetOpen}
+        onClose={() => setIsEntrySheetOpen(false)}
+        currentUser={currentUser}
+        activeRows={activeRows}
+      />
+
+      {/* Batch Print Multi-month Dialog Overlay */}
+      <BatchPrintModal
+        isOpen={isBatchPrintOpen}
+        onClose={() => setIsBatchPrintOpen(false)}
+        billingMonths={billingMonths}
+      />
     </div>
     </>
   );

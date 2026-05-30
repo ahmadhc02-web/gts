@@ -165,9 +165,40 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "domain", "createdBy", "createdAt"]
+    },
+    "LedgerSheet": {
+      "title": "Ledger Sheet",
+      "description": "A customized printed or entered ledger sheet representing daily/monthly recoveries.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recOfficer": { "type": "string" },
+        "recOfficerLabel": { "type": "string" },
+        "area": { "type": "string" },
+        "areaLabel": { "type": "string" },
+        "sheetDate": { "type": "string" },
+        "dateLabel": { "type": "string" },
+        "table1Rows": { "type": "array" },
+        "table2Rows": { "type": "array" },
+        "cashReceived": { "type": "string" },
+        "sign": { "type": "string" },
+        "submitted": { "type": "string" },
+        "cashReceivedLabel": { "type": "string" },
+        "signLabel": { "type": "string" },
+        "submittedLabel": { "type": "string" },
+        "footnoteLeft": { "type": "string" },
+        "footnoteRight": { "type": "string" },
+        "dealerId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "recOfficer", "sheetDate", "createdAt", "dealerId"]
     }
   },
   "firestore": {
+    "ledger_sheets/{sheetId}": {
+      "schema": "LedgerSheet",
+      "description": "Historical recovery ledger sheets saved in the system."
+    },
     "users/{userId}": {
       "schema": "UserProfile",
       "description": "Profiles for admins and members."

@@ -597,6 +597,184 @@ export const googleSheetsService = {
     }
   },
 
+  getBackupTokens: (): GoogleTokens | null => {
+    const tokens = safeLocalStorage.getItem('gts_ledger_backup_google_tokens');
+    if (tokens) {
+      try {
+        return JSON.parse(tokens);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  },
+
+  saveBackupTokens: (tokens: GoogleTokens) => {
+    safeLocalStorage.setItem('gts_ledger_backup_google_tokens', safeStringify(tokens));
+  },
+
+  getBackupSpreadsheetId: (): string | null => {
+    return safeLocalStorage.getItem('gts_ledger_backup_spreadsheet_id');
+  },
+
+  saveBackupSpreadsheetId: (id: string) => {
+    safeLocalStorage.setItem('gts_ledger_backup_spreadsheet_id', id);
+  },
+
+  initiateBackupAuth: async (): Promise<GoogleTokens> => {
+    try {
+      console.log("Initiating Google connection for SECOND/BACKUP account via dynamic Firebase Auth...");
+      if (!navigator.onLine) {
+        throw new Error("You are currently offline. Please connect to the internet first.");
+      }
+      const customProvider = new GoogleAuthProvider();
+      customProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+      customProvider.addScope('https://www.googleapis.com/auth/drive.file');
+      customProvider.setCustomParameters({
+        prompt: 'select_account',
+        access_type: 'offline'
+      });
+
+      const result = await signInWithPopup(auth, customProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      
+      if (!credential || !credential.accessToken) {
+        throw new Error("Failed to retrieve Google Access Token for secondary account.");
+      }
+      
+      const expiry_date = Date.now() + 3590 * 1000;
+      const tokens: GoogleTokens = {
+        access_token: credential.accessToken,
+        refresh_token: (credential as any).refreshToken || undefined,
+        token_type: "Bearer",
+        expiry_date: expiry_date,
+        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file"
+      };
+      
+      googleSheetsService.saveBackupTokens(tokens);
+      console.log("Secondary/Backup Google credentials retrieved and saved successfully!");
+      return tokens;
+    } catch (fbAuthError: any) {
+      console.error("Backup search auth failed:", fbAuthError);
+      throw new Error(fbAuthError.message || "2nd Google account login failed.");
+    }
+  },
+
+  createBackupSpreadsheet: async (title: string, tokens: any) => {
+    try {
+      const response = await fetch(getApiUrl('/api/sheets/create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({
+          tokens,
+          title,
+          sheetName: 'Ledger Backups'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create custom Backup Google Sheet');
+      }
+
+      const result = await response.json();
+      if (result.spreadsheetId) {
+        googleSheetsService.saveBackupSpreadsheetId(result.spreadsheetId);
+      }
+      return result;
+    } catch (error) {
+      console.error('Error creating custom Spreadsheet backup:', error);
+      throw error;
+    }
+  },
+
+  exportLedgerSheetsToSheets: async (sheets: any[], tokens: any, spreadsheetId: string) => {
+    if (!tokens || !spreadsheetId) {
+      throw new Error('Google backup account or Spreadsheet ID is missing. Please connect account and set ID first.');
+    }
+
+    const values: any[][] = [];
+
+    // Header metadata
+    values.push(['==================================================']);
+    values.push(['SYSTEM MONTH-END RECOVERY LEDGERS FINANCIAL JOURNAL']);
+    values.push([`Exported on: ${new Date().toLocaleString()}`]);
+    values.push([`Total Ledger Cards: ${sheets.length}`]);
+    values.push(['==================================================']);
+    values.push(['']);
+
+    const sortedSheets = [...sheets].sort((a, b) => a.createdAt - b.createdAt);
+
+    sortedSheets.forEach((sheet, idx) => {
+      values.push([`CARD #${idx + 1} // OFFICER: ${(sheet.recOfficer || '').toUpperCase()}`]);
+      values.push([`DATE: ${sheet.sheetDate} // AREA: ${sheet.area || 'N/A'}`]);
+      values.push(['--------------------------------------------------']);
+      
+      values.push(['Monthly Recoveries (Table 1)']);
+      values.push(['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT']);
+      const validT1 = (sheet.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0);
+      if (validT1.length > 0) {
+        validT1.forEach((r: any) => {
+          values.push([r.sr, r.cId || '', r.name || '', r.comments || '', r.amount || 0]);
+        });
+      } else {
+        values.push(['No Table 1 entries completed']);
+      }
+      values.push(['']);
+
+      values.push(['Extra Adjustments (Table 2)']);
+      values.push(['SR', 'NAME', 'AMOUNT']);
+      const validT2 = (sheet.table2Rows || []).filter((r: any) => r.name || r.amount > 0);
+      if (validT2.length > 0) {
+        validT2.forEach((r: any) => {
+          values.push([r.sr, r.name || '', r.amount || 0]);
+        });
+      } else {
+        values.push(['No Table 2 entries completed']);
+      }
+      
+      const sumT1 = validT1.reduce((sum: number, r: any) => sum + (parseFloat(r.amount) || 0), 0);
+      const sumT2 = validT2.reduce((sum: number, r: any) => sum + (parseFloat(r.amount) || 0), 0);
+      
+      values.push(['']);
+      values.push([`Total Recoveries (T1): ${sumT1} // Total Adjustments (T2): ${sumT2}`]);
+      values.push([`Cash Received Amount: ${sheet.cashReceived || '0'}`]);
+      if (sheet.footnoteLeft || sheet.footnoteRight) {
+        values.push([`Metadata: ${sheet.footnoteLeft || ''} - ${sheet.footnoteRight || ''}`]);
+      }
+      values.push(['==================================================']);
+      values.push(['']);
+      values.push(['']);
+    });
+
+    try {
+      const response = await fetch(getApiUrl('/api/sheets/update'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({
+          tokens,
+          spreadsheetId,
+          range: `'Ledger Backups'!A1`,
+          values
+        })
+      });
+
+      if (!response.ok) {
+        let errorMsg = 'Failed to write ledger backups to Google Sheets';
+        try {
+          const json = await response.json();
+          errorMsg = json.error || errorMsg;
+        } catch (e) {}
+        throw new Error(errorMsg);
+      }
+
+      const json = await response.json();
+      return googleSheetsService.processResponseJson(json);
+    } catch (error) {
+      console.error('Error backing up ledger sheets:', error);
+      throw error;
+    }
+  },
+
   backupToDrive: async (filename: string, csvContent: string) => {
     const tokens = googleSheetsService.getTokens();
     

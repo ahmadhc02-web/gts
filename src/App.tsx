@@ -499,17 +499,17 @@ export default function App() {
         const initialUsers = await firebaseService.getUsers();
         let currentUsers = [...initialUsers];
         
-        // Self-Healing Boot Seed: Ensure core operational systems users exist matching standard credentials
-        const requiredCoreUsers = [
-          { uid: 'admin_sys_node', username: 'admin', password: 'admin', role: 'super_admin' as const, status: 'active' as const },
-          { uid: 'yaseen_sys_node', username: 'yaseen', password: 'yaseen', role: 'super_admin' as const, status: 'active' as const },
-          { uid: 'abc_sys_node', username: 'abc', password: 'abc', role: 'super_admin' as const, status: 'active' as const }
-        ];
-
+        // Self-Healing Boot Seed: ONLY activate if the database is brand new and completely empty!
+        // This stops the system from constantly restoring deleted or modified default admin profiles on launch.
         let seededAny = false;
-        for (const req of requiredCoreUsers) {
-          const exists = currentUsers.some(u => u.username.toLowerCase() === req.username.toLowerCase());
-          if (!exists) {
+        if (initialUsers.length === 0) {
+          const requiredCoreUsers = [
+            { uid: 'admin_sys_node', username: 'admin', password: 'admin', role: 'super_admin' as const, status: 'active' as const },
+            { uid: 'yaseen_sys_node', username: 'yaseen', password: 'yaseen', role: 'super_admin' as const, status: 'active' as const },
+            { uid: 'abc_sys_node', username: 'abc', password: 'abc', role: 'super_admin' as const, status: 'active' as const }
+          ];
+
+          for (const req of requiredCoreUsers) {
             console.log(`[Database Self-Heal] Seeding default core user: ${req.username}`);
             try {
               const seededUser = await firebaseService.createUser(

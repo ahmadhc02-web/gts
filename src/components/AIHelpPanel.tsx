@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { firebaseService } from '../lib/firebaseService';
+import { Complaint } from '../types';
 
 interface AIHelpPanelProps {
   onClose: () => void;
@@ -50,7 +52,7 @@ interface ChatMessage {
 }
 
 export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'trends' | 'ask'>('trends');
+  const [activeSubTab, setActiveSubTab] = useState<'trends' | 'ask' | 'diagnose'>('trends');
   
   // Trend analyzer states
   const [trendData, setTrendData] = useState<TrendData | null>(null);
@@ -59,6 +61,13 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
 
   // Search Grounding toggle
   const [searchGroundingActive, setSearchGroundingActive] = useState(false);
+
+  // Real-time active complaints diagnostics states
+  const [liveComplaints, setLiveComplaints] = useState<Complaint[]>([]);
+  const [selectedComplaintId, setSelectedComplaintId] = useState<string>('');
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnosisResult, setDiagnosisResult] = useState<string>('');
+  const [applyingRemark, setApplyingRemark] = useState(false);
 
   // Chat/Ask states
   const [askHistory, setAskHistory] = useState<ChatMessage[]>([
@@ -72,6 +81,33 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
   const [userInput, setUserInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // Subscribe to real-time complaints context
+  useEffect(() => {
+    const readTenantId = currentUser.role === 'super_admin' 
+      ? undefined 
+      : (currentUser.role === 'dealer' ? (currentUser as any).uid : (currentUser as any).dealerId || 'main');
+
+    const unsubscribe = firebaseService.subscribeComplaints((complaintsData) => {
+      // Filter out completed/resolved ones, keep pending, in process, important
+      const activeTickets = complaintsData.filter(c => c.status !== 'complete' && c.status !== 'Resolved');
+      setLiveComplaints(activeTickets);
+      
+      // Auto-select first active complaint if none remains selected or if selected one is completed
+       if (activeTickets.length > 0) {
+         setSelectedComplaintId(prev => {
+           if (!prev || !activeTickets.some(c => c.id === prev)) {
+             return activeTickets[0].id;
+           }
+           return prev;
+         });
+       } else {
+         setSelectedComplaintId('');
+       }
+    }, readTenantId);
+
+    return () => unsubscribe();
+  }, [currentUser]);
 
   // Fetch trend analysis on mount
   const fetchTrends = async () => {
@@ -161,6 +197,92 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
     }
   };
 
+  const handleDiagnoseComplaint = async () => {
+    if (!selectedComplaintId) return;
+    const complaint = liveComplaints.find(c => c.id === selectedComplaintId);
+    if (!complaint) return;
+
+    setDiagnosing(true);
+    setDiagnosisResult('');
+
+    try {
+      const detailedQuery = `I need an expert ISP diagnosis for this customer ticket:
+- **Client Name:** ${complaint.customerName || 'N/A'}
+- **Username:** ${complaint.customerUsername || 'N/A'}
+- **Current Category:** ${complaint.category || 'N/A'}
+- **Reported Issue Description:** "${complaint.description || 'No description provided'}"
+- **Ticket Priority:** ${complaint.priority || 'Medium'}
+- **Area / Locality:** ${complaint.area || 'Unknown'}
+- **User Nearby Device:** ${complaint.userNearby || 'N/A'}
+- **Cabinet / Panel Area:** ${complaint.panelDetails || 'N/A'}
+
+Provide:
+1. **ROOT CAUSE HYPOTHESIS**: A precise 1-sentence technical explanation of why this is happening (e.g., high line loss / OLT link drop / wireless interference).
+2. **TROUBLESHOOTING STEP-BY-STEP CHECKLIST**: 3 actionable, specific steps for a support technician to verify (referencing realistic optical signal RX levels: ideal range -18dBm to -25dBm, OLT loop tracing, router pinging, or DNS flushes).
+3. **Copy-paste friendly empathetic CUSTOMER ANSWER TEMPLATE (In Roman Urdu/Hindi + English mixed, e.g., 'Aap ka Router offline dikha raha hai...'):** Keep the tone peaceful, reassuring, polite, and reassuring. Always include simple actions for the consumer (such as power cycling) and let them know a teammate is working on it.`;
+
+      const res = await fetch('/api/gemini/ask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          question: detailedQuery,
+          history: [],
+          searchGrounding: searchGroundingActive
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error('AI Diagnostics model is temporarily unavailable.');
+      }
+
+      const data = await res.json();
+      setDiagnosisResult(data.answer);
+      toast.success('AI Diagnostics generated successfully!', {
+        description: `Expert plan ready for ${complaint.customerName}`
+      });
+    } catch (err: any) {
+      toast.error('AI Diagnostics Failed', { description: err.message });
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
+  const handleApplyAIDiagnosisAsRemarks = async () => {
+    if (!selectedComplaintId || !diagnosisResult) return;
+    const complaint = liveComplaints.find(c => c.id === selectedComplaintId);
+    if (!complaint) return;
+
+    setApplyingRemark(true);
+    try {
+      let remarksText = `[AI Diagnostic Assist Plan]\n${diagnosisResult}\n--- Auto-Generated by Gemini Mentor`;
+      
+      if (remarksText.length > 1500) {
+        remarksText = remarksText.substring(0, 1475) + '... (truncated)';
+      }
+
+      const authorName = currentUser.fullName || currentUser.username;
+      const authorId = (currentUser as any).uid || 'system_ai';
+
+      await firebaseService.updateComplaintRemarks(
+        selectedComplaintId,
+        remarksText,
+        complaint.customerName,
+        authorName,
+        authorId
+      );
+
+      toast.success('AI Plan Applied to Ticket Remarks!', {
+        description: `Remarks updated successfully by ${authorName}.`
+      });
+    } catch (err: any) {
+      toast.error('Failed to apply Remarks', { description: err.message });
+    } finally {
+      setApplyingRemark(false);
+    }
+  };
+
   const copyToClipboard = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
     setCopiedResponseIndex(index);
@@ -218,26 +340,47 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
         </div>
 
         {/* Dynamic Sub-Tabs Panel Selection */}
-        <div className="p-2 bg-slate-50/40 dark:bg-slate-950/40 border-b border-slate-150 dark:border-slate-800/60 flex gap-1 items-center">
+        <div className="p-2 bg-slate-50/40 dark:bg-slate-950/40 border-b border-slate-150 dark:border-slate-850/60 flex gap-1 items-center">
           <button
-            onClick={() => setActiveSubTab('trends')}
+            onClick={() => {
+              setActiveSubTab('trends');
+              setDiagnosisResult('');
+            }}
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-300 cursor-pointer",
               activeSubTab === 'trends'
                 ? "bg-brand-accent text-white shadow-lg shadow-brand-accent/20"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-850/50"
             )}
           >
             <TrendingUp size={13} />
             Live Analytics
           </button>
           <button
-            onClick={() => setActiveSubTab('ask')}
+            onClick={() => {
+              setActiveSubTab('diagnose');
+              setDiagnosisResult('');
+            }}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-300 cursor-pointer",
+              activeSubTab === 'diagnose'
+                ? "bg-brand-accent text-white shadow-lg shadow-brand-accent/20"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-850/50"
+            )}
+          >
+            <Wrench size={13} />
+            Active Diagnoser
+          </button>
+          <button
+            onClick={() => {
+              setActiveSubTab('ask');
+              setDiagnosisResult('');
+            }}
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-300 cursor-pointer",
               activeSubTab === 'ask'
                 ? "bg-brand-accent text-white shadow-lg shadow-brand-accent/20"
-                : "text-slate-500 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-850/50"
             )}
           >
             <Bot size={13} />
@@ -472,6 +615,158 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
                     >
                       Try analytics reload
                     </button>
+                  </div>
+                )}
+              </motion.div>
+            ) : activeSubTab === 'diagnose' ? (
+              <motion.div
+                key="diagnose"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                className="space-y-4 pb-16"
+              >
+                {/* Real-time active complaints listing and diagnosis */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 font-mono">
+                    Select Active Ticket to Diagnose:
+                  </label>
+                  {liveComplaints.length === 0 ? (
+                    <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/30 p-4 rounded-2xl text-center space-y-2">
+                      <ShieldCheck className="text-emerald-500 mx-auto animate-pulse" size={24} />
+                      <div>
+                        <h5 className="text-xs font-black uppercase text-emerald-800 dark:text-emerald-400 font-mono">All Operations Green!</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-emerald-400/80 leading-relaxed mt-0.5 font-sans font-medium">There are no active unresolved customer complaints in the dashboard stream.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <select
+                        value={selectedComplaintId}
+                        onChange={(e) => {
+                          setSelectedComplaintId(e.target.value);
+                          setDiagnosisResult('');
+                        }}
+                        className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs px-3.5 py-3 rounded-2xl focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent text-slate-900 dark:text-white cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 duration-200 font-medium whitespace-nowrap overflow-ellipsis"
+                      >
+                        {liveComplaints.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.category?.toUpperCase() || 'GENERAL'} - {c.customerName || c.customerUsername} ({c.area || 'Unknown'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {(() => {
+                  const complaint = liveComplaints.find(c => c.id === selectedComplaintId);
+                  if (!complaint) return null;
+
+                  return (
+                    <div className="bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-150 dark:border-slate-850 p-4 space-y-3 shadow-sm relative overflow-hidden">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-mono font-black text-brand-accent tracking-widest uppercase">
+                          TICKET PROFILE
+                        </span>
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-full text-[8.5px] font-mono font-bold capitalize select-none",
+                          complaint.priority?.toLowerCase() === 'critical' || complaint.priority?.toLowerCase() === 'high'
+                            ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/15" 
+                            : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/15"
+                        )}>
+                          {complaint.priority || 'Medium'} Priority
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-[11px] border-b border-dashed border-slate-200 dark:border-slate-800 pb-3">
+                        <div>
+                          <span className="text-slate-400 dark:text-slate-550 text-[9px] uppercase font-bold tracking-wider font-mono">Subscriber:</span>
+                          <p className="font-semibold text-slate-800 dark:text-slate-200 truncate mt-0.5">{complaint.customerName || 'N/A'} ({complaint.customerUsername || 'N/A'})</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 dark:text-slate-550 text-[9px] uppercase font-bold tracking-wider font-mono">Area / Cabinet:</span>
+                          <p className="font-semibold text-slate-800 dark:text-slate-200 truncate mt-0.5">{complaint.area || 'Unknown'}</p>
+                        </div>
+                        {complaint.userNearby && (
+                          <div className="col-span-2">
+                            <span className="text-slate-400 dark:text-slate-550 text-[9px] uppercase font-bold tracking-wider font-mono">User Onward Devices / Location:</span>
+                            <p className="font-semibold text-slate-800 dark:text-slate-250 truncate mt-0.5">{complaint.userNearby}</p>
+                          </div>
+                        )}
+                        <div className="col-span-2 mt-1">
+                          <span className="text-slate-400 dark:text-slate-550 text-[9px] uppercase font-bold tracking-wider font-mono">Reported Problem:</span>
+                          <p className="text-slate-700 dark:text-slate-300 font-medium leading-relaxed mt-1 whitespace-pre-line bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-2.5 rounded-xl text-[11px]">
+                            {complaint.description || 'No description of problem.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleDiagnoseComplaint}
+                          disabled={diagnosing}
+                          className="flex-1 bg-brand-accent hover:opacity-90 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 cursor-pointer duration-200 shadow-md shadow-brand-accent/15"
+                        >
+                          {diagnosing ? (
+                            <>
+                              <Loader2 size={13} className="animate-spin" />
+                              Splicing AI Mentor Feed...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={13} className="animate-pulse" />
+                              Diagnose Ticket with Gemini
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {diagnosisResult && (
+                  <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm space-y-3.5 p-4 animate-scale-in">
+                    <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-850 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[9px] font-black tracking-widest text-[#34d399] uppercase font-mono">
+                          Gemini Verification Completed
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-slate-400 font-mono font-bold">AI RESOLVE PRO v1</span>
+                    </div>
+
+                    <div className="text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-line font-medium space-y-4">
+                      {diagnosisResult}
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-150 dark:border-slate-850/80 flex flex-col sm:flex-row gap-2 select-none">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(diagnosisResult);
+                          toast.success('Resolution Plan Copied!', {
+                            description: 'Operational summary copied to clipboard successfully.'
+                          });
+                        }}
+                        className="flex-1 py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-800 hover:opacity-90 text-slate-900 dark:text-white font-semibold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer duration-200 font-mono"
+                      >
+                        <Copy size={12} />
+                        Copy Full Plan
+                      </button>
+                      <button
+                        onClick={handleApplyAIDiagnosisAsRemarks}
+                        disabled={applyingRemark}
+                        className="flex-1 py-2 px-3 rounded-xl bg-[#10b981] hover:bg-[#059669] text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 cursor-pointer duration-200 shadow shadow-emerald-500/20 disabled:opacity-50 font-mono"
+                      >
+                        {applyingRemark ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <ShieldCheck size={12} />
+                        )}
+                        Apply to Remarks
+                      </button>
+                    </div>
                   </div>
                 )}
               </motion.div>
