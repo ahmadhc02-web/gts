@@ -15,7 +15,7 @@ import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
-import { getCardStyle } from '../lib/styleUtils';
+import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import EntrySheet from './EntrySheet';
 import BatchPrintModal from './BatchPrintModal';
@@ -452,7 +452,7 @@ export default function AdminPanel({
     } catch (err: any) {
       console.error(err);
       toast.error("Failed to create billing month", {
-        description: err.message || "Database configurations error."
+        description: getCleanErrorMessage(err)
       });
     }
   };
@@ -541,7 +541,7 @@ export default function AdminPanel({
       });
     } catch (err: any) {
       console.error(err);
-      toast.error("Recheck user list failed", { description: err.message });
+      toast.error("Recheck user list failed", { description: getCleanErrorMessage(err) });
     }
   };
 
@@ -585,7 +585,7 @@ export default function AdminPanel({
       await firebaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin');
     } catch (err: any) {
       console.error("Failed to persist billing cell edit:", err);
-      toast.error("Cell auto-save issue", { description: err.message });
+      toast.error("Cell auto-save issue", { description: getCleanErrorMessage(err) });
     }
   };
 
@@ -606,6 +606,7 @@ export default function AdminPanel({
       toast.success("Recovery row removed from current month's sheet.");
     } catch (err: any) {
       console.error(err);
+      toast.error("Failed to remove row", { description: getCleanErrorMessage(err) });
     }
   };
 
@@ -623,7 +624,7 @@ export default function AdminPanel({
       setCurrentMonthId('');
     } catch (err: any) {
       console.error(err);
-      toast.error("Purge month failed");
+      toast.error("Purge month failed", { description: getCleanErrorMessage(err) });
     }
   };
 
@@ -3644,6 +3645,7 @@ export default function AdminPanel({
         onClose={() => setIsEntrySheetOpen(false)}
         currentUser={currentUser}
         activeRows={activeRows}
+        currentMonthId={currentMonthId}
       />
 
       {/* Batch Print Multi-month Dialog Overlay */}

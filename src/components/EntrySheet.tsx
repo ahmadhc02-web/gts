@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
-  History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn
+  History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { firebaseService } from '../lib/firebaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { Client } from '../types';
+import { getCleanErrorMessage } from '../lib/styleUtils';
 
 interface EntrySheetProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface EntrySheetProps {
     username: string;
   };
   activeRows?: any[]; // For pre-filling rows
+  currentMonthId?: string;
 }
 
 interface Table1Row {
@@ -37,7 +39,7 @@ interface Table2Row {
   ch: boolean;
 }
 
-export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = [] }: EntrySheetProps) {
+export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = [], currentMonthId }: EntrySheetProps) {
   // Top fields
   const [recOfficer, setRecOfficer] = useState('');
   const [area, setArea] = useState('MAIN');
@@ -81,6 +83,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [loadedSheetId, setLoadedSheetId] = useState<string | null>(null);
+  const [showConfirmResetModal, setShowConfirmResetModal] = useState(false);
 
   // Backup accounts states
   const [backupTokens, setBackupTokens] = useState<any>(() => googleSheetsService.getBackupTokens());
@@ -219,6 +222,33 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
     t1WidthSr, t1WidthId, t1WidthName, t1WidthComments, t1WidthAmount, t1WidthCh,
     t2WidthSr, t2WidthName, t2WidthAmount, t2WidthCh
   ]);
+
+  // Zoom & Auto-Fit scaling states
+  const [zoomOption, setZoomOption] = useState<'fit' | '100%' | '85%' | '75%'>(() => {
+    const saved = localStorage.getItem('gts_ledger_zoomOption');
+    return (saved as 'fit' | '100%' | '85%' | '75%') || 'fit';
+  });
+  const [calculatedScale, setCalculatedScale] = useState(1);
+
+  useEffect(() => {
+    if (zoomOption !== 'fit') {
+      if (zoomOption === '100%') setCalculatedScale(1);
+      else if (zoomOption === '85%') setCalculatedScale(0.85);
+      else if (zoomOption === '75%') setCalculatedScale(0.72);
+      return;
+    }
+
+    const handleResize = () => {
+      const availableHeight = window.innerHeight - 110;
+      const paperHeight = 1122; // approx 297mm in pixels
+      const fitScale = Math.min(1, Math.max(0.4, availableHeight / paperHeight));
+      setCalculatedScale(fitScale);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [zoomOption]);
 
    // Function to reset all lines & boxes sizing parameters to default
   const resetSizingToDefault = () => {
@@ -436,6 +466,59 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
       toast.dismiss("ledger-save");
       if (saved) {
         toast.success(loadedSheetId ? "Ledger card updated successfully!" : "Ledger sheet successfully saved to Monthly History!");
+
+        // Auto-update matched master clients inside the currently active/selected billing month
+        if (currentMonthId && activeRows && activeRows.length > 0) {
+          try {
+            const updatedBillingRows = [...activeRows];
+            let updatedCount = 0;
+
+            sheetPayload.table1Rows.forEach((r) => {
+              const hasId = r.cId && r.cId.trim();
+              const hasName = r.name && r.name.trim();
+              if (!hasId && !hasName) return; // skip empty rows
+
+              let matchedIdx = -1;
+
+              if (hasId) {
+                const searchId = r.cId.trim().toLowerCase();
+                matchedIdx = updatedBillingRows.findIndex(br => 
+                  (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
+                  (br.username && br.username.trim().toLowerCase() === searchId)
+                );
+              }
+
+              if (matchedIdx === -1 && hasName) {
+                const searchName = r.name.trim().toLowerCase();
+                matchedIdx = updatedBillingRows.findIndex(br => 
+                  br.name && br.name.trim().toLowerCase() === searchName
+                );
+              }
+
+              if (matchedIdx !== -1) {
+                const amountVal = Number(r.amount) || 0;
+                updatedBillingRows[matchedIdx] = {
+                  ...updatedBillingRows[matchedIdx],
+                  paymentReceived: amountVal,
+                  paymentStatus: 'paid'
+                };
+                updatedCount++;
+              }
+            });
+
+            if (updatedCount > 0) {
+              await firebaseService.saveBillingMonth(
+                currentMonthId, 
+                updatedBillingRows, 
+                currentUser.username || 'admin'
+              );
+              toast.success(`Automatically updated ${updatedCount} subscriber(s) to PAID with designated recovery amounts in ${currentMonthId}!`);
+            }
+          } catch (billingErr: any) {
+            console.error("Failed to auto-update billing status:", billingErr);
+          }
+        }
+
         // "jesy sheet histry main move hojy to bahr new empty sheet automatic creat hojy same"
         resetToBlank();
         setLoadedSheetId(null);
@@ -444,7 +527,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
       }
     } catch (e: any) {
       toast.dismiss("ledger-save");
-      toast.error(e.message || "Failed to save ledger card.");
+      toast.error(getCleanErrorMessage(e));
     }
   };
 
@@ -525,7 +608,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
         setLoadedSheetId(null);
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to delete single ledger sheet.");
+      toast.error(getCleanErrorMessage(err));
     }
   };
 
@@ -609,7 +692,28 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
       setLoadedSheetId(null);
     } catch (e: any) {
       toast.dismiss("terminate-proc");
-      toast.error("Failed to terminate month: " + e.message);
+      toast.error("Failed to terminate month: " + getCleanErrorMessage(e));
+    }
+  };
+
+  // Confirmation handler for complete workspace reset & purge
+  const handleResetWorkspaceAndHistory = async (deleteHistory: boolean) => {
+    try {
+      if (deleteHistory) {
+        const tenantId = firebaseService.getReadTenantId(currentUser as any);
+        toast.loading("Purging all registered monthly sheets...", { id: "reset-all-proc" });
+        await firebaseService.terminateAllLedgerSheets(tenantId);
+        toast.dismiss("reset-all-proc");
+        toast.success("Active workspace reset and all registered sheet history purged successfully!");
+      } else {
+        toast.success("Active workspace fields reset successfully!");
+      }
+      resetToBlank();
+      setLoadedSheetId(null);
+      setShowConfirmResetModal(false);
+    } catch (e: any) {
+      toast.dismiss("reset-all-proc");
+      toast.error("Failed to reset workspace: " + getCleanErrorMessage(e));
     }
   };
 
@@ -762,102 +866,147 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.2 }}
-        className="print-overlay-wrapper fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm z-[250] flex flex-col items-center justify-start overflow-y-auto overflow-x-auto py-8 px-4 print:p-0 print:bg-transparent print:backdrop-blur-none print:block print:static"
+        transition={{ duration: 0.22 }}
+        className="print-overlay-wrapper fixed inset-0 bg-slate-100 dark:bg-slate-950 z-[250] flex flex-col items-stretch justify-start overflow-hidden print:p-0 print:bg-transparent print:backdrop-blur-none print:block print:static text-slate-950 dark:text-slate-100 font-sans"
       >
-             {/* Controls Panel (Hidden in print mode) - Modern portrait vertical toolbar design on the right side */}
-        <motion.div 
-          initial={{ x: 60, opacity: 0, y: '-50%' }}
-          animate={{ x: 0, opacity: 1, y: '-50%' }}
-          transition={{ type: 'spring', stiffness: 280, damping: 24, delay: 0.05 }}
-          className="fixed right-3 sm:right-4 top-1/2 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.18)] p-2.5 sm:p-3 rounded-2.5xl flex flex-col items-center justify-start gap-3 w-14 sm:w-[72px] shrink-0 z-[300] print:hidden backdrop-blur-md"
-        >
-          {/* Header area with icon and compact label */}
-          <div className="flex flex-col items-center gap-1 pb-2 w-full border-b border-slate-200 dark:border-slate-800">
-            <ClipboardList className="text-brand-accent h-5 w-5 animate-bounce" />
-            <span className="text-[7.5px] font-black uppercase tracking-wider text-slate-500 text-center leading-none hidden sm:block">Ledger</span>
-          </div>
-
-          {/* Sizing Toggle Button */}
-          <button
-            onClick={() => setShowSizingPanel(!showSizingPanel)}
-            className={`w-10 h-10 sm:w-12 sm:h-12 flex flex-col items-center justify-center rounded-xl border text-[7px] font-black uppercase tracking-wider cursor-pointer transition-all active:scale-95 duration-200 shrink-0 ${
-              showSizingPanel 
-                ? 'bg-amber-500 hover:bg-amber-600 border-amber-500 text-white shadow-md shadow-amber-500/20' 
-                : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-705 hover:border-slate-350 dark:hover:border-slate-650 border-slate-200 dark:border-slate-705 text-slate-700 dark:text-slate-300'
-            }`}
-            title="Toggle Sizing & Spacing Panel"
-          >
-            <SlidersHorizontal size={13} className={`transform transition-transform duration-300 ${showSizingPanel ? 'rotate-90' : 'rotate-0'}`} />
-            <span className="text-[7px] font-black uppercase tracking-wider mt-1 scale-90">Sizing</span>
-          </button>
-
-          {/* Auto-Fill Button */}
-          <button
-            onClick={autoFillFromDb}
-            className="w-10 h-10 sm:w-12 sm:h-12 flex flex-col items-center justify-center rounded-xl bg-orange-50 dark:bg-orange-95/10 hover:bg-orange-100/60 dark:hover:bg-orange-950/20 text-orange-650 dark:text-orange-400 border border-orange-100 dark:border-orange-900/10 text-[7px] font-black uppercase tracking-wider cursor-pointer transition-all active:scale-95 duration-200 shrink-0"
-            title="Auto-fill unpaid or partial collection accounts"
-          >
-            <RefreshCw size={13} className="animate-spin-slow text-orange-500" />
-            <span className="text-[7px] font-black uppercase tracking-wider mt-1 scale-90">Fill</span>
-          </button>
-
-          {/* Print A4 Button */}
-          <button
-            onClick={handlePrint}
-            className="w-10 h-10 sm:w-12 sm:h-12 flex flex-col items-center justify-center rounded-xl bg-brand-accent hover:opacity-90 text-white text-[7px] font-black uppercase tracking-wider cursor-pointer transition-all active:scale-95 duration-200 shadow-md shadow-brand-accent/15 shrink-0"
-            title="Print sheet to physical page or PDF"
-          >
-            <Printer size={13} />
-            <span className="text-[7px] font-black uppercase tracking-wider mt-1 scale-90">Print</span>
-          </button>
-
-          {/* History Toggle Button */}
-          <button
-            onClick={() => setShowHistoryPanel(!showHistoryPanel)}
-            className={`w-10 h-10 sm:w-12 sm:h-12 flex flex-col items-center justify-center rounded-xl border text-[7px] font-black uppercase tracking-wider cursor-pointer transition-all active:scale-95 duration-200 shrink-0 ${
-              showHistoryPanel 
-                ? 'bg-indigo-650 hover:bg-indigo-700 border-indigo-600 text-white shadow-md shadow-indigo-650/40' 
-                : 'bg-indigo-50 dark:bg-indigo-950/25 hover:bg-indigo-100 border-indigo-100 dark:border-indigo-900/20 text-indigo-700 dark:text-indigo-400'
-            }`}
-            title="Toggle real-time monthly ledger sheets history register"
-          >
-            <History size={13} className={ledgerHistory.length > 0 ? "animate-pulse" : ""} />
-            <span className="text-[7px] font-black uppercase tracking-wider mt-1 scale-90">History</span>
-          </button>
-
-          {/* Save Button */}
-          <button
-            onClick={handleSaveSheet}
-            className="w-10 h-10 sm:w-12 sm:h-12 flex flex-col items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[7px] font-black uppercase tracking-wider cursor-pointer transition-all active:scale-95 duration-200 shadow-md shadow-emerald-600/30 shrink-0 border border-emerald-500/10"
-            title="Commit active ledger sheet to database database ledger cards"
-          >
-            <Save size={13} />
-            <span className="text-[7px] font-black uppercase tracking-wider mt-1 scale-90">Save</span>
-          </button>
-
-          {/* Reset Blank Button */}
-          <button
-            onClick={resetToBlank}
-            className="w-10 h-10 sm:w-12 sm:h-12 flex flex-col items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-650 dark:text-slate-350 border border-slate-200 dark:border-slate-700 text-[7px] font-black uppercase tracking-wider cursor-pointer transition-all active:scale-95 duration-200 shrink-0"
-            title="Reset to blank entry sheet"
-          >
-            <Trash2 size={13} />
-            <span className="text-[7px] font-black uppercase tracking-wider mt-1 scale-90">Reset</span>
-          </button>
-
-          {/* Footer close button */}
-          <div className="w-full pt-2 border-t border-slate-200 dark:border-slate-800 mt-1 flex flex-col items-center">
+        {/* Full-Width Workspace Premium Navbar (Replaces the floating right toolbar) */}
+        <div className="w-full bg-[#fcfcfc] dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-4 z-[310] print:hidden shrink-0 select-none">
+          {/* Left Block */}
+          <div className="flex items-center gap-3 w-full sm:w-auto">
             <button
               onClick={onClose}
-              className="w-10 h-10 sm:w-11 sm:h-11 flex flex-col items-center justify-center rounded-xl hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 cursor-pointer active:scale-95 transition-all duration-200 shrink-0"
-              title="Close Editor"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 active:scale-95 border border-slate-200 dark:border-slate-700 cursor-pointer"
             >
-              <X size={15} />
-              <span className="text-[7px] font-black uppercase tracking-wider mt-0.5 scale-90">Close</span>
+              <ChevronLeft size={14} className="text-blue-500" />
+              Portal
+            </button>
+            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+            <div>
+              <h2 className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Ledger Workspace
+              </h2>
+              <p className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest hidden sm:block">A4 PRINT-READY INTEGRATION CONSOLE</p>
+            </div>
+          </div>
+
+          {/* Middle Block: Live statistics feedback */}
+          <div className="flex items-center gap-4 text-[10px] bg-slate-50/50 dark:bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800/80 hidden lg:flex">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[8px] font-bold text-slate-405 dark:text-slate-500 uppercase tracking-widest">ROWS FILLED</span>
+              <span className="font-extrabold text-[#0f172a] dark:text-slate-100">
+                {table1Rows.filter(r => r.cId || r.name || r.amount > 0).length} / 22
+              </span>
+            </div>
+            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[8px] font-bold text-slate-405 dark:text-slate-500 uppercase tracking-widest">COLLECTED TOTAL</span>
+              <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">
+                Rs. {totalAmount1.toLocaleString()}
+              </span>
+            </div>
+            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[8px] font-bold text-slate-405 dark:text-slate-500 uppercase tracking-widest">AUXILIARY AMNT</span>
+              <span className="font-mono font-black text-blue-600 dark:text-blue-400">
+                Rs. {totalAmount2.toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          {/* Right Block: Main controller actions */}
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+            {/* Viewport Scale Control */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-950 rounded-xl p-0.5 border border-slate-250 dark:border-slate-800 text-[9px] font-black uppercase shrink-0">
+              <span className="text-slate-400 dark:text-slate-500 px-1.5 font-black text-[8px]">ZOOM</span>
+              {(['fit', '100%', '85%', '75%'] as const).map((zOpt) => (
+                <button
+                  key={zOpt}
+                  onClick={() => {
+                    setZoomOption(zOpt);
+                    localStorage.setItem('gts_ledger_zoomOption', zOpt);
+                    toast.success(`Zoom adjusted to ${zOpt.toUpperCase()}`);
+                  }}
+                  className={`px-2 py-1 rounded-lg font-extrabold cursor-pointer transition-all border-none ${
+                    zoomOption === zOpt 
+                      ? 'bg-brand-accent text-white shadow-sm' 
+                      : 'text-slate-600 dark:text-slate-350 hover:text-slate-900 dark:hover:text-white bg-transparent'
+                  }`}
+                >
+                  {zOpt === 'fit' ? 'Auto' : zOpt}
+                </button>
+              ))}
+            </div>
+
+            {/* Sizing Toggle */}
+            <button
+              onClick={() => setShowSizingPanel(!showSizingPanel)}
+              className={`p-2 rounded-xl border text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all flex items-center gap-1 ${
+                showSizingPanel 
+                  ? 'bg-brand-accent border-brand-accent text-white shadow-md shadow-brand-accent/20' 
+                  : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-705 border-slate-200 dark:border-slate-705 text-slate-700 dark:text-slate-300'
+              }`}
+              title="Toggle Sizing and Column Width Sliders"
+            >
+              <SlidersHorizontal size={12} />
+              <span className="hidden md:inline">Sizing</span>
+            </button>
+
+            {/* Auto Fill outstanding from Active Monthly accounts */}
+            <button
+              onClick={autoFillFromDb}
+              className="p-2 rounded-xl bg-brand-accent/10 dark:bg-brand-accent/20 hover:bg-brand-accent/20 text-brand-accent border border-brand-accent/20 text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all flex items-center gap-1 shrink-0"
+              title="Auto Fill Accounts needing Recovery"
+            >
+              <RefreshCw size={12} className="text-brand-accent" />
+              <span>Fill</span>
+            </button>
+
+            {/* Print */}
+            <button
+              onClick={handlePrint}
+              className="p-2 rounded-xl bg-brand-accent hover:opacity-90 text-white text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all shadow-md shadow-brand-accent/15 flex items-center gap-1 border-none"
+              title="Print to Paper or save PDF"
+            >
+              <Printer size={12} />
+              <span>Print</span>
+            </button>
+
+            {/* Registry History */}
+            <button
+              onClick={() => setShowHistoryPanel(!showHistoryPanel)}
+              className={`p-2 rounded-xl border text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all flex items-center gap-1 ${
+                showHistoryPanel 
+                  ? 'bg-brand-accent border-brand-accent text-white shadow-md shadow-brand-accent/20' 
+                  : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-705 border-slate-200 dark:border-slate-705 text-slate-700 dark:text-slate-300'
+              }`}
+              title="Toggle Historical Month Registry Logs"
+            >
+              <History size={12} />
+              <span>History</span>
+            </button>
+
+            {/* Save active sheet */}
+            <button
+              onClick={handleSaveSheet}
+              className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all shadow-md flex items-center gap-1 border-none"
+              title="Commit active sheet to historical database logs"
+            >
+              <Save size={12} />
+              <span>Save</span>
+            </button>
+
+            {/* Reset blank */}
+            <button
+              onClick={() => setShowConfirmResetModal(true)}
+              className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-750 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all flex items-center gap-1"
+              title="Reset fields of current sheet"
+            >
+              <Trash2 size={12} />
+              <span className="hidden sm:inline">Reset</span>
             </button>
           </div>
-        </motion.div>
+        </div>
 
         {/* CSS to overlay print and target only the A4 container physically */}
         <style dangerouslySetInnerHTML={{ __html: `
@@ -972,31 +1121,27 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
           }
         `}} />
 
-        {/* Main Content Layout - Sleek, modern container */}
-        <div className="w-full flex justify-center items-start print:mt-0 print:p-0 print:block">
-          
-          {/* Scrollable mockup container designed to accommodate BOTH the Sizing Designer on the left, the A4 sheet card in the center, and the interactive Ledger Card Registry Sidebar Panel on the right */}
-          <div className="w-full overflow-x-auto flex flex-col xl:flex-row items-center xl:items-start justify-center gap-6 mt-6 px-4 pb-12 print:overflow-visible print:p-0 print:m-0 print:block shrink-0">
-
-            {/* Sizing & Position Designer Panel - Now on the left side of the sheet and extremely close to it */}
-            <AnimatePresence mode="popLayout font-mono">
-            {showSizingPanel && (
-              <motion.div 
-                initial={{ opacity: 0, x: -30, scale: 0.95 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: -30, scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                className="w-full xl:w-[265px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-3.5 print:hidden shrink-0 text-slate-800 dark:text-slate-100 select-none backdrop-blur-sm xl:sticky xl:top-[20px] max-h-[calc(100vh-140px)] overflow-y-auto scrollbar-thin text-left"
-              >
+        {/* Main Integrated Workspace (No more double screen scrolling or nested popups!) */}
+        <div className="flex-1 w-full flex flex-row items-stretch overflow-hidden print:block print:p-0 print:overflow-visible print:h-auto">
+          {/* Left Inline Sizing Designer Panel with custom enter animations */}
+          <AnimatePresence mode="popLayout">
+          {showSizingPanel && (
+            <motion.div 
+              initial={{ opacity: 0, width: 0 }}
+              animate={{ opacity: 1, width: 280 }}
+              exit={{ opacity: 0, width: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="w-[280px] bg-[#fdfdfd] dark:bg-slate-900 border-r border-slate-205 dark:border-slate-800/85 p-4 overflow-y-auto shrink-0 print:hidden h-full text-slate-850 dark:text-slate-100 select-none text-left scrollbar-thin flex flex-col gap-3 font-mono"
+            >
                 
                 <div className="flex items-center justify-between pb-2.5 border-b border-slate-150 dark:border-slate-800 mb-3">
                   <div className="flex items-center gap-1.5">
-                    <Settings2 className="w-4 h-4 text-amber-500 animate-spin-slow" />
+                    <Settings2 className="w-4 h-4 text-brand-accent animate-spin-slow" />
                     <span className="text-[10px] font-black uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc]">Sizing Designer</span>
                   </div>
                   <button 
                     onClick={resetSizingToDefault}
-                    className="flex items-center gap-0.5 text-[8px] font-black text-slate-400 hover:text-amber-500 transition-colors cursor-pointer border-none bg-transparent"
+                    className="flex items-center gap-0.5 text-[8px] font-black text-slate-400 hover:text-brand-accent transition-colors cursor-pointer border-none bg-transparent"
                     title="Reset to default sizes"
                   >
                     <RotateCcw className="w-2.5 h-2.5" />
@@ -1009,7 +1154,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                   <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Row padding</span>
-                      <span className="font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-955 px-1 py-0.5 rounded text-[9px] font-bold">{rowPadding}px</span>
+                      <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{rowPadding}px</span>
                     </div>
                     <input 
                       type="range" 
@@ -1018,7 +1163,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                       step="0.5"
                       value={rowPadding} 
                       onChange={(e) => setRowPadding(parseFloat(e.target.value))}
-                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500 mt-1.5"
+                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent mt-1.5"
                     />
                     <span className="text-[7.5px] text-slate-450 leading-none block mt-1">Squeeze padding to fit lines on one page.</span>
                   </div>
@@ -1026,7 +1171,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                   <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Table Font Size</span>
-                      <span className="font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-955 px-1 py-0.5 rounded text-[9px] font-bold">{tableFontSize}px</span>
+                      <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{tableFontSize}px</span>
                     </div>
                     <input 
                       type="range" 
@@ -1035,14 +1180,14 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                       step="0.5"
                       value={tableFontSize} 
                       onChange={(e) => setTableFontSize(parseFloat(e.target.value))}
-                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500 mt-1.5"
+                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent mt-1.5"
                     />
                   </div>
 
                   <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Header Font Size</span>
-                      <span className="font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-955 px-1 py-0.5 rounded text-[9px] font-bold">{headerFontSize}px</span>
+                      <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{headerFontSize}px</span>
                     </div>
                     <input 
                       type="range" 
@@ -1051,7 +1196,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                       step="0.5"
                       value={headerFontSize} 
                       onChange={(e) => setHeaderFontSize(parseFloat(e.target.value))}
-                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500 mt-1.5"
+                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent mt-1.5"
                     />
                     <span className="text-[7.5px] text-slate-450 leading-none block mt-1">Scale top header fields (OFFICER, AREA, DATE).</span>
                   </div>
@@ -1060,26 +1205,26 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                   <div className="grid grid-cols-2 gap-2">
                     <div className="p-2 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
                       <span className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider block mb-1">Top Margin</span>
-                      <span className="text-[8px] font-mono text-amber-600 dark:text-amber-400 block mb-1">{paperPaddingY}mm</span>
+                      <span className="text-[8px] font-mono text-brand-accent block mb-1">{paperPaddingY}mm</span>
                       <input 
                         type="range" 
                         min="2" 
                         max="22" 
                         value={paperPaddingY} 
                         onChange={(e) => setPaperPaddingY(parseInt(e.target.value))}
-                        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent"
                       />
                     </div>
                     <div className="p-2 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
                       <span className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider block mb-1">Side Margin</span>
-                      <span className="text-[8px] font-mono text-amber-600 dark:text-amber-400 block mb-1">{paperPaddingX}mm</span>
+                      <span className="text-[8px] font-mono text-brand-accent block mb-1">{paperPaddingX}mm</span>
                       <input 
                         type="range" 
                         min="2" 
                         max="22" 
                         value={paperPaddingX} 
                         onChange={(e) => setPaperPaddingX(parseInt(e.target.value))}
-                        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent"
                       />
                     </div>
                   </div>
@@ -1092,62 +1237,62 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                     
                     <div className="space-y-1.5 text-[8.5px] font-bold text-slate-500">
                       <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-455 mb-0.5">
+                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Sr column</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthSr}px</span>
                         </div>
                         <input 
                           type="range" min="20" max="80" value={t1WidthSr} 
                           onChange={(e) => setT1WidthSr(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-amber-500 rounded appearance-none cursor-pointer"
+                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
 
                       <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-455 mb-0.5">
+                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Customer ID col</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthId}px</span>
                         </div>
                         <input 
                           type="range" min="40" max="150" value={t1WidthId} 
                           onChange={(e) => setT1WidthId(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-amber-500 rounded appearance-none cursor-pointer"
+                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
 
                       <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-455 mb-0.5">
+                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Name col</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthName}px</span>
                         </div>
                         <input 
                           type="range" min="100" max="380" value={t1WidthName} 
                           onChange={(e) => setT1WidthName(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-amber-500 rounded appearance-none cursor-pointer"
+                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
 
                       <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-455 mb-0.5">
+                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Comments/Phone col</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthComments}px</span>
                         </div>
                         <input 
                           type="range" min="100" max="350" value={t1WidthComments} 
                           onChange={(e) => setT1WidthComments(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-amber-500 rounded appearance-none cursor-pointer"
+                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
 
                       <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-455 mb-0.5">
+                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Amount col</span>
                           <span className="font-mono text-slate-655 dark:text-slate-400">{t1WidthAmount}px</span>
                         </div>
                         <input 
                           type="range" min="50" max="180" value={t1WidthAmount} 
                           onChange={(e) => setT1WidthAmount(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-amber-500 rounded appearance-none cursor-pointer"
+                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
                     </div>
@@ -1161,26 +1306,26 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                     
                     <div className="space-y-1.5 text-[8.5px] font-bold text-slate-500">
                       <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-450 mb-0.5">
+                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Account Title col</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t2WidthName}px</span>
                         </div>
                         <input 
                           type="range" min="150" max="550" value={t2WidthName} 
                           onChange={(e) => setT2WidthName(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-amber-500 rounded appearance-none cursor-pointer"
+                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
 
                       <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-455 mb-0.5">
+                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Amount col</span>
                           <span className="font-mono text-slate-655 dark:text-slate-400">{t2WidthAmount}px</span>
                         </div>
                         <input 
                           type="range" min="50" max="250" value={t2WidthAmount} 
                           onChange={(e) => setT2WidthAmount(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-amber-500 rounded appearance-none cursor-pointer"
+                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
                     </div>
@@ -1188,7 +1333,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
 
                 </div>
 
-                <div className="mt-3 p-2 bg-amber-50/40 dark:bg-amber-955/10 rounded-lg border border-amber-100/30 dark:border-amber-900/10 text-[8.5px] text-amber-700 dark:text-amber-350 leading-normal">
+                <div className="mt-3 p-2 bg-brand-accent/10 dark:bg-brand-accent/20 rounded-lg border border-brand-accent/20 dark:border-brand-accent/10 text-[8.5px] text-brand-accent leading-normal">
                   💡 <span className="font-extrabold uppercase">Grid Position:</span> Drag sliders to align columns perfectly.
                 </div>
 
@@ -1196,19 +1341,35 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
             )}
             </AnimatePresence>
 
-            {/* A4 Paper Mockup Sheet Container */}
-            <motion.div 
-              initial={{ opacity: 0, y: 30, scale: 0.99 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ delay: 0.15, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-              style={{ 
-                paddingLeft: `${paperPaddingX}mm`, 
-                paddingRight: `${paperPaddingX}mm`, 
-                paddingTop: `${paperPaddingY}mm`, 
-                paddingBottom: `${paperPaddingY}mm` 
-              }}
-              className="print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[210mm] min-h-[297mm] select-text flex flex-col text-[#0f172a] font-sans print:m-0 shrink-0"
-            >
+            {/* Center Area: Full Viewport Scale-to-Fit Workspace Area */}
+            <div className="flex-1 overflow-auto p-4 sm:p-6 flex items-start justify-center bg-slate-100 dark:bg-slate-900/40 scrollbar-thin relative h-full print:bg-transparent print:p-0 print:m-0 print:block print:overflow-visible print:h-auto select-none print:select-text">
+              <div 
+                className="relative flex items-start justify-center print:block print:w-auto print:h-auto shrink-0 print:static"
+                style={{
+                  width: `calc(210mm * ${calculatedScale})`,
+                  height: `calc(297mm * ${calculatedScale})`,
+                  minWidth: `calc(210mm * ${calculatedScale})`,
+                  minHeight: `calc(297mm * ${calculatedScale})`,
+                }}
+              >
+                {/* A4 Paper Mockup Sheet Container */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 30, scale: 0.99 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ delay: 0.15, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                  style={{ 
+                    paddingLeft: `${paperPaddingX}mm`, 
+                    paddingRight: `${paperPaddingX}mm`, 
+                    paddingTop: `${paperPaddingY}mm`, 
+                    paddingBottom: `${paperPaddingY}mm`,
+                    transform: `scale(${calculatedScale})`,
+                    transformOrigin: 'top left',
+                    position: 'absolute',
+                    left: 0,
+                    top: 0
+                  }}
+                  className="print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[210mm] min-h-[297mm] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text"
+                >
             
             {/* Header Row - Aligned tight & left with Flex box for perfect viewport/A4 compatibility */}
             <div 
@@ -1411,7 +1572,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                       key={index} 
                       className={`border-b border-slate-405 font-mono colRow transition-all duration-250 ${
                         isSearchResultMatch 
-                          ? 'bg-amber-100 font-bold border-l-4 border-l-amber-600' 
+                           ? 'bg-brand-accent/20 dark:bg-brand-accent/30 font-bold border-l-4 border-l-brand-accent' 
                           : ''
                       }`}
                     >
@@ -1481,7 +1642,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                                   key={cObj.id || cObj.username}
                                   type="button"
                                   onClick={() => handleSelectSuggestion(index, cObj)}
-                                  className="w-full flex items-center justify-between text-left px-2 sm:px-2.5 py-1.5 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 rounded-lg transition-colors group"
+                                  className="w-full flex items-center justify-between text-left px-2 sm:px-2.5 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg transition-colors group"
                                 >
                                   <div className="flex flex-col min-w-0 pr-2">
                                     <span className="text-[11px] font-bold text-slate-900 dark:text-slate-100 group-hover:text-white truncate">
@@ -1555,7 +1716,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                                   key={cObj.id || cObj.username}
                                   type="button"
                                   onClick={() => handleSelectSuggestion(index, cObj)}
-                                  className="w-full flex items-center justify-between text-left px-2 sm:px-2.5 py-1.5 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-600 rounded-lg transition-colors group"
+                                  className="w-full flex items-center justify-between text-left px-2 sm:px-2.5 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg transition-colors group"
                                 >
                                   <div className="flex flex-col min-w-0 pr-2">
                                     <span className="text-[11px] font-bold text-slate-900 dark:text-slate-100 group-hover:text-white truncate">
@@ -1884,6 +2045,8 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
           </div>
  
         </motion.div> {/* print-paper-container ends */}
+              </div> {/* relative wrapper ends */}
+            </div> {/* center scale workspace ends */}
 
         {/* Financial Ledger Sheets Registry & Backup Sidebar Panel on the right */}
         {showHistoryPanel && (
@@ -1891,12 +2054,12 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ type: 'spring', stiffness: 260, damping: 25 }}
-            className="w-full xl:w-[390px] shrink-0 bg-slate-910/98 dark:bg-slate-950/98 border border-slate-705/80 rounded-2xl p-5 shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex flex-col gap-4 font-sans text-slate-100 print:hidden text-left"
+            className="w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[300]"
           >
             {/* Title */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
-                <History className="text-indigo-400 h-5 w-5 animate-pulse" />
+                <History className="text-brand-accent h-5 w-5 animate-pulse" />
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 font-mono">Ledger Registry</h3>
                   <p className="text-[10px] text-slate-400">Monthly recovery historical cards</p>
@@ -1920,7 +2083,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                 placeholder="Advanced Search Client ID or Name..."
                 value={historySearchQuery}
                 onChange={(e) => setHistorySearchQuery(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 focus:border-indigo-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none transition-colors"
+                className="w-full bg-slate-950/80 border border-slate-800 focus:border-brand-accent rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none transition-colors"
               />
               {historySearchQuery && (
                 <button
@@ -1936,7 +2099,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
             <div className="bg-slate-950/50 rounded-xl border border-slate-800/60 p-3.5 flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black tracking-wider uppercase text-slate-400 font-mono flex items-center gap-1">
-                  <Database size={10} className="text-amber-400" />
+                  <Database size={10} className="text-brand-accent" />
                   Backup & Monthly Resets
                 </span>
                 {backupTokens ? (
@@ -1954,7 +2117,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
               {!backupTokens ? (
                 <button
                   onClick={handleConnectBackupAccount}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-600 text-white text-[10px] uppercase font-black tracking-widest transition-all cursor-pointer shadow-md border-none"
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-brand-accent hover:opacity-95 text-white text-[10px] uppercase font-black tracking-widest transition-all cursor-pointer shadow-md border-none"
                 >
                   <LogIn size={11} />
                   Authorize Backup Google Account
@@ -1988,7 +2151,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                     <button
                       onClick={handleBackupLedgerHistory}
                       disabled={isBackingUp}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-955 text-[10px] font-black tracking-wider uppercase rounded-lg shadow-md transition-all cursor-pointer border-none"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-brand-accent hover:opacity-90 disabled:opacity-50 text-white text-[10px] font-black tracking-wider uppercase rounded-lg shadow-md transition-all cursor-pointer border-none"
                       title="Google spreadsheet ledger backup with date sections integration"
                     >
                       <FileSpreadsheet size={11} />
@@ -2042,7 +2205,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                       onClick={() => handleLoadHistorySheet(sheet)}
                       className={`group relative p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-1.5 ${
                         isLoaded
-                          ? 'bg-indigo-950/40 border-indigo-500/80 shadow-md shadow-indigo-500/5'
+                          ? 'bg-brand-accent/10 border-brand-accent/60 shadow-md shadow-brand-accent/10'
                           : 'bg-slate-950/45 hover:bg-slate-900/60 border-slate-850 hover:border-slate-700'
                       }`}
                     >
@@ -2056,7 +2219,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                       </button>
 
                       <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-lg bg-indigo-950/90 border border-slate-800 flex items-center justify-center text-xs font-black text-indigo-400 font-mono">
+                        <div className="h-7 w-7 rounded-lg bg-brand-accent/20 border border-brand-accent/35 flex items-center justify-center text-xs font-black text-brand-accent font-mono">
                           {sheet.recOfficer?.substring(0, 2).toUpperCase() || 'RO'}
                         </div>
                         <div>
@@ -2079,7 +2242,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                       </div>
                       
                       {isLoaded && (
-                        <div className="absolute bottom-1 right-2 text-[8px] uppercase tracking-widest font-black text-indigo-400 animate-pulse">
+                        <div className="absolute bottom-1 right-2 text-[8px] uppercase tracking-widest font-black text-brand-accent animate-pulse">
                           Active Panel
                         </div>
                       )}
@@ -2094,9 +2257,82 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
             </div>
           </motion.div>
         )}
-      </div> {/* scrollable container ends */}
-      </div> {/* sidebar parent layout wrapper ends */}
-    </motion.div> {/* print-overlay-wrapper ends */}
+        </div> {/* Main Integrated Workspace ends */}
+      </motion.div> {/* print-overlay-wrapper ends */}
+
+      {/* Beautiful Reset & Purge Confirmation Modal */}
+      <AnimatePresence>
+        {showConfirmResetModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 15, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+            >
+              <div className="p-5 flex flex-col gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center text-rose-500 shrink-0">
+                    <AlertCircle size={20} className="animate-pulse text-rose-500" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-rose-500 font-mono">
+                      CONFIRM TOTAL RESET
+                    </h4>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                      Reset Workspace & History?
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 space-y-2 leading-relaxed">
+                  <p className="uppercase text-[9px] font-bold text-slate-400">
+                    Choose one of the core reset operations below:
+                  </p>
+                  <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-1">
+                    <p className="font-extrabold text-[#0f172a] dark:text-slate-200 uppercase text-[9.5px] tracking-wide flex items-center gap-1.5 label-danger">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      Option 1: Total Server Purge
+                    </p>
+                    <p className="text-[10px] text-slate-450 dark:text-slate-400 font-bold leading-normal uppercase">
+                      Resets live inputs and permanently purges <span className="text-rose-500 font-black">{ledgerHistory.length} registered monthly sheets</span> on Firebase.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-1">
+                  <button
+                    onClick={() => handleResetWorkspaceAndHistory(true)}
+                    className="w-full py-2 px-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-md shadow-rose-550/15 border-none text-center"
+                  >
+                    💥 Clear Screen & Delete All history
+                  </button>
+
+                  <button
+                    onClick={() => handleResetWorkspaceAndHistory(false)}
+                    className="w-full py-2 px-4 bg-brand-accent hover:opacity-90 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-sm border-none text-center"
+                  >
+                    🧹 Clear SCREEN Inputs Only
+                  </button>
+
+                  <button
+                    onClick={() => setShowConfirmResetModal(false)}
+                    className="w-full py-1.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-extrabold uppercase tracking-widest transition-all cursor-pointer border border-slate-200 dark:border-slate-700 text-center"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>,
     document.body
   );
