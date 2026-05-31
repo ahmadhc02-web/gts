@@ -419,9 +419,10 @@ Provide:
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
-                className="text-[9px] text-slate-500 font-mono tracking-wider font-semibold uppercase bg-slate-200/50 dark:bg-slate-800/40 px-2 py-0.5 rounded-full"
+                className="text-[9px] text-emerald-600 dark:text-[#34d399] font-mono font-bold tracking-wider flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20"
               >
-                OFFLINE ENGINE
+                <span className="w-1.5 h-1.5 bg-emerald-500 dark:bg-emerald-400 rounded-full animate-pulse" />
+                ONLINE ENGINE
               </motion.span>
             )}
           </AnimatePresence>

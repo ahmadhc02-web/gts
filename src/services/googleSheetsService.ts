@@ -5,18 +5,8 @@ import { safeStringify } from '../lib/utils';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
 
 const getApiUrl = (endpoint: string): string => {
-  const host = window.location.hostname;
-  if (
-    host === 'localhost' || 
-    host === '127.0.0.1' || 
-    host.includes('.run.app') ||
-    host.includes('hf.space') ||
-    host.includes('huggingface.co')
-  ) {
-    return endpoint;
-  }
-  // Production URL of the provisioned Cloud Run backend
-  return `https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app${endpoint}`;
+  // Always use relative path or resolve from current origin to ensure compatibility across Dev, Pre-prod, and exported containers.
+  return endpoint;
 };
 
 export interface GoogleTokens {
@@ -62,6 +52,9 @@ try {
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.addScope('https://www.googleapis.com/auth/drive');
+provider.addScope('https://www.googleapis.com/auth/gmail.send');
+provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
 
 export const googleSheetsService = {
   syncConfigToFirestore: async (updates: any) => {
@@ -376,6 +369,9 @@ export const googleSheetsService = {
       const customProvider = new GoogleAuthProvider();
       customProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
       customProvider.addScope('https://www.googleapis.com/auth/drive.file');
+      customProvider.addScope('https://www.googleapis.com/auth/drive');
+      customProvider.addScope('https://www.googleapis.com/auth/gmail.send');
+      customProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
       customProvider.setCustomParameters({
         prompt: 'consent',
         access_type: 'offline'
@@ -398,7 +394,7 @@ export const googleSheetsService = {
         refresh_token: (credential as any).refreshToken || undefined,
         token_type: "Bearer",
         expiry_date: expiry_date,
-        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file"
+        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly"
       };
       
       googleSheetsService.saveTokens(tokens);
@@ -630,6 +626,9 @@ export const googleSheetsService = {
       const customProvider = new GoogleAuthProvider();
       customProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
       customProvider.addScope('https://www.googleapis.com/auth/drive.file');
+      customProvider.addScope('https://www.googleapis.com/auth/drive');
+      customProvider.addScope('https://www.googleapis.com/auth/gmail.send');
+      customProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
       customProvider.setCustomParameters({
         prompt: 'select_account',
         access_type: 'offline'
@@ -648,7 +647,7 @@ export const googleSheetsService = {
         refresh_token: (credential as any).refreshToken || undefined,
         token_type: "Bearer",
         expiry_date: expiry_date,
-        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file"
+        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly"
       };
       
       googleSheetsService.saveBackupTokens(tokens);
@@ -953,6 +952,11 @@ export const googleSheetsService = {
         })
       });
 
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        throw new Error('The secure gateway returned an HTML document instead of JSON data. Please verify your Google Account link in the Gmail Integrations section.');
+      }
+
       if (!response.ok) {
         let errorMsg = 'Failed to perform bulk export';
         try {
@@ -965,7 +969,11 @@ export const googleSheetsService = {
         throw new Error(errorMsg);
       }
 
-      const resJson = await response.json();
+      const resText = await response.text();
+      if (resText.trim().startsWith('<!doctype') || resText.trim().startsWith('<html')) {
+        throw new Error('Access credentials expired or unrouted. Please link your Google Account in the Gmail Center.');
+      }
+      const resJson = JSON.parse(resText);
       googleSheetsService.processResponseJson(resJson);
       try {
         await googleSheetsService.syncConfigToFirestore({ lastAutoBackupTime: Date.now() });
@@ -1030,6 +1038,11 @@ export const googleSheetsService = {
         })
       });
 
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        throw new Error('The sync gateway returned an HTML document instead of JSON. Ensure your server endpoints are running and Gmail is connected.');
+      }
+
       if (!response.ok) {
         let errorMsg = 'Failed auto-syncing config';
         try {
@@ -1042,7 +1055,11 @@ export const googleSheetsService = {
         throw new Error(errorMsg);
       }
 
-      const json = await response.json();
+      const resText = await response.text();
+      if (resText.trim().startsWith('<!doctype') || resText.trim().startsWith('<html')) {
+        throw new Error('Configuration backup encountered HTML response. Please reconnect your Google Account.');
+      }
+      const json = JSON.parse(resText);
       googleSheetsService.processResponseJson(json);
     } catch (err) {
       console.error('Error auto-syncing config:', err);

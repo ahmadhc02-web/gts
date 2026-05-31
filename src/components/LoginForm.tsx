@@ -89,6 +89,136 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
   const [isCheckingUser, setIsCheckingUser] = useState(false);
   const [detectedCompanyName, setDetectedCompanyName] = useState<string>("Green Tech Services");
 
+  // Recovery Flow State
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoveryUsername, setRecoveryUsername] = useState('');
+  const [recoveryStage, setRecoveryStage] = useState<'request' | 'verify' | 'reset' | 'success'>('request');
+  const [recoveryOtp, setRecoveryOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoverySuccess, setRecoverySuccess] = useState<string | null>(null);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+
+  const obscureEmail = (email: string) => {
+    if (!email) return '';
+    const parts = email.split('@');
+    if (parts.length < 2) return email;
+    const [local, domain] = parts;
+    if (local.length <= 3) {
+      return `${local.charAt(0)}***@${domain}`;
+    }
+    return `${local.slice(0, 3)}***@${domain}`;
+  };
+
+  // Check for deep link on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rUsername = params.get('reset_username');
+    const rCode = params.get('reset_code');
+    if (rUsername && rCode) {
+      setRecoveryUsername(rUsername);
+      setRecoveryOtp(rCode);
+      setRecoveryStage('reset'); // Jump directly to new password entry
+      setShowRecoveryModal(true);
+      // Clean query params so they don't stick around in address bar
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (err) {}
+    }
+  }, []);
+
+  const handleRecoveryRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recoveryUsername.trim()) return;
+    setIsRecovering(true);
+    setRecoveryError(null);
+    setRecoverySuccess(null);
+    try {
+      const response = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: recoveryUsername.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to dispatch verification code.');
+      }
+      setRecoveryEmail(data.email || '');
+      setRecoveryStage('verify');
+    } catch (err: any) {
+      console.error("Recovery request failed:", err);
+      setRecoveryError(err.message || 'Verification passcode dispatch failed.');
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+
+  const handleRecoveryVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recoveryOtp.trim()) return;
+    setIsRecovering(true);
+    setRecoveryError(null);
+    try {
+      const response = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: recoveryUsername.trim(), code: recoveryOtp.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Incorrect code. Please verification checks and retry.');
+      }
+      setRecoveryStage('reset');
+    } catch (err: any) {
+      console.error("Recovery verify failed:", err);
+      setRecoveryError(err.message || 'Passcode verification failed.');
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+
+  const handleRecoveryReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword) {
+      setRecoveryError('Please establish a new passcode.');
+      return;
+    }
+    if (newPassword.length < 5) {
+      setRecoveryError('Passcode must be at least 5 characters long.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setRecoveryError('Passcodes do not match.');
+      return;
+    }
+    setIsRecovering(true);
+    setRecoveryError(null);
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: recoveryUsername.trim(),
+          code: recoveryOtp.trim(),
+          newPassword
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update passcode.');
+      }
+      setRecoverySuccess(data.message || 'Passcode updated successfully!');
+      setRecoveryStage('success');
+    } catch (err: any) {
+      console.error("Recovery reset failed:", err);
+      setRecoveryError(err.message || 'Failed to update your credentials.');
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+
   // Check if username needs a line code and fetch branding
   useEffect(() => {
     const checkUser = async () => {
@@ -307,6 +437,21 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
             </div>
           </div>
 
+          <div className="flex justify-end pr-1 -mt-1 pb-1">
+            <button
+              type="button"
+              onClick={() => {
+                setRecoveryUsername(username);
+                setRecoveryError(null);
+                setRecoverySuccess(null);
+                setShowRecoveryModal(true);
+              }}
+              className="text-[9px] font-black uppercase tracking-widest text-[#2563EB] dark:text-brand-accent hover:underline transition-colors cursor-pointer"
+            >
+              Forgot Password?
+            </button>
+          </div>
+
           {error && (
             <motion.div 
               initial={{ opacity: 0, height: 0 }}
@@ -377,6 +522,294 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
           </p>
         </div>
       </motion.div>
+
+      <AnimatePresence>
+        {showRecoveryModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="relative w-full max-w-md p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden"
+            >
+              {/* Corner Accents */}
+              <div className="absolute top-0 right-0 w-24 h-24 bg-brand-accent/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
+
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-slate-800/60">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-brand-accent/10 flex items-center justify-center text-brand-accent">
+                    <Terminal size={16} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-50">Identity Recovery</h3>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-[#2563EB] dark:text-brand-accent">Passkey Protocol Restore</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRecoveryModal(false);
+                    // Reset to request stage on close
+                    setTimeout(() => {
+                      setRecoveryStage('request');
+                      setRecoveryOtp('');
+                      setNewPassword('');
+                      setConfirmNewPassword('');
+                      setRecoveryError(null);
+                    }, 300);
+                  }}
+                  className="p-1 px-2 rounded-lg bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-300 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+
+              {recoveryStage === 'request' && (
+                <form onSubmit={handleRecoveryRequest} className="space-y-4">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-semibold">
+                    To initiate the secure protocol restore, enter your registered <strong>Access ID (Username)</strong> below. We will match the credentials and dispatch an OTP code via Gmail.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Access ID (Username)</label>
+                    <div className="relative">
+                      <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input
+                        type="text"
+                        value={recoveryUsername}
+                        onChange={(e) => setRecoveryUsername(e.target.value)}
+                        placeholder="Enter Username"
+                        className={cn(inputClasses, "py-2.5")}
+                        required
+                        disabled={isRecovering}
+                      />
+                    </div>
+                  </div>
+
+                  {recoveryError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 text-[11px] font-bold text-red-600 dark:text-red-400 flex gap-2 items-start"
+                    >
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 animate-pulse" />
+                      <span>{recoveryError}</span>
+                    </motion.div>
+                  )}
+
+                  <div className="pt-2 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowRecoveryModal(false)}
+                      className="flex-1 py-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl text-[10.5px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-all border border-slate-200/50 dark:border-slate-700/50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isRecovering || !recoveryUsername}
+                      className="flex-1 py-3 bg-slate-900 dark:bg-brand-accent text-white rounded-xl text-[10.5px] font-black uppercase tracking-wider shadow-lg shadow-brand-accent/10 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isRecovering ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Checking...
+                        </>
+                      ) : (
+                        'Send OTP Code'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {recoveryStage === 'verify' && (
+                <form onSubmit={handleRecoveryVerify} className="space-y-4">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-semibold">
+                    A secure authentication code has been dispatched to your backup destination: <strong className="text-blue-500">{obscureEmail(recoveryEmail)}</strong>. Enter the 6-digit code below:
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">6-Digit Secure Code</label>
+                    <div className="relative">
+                      <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={recoveryOtp}
+                        onChange={(e) => setRecoveryOtp(e.target.value.replace(/\D/g, ''))}
+                        placeholder="e.g. 123456"
+                        className={cn(inputClasses, "py-2.5 text-center font-mono tracking-[0.3em] text-lg font-bold pl-4")}
+                        required
+                        disabled={isRecovering}
+                      />
+                    </div>
+                  </div>
+
+                  {recoveryError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 text-[11px] font-bold text-red-600 dark:text-red-400 flex gap-2 items-start"
+                    >
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{recoveryError}</span>
+                    </motion.div>
+                  )}
+
+                  <div className="pt-2 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRecoveryStage('request')}
+                      className="flex-1 py-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl text-[10.5px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-all border border-slate-200/50 dark:border-slate-700/50"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isRecovering || recoveryOtp.length < 6}
+                      className="flex-1 py-3 bg-slate-900 dark:bg-brand-accent text-white rounded-xl text-[10.5px] font-black uppercase tracking-wider shadow-lg shadow-brand-accent/10 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isRecovering ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Verifying...
+                        </>
+                      ) : (
+                        'Verify Code'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {recoveryStage === 'reset' && (
+                <form onSubmit={handleRecoveryReset} className="space-y-4">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-semibold">
+                    Establish your new security configurations for access ID <strong>{recoveryUsername}</strong>.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">New Secure Passcode</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Min 5 characters"
+                        className={cn(inputClasses, "py-2.5")}
+                        required
+                        disabled={isRecovering}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Confirm Secure Passcode</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        placeholder="Repeat passcode"
+                        className={cn(inputClasses, "py-2.5")}
+                        required
+                        disabled={isRecovering}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-start">
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="text-[10px] font-black uppercase tracking-wider text-slate-500 hover:text-brand-accent transition-all flex items-center gap-1.5"
+                    >
+                      {showPassword ? <EyeOff size={12} /> : <Eye size={12} />}
+                      {showPassword ? "Reveal Passwords" : "Hide Passwords"}
+                    </button>
+                  </div>
+
+                  {recoveryError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30 text-[11px] font-bold text-red-600 dark:text-red-400 flex gap-2 items-start"
+                    >
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{recoveryError}</span>
+                    </motion.div>
+                  )}
+
+                  <div className="pt-2 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRecoveryStage('verify')}
+                      className="flex-1 py-3 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl text-[10.5px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-all border border-slate-200/50 dark:border-slate-700/50"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isRecovering || !newPassword || !confirmNewPassword}
+                      className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10.5px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/10 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isRecovering ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Finalizing...
+                        </>
+                      ) : (
+                        'Save Passcode'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {recoveryStage === 'success' && (
+                <div className="space-y-4 text-center py-2 animate-fadeIn">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/15 text-emerald-500 flex items-center justify-center mx-auto mb-2 font-black text-xl">
+                    ✓
+                  </div>
+                  <h4 className="text-sm font-black uppercase tracking-tight text-emerald-600 dark:text-emerald-400 leading-none">Security Updated</h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-bold p-3 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-slate-100 dark:border-slate-800/50 text-left">
+                    {recoverySuccess}
+                  </p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                    Your security nodes have successfully registered the new credentials. You can now sign in with your updated passcode.
+                  </p>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowRecoveryModal(false);
+                        setRecoveryStage('request');
+                        setRecoveryOtp('');
+                        setNewPassword('');
+                        setConfirmNewPassword('');
+                        setRecoveryError(null);
+                        setRecoverySuccess(null);
+                      }}
+                      className="w-full py-3 bg-slate-950 dark:bg-slate-800 hover:scale-[1.01] active:scale-95 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all"
+                    >
+                      Return to Sign In
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

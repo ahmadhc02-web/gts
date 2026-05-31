@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { UserProfile, Notification, BrandingConfig } from '../types';
@@ -30,7 +30,7 @@ interface LayoutProps {
   micAuthorized?: boolean;
   onToggleMic?: () => void;
   onResetBanner?: () => void;
-  onUpdateUser?: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role'], profilePicture?: string) => Promise<void>;
+  onUpdateUser?: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role'], profilePicture?: string, email?: string) => Promise<void>;
   branding?: BrandingConfig;
   onUpdateBranding?: (newBranding: BrandingConfig) => Promise<void>;
   activeTab?: string;
@@ -59,6 +59,41 @@ export default function Layout({
   onNavigate: onNavigateProp
 }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
+  const [isThemeTransitioning, setIsThemeTransitioning] = useState(false);
+  const [themeTransitionProgress, setThemeTransitionProgress] = useState(0);
+  const [targetTheme, setTargetTheme] = useState<'light' | 'dark' | null>(null);
+
+  const handleThemeToggle = () => {
+    if (isThemeTransitioning) return;
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTargetTheme(nextTheme);
+    setIsThemeTransitioning(true);
+    setThemeTransitionProgress(0);
+
+    let progress = 0;
+    let didToggle = false;
+    const interval = setInterval(() => {
+      progress += Math.floor(Math.random() * 12) + 8;
+      if (progress >= 85 && !didToggle) {
+        didToggle = true;
+        toggleTheme();
+      }
+
+      if (progress >= 100) {
+        progress = 100;
+        setThemeTransitionProgress(100);
+        clearInterval(interval);
+
+        setTimeout(() => {
+          setIsThemeTransitioning(false);
+          setTargetTheme(null);
+        }, 220);
+      } else {
+        setThemeTransitionProgress(progress);
+      }
+    }, 38);
+  };
+
   const [isChatOpen, setIsChatOpen] = React.useState(false);
   const [selectedChatId, setSelectedChatId] = React.useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = React.useState(false);
@@ -143,6 +178,7 @@ export default function Layout({
   const [editUsername, setEditUsername] = useState(user?.username || '');
   const [editPassword, setEditPassword] = useState(user?.password || '');
   const [editProfilePicture, setEditProfilePicture] = useState(user?.profilePicture || '');
+  const [editEmail, setEditEmail] = useState(user?.email || '');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -152,6 +188,7 @@ export default function Layout({
       setEditUsername(user.username || '');
       setEditPassword(user.password || '');
       setEditProfilePicture(user.profilePicture || '');
+      setEditEmail(user.email || '');
     }
   }, [user]);
 
@@ -180,7 +217,8 @@ export default function Layout({
         user.companyName, 
         editFullName, 
         user.role,
-        editProfilePicture
+        editProfilePicture,
+        editEmail
       );
       setIsProfileOpen(false);
     } catch (error) {
@@ -317,6 +355,7 @@ export default function Layout({
       label: 'System Settings',
       items: [
         { id: 'settings', label: 'Security', icon: Shield },
+        { id: 'gmail', label: 'Gmail Center', icon: Mail },
         { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin'] },
         { id: 'branding', label: 'CUSTOMIZATION', icon: Palette, roles: ['super_admin', 'editor'] },
       ]
@@ -329,9 +368,9 @@ export default function Layout({
       // Role-based filtering
       if (!user) return false;
       
-      // If user is member, only show specific items requested: Operations, User Details, Active Nodes, Security
+      // If user is member, only show specific items requested: Operations, User Details, Active Nodes, Security, Gmail
       if (user.role === 'member') {
-        return ['complaints', 'clients', 'nodes', 'settings'].includes(item.id);
+        return ['complaints', 'clients', 'nodes', 'settings', 'gmail'].includes(item.id);
       }
       
       // For other roles, check item.roles if defined
@@ -874,148 +913,7 @@ export default function Layout({
         )}
       </AnimatePresence>
 
-      {/* Profile Dropdown */}
-      <AnimatePresence>
-        {isProfileOpen && user && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsProfileOpen(false)}
-              className="fixed inset-0 bg-slate-950/20 backdrop-blur-[2px] z-[150]"
-            />
-            <motion.div
-              id="profile-panel"
-              initial={{ opacity: 0, y: -20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -20, scale: 0.95 }}
-              className="fixed top-20 right-4 sm:right-24 w-[calc(100vw-2rem)] sm:w-[320px] bg-white dark:bg-slate-950 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-[0_20px_60px_rgba(0,0,0,0.2)] z-[200] overflow-hidden"
-            >
-              <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800/50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-brand-accent/10 flex items-center justify-center border border-brand-accent/20">
-                    <User size={20} className="text-brand-accent" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 leading-none">Security Profile</h3>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Identity & Access Management</p>
-                  </div>
-                </div>
-              </div>
-
-              <form onSubmit={handleUpdateProfile} className="p-5 space-y-4">
-                <div className="flex flex-col items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800/40">
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="relative w-20 h-20 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex items-center justify-center overflow-hidden cursor-pointer group transition-all"
-                  >
-                    {editProfilePicture ? (
-                      <img 
-                        src={editProfilePicture} 
-                        alt="Profile Preview" 
-                        className="w-full h-full object-cover" 
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-brand-accent transition-colors">
-                        <User size={24} className="opacity-70 group-hover:scale-105 transition-transform" />
-                        <span className="text-[7.5px] font-black uppercase mt-1 tracking-tight">Setup Photo</span>
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all text-white text-[8px] font-black uppercase tracking-widest text-center select-none">
-                      UPLOAD
-                    </div>
-                  </div>
-                  
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleImageUpload} 
-                    accept="image/*" 
-                    className="hidden" 
-                  />
-                  
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-lg text-[9px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-                    >
-                      Choose Image
-                    </button>
-                    {editProfilePicture && (
-                      <button
-                        type="button"
-                        onClick={() => setEditProfilePicture('')}
-                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 text-rose-500 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Full Display Name</label>
-                  <input
-                    type="text"
-                    value={editFullName}
-                    onChange={(e) => setEditFullName(e.target.value)}
-                    placeholder="Enter Full Name"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold focus:ring-2 focus:ring-brand-accent/30 outline-none transition-all"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Access ID (Username)</label>
-                  <input
-                    type="text"
-                    value={editUsername}
-                    onChange={(e) => setEditUsername(e.target.value)}
-                    placeholder="Username"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold focus:ring-2 focus:ring-brand-accent/30 outline-none transition-all"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Secure Protocol (Password)</label>
-                  <input
-                    type="password"
-                    value={editPassword}
-                    onChange={(e) => setEditPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl px-4 py-2.5 text-xs font-bold focus:ring-2 focus:ring-brand-accent/30 outline-none transition-all"
-                  />
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={isUpdatingProfile}
-                    className="w-full py-3 bg-slate-900 dark:bg-brand-accent text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-brand-accent/10 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
-                  >
-                    {isUpdatingProfile ? 'Propagating Changes...' : 'Update Identity Panel'}
-                  </button>
-                </div>
-              </form>
-
-              <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-800/50 flex items-center justify-between">
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Role: {user.role}</span>
-                <button
-                  onClick={() => {
-                    setIsProfileOpen(false);
-                    if (onLogout) onLogout();
-                  }}
-                  className="text-[9px] font-black uppercase tracking-widest text-rose-500 hover:text-rose-600 transition-colors"
-                >
-                  Terminate Session
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* Relocated Profile dropdown to the header relative toggle container */}
 
       <header className={cn(
         "sticky top-0 z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
@@ -1192,7 +1090,7 @@ export default function Layout({
             {/* Sliding oval toggle theme switch */}
             <div className="flex items-center h-9 select-none" title="Toggle Theme Modes">
               <button
-                onClick={toggleTheme}
+                onClick={handleThemeToggle}
                 className={cn(
                   "relative w-12 h-6 rounded-full transition-colors duration-300 outline-none flex items-center shrink-0 border",
                   theme === 'dark' 
@@ -1212,37 +1110,251 @@ export default function Layout({
             </div>
 
             {user && (
-              <button 
-                id="profile-toggle-btn"
-                onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className="h-9 flex items-center gap-2.5 px-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-200/50 dark:border-slate-800/80 shadow-sm cursor-pointer select-none"
-              >
-                <div className="hidden sm:flex flex-col items-end justify-center select-none">
-                  <span className="text-[10px] font-black tracking-tight text-slate-800 dark:text-slate-200 leading-none">
-                    {user.fullName || user.username || "Muhammad Ahmad"}
-                  </span>
-                  <span className="text-[7.5px] font-bold text-slate-450 dark:text-slate-500 tracking-wider mt-0.5 uppercase leading-none">
-                    {user.role === 'super_admin' ? 'SUPER ADMIN' : 
-                     user.role === 'liteadmin' ? 'LITE ADMIN' : 
-                     user.role === 'member' ? 'MEMBER' : 
-                     user.role === 'dealer' ? 'MAIN DEALER' : 
-                     user.role ? user.role.replace('_', ' ').toUpperCase() : 'USER'}
-                  </span>
-                </div>
-                {/* avatar photo matching profile image */}
-                <div className="w-6.5 h-6.5 rounded-lg overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 border border-slate-200/55 dark:border-slate-750 flex items-center justify-center">
-                  {user.profilePicture ? (
-                    <img 
-                      src={user.profilePicture} 
-                      alt="User Profile" 
-                      className="w-full h-full object-cover" 
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <User size={12} className="text-slate-400 dark:text-slate-500" />
+              <div className="relative">
+                <button 
+                  id="profile-toggle-btn"
+                  onClick={() => setIsProfileOpen(!isProfileOpen)}
+                  className="h-9 flex items-center gap-2.5 px-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-200/50 dark:border-slate-800/80 shadow-sm cursor-pointer select-none"
+                >
+                  <div className="hidden sm:flex flex-col items-end justify-center select-none">
+                    <span className="text-[10px] font-black tracking-tight text-slate-800 dark:text-slate-200 leading-none">
+                      {user.fullName || user.username || "Muhammad Ahmad"}
+                    </span>
+                    <span className="text-[7.5px] font-bold text-slate-450 dark:text-slate-500 tracking-wider mt-0.5 uppercase leading-none">
+                      {user.role === 'super_admin' ? 'SUPER ADMIN' : 
+                       user.role === 'liteadmin' ? 'LITE ADMIN' : 
+                       user.role === 'member' ? 'MEMBER' : 
+                       user.role === 'dealer' ? 'MAIN DEALER' : 
+                       user.role ? user.role.replace('_', ' ').toUpperCase() : 'USER'}
+                    </span>
+                  </div>
+                  {/* avatar photo matching profile image */}
+                  <div className="w-6.5 h-6.5 rounded-lg overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 border border-slate-200/55 dark:border-slate-750 flex items-center justify-center">
+                    {user.profilePicture ? (
+                      <img 
+                        src={user.profilePicture} 
+                        alt="User Profile" 
+                        className="w-full h-full object-cover" 
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <User size={12} className="text-slate-400 dark:text-slate-500" />
+                    )}
+                  </div>
+                </button>
+
+                <AnimatePresence>
+                  {isProfileOpen && user && (
+                    <>
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setIsProfileOpen(false)}
+                        className="fixed inset-0 bg-slate-950/10 backdrop-blur-[1px] z-[150]"
+                      />
+                      <motion.div
+                        id="profile-panel"
+                        initial={{ opacity: 0, height: 0, scaleY: 0.8, y: -10, originY: 0 }}
+                        animate={{ opacity: 1, height: "auto", scaleY: 1, y: 0, originY: 0 }}
+                        exit={{ opacity: 0, height: 0, scaleY: 0.8, y: -10, originY: 0 }}
+                        transition={{ type: "spring", damping: 26, stiffness: 320 }}
+                        className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[340px] bg-white dark:bg-slate-950 rounded-3xl border border-slate-200/70 dark:border-slate-800/80 shadow-[0_20px_50px_rgba(0,0,0,0.12)] dark:shadow-[0_25px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden origin-top text-slate-800 dark:text-slate-100 animate-slideDown"
+                      >
+                        {/* Upper Gradient Accent */}
+                        <div className="absolute top-0 left-0 right-0 h-[3.5px] bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
+                        
+                        {/* Improved Header */}
+                        <div className="p-5 pb-4 bg-slate-50/50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800/50 relative">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-emerald-400/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                <Shield size={18} className="animate-pulse" />
+                              </div>
+                              <div>
+                                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">IDENTITY PROFILE</h3>
+                                <p className="text-[8px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Access Key Registry Status</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                              <span className="text-[7.5px] font-mono font-bold uppercase tracking-wider">SECURE</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Interactive Photo Uploader Section */}
+                        <div className="p-5 pb-4 flex flex-col items-center gap-1.5 border-b border-slate-100 dark:border-slate-800/30">
+                          <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                            {/* Colorful glow behind on hover */}
+                            <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-indigo-500 blur opacity-20 group-hover:opacity-55 transition-opacity duration-500 animate-pulse" />
+                            
+                            <div className="relative w-20 h-20 rounded-full border-2 border-white dark:border-slate-950 bg-slate-55 dark:bg-slate-900 overflow-hidden shadow-md flex items-center justify-center transition-transform duration-500 group-hover:scale-105">
+                              {editProfilePicture ? (
+                                <img 
+                                  src={editProfilePicture} 
+                                  alt="Profile Preview" 
+                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 transition-colors">
+                                  <User size={26} className="opacity-70" />
+                                </div>
+                              )}
+                              
+                              {/* Overlay for uploading */}
+                              <div className="absolute inset-0 bg-slate-950/70 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all duration-300 text-white gap-0.5">
+                                <Camera size={14} className="text-emerald-400 animate-bounce" />
+                                <span className="text-[7.5px] font-black uppercase tracking-widest">UPLOAD</span>
+                              </div>
+                            </div>
+
+                            {/* Pen avatar corner badge */}
+                            <div className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-slate-950 dark:bg-emerald-500 text-white dark:text-slate-950 flex items-center justify-center shadow-md border border-white dark:border-slate-950 group-hover:bg-emerald-500 dark:group-hover:bg-emerald-400 transition-colors">
+                              <PenLine size={10} />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="px-2 py-0.5 bg-slate-55 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200/50 dark:border-slate-800 rounded text-[8px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 transition-all active:scale-95 cursor-pointer"
+                            >
+                              CHOOSE_FILE
+                            </button>
+                            {editProfilePicture && (
+                              <button
+                                type="button"
+                                onClick={() => setEditProfilePicture('')}
+                                className="px-2 py-0.5 bg-rose-500/10 hover:bg-rose-500/15 text-rose-500 rounded text-[8px] font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer"
+                              >
+                                CLEAR_IMG
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Form Body with Prefix Icons and custom styling */}
+                        <form onSubmit={handleUpdateProfile} className="p-5 space-y-4">
+                          {/* Full Name input */}
+                          <div className="space-y-1.5">
+                            <label className="text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 ml-1 block leading-none">Full Display Name</label>
+                            <div className="relative group">
+                              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors pointer-events-none">
+                                <User size={13.5} />
+                              </div>
+                              <input
+                                type="text"
+                                value={editFullName}
+                                onChange={(e) => setEditFullName(e.target.value)}
+                                placeholder="Enter Full Name"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Access ID / Username input */}
+                          <div className="space-y-1.5">
+                            <label className="text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 ml-1 block leading-none">Access ID (Username)</label>
+                            <div className="relative group">
+                              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors pointer-events-none">
+                                <Key size={13.5} />
+                              </div>
+                              <input
+                                type="text"
+                                value={editUsername}
+                                onChange={(e) => setEditUsername(e.target.value)}
+                                placeholder="Username"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Password input */}
+                          <div className="space-y-1.5">
+                            <label className="text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 ml-1 block leading-none">Secure Passcode (Password)</label>
+                            <div className="relative group">
+                              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors pointer-events-none">
+                                <Lock size={13.5} />
+                              </div>
+                              <input
+                                type="password"
+                                value={editPassword}
+                                onChange={(e) => setEditPassword(e.target.value)}
+                                placeholder="••••••••"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Email input */}
+                          <div className="space-y-1.5">
+                            <label className="text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 ml-1 block leading-none">Recovery Mailbox (OTP Reset Link)</label>
+                            <div className="relative group">
+                              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors pointer-events-none">
+                                <Mail size={13.5} />
+                              </div>
+                              <input
+                                type="email"
+                                value={editEmail}
+                                onChange={(e) => setEditEmail(e.target.value)}
+                                placeholder="example@mail.com"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Secure Submit Trigger */}
+                          <div className="pt-2">
+                            <button
+                              type="submit"
+                              disabled={isUpdatingProfile}
+                              className="w-full py-3 bg-slate-900 hover:bg-slate-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:text-slate-950 text-white font-black uppercase tracking-widest text-[9.5px] rounded-xl transition-all shadow-md dark:shadow-emerald-500/10 disabled:opacity-50 hover:shadow-lg flex items-center justify-center gap-1.5 cursor-pointer border-none"
+                            >
+                              {isUpdatingProfile ? (
+                                <>
+                                  <RefreshCw size={12} className="animate-spin text-white dark:text-slate-950" />
+                                  <span>Syncing...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles size={11.5} className="opacity-85 text-white dark:text-slate-950" />
+                                  <span>Commit Updates</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </form>
+
+                        {/* Dashboard Footer with Roles & Termination Option */}
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-850 flex items-center justify-between">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[7px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Security Access</span>
+                            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none">
+                              {user.role === 'super_admin' ? 'Level 5 (Super Admin)' :
+                               user.role === 'liteadmin' ? 'Level 4 (Lite Admin)' :
+                               user.role === 'member' ? 'Level 2 (Member)' :
+                               user.role === 'dealer' ? 'Level 3 (Main Dealer)' : 'Level 1 (User)'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsProfileOpen(false);
+                              if (onLogout) onLogout();
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 text-[8.5px] font-black uppercase tracking-widest transition-all cursor-pointer active:scale-95"
+                          >
+                            Terminate Session
+                          </button>
+                        </div>
+                      </motion.div>
+                    </>
                   )}
-                </div>
-              </button>
+                </AnimatePresence>
+              </div>
             )}
 
             {/* Glowing Live Relay Badge */}
@@ -1331,6 +1443,104 @@ export default function Layout({
         userFullName={user?.fullName || user?.username || 'Super Admin'} 
         onUpdateBranding={onUpdateBranding}
       />
+
+      {/* Theme Transition 0% - 100% Loader Overlay */}
+      <AnimatePresence>
+        {isThemeTransitioning && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className={cn(
+              "fixed inset-0 z-[999999] flex flex-col items-center justify-center font-sans select-none overflow-hidden",
+              targetTheme === 'dark' 
+                ? "bg-slate-950 text-white" 
+                : "bg-slate-50 text-slate-950"
+            )}
+          >
+            {/* Ambient visual background glow halos */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-blue-500/10 rounded-full blur-[130px] animate-pulse" />
+              {targetTheme === 'dark' ? (
+                <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-[100px]" />
+              ) : (
+                <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-amber-500/5 rounded-full blur-[100px]" />
+              )}
+            </div>
+
+            <div className="relative text-center max-w-sm w-full px-8 flex flex-col items-center gap-6">
+              {/* Rotating themed shape container */}
+              <div 
+                className={cn(
+                  "w-16 h-16 rounded-3xl flex items-center justify-center shadow-lg relative border",
+                  targetTheme === 'dark'
+                    ? "bg-slate-900 border-slate-800 text-yellow-400"
+                    : "bg-white border-slate-200 text-indigo-600"
+                )}
+              >
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+                  className="absolute inset-[3px] border-2 border-dashed rounded-2xl opacity-40 animate-[spin_8s_linear_infinite]"
+                  style={{
+                    borderColor: targetTheme === 'dark' ? '#f59e0b' : '#6366f1'
+                  }}
+                />
+                
+                {targetTheme === 'dark' ? (
+                  <Moon size={28} className="animate-pulse" />
+                ) : (
+                  <Sun size={28} className="animate-pulse" />
+                )}
+              </div>
+
+              {/* Text Block */}
+              <div className="space-y-1">
+                <h4 className="text-[10px] font-black tracking-[0.25em] uppercase text-blue-500">
+                  SYSTEM CORE SHIFT
+                </h4>
+                <h2 className="text-sm font-black uppercase tracking-widest">
+                  {targetTheme === 'dark' ? "Transitioning to Dark Mode" : "Transitioning to Light Mode"}
+                </h2>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-relaxed">
+                  Optimizing viewport variables & styling constants
+                </p>
+              </div>
+
+              {/* Glowing progress line bar */}
+              <div className="w-full space-y-2">
+                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  <span className="flex items-center gap-1.5 font-sans font-extrabold text-blue-500">
+                    <span className="w-1 h-1 rounded-full bg-blue-500 animate-ping" />
+                    RECONSTRUCTING UI
+                  </span>
+                  <span className="font-mono text-blue-500">{themeTransitionProgress}%</span>
+                </div>
+                
+                <div className="w-full h-1 bg-slate-200/50 dark:bg-slate-800/80 rounded-full overflow-hidden shadow-inner">
+                  <div 
+                    className={cn(
+                      "h-full rounded-full transition-all duration-75",
+                      targetTheme === 'dark' 
+                        ? "bg-gradient-to-r from-yellow-500 via-amber-500 to-emerald-500"
+                        : "bg-gradient-to-r from-indigo-500 via-blue-500 to-emerald-500"
+                    )}
+                    style={{ width: `${themeTransitionProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="text-[8px] font-bold tracking-widest uppercase text-slate-400 animate-pulse font-mono">
+                {themeTransitionProgress < 30 ? "⚡ REPLICATING DOM ROOT CLASSES..." :
+                 themeTransitionProgress < 65 ? "💾 COMPUTING TAILWIND COLORS..." :
+                 themeTransitionProgress < 90 ? "🚀 APPORTIONING MEMORY BLOCKS..." :
+                 "✨ OPTIMIZATION COMPLETED!"}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

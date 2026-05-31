@@ -780,6 +780,14 @@ export default function App() {
           });
 
           // Background Notification
+          if ((window as any).AndroidInterface) {
+            try {
+              (window as any).AndroidInterface.showNotification(`GTS: ${latest.type.toUpperCase()}`, `${latest.message} - By ${latest.authorName}`);
+            } catch (err) {
+              console.error("Android bridge error:", err);
+            }
+          }
+
           if ("Notification" in window && Notification.permission === "granted") {
             const options = {
               body: `${latest.message}\nBy: ${latest.authorName}`,
@@ -841,6 +849,14 @@ export default function App() {
           }
 
           // Mobile Notification
+          if ((window as any).AndroidInterface) {
+            try {
+              (window as any).AndroidInterface.showNotification(`New from ${latest.senderName}`, latest.text || (latest.type === 'voice' ? '🎤 Voice Message' : 'New Message'));
+            } catch (err) {
+              console.error("Android bridge error:", err);
+            }
+          }
+
           if ("Notification" in window && Notification.permission === "granted") {
             const options = {
               body: latest.text || (latest.type === 'voice' ? '🎤 Voice Message' : 'New Message'),
@@ -1121,7 +1137,25 @@ export default function App() {
 
       const foundUser = effectiveUsers.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
       
-      if (foundUser && foundUser.password === pass) {
+      let isCredentialsValid = false;
+      if (foundUser) {
+        if (foundUser.password === pass) {
+          isCredentialsValid = true;
+        } else if (foundUser.email) {
+          try {
+            const { signInWithEmailAndPassword } = await import('firebase/auth');
+            await signInWithEmailAndPassword(auth, foundUser.email.trim(), pass);
+            await firebaseService.updateUser(foundUser.uid, { password: pass }, foundUser.fullName || foundUser.username);
+            foundUser.password = pass;
+            isCredentialsValid = true;
+            toast.success("Identity Verified: Password synchronized with recovery records.");
+          } catch (signInErr) {
+            console.warn("Local & Firebase Auth check both failed:", signInErr);
+          }
+        }
+      }
+      
+      if (foundUser && isCredentialsValid) {
         if (foundUser.status === 'pending') {
           setError('Access Restricted: Your account is pending registration approval.');
           setIsLoading(false);
@@ -1393,10 +1427,10 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role'], profilePicture?: string) => {
+  const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role'], profilePicture?: string, email?: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode && { lineCode }), ...(companyName && { companyName }), ...(profilePicture && { profilePicture }) }, user.fullName || user.username);
+      await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode && { lineCode }), ...(companyName && { companyName }), ...(profilePicture && { profilePicture }), ...(email && { email: email.trim() }) }, user.fullName || user.username);
       
       const targetUser = users.find(u => u.uid === uid);
       const updatedUserObj = {
@@ -1408,12 +1442,26 @@ export default function App() {
         role: role || targetUser?.role || 'user',
         ...(lineCode && { lineCode }),
         ...(companyName && { companyName }),
-        ...(profilePicture && { profilePicture })
+        ...(profilePicture && { profilePicture }),
+        ...(email && { email: email.trim() })
       };
+
+      // Ensure a shadow Firebase Auth user exists for sendPasswordResetEmail to work
+      if (email && email.trim() !== '') {
+        try {
+          const { createUserWithEmailAndPassword } = await import('firebase/auth');
+          await createUserWithEmailAndPassword(auth, email.trim(), pass);
+          console.log(`Shadow Firebase Auth account ensured for ${email.trim()}`);
+        } catch (authErr: any) {
+          if (authErr.code !== 'auth/email-already-in-use') {
+            console.warn("Defensive shadow account registration message:", authErr.message);
+          }
+        }
+      }
 
       // If updating self, update local user state too
       if (user && user.uid === uid) {
-        const updatedUser = { ...user, username, password: pass, fullName, ...(role && { role }), ...(lineCode && { lineCode }), ...(companyName && { companyName }), ...(profilePicture && { profilePicture }) };
+        const updatedUser = { ...user, username, password: pass, fullName, ...(role && { role }), ...(lineCode && { lineCode }), ...(companyName && { companyName }), ...(profilePicture && { profilePicture }), ...(email && { email: email.trim() }) };
         setUser(updatedUser);
         safeLocalStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }

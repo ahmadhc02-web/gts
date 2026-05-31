@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned } from 'lucide-react';
+import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned, Send, Users, Activity, RotateCcw, FileSpreadsheet, Flag, UserPlus, Info, Sparkles } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig } from '../types';
 import { cn } from '../lib/utils';
 import { getCardStyle } from '../lib/styleUtils';
@@ -45,6 +45,9 @@ export default function ComplaintList({
   const currentUserId = currentUser.uid;
   const [startDate, setStartDate] = React.useState('');
   const [endDate, setEndDate] = React.useState('');
+  const [timeRange, setTimeRange] = React.useState('All Time');
+  const [timeRangeOpen, setTimeRangeOpen] = React.useState(false);
+  const [exportOpen, setExportOpen] = React.useState(false);
   const [statusFilter, setStatusFilter] = React.useState<ComplaintStatus | 'all'>(forcedStatusFilter);
   const [priorityFilter, setPriorityFilter] = React.useState<ComplaintPriority | 'all'>(forcedPriorityFilter);
   const [categoryFilter, setCategoryFilter] = React.useState<ComplaintCategory | 'all'>(forcedCategoryFilter);
@@ -55,8 +58,13 @@ export default function ComplaintList({
   const [selectedComplaint, setSelectedComplaint] = React.useState<Complaint | null>(null);
   const [statusRemarks, setStatusRemarks] = React.useState('');
   const [customerReview, setCustomerReview] = React.useState('');
+  const [hideStatusRemarksBox, setHideStatusRemarksBox] = React.useState(false);
+  const [hideCustomerReviewBox, setHideCustomerReviewBox] = React.useState(false);
   const [isEditingRemarks, setIsEditingRemarks] = React.useState(false);
   const [editedRemarks, setEditedRemarks] = React.useState('');
+  const [animateRemarksLeft, setAnimateRemarksLeft] = React.useState(false);
+  const [animateReviewLeft, setAnimateReviewLeft] = React.useState(false);
+  const [showLeftThankYou, setShowLeftThankYou] = React.useState(false);
 
   const playPopupSound = () => {
     try {
@@ -68,9 +76,59 @@ export default function ComplaintList({
     }
   };
 
+  const handleTimeRangeChange = (range: string) => {
+    setTimeRange(range);
+    setTimeRangeOpen(false);
+    
+    const today = new Date();
+    
+    if (range === 'Today') {
+      const todayStr = today.toISOString().split('T')[0];
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (range === 'Yesterday') {
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      setStartDate(yesterdayStr);
+      setEndDate(yesterdayStr);
+    } else if (range === 'Last 7 Days') {
+      const last7 = new Date();
+      last7.setDate(today.getDate() - 7);
+      const last7Str = last7.toISOString().split('T')[0];
+      const todayStr = today.toISOString().split('T')[0];
+      setStartDate(last7Str);
+      setEndDate(todayStr);
+    } else if (range === 'This Month') {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      const firstDayStr = firstDay.toISOString().split('T')[0];
+      const lastDayStr = today.toISOString().split('T')[0];
+      setStartDate(firstDayStr);
+      setEndDate(lastDayStr);
+    } else if (range === 'All Time') {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
+
   React.useEffect(() => {
     if (selectedComplaint) {
       playPopupSound();
+      setStatusRemarks(selectedComplaint.remarks || '');
+      setCustomerReview(selectedComplaint.customerReview || '');
+      setHideStatusRemarksBox(!!selectedComplaint.remarks);
+      setHideCustomerReviewBox(!!selectedComplaint.customerReview);
+      setAnimateRemarksLeft(false);
+      setAnimateReviewLeft(false);
+      setShowLeftThankYou(false);
+    } else {
+      setStatusRemarks('');
+      setCustomerReview('');
+      setHideStatusRemarksBox(false);
+      setHideCustomerReviewBox(false);
+      setAnimateRemarksLeft(false);
+      setAnimateReviewLeft(false);
+      setShowLeftThankYou(false);
     }
   }, [selectedComplaint]);
   const [sortConfig, setSortConfig] = React.useState<{
@@ -518,133 +576,208 @@ export default function ComplaintList({
         )}
       </AnimatePresence>
 
-      {/* Search & Filters */}
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="flex flex-col gap-2">
-            <h3 className="text-2xl font-black flex items-center gap-3 uppercase tracking-tight">
-              {customNames.complaint || 'Operational Registry'}
-              <span className="text-xs font-black px-3 py-1.5 bg-brand-accent/10 border border-brand-accent/20 text-brand-accent rounded leading-none">
-                {filteredComplaints.length} Records
-              </span>
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 font-black uppercase tracking-[0.2em] flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm" />
-              Real-time Logs <span className="text-slate-300 dark:text-slate-700">|</span> {complaints.filter(c => new Date(c.createdAt).toDateString() === new Date().toDateString()).length} entries today
-            </p>
-          </div>
+      {/* Header Area */}
+      <div className="mb-6 flex flex-col items-center justify-center text-center gap-2">
+        <h3 className="text-2xl font-black flex items-center justify-center gap-3 uppercase tracking-tight text-slate-900 dark:text-white">
+          {customNames.complaint || 'Operational Registry'}
+          <span className="text-xs font-black px-3 py-1 bg-brand-accent/10 border border-brand-accent/20 text-brand-accent rounded leading-none">
+            {filteredComplaints.length} Records
+          </span>
+        </h3>
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-extrabold uppercase tracking-[0.2em] flex items-center justify-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          Real-time Logs <span className="text-slate-300 dark:text-slate-700">|</span> {complaints.filter(c => new Date(c.createdAt).toDateString() === new Date().toDateString()).length} entries today
+        </p>
+      </div>
+
+      {/* Search Bar, Time Range & Action Line */}
+      <div className="flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-900/10 p-4 rounded-2xl border border-slate-200/50 dark:border-slate-800/60 mb-2">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex bg-slate-100 dark:bg-slate-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800">
-              <button
-                onClick={setFilterToday}
-                className="px-4 py-2 rounded-md text-xs font-black uppercase tracking-wider hover:bg-white dark:hover:bg-slate-800 transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-              >
-                Today
-              </button>
-              <button
-                onClick={setFilterYesterday}
-                className="px-4 py-2 rounded-md text-xs font-black uppercase tracking-wider hover:bg-white dark:hover:bg-slate-800 transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-              >
-                Yesterday
-              </button>
-            </div>
-            
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm min-w-[240px]">
-              <Calendar size={14} className="text-brand-accent shrink-0" />
-              <input 
-                type="date" 
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="bg-transparent border-none text-[10px] focus:outline-none text-slate-600 dark:text-slate-100 w-full uppercase font-bold"
-              />
-              <span className="text-slate-300">|</span>
-              <input 
-                type="date" 
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="bg-transparent border-none text-[10px] focus:outline-none text-slate-600 dark:text-slate-100 w-full uppercase font-bold"
-              />
-            </div>
-
-            <button
-              onClick={() => {
-                clearDateFilters();
-                setSearchQuery('');
-                setStatusFilter('all');
-              }}
-              className="px-3 py-1.5 text-[10px] font-bold text-slate-400 hover:text-red-500 uppercase tracking-widest transition-colors"
-            >
-              Reset
-            </button>
-            
-            {complaints.length > 0 && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={exportToPDF}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg bg-slate-900 dark:bg-slate-800 text-white transition-all text-[11px] font-bold uppercase tracking-widest shadow-lg hover:bg-black dark:hover:bg-slate-700"
-                >
-                  <Download size={14} />
-                  PDF
-                </button>
-                <button
-                  onClick={exportToCSV}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg bg-emerald-500 text-white transition-all text-[11px] font-bold uppercase tracking-widest shadow-lg hover:bg-emerald-600"
-                >
-                  <FileDown size={14} />
-                  CSV
-                </button>
-                <div className="flex items-center gap-1 group/google">
-                  <button
-                    onClick={handleBackupToDrive}
-                    disabled={isBackingUp}
-                    className={cn(
-                      "flex items-center gap-2 px-5 py-2 rounded-lg transition-all text-[11px] font-bold uppercase tracking-widest shadow-lg",
-                      isGoogleConnected 
-                        ? "bg-brand-accent text-white hover:bg-blue-700" 
-                        : "bg-slate-100 dark:bg-slate-900 text-slate-400 border border-slate-200 dark:border-slate-800 hover:border-brand-accent/50 hover:text-brand-accent",
-                      isBackingUp && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    <CloudUpload size={14} className={isBackingUp ? "animate-bounce" : ""} />
-                    {isBackingUp ? 'Backing up...' : isGoogleConnected ? 'Backup to Drive' : 'Sync Google'}
-                  </button>
-                  {isGoogleConnected && !isBackingUp && (
-                    <button 
-                      onClick={handleGoogleDisconnect}
-                      className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
-                      title="Disconnect Google Account"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-          <div className="md:col-span-12 lg:col-span-3 relative">
+          {/* Leftside search field */}
+          <div className="relative flex-1 max-w-md">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+              <Printer size={16} />
+            </span>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search registry (Name, Phone, Area)..."
-              className="w-full pl-11 pr-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 font-medium focus:ring-2 focus:ring-brand-accent/20"
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-xs font-semibold focus:ring-2 focus:ring-brand-accent/20 outline-none transition-all"
             />
-            <Printer size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           </div>
 
-          <div className="md:col-span-6 lg:col-span-2">
+          {/* Quick Active and Dropdowns Section */}
+          <div className="flex flex-wrap items-center gap-3">
+            
+            {/* Time Range dropdown card */}
+            <div className="relative">
+              <button
+                onClick={() => setTimeRangeOpen(!timeRangeOpen)}
+                className="flex items-center justify-between gap-2 px-4 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-350 shadow-sm min-w-[130px] hover:border-brand-accent transition-all cursor-pointer"
+              >
+                <span>{timeRange}</span>
+                <ChevronDown size={14} className={cn("text-slate-400 transition-transform duration-300", timeRangeOpen && "rotate-180")} />
+              </button>
+              
+              <AnimatePresence>
+                {timeRangeOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-50 text-left"
+                  >
+                    <div className="p-1.5 space-y-1">
+                      {['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'All Time'].map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => handleTimeRangeChange(r)}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer",
+                            timeRange === r 
+                              ? "bg-brand-accent/10 text-brand-accent" 
+                              : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-white"
+                          )}
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* RESET filter action */}
+            <button
+              onClick={() => {
+                clearDateFilters();
+                setSearchQuery('');
+                setStatusFilter('all');
+                setPriorityFilter('all');
+                setCategoryFilter('all');
+                setZoneFilter('all');
+                setTimeRange('All Time');
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-900 rounded-xl cursor-pointer transition-all"
+            >
+              <RotateCcw size={13} />
+              <span>Reset</span>
+            </button>
+
+            {/* Split status filters pill toggler */}
+            <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                  statusFilter === 'all'
+                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-355"
+                )}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setStatusFilter('pending')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                  statusFilter === 'pending'
+                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-355"
+                )}
+              >
+                Pending
+              </button>
+              <button
+                onClick={() => setStatusFilter('in process')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                  statusFilter === 'in process'
+                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-330"
+                )}
+              >
+                In Process
+              </button>
+            </div>
+
+            {/* EXPORT consolidated dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setExportOpen(!exportOpen)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-850 hover:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-all cursor-pointer border border-transparent dark:border-slate-800"
+              >
+                <Download size={13} />
+                <span>Export</span>
+                <ChevronDown size={11} className={cn("transition-transform duration-300", exportOpen && "rotate-180")} />
+              </button>
+              
+              <AnimatePresence>
+                {exportOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-50 text-left"
+                  >
+                    <div className="p-1.5 space-y-1">
+                      <button
+                        onClick={() => {
+                          exportToPDF();
+                          setExportOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                      >
+                        <FileDown size={14} className="text-rose-500" />
+                        <span>Export PDF document</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          exportToCSV();
+                          setExportOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                      >
+                        <FileSpreadsheet size={14} className="text-emerald-500" />
+                        <span>Export CSV datasheet</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleBackupToDrive();
+                          setExportOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                      >
+                        <CloudUpload size={14} className="text-blue-500" />
+                        <span>Cloud Backup (Drive)</span>
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Dropdown filters grid line */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-200/40 dark:border-slate-800/40">
+          <div>
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as any)}
-              className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-accent/20 appearance-none bg-no-repeat"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
               style={{ 
-                backgroundPosition: 'right 1rem center', 
+                backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
-                backgroundSize: '1rem' 
+                backgroundSize: '0.85rem',
+                backgroundRepeat: 'no-repeat'
               }}
             >
               <option value="all">ALL CATEGORIES</option>
@@ -654,15 +787,16 @@ export default function ComplaintList({
             </select>
           </div>
 
-          <div className="md:col-span-6 lg:col-span-2">
+          <div>
             <select
               value={zoneFilter}
               onChange={(e) => setZoneFilter(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-100 focus:ring-2 focus:ring-brand-accent/20 appearance-none bg-no-repeat"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
               style={{ 
-                backgroundPosition: 'right 1rem center', 
+                backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
-                backgroundSize: '1rem' 
+                backgroundSize: '0.85rem',
+                backgroundRepeat: 'no-repeat'
               }}
             >
               <option value="all">ALL ZONES</option>
@@ -672,15 +806,16 @@ export default function ComplaintList({
             </select>
           </div>
 
-          <div className="md:col-span-6 lg:col-span-2">
+          <div>
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value as any)}
-              className="w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[11px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-100 focus:ring-2 focus:ring-brand-accent/20 appearance-none bg-no-repeat"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
               style={{ 
-                backgroundPosition: 'right 1rem center', 
+                backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
-                backgroundSize: '1rem' 
+                backgroundSize: '0.85rem',
+                backgroundRepeat: 'no-repeat'
               }}
             >
               <option value="all">ALL PRIORITIES</option>
@@ -689,160 +824,105 @@ export default function ComplaintList({
               ))}
             </select>
           </div>
-
-          <div className="md:col-span-12 lg:col-span-3">
-            <div className="flex p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 w-full h-full overflow-x-auto">
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={cn(
-                  "flex-1 px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all whitespace-nowrap",
-                  statusFilter === 'all' 
-                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm border border-slate-200 dark:border-slate-700" 
-                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
-                )}
-              >
-                ALL
-              </button>
-              {appConfig.statuses.map((s, i) => (
-                <button
-                  key={`stat-${i}`}
-                  onClick={() => setStatusFilter(s)}
-                  className={cn(
-                    "flex-1 px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all whitespace-nowrap",
-                    statusFilter === s 
-                      ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm border border-slate-200 dark:border-slate-700" 
-                      : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-300"
-                  )}
-                >
-                  {s.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
-
-        {/* Removed redundant date input block from bottom of filter grid */}
       </div>
 
-      {/* Row-based Grid (Table View) */}
+      {/* Row-based Grid (Table View) - High-Fidelity Professional ISP Layout */}
       <motion.div 
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn("overflow-hidden shadow-xl", getCardStyle(branding.cardStyle))}
+        className={cn("overflow-hidden shadow-2xl border bg-white dark:bg-slate-950/40 border-slate-200/50 dark:border-slate-800/80 backdrop-blur-md", getCardStyle(branding.cardStyle))}
       >
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
-            <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-800">
+          <table className="w-full text-left border-collapse min-w-[1250px]">
+            <thead className="bg-slate-50/75 dark:bg-slate-900/40 border-b border-slate-150 dark:border-slate-800/85">
               <tr>
                 <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('client')}
                 >
-                  <div className="flex items-center gap-2">
-                    {customNames.client || 'Client Name'}
+                  <div className="flex items-center gap-1.5">
+                    <span>{customNames.client || 'Client & Contact'}</span>
                     {sortConfig.key === 'client' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
+                       sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
                   </div>
                 </th>
+                
                 <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('category')}
                 >
-                  <div className="flex items-center gap-2">
-                    {customNames.category || 'Category'}
+                  <div className="flex items-center gap-1.5">
+                    <span>{customNames.category || 'Category'}</span>
                     {sortConfig.key === 'category' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
+                       sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
                   </div>
                 </th>
-                <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
-                  onClick={() => handleSort('tactical')}
-                >
-                  <div className="flex items-center gap-2">
-                    {customNames.zone || 'Sector'}
-                    {sortConfig.key === 'tactical' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
-                    )}
-                  </div>
+
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
+                  User ID & Sector
                 </th>
+
                 <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
-                  onClick={() => handleSort('profile')}
-                >
-                  <div className="flex items-center gap-2">
-                    {customNames.pkg || 'Profile'}
-                    {sortConfig.key === 'profile' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
-                    )}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
-                  onClick={() => handleSort('panelDetails' as keyof Complaint)}
-                >
-                  <div className="flex items-center gap-2">
-                    {customNames.panel || 'Panel Details'}
-                    {sortConfig.key === 'panelDetails' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
-                    )}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('description')}
                 >
-                  <div className="flex items-center gap-2">
-                    {customNames.description || 'Issue Details'}
+                  <div className="flex items-center gap-1.5">
+                    <span>{customNames.description || 'Issue Details'}</span>
                     {sortConfig.key === 'description' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
+                       sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
                   </div>
                 </th>
+
                 <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 text-center cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-4 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 text-center cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('urgency')}
                 >
-                  <div className="flex items-center justify-center gap-2">
-                    Priority
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>Priority</span>
                     {sortConfig.key === 'urgency' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
+                       sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
                   </div>
                 </th>
+
                 <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 text-center cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 text-center cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('status')}
                 >
-                  <div className="flex items-center justify-center gap-2">
-                    Status
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>Status</span>
                     {sortConfig.key === 'status' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
+                       sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
                   </div>
                 </th>
+
                 <th 
-                  className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 text-right cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 text-right cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('registry')}
                 >
-                  <div className="flex items-center justify-end gap-2">
-                    Registry Date
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span>Dates</span>
                     {sortConfig.key === 'registry' && (
-                       sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-brand-accent" /> : <ChevronDown size={12} className="text-brand-accent" />
+                       sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
                   </div>
                 </th>
-                <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 text-right">Protocol</th>
+
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 text-right">Quick Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50 dark:divide-slate-800/40">
-               <AnimatePresence mode="popLayout">
+            <tbody className="divide-y divide-slate-105 dark:divide-slate-800/40">
+              <AnimatePresence mode="popLayout">
                 {paginatedComplaints.length === 0 ? (
-                   <tr>
-                     <td colSpan={10} className="py-24 text-center">
-                       <Clock size={40} className="text-slate-200 mx-auto mb-4 animate-bounce" style={{ animationDuration: '3s' }} />
-                       <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No records meet current parameters</p>
+                  <tr>
+                    <td colSpan={10} className="py-24 text-center">
+                      <Clock size={40} className="text-slate-200 mx-auto mb-4 animate-bounce" style={{ animationDuration: '3s' }} />
+                      <p className="text-slate-400 font-bold uppercase tracking-widest text-[11px]">No operational records fit active criteria</p>
                     </td>
                   </tr>
                 ) : (
@@ -850,122 +930,151 @@ export default function ComplaintList({
                     <motion.tr
                       key={complaint.id}
                       layout="position"
-                      initial={{ opacity: 0, y: 15 }}
+                      initial={{ opacity: 0, y: 12 }}
                       animate={{ 
                         opacity: 1, 
                         y: 0,
                         transition: {
                           type: "spring",
-                          stiffness: 120,
-                          damping: 14,
-                          delay: index * 0.03
+                          stiffness: 140,
+                          damping: 15,
+                          delay: index * 0.02
                         }
                       }}
                       exit={{ 
                         opacity: 0, 
-                        scale: 0.96,
+                        scale: 0.98,
                         transition: { duration: 0.15 }
                       }}
                       onClick={() => setSelectedComplaint(complaint)}
                       className={cn(
-                        "group hover:scale-[1.004] active:scale-[0.998] hover:shadow-md dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.4)] border-y border-slate-100/80 dark:border-slate-800/40 transition-all duration-300 cursor-pointer relative",
+                        "group hover:scale-[1.002] active:scale-[0.999] hover:shadow-[0_4px_24px_rgba(0,0,0,0.02)] dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.25)] border-y border-slate-100/50 dark:border-slate-800/40 transition-all duration-300 cursor-pointer relative",
                         complaint.status === 'complete' 
-                          ? 'bg-white dark:bg-slate-950/20 hover:bg-emerald-500/[0.03] dark:hover:bg-emerald-500/[0.04] hover:border-emerald-500/20' 
+                          ? 'bg-emerald-500/[0.005] dark:bg-slate-950/20 hover:bg-emerald-500/[0.02] dark:hover:bg-emerald-500/[0.03]' 
                           : complaint.status === 'in process'
-                            ? 'bg-white dark:bg-slate-950/20 hover:bg-blue-500/[0.03] dark:hover:bg-blue-500/[0.04] hover:border-blue-500/20'
-                            : complaint.status === 'important'
-                              ? 'bg-white dark:bg-slate-950/20 hover:bg-amber-500/[0.03] dark:hover:bg-amber-500/[0.04] hover:border-amber-500/20'
-                              : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.03] dark:hover:bg-slate-500/[0.04] hover:border-slate-500/15'
+                            ? 'bg-blue-500/[0.005] dark:bg-slate-950/20 hover:bg-blue-500/[0.02] dark:hover:bg-blue-500/[0.03]'
+                            : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.015] dark:hover:bg-slate-500/[0.025]'
                       )}
                     >
-                      <td className="px-6 py-5 relative">
-                        {/* Interactive Status Color Bar on Left Margin */}
+                      {/* CLIENT & CONTACT */}
+                      <td className="px-6 py-4.5 relative">
+                        {/* Interactive Status Indicator bar */}
                         <div className={cn(
-                          "absolute left-0 top-2 bottom-2 w-1 rounded-r-full transition-all duration-300 group-hover:w-1.5",
-                          complaint.status === 'complete' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' :
-                          complaint.status === 'in process' ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.4)]' :
-                          complaint.status === 'important' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : 
-                          'bg-slate-400 dark:bg-slate-500 shadow-none'
+                          "absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-md transition-all duration-300 group-hover:w-1.5",
+                          complaint.status === 'complete' ? 'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]' :
+                          complaint.status === 'in process' ? 'bg-blue-500 shadow-[2px_0_10px_rgba(59,130,246,0.4)]' :
+                          'bg-amber-500 shadow-[2px_0_10px_rgba(245,158,11,0.4)]'
                         )} />
                         
-                        <div className="flex items-center gap-4 pl-1">
-                          <div className="shrink-0 w-[42px] h-[42px] rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/40 dark:border-slate-800/50 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover:scale-105 group-hover:bg-brand-accent/10 group-hover:text-brand-accent group-hover:border-brand-accent/20 transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
-                            {complaint.category === 'Fiber Break' ? (
-                              <Zap size={18} className="text-rose-500 dark:text-rose-400 shrink-0 group-hover:animate-pulse" />
-                            ) : (
-                              <Wifi size={18} className="text-indigo-500 dark:text-indigo-400 shrink-0 group-hover:animate-pulse" />
-                            )}
+                        <div className="flex items-center gap-3.5 pl-1.5">
+                          <div className="shrink-0 w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover:scale-110 group-hover:bg-brand-accent/10 group-hover:text-brand-accent group-hover:border-brand-accent/20 transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.01)]">
+                            <Wifi size={17} className="shrink-0" />
                           </div>
                           <div className="flex flex-col">
-                            <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight leading-snug group-hover:text-brand-accent transition-colors duration-300 text-[13px]">
+                            <span className="font-extrabold text-slate-950 dark:text-white uppercase tracking-tight text-xs group-hover:text-brand-accent transition-colors duration-300 leading-tight">
                               {complaint.customerName}
                             </span>
-                            <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 uppercase tracking-widest">{complaint.customerUsername || '---'}</span>
+                            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                              <Phone size={10} className="text-slate-400 shrink-0" />
+                              <span>({complaint.number.slice(0,4)}) {complaint.number.slice(4)}</span>
+                            </span>
+                            {complaint.pkgDetails && (
+                              <span className="inline-block mt-1 text-[8.5px] font-black uppercase tracking-wider text-brand-accent bg-brand-accent/10 border border-brand-accent/15 px-1.5 py-0.5 rounded w-max">
+                                {complaint.pkgDetails}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-5">
+
+                      {/* CATEGORY */}
+                      <td className="px-6 py-4.5">
                         <span className={cn(
-                          "text-[10px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg border transition-all duration-300 inline-block",
+                          "text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border inline-block leading-none",
                           complaint.category === 'Fiber Break' 
-                            ? 'bg-rose-500/5 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/10' 
-                            : 'bg-indigo-500/5 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/10'
+                            ? 'bg-rose-500/5 text-rose-500 border-rose-500/10' 
+                            : complaint.category === 'Offline'
+                            ? 'bg-purple-500/5 text-purple-500 border-purple-500/10'
+                            : 'bg-indigo-505/5 text-indigo-500 border-indigo-500/10'
                         )}>
                           {complaint.category}
                         </span>
                       </td>
-                      <td className="px-6 py-5">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest group-hover:translate-x-0.5 transition-transform duration-300">
-                             <MapPin size={11} className="text-brand-accent/75 shrink-0" />
-                             <span className="truncate max-w-[120px]">{complaint.area}</span>
-                          </div>
-                          {complaint.userNearby && (
-                            <span className="text-[9px] font-bold text-amber-500/90 dark:text-amber-400/90 uppercase tracking-wider flex items-center gap-1 mt-0.5">
-                              <MapPinned size={10} className="shrink-0" /> {complaint.userNearby}
-                            </span>
-                          )}
-                          <span className="text-[10.5px] font-mono text-slate-500 dark:text-slate-400 mt-1">{complaint.number}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-lg bg-slate-50/80 dark:bg-slate-900/40 border border-slate-200/40 dark:border-slate-800/40 shadow-sm">
-                            <Package size={13} className="text-slate-500 dark:text-slate-400 group-hover:rotate-12 transition-transform duration-300" />
-                          </div>
-                          <span className="text-[11px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                            {complaint.pkgDetails || 'N/A'}
+
+                      {/* USER ID & SECTOR */}
+                      <td className="px-6 py-4.5 font-sans">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider bg-slate-100/50 dark:bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-200/20 dark:border-slate-800/20 w-max leading-none">
+                            {complaint.customerUsername || 'NO USER_ID'}
+                          </span>
+                          <span className="text-[10px] font-extrabold text-slate-500 mt-1.5 flex items-center gap-1">
+                            <MapPin size={11} className="text-slate-400 shrink-0" />
+                            <span>{complaint.area || 'Unknown Sector'}</span>
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-5">
-                        <span className="text-[11px] text-slate-600 dark:text-slate-300 font-bold tracking-tight bg-slate-50/50 dark:bg-slate-900/20 border border-dashed border-slate-200/50 dark:border-slate-800/60 px-2 py-1 rounded-md shrink-0 truncate max-w-[140px] block">
-                          {complaint.panelDetails || 'N/A'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5">
-                        <span className="text-xs text-slate-600 dark:text-slate-350 font-medium line-clamp-2 max-w-[180px] bg-slate-50/30 dark:bg-slate-900/10 px-2.5 py-1.5 rounded-lg border border-transparent group-hover:border-slate-100/50 dark:group-hover:border-slate-800/50 transition-colors block">
-                          {complaint.description}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5">
-                        <div className="flex justify-center">
-                          <div className={cn(
-                            "px-2.5 py-1.5 rounded-lg text-[9.5px] font-black uppercase tracking-widest border transition-all duration-300 group-hover:scale-105",
-                            getPriorityColor(complaint.priority || 'Medium')
-                          )}>
-                            {complaint.priority || 'Medium'}
-                          </div>
+
+                      {/* ISSUE DETAILS */}
+                      <td className="px-6 py-4.5">
+                        <div className="flex flex-col gap-1.5 max-w-[280px]">
+                          {complaint.panelDetails ? (
+                            <span className="text-[9.5px] font-mono font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200/50 dark:border-slate-800/60 block truncate select-all leading-tight">
+                              {complaint.panelDetails}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 italic">No Device Panel specified</span>
+                          )}
+                          <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed font-semibold italic truncate">
+                            "{complaint.description}"
+                          </p>
                         </div>
                       </td>
-                      <td className="px-6 py-5">
-                        <div className="flex flex-col items-center justify-center gap-1.5 matches-status-cell">
-                          <div className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)] transition-all duration-300 group-hover:scale-105",
-                            getStatusColor(complaint.status)
+
+                      {/* PRIORITY (with Flags correctly aligned with metadata) */}
+                      <td className="px-4 py-4.5 text-center">
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          <Flag size={14} className={cn(
+                            "shrink-0",
+                            complaint.priority === 'Critical' || complaint.priority === 'High' ? 'text-rose-500 fill-rose-500 animate-pulse' :
+                            complaint.priority === 'Medium' ? 'text-amber-500 fill-amber-500' :
+                            'text-slate-400 fill-slate-300 dark:fill-slate-700'
+                          )} />
+                          <span className={cn(
+                            "text-[9px] font-black uppercase tracking-widest",
+                            complaint.priority === 'Critical' || complaint.priority === 'High' ? 'text-rose-600 dark:text-rose-400' :
+                            complaint.priority === 'Medium' ? 'text-amber-600 dark:text-amber-400' :
+                            'text-slate-500'
                           )}>
-                            {getStatusIcon(complaint.status)}
-                            <span className="leading-none">{complaint.status}</span>
+                            {complaint.priority || 'Medium'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* STATUS (With badge and delegator avatar) */}
+                      <td className="px-6 py-4.5">
+                        <div className="flex flex-col items-center justify-center gap-1.5 matches-status-cell">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]",
+                              complaint.status === 'complete' 
+                                ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400' 
+                                : complaint.status === 'in process'
+                                ? 'bg-blue-500/10 text-blue-600 border-blue-500/25 dark:text-blue-400'
+                                : 'bg-amber-500/10 text-amber-600 border-amber-500/25 dark:text-amber-400'
+                            )}>
+                              <span className={cn(
+                                "w-1.5 h-1.5 rounded-full",
+                                complaint.status === 'complete' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
+                                complaint.status === 'in process' ? 'bg-blue-500 shadow-[0_0_6px_#3b82f6]' : 
+                                'bg-amber-500 shadow-[0_0_6px_#f59e0b]'
+                              )} />
+                              <span>{complaint.status}</span>
+                            </span>
+                            
+                            {/* Delegate staff avatar */}
+                            <div className="h-6 w-6 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-205 dark:border-slate-700 text-slate-650 dark:text-slate-350 flex items-center justify-center font-black text-[9px] uppercase shadow-sm shrink-0" title={`Logged by: ${complaint.memberName || 'System'}`}>
+                              {complaint.memberName ? complaint.memberName.slice(0,2) : 'SY'}
+                            </div>
                           </div>
                           
                           {complaint.status === 'in process' && (() => {
@@ -973,15 +1082,15 @@ export default function ComplaintList({
                             if (prog.percentage <= 0) return null;
                             return (
                               <div className="w-24 flex flex-col items-center gap-1" title={prog.stepText}>
-                                <div className="w-full bg-slate-100 dark:bg-slate-800/80 h-1 rounded-full overflow-hidden border border-slate-200/20 dark:border-slate-700/30">
+                                <div className="w-full bg-slate-100 dark:bg-slate-800/80 h-1 rounded-full overflow-hidden border border-slate-205/25 dark:border-slate-700/30">
                                   <motion.div 
                                     initial={{ width: 0 }}
                                     animate={{ width: `${prog.percentage}%` }}
                                     transition={{ duration: 0.6, ease: "easeOut" }}
-                                    className="bg-blue-500 dark:bg-blue-400 h-full rounded-full shadow-sm"
+                                    className="bg-blue-500 dark:bg-blue-400 h-full rounded-full"
                                   />
                                 </div>
-                                <span className="text-[8px] font-mono font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0 animate-pulse">
+                                <span className="text-[7.5px] font-mono font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0 animate-pulse">
                                   {prog.percentage}% Complete
                                 </span>
                               </div>
@@ -989,16 +1098,23 @@ export default function ComplaintList({
                           })()}
                         </div>
                       </td>
-                      <td className="px-6 py-5 text-right">
+
+                      {/* DATES */}
+                      <td className="px-6 py-4.5 text-right font-sans">
                         <div className="flex flex-col items-end">
-                          <span className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-tighter">
+                          <span className="text-[11px] font-extrabold text-slate-850 dark:text-slate-300 uppercase tracking-tighter">
                             {new Date(complaint.createdAt).toLocaleDateString()}
                           </span>
-                          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5">{new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="text-[9.5px] font-mono text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+                            <Clock size={10} className="text-slate-350" />
+                            <span>{new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </span>
                         </div>
                       </td>
-                      <td className="px-6 py-5 text-right">
-                        <div className="flex justify-end gap-1.5">
+
+                      {/* QUICK ACTIONS */}
+                      <td className="px-6 py-4.5 text-right">
+                        <div className="flex justify-end gap-1.5" onClick={e => e.stopPropagation()}>
                            {(isAdmin || (currentUserId && complaint.memberId === currentUserId)) && (
                              <button
                                onClick={(e) => {
@@ -1007,10 +1123,10 @@ export default function ComplaintList({
                                  setEditData({ ...complaint });
                                  setSelectedComplaint(null); // Close detail modal if open
                                }}
-                               className="p-1.5 text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-transparent hover:border-blue-100 dark:hover:border-blue-900 rounded-lg transition-all duration-200 cursor-pointer"
+                               className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-transparent hover:border-blue-100 rounded-lg transition-all cursor-pointer"
                                title="Edit Operational Log"
                              >
-                               <Pencil size={14} />
+                               <Pencil size={13} />
                              </button>
                            )}
                            {isAdmin && onDelete && (
@@ -1019,10 +1135,10 @@ export default function ComplaintList({
                                  e.stopPropagation();
                                  setComplaintToDelete(complaint.id);
                                }}
-                               className="p-1.5 text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-100 dark:hover:border-rose-900 rounded-lg transition-all duration-200 cursor-pointer"
+                               className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-100 rounded-lg transition-all cursor-pointer"
                                title="Revoke Registry"
                              >
-                               <Trash2 size={14} />
+                               <Trash2 size={13} />
                              </button>
                            )}
                         </div>
@@ -1126,7 +1242,7 @@ export default function ComplaintList({
         )}
 
         {selectedComplaint && (
-          <div className="fixed inset-0 z-[500] flex items-center justify-center p-2 sm:p-4 md:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-2 sm:p-3 md:p-4 lg:p-6 overflow-y-auto custom-scrollbar">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1137,13 +1253,13 @@ export default function ComplaintList({
             
             <motion.div
               layoutId={selectedComplaint.id}
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 1, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-5xl bg-white dark:bg-slate-950 rounded-3xl shadow-[0_40px_100px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/50 dark:border-white/10"
+              exit={{ opacity: 0, scale: 1, y: 20 }}
+              className="relative w-full max-w-5xl bg-white dark:bg-slate-950 rounded-2xl shadow-[0_40px_100px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/50 dark:border-white/10 md:scale-[0.80] lg:scale-[0.76] xl:scale-[0.80] 2xl:scale-90 origin-center my-auto transition-transform duration-300 shrink-0"
             >
-              <div className="p-4 sm:p-5 md:p-8 space-y-4 sm:space-y-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
-                <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+              <div className="p-3 sm:p-4 md:p-5 space-y-3 sm:space-y-4 max-h-[96vh] md:max-h-[85vh] overflow-y-auto custom-scrollbar">
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
                   <div className="flex items-center gap-3 sm:gap-6">
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-3 mb-1 sm:mb-2">
@@ -1175,15 +1291,15 @@ export default function ComplaintList({
                           );
                         })()}
                       </div>
-                      <h2 className="text-lg sm:text-2xl font-black text-slate-950 dark:text-white uppercase tracking-tighter leading-none">
+                      <h2 className="text-base sm:text-xl font-black text-slate-950 dark:text-white uppercase tracking-tighter leading-none">
                         {selectedComplaint.customerName}
                       </h2>
                     </div>
                     
                     {selectedComplaint.customerUsername && (
-                      <div className="flex flex-col gap-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                        <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Access ID</span>
-                        <span className="text-[10px] sm:text-xs font-black text-slate-900 dark:text-brand-accent uppercase tracking-widest">
+                      <div className="flex flex-col gap-0.5 px-2 py-1 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <span className="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Access ID</span>
+                        <span className="text-[9px] sm:text-xs font-black text-slate-900 dark:text-brand-accent uppercase tracking-widest leading-none">
                           {selectedComplaint.customerUsername}
                         </span>
                       </div>
@@ -1192,38 +1308,38 @@ export default function ComplaintList({
 
                   <button 
                     onClick={() => setSelectedComplaint(null)}
-                    className="absolute top-2 right-2 sm:relative sm:top-0 sm:right-0 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:scale-110 active:scale-95 transition-all shadow-sm"
+                    className="absolute top-2 right-2 sm:relative sm:top-0 sm:right-0 w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:scale-110 active:scale-95 transition-all shadow-sm"
                   >
-                    <X size={18} />
+                    <X size={16} />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 p-3 sm:p-4 rounded-2xl bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800/50">
-                  <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
-                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">{customNames.zone || 'Sector'}</p>
-                    <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <MapPin size={12} className="text-brand-accent shrink-0" />
-                      <span className="uppercase text-[11px] sm:text-sm truncate">{selectedComplaint.area}</span>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 sm:gap-2.5 p-2 sm:p-2.5 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800/50">
+                  <div className="space-y-0.5 md:border-r border-slate-100 dark:border-slate-800 pr-1.5 sm:pr-3">
+                    <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">{customNames.zone || 'Sector'}</p>
+                    <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <MapPin size={11} className="text-brand-accent shrink-0" />
+                      <span className="uppercase text-[10px] sm:text-xs truncate">{selectedComplaint.area}</span>
                     </div>
                   </div>
-                  <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
-                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Contact</p>
-                    <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Phone size={12} className="text-brand-accent shrink-0" />
-                      <span className="font-mono text-[11px] sm:text-sm truncate">{selectedComplaint.number}</span>
+                  <div className="space-y-0.5 md:border-r border-slate-100 dark:border-slate-800 pr-1.5 sm:pr-3">
+                    <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">Contact</p>
+                    <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Phone size={11} className="text-brand-accent shrink-0" />
+                      <span className="font-mono text-[10px] sm:text-xs truncate">{selectedComplaint.number}</span>
                     </div>
                   </div>
-                  <div className="space-y-1 md:border-r border-slate-100 dark:border-slate-800 pr-2 sm:pr-4">
-                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">{customNames.pkg || 'Profile'}</p>
-                    <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Package size={12} className="text-brand-accent shrink-0" />
-                      <span className="uppercase text-[11px] sm:text-sm truncate">{selectedComplaint.pkgDetails || 'N/A'}</span>
+                  <div className="space-y-0.5 md:border-r border-slate-100 dark:border-slate-800 pr-1.5 sm:pr-3">
+                    <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">{customNames.pkg || 'Profile'}</p>
+                    <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Package size={11} className="text-brand-accent shrink-0" />
+                      <span className="uppercase text-[10px] sm:text-xs truncate">{selectedComplaint.pkgDetails || 'N/A'}</span>
                     </div>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">{customNames.panel || 'Panel'}/{customNames.nearby || 'Nearby'}</p>
-                    <div className="flex items-center gap-1.5 sm:gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Layers size={12} className="text-brand-accent shrink-0" />
+                  <div className="space-y-0.5">
+                    <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">{customNames.panel || 'Panel'}/{customNames.nearby || 'Nearby'}</p>
+                    <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Layers size={11} className="text-brand-accent shrink-0" />
                       <span className="uppercase text-[9px] sm:text-[10px] truncate leading-tight">
                         {selectedComplaint.panelDetails || 'N/A'} / {selectedComplaint.userNearby || 'N/A'}
                       </span>
@@ -1231,144 +1347,509 @@ export default function ComplaintList({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5">
                   {/* Left Side: Descriptions */}
-                  <div className="col-span-12 lg:col-span-7 space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center px-1">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{customNames.complaint || 'Operational Log'}</p>
-                        <div className="flex items-center gap-2">
-                           <Zap size={10} className={cn(getPriorityColor(selectedComplaint.priority || 'Medium'))} />
-                           <span className={cn("text-[9px] font-black uppercase tracking-widest", getPriorityColor(selectedComplaint.priority || 'Medium'))}>
-                             {selectedComplaint.priority || 'Medium'}
-                           </span>
+                  <div className="col-span-12 lg:col-span-7 space-y-3 sm:space-y-4">
+                    
+                    {/* Block 1: Operational Log */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="group relative rounded-xl border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                    >
+                      {/* Side indicator with priority color */}
+                      <div className={cn(
+                        "absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover:w-1.5",
+                        selectedComplaint.priority === 'High' ? 'bg-rose-500 shadow-[2px_0_10px_rgba(244,63,94,0.4)]' :
+                        selectedComplaint.priority === 'Critical' ? 'bg-red-600 shadow-[2px_0_12px_rgba(220,38,38,0.5)]' :
+                        selectedComplaint.priority === 'Medium' ? 'bg-amber-500 shadow-[2px_0_10px_rgba(245,158,11,0.4)]' :
+                        'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]'
+                      )} />
+
+                      <div className="p-3 pl-5 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-1.5">
+                            <span className="p-0.5 rounded bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400">
+                              <Network size={10} className="animate-pulse" />
+                            </span>
+                            <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                              {customNames.complaint || 'Operational Log'}
+                            </span>
+                          </div>
+                          
+                          <motion.div 
+                            whileHover={{ scale: 1.05 }}
+                            className={cn(
+                              "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all",
+                              selectedComplaint.priority === 'High' || selectedComplaint.priority === 'Critical'
+                                ? 'bg-rose-500/10 dark:bg-rose-500/5 text-rose-500 border-rose-500/20'
+                                : selectedComplaint.priority === 'Medium'
+                                ? 'bg-amber-500/10 dark:bg-amber-500/5 text-amber-500 border-amber-500/20'
+                                : 'bg-emerald-500/10 dark:bg-emerald-500/5 text-emerald-500 border-emerald-500/20'
+                            )}
+                          >
+                            <Zap size={8} className="shrink-0" />
+                            <span>{selectedComplaint.priority || 'Medium'} PRIORITY</span>
+                          </motion.div>
+                        </div>
+
+                        <div className="relative p-2.5 rounded-xl bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100/50 dark:border-slate-900/80 flex items-center">
+                          <div className="absolute top-1 left-2 text-slate-200 dark:text-slate-800 text-2.5xl font-serif pointer-events-none select-none">“</div>
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 leading-relaxed italic relative z-10 pl-2 pr-2">
+                            {selectedComplaint.description}
+                          </p>
+                          <div className="absolute bottom-1 right-2 text-slate-200 dark:text-slate-800 text-2.5xl font-serif pointer-events-none select-none">”</div>
                         </div>
                       </div>
-                      <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm min-h-[80px]">
-                        <p className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 leading-relaxed italic">
-                          "{selectedComplaint.description}"
-                        </p>
-                      </div>
-                    </div>
+                    </motion.div>
 
-                    {/* ALWAYS SHOW Group 2: Team Resolution Protocol */}
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center px-1">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Team Resolution Protocol</p>
-                        {isAdmin && !isEditingRemarks && (
-                          <button 
-                            onClick={() => {
-                              setEditedRemarks(selectedComplaint.remarks || '');
-                              setIsEditingRemarks(true);
-                            }}
-                            className="text-[9px] font-black uppercase text-brand-accent hover:underline flex items-center gap-1"
-                          >
-                            <Pencil size={10} />
-                            {selectedComplaint.remarks ? 'Edit' : 'Add Protocol'}
-                          </button>
+                    {/* Block 2: Team Resolution Protocol */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: 0.05 }}
+                      className="group relative rounded-xl border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                    >
+                      <div className="p-3 space-y-2 relative overflow-hidden">
+                        {/* Thank You Animation Background Overlay */}
+                        <AnimatePresence>
+                          {showLeftThankYou && (
+                            <motion.div 
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-950/20 dark:to-teal-950/25 backdrop-blur-[2.5px] z-20 flex flex-col items-center justify-center pointer-events-none"
+                            >
+                              <motion.div
+                                initial={{ scale: 0, rotate: -15 }}
+                                animate={{ scale: [0, 1.25, 1], rotate: 0 }}
+                                transition={{ duration: 0.5, ease: "easeOut" }}
+                                className="flex flex-col items-center gap-1"
+                              >
+                                <CheckCircle className="text-emerald-500 dark:text-emerald-400 animate-bounce" size={22} />
+                                <span className="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-600 dark:text-emerald-400">Thank You!</span>
+                              </motion.div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-1.5">
+                            <span className="p-0.5 rounded bg-slate-100 dark:bg-slate-900 text-emerald-500">
+                              <CheckCircle size={10} />
+                            </span>
+                            <span className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-500">
+                              Team Resolution Protocol
+                            </span>
+                          </div>
+                          
+                          {isAdmin && !isEditingRemarks && (
+                            <motion.button 
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => {
+                                  setEditedRemarks(selectedComplaint.remarks || '');
+                                  setIsEditingRemarks(true);
+                              }}
+                              className="text-[8px] font-black uppercase tracking-wider text-brand-accent hover:text-brand-accent/80 flex items-center gap-1 px-1.5 py-0.5 rounded bg-brand-accent/5 border border-brand-accent/10 hover:border-brand-accent/20 cursor-pointer transition-all"
+                            >
+                              <Pencil size={9} />
+                              <span>{selectedComplaint.remarks ? 'Amend' : 'Formulate'}</span>
+                            </motion.button>
+                          )}
+                        </div>
+
+                        <AnimatePresence mode="wait">
+                          {isEditingRemarks ? (
+                            <motion.div 
+                              initial={{ opacity: 0, scale: 0.98 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.98 }}
+                              className="space-y-1.5"
+                            >
+                              <textarea
+                                value={editedRemarks}
+                                onChange={(e) => setEditedRemarks(e.target.value)}
+                                className="w-full p-2.5 bg-slate-50 dark:bg-slate-900/60 border border-brand-accent/30 dark:border-brand-accent/20 rounded-xl text-xs focus:ring-2 focus:ring-brand-accent/25 focus:border-brand-accent outline-none h-16 resize-none"
+                                placeholder="Type structural logging protocol..."
+                                autoFocus
+                              />
+                              <div className="flex justify-end gap-1.5 text-[9px] font-black uppercase tracking-widest">
+                                <button 
+                                  type="button"
+                                  onClick={() => setIsEditingRemarks(false)}
+                                  className="px-2 py-1 text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900 rounded cursor-pointer transition-all"
+                                >
+                                  Cancel
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={async () => {
+                                    if (onUpdateRemarks) {
+                                      await onUpdateRemarks(selectedComplaint.id, editedRemarks);
+                                      setSelectedComplaint({ ...selectedComplaint, remarks: editedRemarks });
+                                      setIsEditingRemarks(false);
+                                    }
+                                  }}
+                                  className="px-3 py-1 bg-brand-accent text-white rounded shadow-sm shadow-brand-accent/15 cursor-pointer hover:bg-brand-accent-hover transition-all"
+                                >
+                                  Commit Updates
+                                </button>
+                              </div>
+                            </motion.div>
+                          ) : selectedComplaint.remarks ? (
+                            <motion.div 
+                              key={selectedComplaint.remarks}
+                              initial={animateRemarksLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
+                              animate={{ x: 0, opacity: 1, scale: 1 }}
+                              transition={{ type: "spring", stiffness: 150, damping: 15 }}
+                              className="p-2.5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent rounded-xl border border-emerald-500/20 text-emerald-800 dark:text-emerald-400 text-xs font-semibold whitespace-pre-wrap leading-relaxed shadow-inner"
+                            >
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                </span>
+                                <span className="text-[7px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed</span>
+                              </div>
+                              <p className="italic">"{selectedComplaint.remarks}"</p>
+                            </motion.div>
+                          ) : (
+                            <motion.div 
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="p-2.5 bg-amber-500/5 rounded-xl border border-dashed border-amber-500/20 text-[10px] text-amber-600 dark:text-amber-400 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1"
+                            >
+                              <ShieldAlert size={12} className="text-amber-500 animate-bounce" />
+                              <span>⚠️ Protocol Outstanding</span>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
+                        {selectedComplaint.remarkAuthorName && !isEditingRemarks && (
+                          <div className="flex justify-end items-center gap-1 text-[7px] font-black text-slate-400 uppercase tracking-widest leading-none pr-1">
+                            <span>COMMITTED BY:</span> 
+                            <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 px-1 py-0.5 rounded border border-emerald-500/10">
+                              {selectedComplaint.remarkAuthorName}
+                            </span>
+                          </div>
                         )}
                       </div>
-                      
-                      {isEditingRemarks ? (
-                        <div className="space-y-2">
-                          <textarea
-                            value={editedRemarks}
-                            onChange={(e) => setEditedRemarks(e.target.value)}
-                            className="w-full p-4 bg-white dark:bg-slate-900 rounded-2xl border border-brand-accent/30 text-xs sm:text-sm focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none"
-                            autoFocus
-                          />
-                          <div className="flex justify-end gap-2">
-                            <button 
-                              onClick={() => setIsEditingRemarks(false)}
-                              className="px-3 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600"
+                    </motion.div>
+
+                    {/* Block 3: Customer Review */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: 0.1 }}
+                      className="group relative rounded-xl border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                    >
+                      <div className="p-3 space-y-2 relative overflow-hidden">
+                        {/* Thank You Animation Background Overlay */}
+                        <AnimatePresence>
+                          {showLeftThankYou && (
+                            <motion.div 
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-950/20 dark:to-teal-950/25 backdrop-blur-[2.5px] z-20 flex flex-col items-center justify-center pointer-events-none"
                             >
-                              Cancel
-                            </button>
-                            <button 
-                              onClick={async () => {
-                                if (onUpdateRemarks) {
-                                  await onUpdateRemarks(selectedComplaint.id, editedRemarks);
-                                  setSelectedComplaint({ ...selectedComplaint, remarks: editedRemarks });
-                                  setIsEditingRemarks(false);
-                                }
-                              }}
-                              className="px-4 py-1 bg-brand-accent text-white rounded-lg text-[9px] font-black uppercase tracking-widest"
-                            >
-                              Save Changes
-                            </button>
+                              <motion.div
+                                initial={{ scale: 0, rotate: 15 }}
+                                animate={{ scale: [0, 1.25, 1], rotate: 0 }}
+                                transition={{ duration: 0.5, ease: "easeOut" }}
+                                className="flex flex-col items-center gap-1"
+                              >
+                                <Sparkles className="text-indigo-500 dark:text-indigo-400 animate-bounce" size={22} />
+                                <span className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 dark:text-indigo-400">Thank You!</span>
+                              </motion.div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-1.5">
+                            <span className="p-0.5 rounded bg-slate-100 dark:bg-slate-900 text-brand-accent">
+                              <User size={10} />
+                            </span>
+                            <span className="text-[9px] font-black uppercase tracking-[0.18em] text-brand-accent">
+                              Customer Review
+                            </span>
                           </div>
                         </div>
-                      ) : selectedComplaint.remarks ? (
-                        <div className="p-4 bg-emerald-50/50 dark:bg-emerald-500/5 rounded-2xl border border-emerald-500/20 italic text-emerald-700 dark:text-emerald-400 text-xs sm:text-sm shadow-sm font-semibold">
-                          "{selectedComplaint.remarks}"
-                        </div>
-                      ) : (
-                        <div className="p-4 bg-amber-500/5 rounded-2xl border border-dashed border-amber-500/20 text-xs text-amber-600 dark:text-amber-400 font-bold uppercase italic tracking-wide text-center">
-                          ⚠️ Awaiting Team Action / Technical Resolution Protocol Pending
-                        </div>
-                      )}
-                      {selectedComplaint.remarkAuthorName && !isEditingRemarks && (
-                        <p className="text-[8px] font-bold text-slate-400 text-right uppercase tracking-widest pr-2">
-                          By: {selectedComplaint.remarkAuthorName}
-                        </p>
-                      )}
-                    </div>
 
-                    {/* ALWAYS SHOW Group 3: Customer Review */}
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center px-1">
-                        <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent">Customer Review</p>
+                        {selectedComplaint.customerReview ? (
+                          <motion.div 
+                            key={selectedComplaint.customerReview}
+                            initial={animateReviewLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
+                            animate={{ x: 0, opacity: 1, scale: 1 }}
+                            transition={{ type: "spring", stiffness: 150, damping: 15 }}
+                            className="p-2.5 bg-gradient-to-r from-brand-accent/10 via-brand-accent/5 to-transparent rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold whitespace-pre-wrap leading-relaxed shadow-inner italic"
+                          >
+                            "{selectedComplaint.customerReview}"
+                          </motion.div>
+                        ) : (
+                          <div className="p-2.5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-800/85 text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1">
+                            <span>💬 Awaiting Telemetry / No Review Logged</span>
+                          </div>
+                        )}
                       </div>
-                      {selectedComplaint.customerReview ? (
-                        <div className="p-4 bg-brand-accent/5 rounded-2xl border border-brand-accent/20 italic text-brand-accent text-xs sm:text-sm shadow-sm font-semibold font-sans">
-                          "{selectedComplaint.customerReview}"
-                        </div>
-                      ) : (
-                        <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wide text-center">
-                          💬 No Customer Review Registered Yet (Awaiting final checkout telemetry)
-                        </div>
-                      )}
-                    </div>
+                    </motion.div>
 
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30 gap-2">
-                      <div className="flex items-center gap-2">
-                        <User size={12} className="text-slate-400" />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 whitespace-nowrap">Log Delegate:</span>
-                        <span className="text-[9px] font-black uppercase tracking-widest text-brand-accent truncate max-w-[100px]">{selectedComplaint.memberName || 'System'}</span>
+                    {/* Footer Stats / Delegates */}
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3, delay: 0.15 }}
+                      className="flex flex-row items-center justify-between p-2 rounded-xl border border-slate-200/50 dark:border-slate-800/60 bg-slate-50/60 dark:bg-slate-950/40 gap-2"
+                    >
+                      <div className="flex items-center gap-1 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
+                        <User size={10} className="shrink-0" />
+                        <span className="whitespace-nowrap">Delegate:</span>
+                        <span className="text-brand-accent px-1.5 py-0.5 rounded bg-brand-accent/5 border border-brand-accent/10 truncate max-w-[100px]">{selectedComplaint.memberName || 'System'}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-slate-400">
-                        <Clock size={12} />
-                        <span className="text-[9px] font-black uppercase tracking-tight">{new Date(selectedComplaint.createdAt).toLocaleString()}</span>
+                      <div className="flex items-center gap-1 text-slate-400 dark:text-slate-500 font-mono text-[8.5px] font-bold leading-none">
+                        <Clock size={10} className="shrink-0 animate-spin-slow" />
+                        <span className="uppercase tracking-wider">REG DATE: {new Date(selectedComplaint.createdAt).toLocaleDateString()}</span>
                       </div>
-                    </div>
+                    </motion.div>
                   </div>
 
                   {/* Right Side: Admin Protocol */}
-                  <div className="col-span-12 lg:col-span-5 flex flex-col bg-slate-50/50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/5 rounded-2xl p-4 sm:p-5">
+                  <div className="col-span-12 lg:col-span-5 flex flex-col bg-slate-50/50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/5 rounded-xl p-3 sm:p-4 relative overflow-hidden">
                     {isAdmin && onStatusChange ? (
                       <div className="flex flex-col h-full space-y-4">
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Tactical Protocol Command</p>
                         
-                        <div className="space-y-3">
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Team Resolution Protocol (Required for completion)</label>
-                            <textarea
-                              value={statusRemarks}
-                              onChange={(e) => setStatusRemarks(e.target.value)}
-                              placeholder="Enter resolution protocol details..."
-                              className="w-full h-20 sm:h-24 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
-                            />
-                          </div>
+                        <div className="space-y-3 relative">
+                          <AnimatePresence mode="wait">
+                            {hideStatusRemarksBox && hideCustomerReviewBox ? (
+                              <motion.div
+                                key="thank-you-view"
+                                initial={{ scale: 0.9, opacity: 0, y: 15 }}
+                                animate={{ scale: 1, opacity: 1, y: 0 }}
+                                exit={{ scale: 0.9, opacity: 0, y: -15 }}
+                                transition={{ type: "spring", stiffness: 200, damping: 20 }}
+                                className="p-5 bg-gradient-to-br from-emerald-500/10 via-brand-accent/5 to-transparent rounded-2xl border border-emerald-500/30 text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[220px]"
+                              >
+                                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.08)_0%,transparent_70%)] pointer-events-none" />
+                                
+                                <motion.div
+                                  initial={{ scale: 0, rotate: -45 }}
+                                  animate={{ scale: 1, rotate: 0 }}
+                                  transition={{ delay: 0.15, type: "spring", stiffness: 220, damping: 12 }}
+                                  className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-emerald-500 mb-3.5 shadow-lg shadow-emerald-500/10"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                </motion.div>
 
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Customer Review (Required for completion)</label>
-                            <textarea
-                              value={customerReview}
-                              onChange={(e) => setCustomerReview(e.target.value)}
-                              placeholder="Type customer feedback or review here..."
-                              className="w-full h-20 sm:h-24 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-medium focus:ring-2 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
-                            />
-                          </div>
+                                <motion.h3 
+                                  initial={{ opacity: 0, y: 5 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: 0.25 }}
+                                  className="text-[11px] font-black uppercase text-emerald-500 tracking-[0.25em] mb-1"
+                                >
+                                  Thank You!
+                                </motion.h3>
+                                
+                                <motion.p 
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  transition={{ delay: 0.35 }}
+                                  className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-3.5"
+                                >
+                                  Resolution & Review telemetry verified.
+                                </motion.p>
+
+                                <div className="w-full text-left space-y-1.5 p-3 bg-slate-100/50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800">
+                                  <div className="flex items-center gap-1.5 justify-between">
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Team Resolution:</span>
+                                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 truncate max-w-[140px]">{statusRemarks || 'Confirmed'}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 justify-between">
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Customer Review:</span>
+                                    <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 truncate max-w-[140px]">{customerReview || 'Confirmed'}</span>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setHideStatusRemarksBox(false);
+                                    setHideCustomerReviewBox(false);
+                                  }}
+                                  className="mt-3.5 text-[9px] font-black uppercase text-brand-accent tracking-widest hover:underline cursor-pointer"
+                                >
+                                  Revise Log Fields
+                                </button>
+                              </motion.div>
+                            ) : (
+                              <div className="space-y-4">
+                                {/* 1. Team Resolution Protocol Field */}
+                                <AnimatePresence mode="wait">
+                                  {!hideStatusRemarksBox ? (
+                                    <motion.div
+                                      key="resolution-input"
+                                      initial={{ x: 50, opacity: 0 }}
+                                      animate={{ x: 0, opacity: 1 }}
+                                      exit={{ x: -100, opacity: 0 }}
+                                      transition={{ type: 'spring', stiffness: 220, damping: 20 }}
+                                      className="space-y-1"
+                                    >
+                                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Team Resolution Protocol (Required for completion)</label>
+                                      <div className="relative">
+                                        <textarea
+                                          value={statusRemarks}
+                                          onChange={(e) => setStatusRemarks(e.target.value)}
+                                          placeholder="Enter resolution protocol details..."
+                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (!statusRemarks.trim()) {
+                                              toast.error("Please enter a Team Resolution Protocol first.");
+                                              return;
+                                            }
+                                            // Copy to selected complaint remarks trigger
+                                            setSelectedComplaint(prev => prev ? { ...prev, remarks: statusRemarks } : null);
+                                            
+                                            // Enable slide transition shifting right to left
+                                            setAnimateRemarksLeft(true);
+                                            setHideStatusRemarksBox(true);
+                                            
+                                            // Check if both elements are completed to trigger Thank You animations
+                                            if (customerReview.trim() && hideCustomerReviewBox) {
+                                              setShowLeftThankYou(true);
+                                            }
+                                            
+                                            try {
+                                              const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+                                              sound.volume = 0.2;
+                                              sound.play().catch(() => {});
+                                            } catch (e) {}
+                                            toast.success("Protocol saved in memory.");
+                                          }}
+                                          className="absolute bottom-2 right-2 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
+                                        >
+                                          <span>Enter</span>
+                                          <Send size={7} />
+                                        </button>
+                                      </div>
+                                    </motion.div>
+                                  ) : (
+                                    <motion.div
+                                      key="resolution-badge"
+                                      initial={{ x: 100, opacity: 0 }}
+                                      animate={{ x: 0, opacity: 1 }}
+                                      exit={{ x: -50, opacity: 0 }}
+                                      transition={{ type: 'spring', stiffness: 220, damping: 20 }}
+                                      className="p-2 bg-emerald-500/5 rounded-lg border border-emerald-500/25 flex items-center justify-between shadow-sm"
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pulse" />
+                                        <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none">Team Resolution Protocol Checked In</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setHideStatusRemarksBox(false);
+                                          setAnimateRemarksLeft(false);
+                                          setShowLeftThankYou(false);
+                                        }}
+                                        className="text-[8px] font-black uppercase text-brand-accent hover:underline cursor-pointer"
+                                      >
+                                        Edit
+                                      </button>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+
+                                {/* 2. Customer Review Field */}
+                                <AnimatePresence mode="wait">
+                                  {!hideCustomerReviewBox ? (
+                                    <motion.div
+                                      key="review-input"
+                                      initial={{ x: 50, opacity: 0 }}
+                                      animate={{ x: 0, opacity: 1 }}
+                                      exit={{ x: -100, opacity: 0 }}
+                                      transition={{ type: 'spring', stiffness: 220, damping: 20 }}
+                                      className="space-y-1"
+                                    >
+                                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Customer Review (Required for completion)</label>
+                                      <div className="relative">
+                                        <textarea
+                                          value={customerReview}
+                                          onChange={(e) => setCustomerReview(e.target.value)}
+                                          placeholder="Type customer feedback or review here..."
+                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (!customerReview.trim()) {
+                                              toast.error("Please type a Customer Review first.");
+                                              return;
+                                            }
+                                            // Copy to selected complaint customerReview trigger
+                                            setSelectedComplaint(prev => prev ? { ...prev, customerReview: customerReview } : null);
+                                            
+                                            // Enable slide transition shifting right to left
+                                            setAnimateReviewLeft(true);
+                                            setHideCustomerReviewBox(true);
+                                            
+                                            // Check if both elements are completed to trigger Thank You animations
+                                            if (statusRemarks.trim() && hideStatusRemarksBox) {
+                                              setShowLeftThankYou(true);
+                                            }
+                                            
+                                            try {
+                                              const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+                                              sound.volume = 0.2;
+                                              sound.play().catch(() => {});
+                                            } catch (e) {}
+                                            toast.success("Customer review saved in memory.");
+                                          }}
+                                          className="absolute bottom-2 right-2 px-2 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-indigo-500/20"
+                                        >
+                                          <span>Enter</span>
+                                          <Send size={7} />
+                                        </button>
+                                      </div>
+                                    </motion.div>
+                                  ) : (
+                                    <motion.div
+                                      key="review-badge"
+                                      initial={{ x: 100, opacity: 0 }}
+                                      animate={{ x: 0, opacity: 1 }}
+                                      exit={{ x: -50, opacity: 0 }}
+                                      transition={{ type: 'spring', stiffness: 220, damping: 20 }}
+                                      className="p-2 bg-indigo-500/5 rounded-lg border border-indigo-500/25 flex items-center justify-between shadow-sm"
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 anim-pulse" />
+                                        <span className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest leading-none">Customer Review Checked In</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setHideCustomerReviewBox(false);
+                                          setAnimateReviewLeft(false);
+                                          setShowLeftThankYou(false);
+                                        }}
+                                        className="text-[8px] font-black uppercase text-brand-accent hover:underline cursor-pointer"
+                                      >
+                                        Edit
+                                      </button>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            )}
+                          </AnimatePresence>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
@@ -1384,6 +1865,8 @@ export default function ComplaintList({
                                 setSelectedComplaint({ ...selectedComplaint, status: s, remarks: statusRemarks, customerReview: customerReview });
                                 setStatusRemarks('');
                                 setCustomerReview('');
+                                setHideStatusRemarksBox(false);
+                                setHideCustomerReviewBox(false);
                               }}
                               className={cn(
                                 "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
