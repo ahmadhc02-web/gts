@@ -439,8 +439,11 @@ export default function AdminPanel({
   const [isEditingSecurityKey, setIsEditingSecurityKey] = useState(false);
   const [newSecurityKeyInput, setNewSecurityKeyInput] = useState('');
 
+  const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
+  const activeDealerId = isDealerTied ? firebaseService.getTenantId(currentUser) : undefined;
+
   const handleUnlockBilling = () => {
-    const requiredKey = appConfig.billingSecurityKey || '786786';
+    const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig.billingSecurityKey || '786786');
     if (billingKeyInput === requiredKey) {
       setIsBillingUnlocked(true);
       sessionStorage.setItem('gts_billing_unlocked', 'true');
@@ -523,9 +526,9 @@ export default function AdminPanel({
         }
         return prev;
       });
-    });
+    }, activeDealerId);
     return () => unsubscribe();
-  }, []);
+  }, [currentUser, activeDealerId]);
 
   // Automatic background synchronization:
   // Detects newly created/updated master clients and automatically incorporates them or updates their details in the active billing sheet
@@ -608,7 +611,7 @@ export default function AdminPanel({
       console.log(`[Auto billingsync] Active billing sheet is out of sync. Synchronizing ${newCount} additions and ${updatedCount} updates...`);
       const saveSync = async () => {
         try {
-          await firebaseService.saveBillingMonth(currentMonthId, existingRows, 'System Sync');
+          await firebaseService.saveBillingMonth(currentMonthId, existingRows, 'System Sync', activeDealerId);
           if (newCount > 0 || updatedCount > 0) {
             toast.success("Billing Sheet Reconciled", {
               description: `Synced ${newCount} new clients and ${updatedCount} client profile updates instantly.`
@@ -683,7 +686,7 @@ export default function AdminPanel({
         };
       });
 
-      await firebaseService.createBillingMonth(monthId, rows, currentUser.username || 'admin');
+      await firebaseService.createBillingMonth(monthId, rows, currentUser.username || 'admin', activeDealerId);
       
       toast.success("MONTH CREATED SUCCESSFULLY", {
         description: `Successfully loaded wifi billing sheet ${monthId} with ${rows.length} master clients.`
@@ -777,7 +780,7 @@ export default function AdminPanel({
         }
       });
 
-      await firebaseService.saveBillingMonth(currentMonthId, existingRows, currentUser.username || 'admin');
+      await firebaseService.saveBillingMonth(currentMonthId, existingRows, currentUser.username || 'admin', activeDealerId);
       
       toast.success("USER LIST RECHECKED PERFECTLY!", {
         description: `Linked ${newCount} new registered users and updated info for ${updatedCount} profiles in this month's recovery sheet.`
@@ -825,7 +828,7 @@ export default function AdminPanel({
       }
 
       updatedRows[rowIndex] = targetRow;
-      await firebaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin');
+      await firebaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId);
     } catch (err: any) {
       console.error("Failed to persist billing cell edit:", err);
       toast.error("Cell auto-save issue", { description: getCleanErrorMessage(err) });
@@ -845,7 +848,7 @@ export default function AdminPanel({
     try {
       const updatedRows = [...(activeDoc.rows || [])];
       updatedRows.splice(rowIndex, 1);
-      await firebaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin');
+      await firebaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId);
       toast.success("Recovery row removed from current month's sheet.");
     } catch (err: any) {
       console.error(err);
@@ -862,7 +865,7 @@ export default function AdminPanel({
     if (!confirm(`⚠️ WARNING: Complete deletion selected!\n\nAre you sure you want to permanently delete the entire ${currentMonthId} monthly recovery sheet database?\n\nThis will destroy all payments entered for this month.`)) return;
 
     try {
-      await firebaseService.deleteBillingMonth(currentMonthId);
+      await firebaseService.deleteBillingMonth(currentMonthId, activeDealerId);
       toast.success(`${currentMonthId} recovery sheet was deleted from database successfully.`);
       setCurrentMonthId('');
     } catch (err: any) {
@@ -2515,7 +2518,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'config' && (currentUser.role === 'super_admin' || currentUser.role === 'admin') && (
+        {activeTab === 'config' && (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'dealer') && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
               {/* Category Management */}

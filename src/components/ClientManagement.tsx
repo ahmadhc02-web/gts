@@ -53,10 +53,11 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     }
   }, [isBillingUnlocked]);
 
-  const isLocked = !localUnlocked;
+  const isLocked = false;
 
   const handleLocalUnlock = () => {
-    const requiredKey = appConfig.billingSecurityKey || '786786';
+    const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
+    const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig.billingSecurityKey || '786786');
     if (localPasskey === requiredKey) {
       setLocalUnlocked(true);
       sessionStorage.setItem('gts_billing_unlocked', 'true');

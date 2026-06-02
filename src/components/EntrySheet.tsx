@@ -2,22 +2,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
-  History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert
+  History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
+  ArrowUpDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { firebaseService } from '../lib/firebaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
-import { Client } from '../types';
+import { Client, UserProfile } from '../types';
 import { getCleanErrorMessage } from '../lib/styleUtils';
 
 interface EntrySheetProps {
   isOpen: boolean;
   onClose: () => void;
-  currentUser: {
-    fullName?: string;
-    username: string;
-  };
+  currentUser: UserProfile;
   activeRows?: any[]; // For pre-filling rows
   currentMonthId?: string;
   isBillingUnlocked?: boolean;
@@ -51,6 +49,8 @@ export default function EntrySheet({
   appConfig
 }: EntrySheetProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
+  const activeDealerId = isDealerTied ? firebaseService.getTenantId(currentUser) : undefined;
 
   // Top fields
   const [recOfficer, setRecOfficer] = useState('');
@@ -72,7 +72,8 @@ export default function EntrySheet({
   const isLocked = !localUnlocked;
 
   const handleLocalUnlock = () => {
-    const requiredKey = appConfig?.billingSecurityKey || '786786';
+    const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
+    const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig?.billingSecurityKey || '786786');
     if (localPasskey === requiredKey) {
       setLocalUnlocked(true);
       sessionStorage.setItem('gts_billing_unlocked', 'true');
@@ -110,6 +111,82 @@ export default function EntrySheet({
   const [table1Rows, setTable1Rows] = useState<Table1Row[]>([]);
   // Table 2 rows (3 rows)
   const [table2Rows, setTable2Rows] = useState<Table2Row[]>([]);
+
+  // Sorting configurations & handlers
+  const [t1SortConfig, setT1SortConfig] = useState<{ key: 'cId' | 'name' | 'comments' | 'amount' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+  const [t2SortConfig, setT2SortConfig] = useState<{ key: 'name' | 'amount' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+
+  const handleT1Sort = (key: 'cId' | 'name' | 'comments' | 'amount') => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (t1SortConfig.key === key && t1SortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setT1SortConfig({ key, direction });
+
+    // Filter filled (active) rows vs blank rows to float blanks to bottom
+    const activeRows = table1Rows.filter(r => (r.cId || '').trim() || (r.name || '').trim() || (r.comments || '').trim() || (Number(r.amount) || 0) > 0);
+    const blankRows = table1Rows.filter(r => !((r.cId || '').trim() || (r.name || '').trim() || (r.comments || '').trim() || (Number(r.amount) || 0) > 0));
+
+    activeRows.sort((a, b) => {
+      let valA: any = a[key] || '';
+      let valB: any = b[key] || '';
+
+      if (key === 'amount') {
+        const numA = Number(valA) || 0;
+        const numB = Number(valB) || 0;
+        return direction === 'asc' ? numA - numB : numB - numA;
+      } else {
+        const strA = String(valA).trim();
+        const strB = String(valB).trim();
+        const cmp = strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' });
+        return direction === 'asc' ? cmp : -cmp;
+      }
+    });
+
+    // Reassemble and re-index Serial Numbers dynamically
+    const sorted = [...activeRows, ...blankRows].map((r, i) => ({
+      ...r,
+      sr: i + 1
+    }));
+
+    setTable1Rows(sorted);
+    toast.success(`Table 1 sorted by ${key.toUpperCase()} (${direction === 'asc' ? 'A-Z' : 'Z-A'})`);
+  };
+
+  const handleT2Sort = (key: 'name' | 'amount') => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (t2SortConfig.key === key && t2SortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setT2SortConfig({ key, direction });
+
+    const activeRows = table2Rows.filter(r => (r.name || '').trim() || (Number(r.amount) || 0) > 0);
+    const blankRows = table2Rows.filter(r => !((r.name || '').trim() || (Number(r.amount) || 0) > 0));
+
+    activeRows.sort((a, b) => {
+      let valA: any = a[key] || '';
+      let valB: any = b[key] || '';
+
+      if (key === 'amount') {
+        const numA = Number(valA) || 0;
+        const numB = Number(valB) || 0;
+        return direction === 'asc' ? numA - numB : numB - numA;
+      } else {
+        const strA = String(valA).trim();
+        const strB = String(valB).trim();
+        const cmp = strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' });
+        return direction === 'asc' ? cmp : -cmp;
+      }
+    });
+
+    const sorted = [...activeRows, ...blankRows].map((r, i) => ({
+      ...r,
+      sr: i + 1
+    }));
+
+    setTable2Rows(sorted);
+    toast.success(`Table 2 sorted by ${key.toUpperCase()} (${direction === 'asc' ? 'A-Z' : 'Z-A'})`);
+  };
 
   // Autocomplete suggestions states
   const [clients, setClients] = useState<any[]>([]);
@@ -595,7 +672,8 @@ export default function EntrySheet({
               await firebaseService.saveBillingMonth(
                 currentMonthId, 
                 updatedBillingRows, 
-                currentUser.username || 'admin'
+                currentUser.username || 'admin',
+                activeDealerId
               );
               toast.success(`Automatically updated ${updatedCount} subscriber(s) to PAID with designated recovery amounts in ${currentMonthId}!`);
             }
@@ -1615,7 +1693,7 @@ export default function EntrySheet({
 
           {/* Table 1 (22 collection rows) */}
           <div className="mt-4 flex-1">
-            <table className="w-full border-2 border-black border-collapse">
+            <table className="w-full border-2 border-black border-collapse table-fixed">
               <thead>
                 <tr className="border-b-2 border-black font-extrabold text-center text-black uppercase font-mono">
                   <th 
@@ -1637,7 +1715,7 @@ export default function EntrySheet({
                   </th>
                   <th 
                     style={{ width: `${t1WidthId}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
-                    className="px-2 border-r border-black"
+                    className="px-2 border-r border-black relative group"
                   >
                     <input
                       type="text"
@@ -1651,10 +1729,18 @@ export default function EntrySheet({
                       className="w-full text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
                       title="Double-click/type to edit column header"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleT1Sort('cId')}
+                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      title="Sort by C.ID"
+                    >
+                      <ArrowUpDown className="w-2.5 h-2.5" />
+                    </button>
                   </th>
                   <th 
                     style={{ width: `${t1WidthName}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
-                    className="px-3 border-r border-black"
+                    className="px-3 border-r border-black relative group"
                   >
                     <input
                       type="text"
@@ -1668,10 +1754,18 @@ export default function EntrySheet({
                       className="w-full text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
                       title="Double-click/type to edit column header"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleT1Sort('name')}
+                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      title="Sort by Name"
+                    >
+                      <ArrowUpDown className="w-2.5 h-2.5" />
+                    </button>
                   </th>
                   <th 
                     style={{ width: `${t1WidthComments}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
-                    className="px-3 border-r border-black"
+                    className="px-3 border-r border-black relative group"
                   >
                     <input
                       type="text"
@@ -1685,10 +1779,18 @@ export default function EntrySheet({
                       className="w-full text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
                       title="Double-click/type to edit column header"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleT1Sort('comments')}
+                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      title="Sort by Comments"
+                    >
+                      <ArrowUpDown className="w-2.5 h-2.5" />
+                    </button>
                   </th>
                   <th 
                     style={{ width: `${t1WidthAmount}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
-                    className="px-2 border-r border-black"
+                    className="px-2 border-r border-black relative group"
                   >
                     <input
                       type="text"
@@ -1699,9 +1801,17 @@ export default function EntrySheet({
                         setT1Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-right bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
+                      className="w-full text-right bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase pr-4"
                       title="Double-click/type to edit column header"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleT1Sort('amount')}
+                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      title="Sort by Amount"
+                    >
+                      <ArrowUpDown className="w-2.5 h-2.5" />
+                    </button>
                   </th>
                   <th 
                     style={{ width: `${t1WidthCh}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
@@ -1968,7 +2078,7 @@ export default function EntrySheet({
 
           {/* Table 2 Secondary Balances (3 rows, Bank, Panel balance, Cash hand) */}
           <div className="mt-5 select-text">
-            <table className="w-full border-2 border-black border-collapse">
+            <table className="w-full border-2 border-black border-collapse table-fixed">
               <thead>
                 <tr className="border-b-2 border-black font-extrabold text-center text-black uppercase font-mono">
                   <th 
@@ -1990,7 +2100,7 @@ export default function EntrySheet({
                   </th>
                   <th 
                     style={{ width: `${t2WidthName}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 
-                    className="px-3 border-r border-black text-left"
+                    className="px-3 border-r border-black text-left relative group"
                   >
                     <input
                       type="text"
@@ -2004,10 +2114,18 @@ export default function EntrySheet({
                       className="w-full text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
                       title="Double-click/type to edit heading"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleT2Sort('name')}
+                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      title="Sort by Name"
+                    >
+                      <ArrowUpDown className="w-2.5 h-2.5" />
+                    </button>
                   </th>
                   <th 
                     style={{ width: `${t2WidthAmount}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 
-                    className="px-2 border-r border-black"
+                    className="px-2 border-r border-black relative group"
                   >
                     <input
                       type="text"
@@ -2018,9 +2136,17 @@ export default function EntrySheet({
                         setT2Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-right bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
+                      className="w-full text-right bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase pr-4"
                       title="Double-click/type to edit heading"
                     />
+                    <button
+                      type="button"
+                      onClick={() => handleT2Sort('amount')}
+                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      title="Sort by Amount"
+                    >
+                      <ArrowUpDown className="w-2.5 h-2.5" />
+                    </button>
                   </th>
                   <th 
                     style={{ width: '40px', paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 

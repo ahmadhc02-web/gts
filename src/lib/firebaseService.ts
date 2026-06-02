@@ -459,7 +459,7 @@ export const firebaseService = {
   },
 
   getAppConfig: async (tenantId: string = 'main'): Promise<any> => {
-    const docId = 'app_main_config';
+    const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
     try {
       const { data, error } = await supabase
         .from('branding_config')
@@ -480,11 +480,15 @@ export const firebaseService = {
         currentConfig = {};
       }
 
+      const zoneKey = tenantId === 'main' ? 'zone' : `zone_${tenantId}`;
+      const categoryKey = tenantId === 'main' ? 'category' : `category_${tenantId}`;
+      const priorityKey = tenantId === 'main' ? 'priority' : `priority_${tenantId}`;
+
       // Fetch dynamic dropdown filters from 'branding_config' table using custom row queries:
       const [zonesRes, categoriesRes, prioritiesRes] = await Promise.all([
-        supabase.from('branding_config').select('item_value').eq('config_type', 'zone'),
-        supabase.from('branding_config').select('item_value').eq('config_type', 'category'),
-        supabase.from('branding_config').select('item_value').eq('config_type', 'priority')
+        supabase.from('branding_config').select('item_value').eq('config_type', zoneKey),
+        supabase.from('branding_config').select('item_value').eq('config_type', categoryKey),
+        supabase.from('branding_config').select('item_value').eq('config_type', priorityKey)
       ]);
 
       const dbZones = (zonesRes.data || [])
@@ -810,7 +814,7 @@ export const firebaseService = {
   },
 
   subscribeConfig: (callback: (config: any) => void, tenantId: string = 'main') => {
-    const docId = 'app_main_config';
+    const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
     
     const fetchConfig = async () => {
       try {
@@ -842,11 +846,15 @@ export const firebaseService = {
           currentConfig = {};
         }
 
+        const zoneKey = tenantId === 'main' ? 'zone' : `zone_${tenantId}`;
+        const categoryKey = tenantId === 'main' ? 'category' : `category_${tenantId}`;
+        const priorityKey = tenantId === 'main' ? 'priority' : `priority_${tenantId}`;
+
         // Fetch dynamic dropdown filters from 'branding_config' table using custom row queries:
         const [zonesRes, categoriesRes, prioritiesRes] = await Promise.all([
-          supabase.from('branding_config').select('item_value').eq('config_type', 'zone'),
-          supabase.from('branding_config').select('item_value').eq('config_type', 'category'),
-          supabase.from('branding_config').select('item_value').eq('config_type', 'priority')
+          supabase.from('branding_config').select('item_value').eq('config_type', zoneKey),
+          supabase.from('branding_config').select('item_value').eq('config_type', categoryKey),
+          supabase.from('branding_config').select('item_value').eq('config_type', priorityKey)
         ]);
 
         const dbZones = (zonesRes.data || [])
@@ -894,7 +902,7 @@ export const firebaseService = {
   },
 
   updateConfig: async (config: any, authorName: string, tenantId: string = 'main') => {
-    const docId = 'app_main_config';
+    const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
     try {
       const cleanConfig = sanitize(config);
       localStorage.setItem(`gts_config_${tenantId}`, JSON.stringify(cleanConfig));
@@ -908,13 +916,17 @@ export const firebaseService = {
       
       await supabase.from('branding_config').upsert(payload);
 
+      const zoneKey = tenantId === 'main' ? 'zone' : `zone_${tenantId}`;
+      const categoryKey = tenantId === 'main' ? 'category' : `category_${tenantId}`;
+      const priorityKey = tenantId === 'main' ? 'priority' : `priority_${tenantId}`;
+
       // 1. Sync zones
       if (Array.isArray(cleanConfig.zones)) {
-        await supabase.from('branding_config').delete().eq('config_type', 'zone');
+        await supabase.from('branding_config').delete().eq('config_type', zoneKey);
         if (cleanConfig.zones.length > 0) {
           const insertZones = cleanConfig.zones.map((z: string) => ({
             id: `zone_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`,
-            config_type: 'zone',
+            config_type: zoneKey,
             item_value: z,
             updated_at: Date.now(),
             updated_by: authorName
@@ -925,11 +937,11 @@ export const firebaseService = {
 
       // 2. Sync categories
       if (Array.isArray(cleanConfig.categories)) {
-        await supabase.from('branding_config').delete().eq('config_type', 'category');
+        await supabase.from('branding_config').delete().eq('config_type', categoryKey);
         if (cleanConfig.categories.length > 0) {
           const insertCategories = cleanConfig.categories.map((c: string) => ({
             id: `cat_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`,
-            config_type: 'category',
+            config_type: categoryKey,
             item_value: c,
             updated_at: Date.now(),
             updated_by: authorName
@@ -940,11 +952,11 @@ export const firebaseService = {
 
       // 3. Sync priorities
       if (Array.isArray(cleanConfig.priorities)) {
-        await supabase.from('branding_config').delete().eq('config_type', 'priority');
+        await supabase.from('branding_config').delete().eq('config_type', priorityKey);
         if (cleanConfig.priorities.length > 0) {
           const insertPriorities = cleanConfig.priorities.map((p: string) => ({
             id: `pri_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`,
-            config_type: 'priority',
+            config_type: priorityKey,
             item_value: p,
             updated_at: Date.now(),
             updated_by: authorName
@@ -1419,20 +1431,39 @@ export const firebaseService = {
   },
 
   // --- Billing Months Methods ---
-  subscribeBillingMonths: (callback: (months: any[]) => void) => {
+  subscribeBillingMonths: (callback: (months: any[]) => void, dealerId?: string) => {
     const fetchBillingMonths = async () => {
       try {
+        let prefix = 'billing_month_';
+        if (dealerId) {
+          prefix = `billing_month_${dealerId}_`;
+        }
+
         const { data, error } = await supabase
           .from('branding_config')
           .select('*')
-          .like('id', 'billing_month_%');
+          .like('id', `${prefix}%`);
         
         if (!error && data) {
           const months = data.map(item => {
             try {
               const parsedRows = JSON.parse(item.dashboard_subtext || '[]');
+              
+              // If dealerId is NOT passed, filter out dealer-specific billing months
+              if (!dealerId) {
+                const suffix = item.id.substring('billing_month_'.length);
+                if (suffix.includes('_')) {
+                  // This is a dealer-specific month, skip for standard view
+                  return null;
+                }
+              }
+
+              const displayId = dealerId 
+                ? item.id.replace(`billing_month_${dealerId}_`, '')
+                : item.id.replace('billing_month_', '');
+
               return {
-                id: item.id.replace('billing_month_', ''),
+                id: displayId,
                 rows: parsedRows,
                 createdAt: item.updated_at || Date.now(),
                 updatedAt: item.updated_at || Date.now(),
@@ -1468,8 +1499,8 @@ export const firebaseService = {
     };
   },
 
-  createBillingMonth: async (monthId: string, rows: any[], createdBy: string) => {
-    const docId = `billing_month_${monthId}`;
+  createBillingMonth: async (monthId: string, rows: any[], createdBy: string, dealerId?: string) => {
+    const docId = dealerId ? `billing_month_${dealerId}_${monthId}` : `billing_month_${monthId}`;
     const payload = {
       id: docId,
       dashboard_subtext: JSON.stringify(rows),
@@ -1479,8 +1510,8 @@ export const firebaseService = {
     await supabase.from('branding_config').upsert(payload);
   },
 
-  saveBillingMonth: async (monthId: string, rows: any[], updatedBy: string) => {
-    const docId = `billing_month_${monthId}`;
+  saveBillingMonth: async (monthId: string, rows: any[], updatedBy: string, dealerId?: string) => {
+    const docId = dealerId ? `billing_month_${dealerId}_${monthId}` : `billing_month_${monthId}`;
     const payload = {
       id: docId,
       dashboard_subtext: JSON.stringify(rows),
@@ -1490,8 +1521,8 @@ export const firebaseService = {
     await supabase.from('branding_config').upsert(payload);
   },
 
-  deleteBillingMonth: async (monthId: string) => {
-    const docId = `billing_month_${monthId}`;
+  deleteBillingMonth: async (monthId: string, dealerId?: string) => {
+    const docId = dealerId ? `billing_month_${dealerId}_${monthId}` : `billing_month_${monthId}`;
     await supabase.from('branding_config').delete().eq('id', docId);
   },
 
