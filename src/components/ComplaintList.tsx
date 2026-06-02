@@ -1253,18 +1253,18 @@ export default function ComplaintList({
             
             <motion.div
               layoutId={selectedComplaint.id}
-              initial={{ opacity: 0, scale: 1, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 1, y: 20 }}
-              className="relative w-full max-w-5xl bg-white dark:bg-slate-950 rounded-2xl shadow-[0_40px_100px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/50 dark:border-white/10 md:scale-[0.80] lg:scale-[0.76] xl:scale-[0.80] 2xl:scale-90 origin-center my-auto transition-transform duration-300 shrink-0"
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-6xl bg-white dark:bg-slate-950 rounded-2xl shadow-[0_45px_120px_rgba(0,0,0,0.5)] overflow-hidden border border-slate-200/50 dark:border-white/10 origin-center my-auto scale-100 transition-all duration-300 shrink-0"
             >
-              <div className="p-3 sm:p-4 md:p-5 space-y-3 sm:space-y-4 max-h-[96vh] md:max-h-[85vh] overflow-y-auto custom-scrollbar">
-                <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
-                  <div className="flex items-center gap-3 sm:gap-6">
-                    <div className="space-y-1">
+              <div className="p-5 sm:p-7 md:p-9 space-y-5 sm:space-y-6 max-h-[96vh] md:max-h-[90vh] overflow-y-auto custom-scrollbar">
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                  <div className="flex items-center gap-4 sm:gap-6">
+                    <div className="space-y-1.5">
                       <div className="flex flex-wrap items-center gap-3 mb-1 sm:mb-2">
                         <div className={cn(
-                          "inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest border",
+                          "inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest border",
                           getStatusColor(selectedComplaint.status)
                         )}>
                           {getStatusIcon(selectedComplaint.status)}
@@ -1275,8 +1275,8 @@ export default function ComplaintList({
                           const prog = calculateProtocolProgress(selectedComplaint.remarks);
                           if (prog.percentage <= 0) return null;
                           return (
-                            <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/5 border border-blue-500/10 rounded-full">
-                              <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40 shadow-inner">
+                            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 bg-blue-500/5 border border-blue-500/10 rounded-full">
+                              <div className="w-20 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40 shadow-inner">
                                 <motion.div 
                                   initial={{ width: 0 }}
                                   animate={{ width: `${prog.percentage}%` }}
@@ -1291,15 +1291,15 @@ export default function ComplaintList({
                           );
                         })()}
                       </div>
-                      <h2 className="text-base sm:text-xl font-black text-slate-950 dark:text-white uppercase tracking-tighter leading-none">
+                      <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-950 dark:text-white uppercase tracking-tight leading-none">
                         {selectedComplaint.customerName}
                       </h2>
                     </div>
                     
                     {selectedComplaint.customerUsername && (
-                      <div className="flex flex-col gap-0.5 px-2 py-1 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-                        <span className="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Access ID</span>
-                        <span className="text-[9px] sm:text-xs font-black text-slate-900 dark:text-brand-accent uppercase tracking-widest leading-none">
+                      <div className="flex flex-col gap-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Access ID</span>
+                        <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-brand-accent uppercase tracking-widest leading-none">
                           {selectedComplaint.customerUsername}
                         </span>
                       </div>
@@ -1308,39 +1308,39 @@ export default function ComplaintList({
 
                   <button 
                     onClick={() => setSelectedComplaint(null)}
-                    className="absolute top-2 right-2 sm:relative sm:top-0 sm:right-0 w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:scale-110 active:scale-95 transition-all shadow-sm"
+                    className="absolute top-3 right-3 sm:relative sm:top-0 sm:right-0 w-9 h-9 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:scale-110 active:scale-95 transition-all shadow-sm cursor-pointer"
                   >
-                    <X size={16} />
+                    <X size={18} />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 sm:gap-2.5 p-2 sm:p-2.5 rounded-xl bg-slate-50/50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800/50">
-                  <div className="space-y-0.5 md:border-r border-slate-100 dark:border-slate-800 pr-1.5 sm:pr-3">
-                    <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">{customNames.zone || 'Sector'}</p>
-                    <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <MapPin size={11} className="text-brand-accent shrink-0" />
-                      <span className="uppercase text-[10px] sm:text-xs truncate">{selectedComplaint.area}</span>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/45 border border-slate-100 dark:border-slate-800/60">
+                  <div className="space-y-1 md:border-r border-slate-105 dark:border-slate-800 pr-1.5 sm:pr-3">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">{customNames.zone || 'Sector'}</p>
+                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <MapPin size={13} className="text-brand-accent shrink-0" />
+                      <span className="uppercase text-xs sm:text-sm truncate">{selectedComplaint.area}</span>
                     </div>
                   </div>
-                  <div className="space-y-0.5 md:border-r border-slate-100 dark:border-slate-800 pr-1.5 sm:pr-3">
-                    <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">Contact</p>
-                    <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Phone size={11} className="text-brand-accent shrink-0" />
-                      <span className="font-mono text-[10px] sm:text-xs truncate">{selectedComplaint.number}</span>
+                  <div className="space-y-1 md:border-r border-slate-105 dark:border-slate-800 pr-1.5 sm:pr-3">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">Contact</p>
+                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Phone size={13} className="text-brand-accent shrink-0" />
+                      <span className="font-mono text-xs sm:text-sm truncate">{selectedComplaint.number}</span>
                     </div>
                   </div>
-                  <div className="space-y-0.5 md:border-r border-slate-100 dark:border-slate-800 pr-1.5 sm:pr-3">
-                    <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">{customNames.pkg || 'Profile'}</p>
-                    <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Package size={11} className="text-brand-accent shrink-0" />
-                      <span className="uppercase text-[10px] sm:text-xs truncate">{selectedComplaint.pkgDetails || 'N/A'}</span>
+                  <div className="space-y-1 md:border-r border-slate-105 dark:border-slate-800 pr-1.5 sm:pr-3">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">{customNames.pkg || 'Profile'}</p>
+                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Package size={13} className="text-brand-accent shrink-0" />
+                      <span className="uppercase text-xs sm:text-sm truncate">{selectedComplaint.pkgDetails || 'N/A'}</span>
                     </div>
                   </div>
-                  <div className="space-y-0.5">
-                    <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">{customNames.panel || 'Panel'}/{customNames.nearby || 'Nearby'}</p>
-                    <div className="flex items-center gap-1.5 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Layers size={11} className="text-brand-accent shrink-0" />
-                      <span className="uppercase text-[9px] sm:text-[10px] truncate leading-tight">
+                  <div className="space-y-1">
+                    <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">{customNames.panel || 'Panel'}/{customNames.nearby || 'Nearby'}</p>
+                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
+                      <Layers size={13} className="text-brand-accent shrink-0" />
+                      <span className="uppercase text-xs sm:text-sm truncate leading-tight">
                         {selectedComplaint.panelDetails || 'N/A'} / {selectedComplaint.userNearby || 'N/A'}
                       </span>
                     </div>
@@ -1394,12 +1394,12 @@ export default function ComplaintList({
                           </motion.div>
                         </div>
 
-                        <div className="relative p-2.5 rounded-xl bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100/50 dark:border-slate-900/80 flex items-center">
-                          <div className="absolute top-1 left-2 text-slate-200 dark:text-slate-800 text-2.5xl font-serif pointer-events-none select-none">“</div>
-                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 leading-relaxed italic relative z-10 pl-2 pr-2">
+                        <div className="relative p-4 sm:p-5 rounded-xl bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100/50 dark:border-slate-900/80 flex items-center">
+                          <div className="absolute top-1 left-2.5 text-slate-300 dark:text-slate-800 text-3xl font-serif pointer-events-none select-none">“</div>
+                          <p className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-200 leading-relaxed italic relative z-10 pl-3 pr-3">
                             {selectedComplaint.description}
                           </p>
-                          <div className="absolute bottom-1 right-2 text-slate-200 dark:text-slate-800 text-2.5xl font-serif pointer-events-none select-none">”</div>
+                          <div className="absolute bottom-1 right-2.5 text-slate-300 dark:text-slate-800 text-3xl font-serif pointer-events-none select-none">”</div>
                         </div>
                       </div>
                     </motion.div>
@@ -1471,7 +1471,7 @@ export default function ComplaintList({
                               <textarea
                                 value={editedRemarks}
                                 onChange={(e) => setEditedRemarks(e.target.value)}
-                                className="w-full p-2.5 bg-slate-50 dark:bg-slate-900/60 border border-brand-accent/30 dark:border-brand-accent/20 rounded-xl text-xs focus:ring-2 focus:ring-brand-accent/25 focus:border-brand-accent outline-none h-16 resize-none"
+                                className="w-full p-3 bg-slate-50 dark:bg-slate-900/60 border border-brand-accent/30 dark:border-brand-accent/20 rounded-xl text-sm focus:ring-2 focus:ring-brand-accent/25 focus:border-brand-accent outline-none h-24 resize-none"
                                 placeholder="Type structural logging protocol..."
                                 autoFocus
                               />
@@ -1504,14 +1504,14 @@ export default function ComplaintList({
                               initial={animateRemarksLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
                               animate={{ x: 0, opacity: 1, scale: 1 }}
                               transition={{ type: "spring", stiffness: 150, damping: 15 }}
-                              className="p-2.5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent rounded-xl border border-emerald-500/20 text-emerald-800 dark:text-emerald-400 text-xs font-semibold whitespace-pre-wrap leading-relaxed shadow-inner"
+                              className="p-4 sm:p-5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent rounded-xl border border-emerald-500/20 text-emerald-800 dark:text-emerald-400 text-sm sm:text-base font-semibold whitespace-pre-wrap leading-relaxed shadow-inner"
                             >
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <span className="relative flex h-1.5 w-1.5">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="relative flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                 </span>
-                                <span className="text-[7px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed</span>
+                                <span className="text-[8px] sm:text-[9.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed</span>
                               </div>
                               <p className="italic">"{selectedComplaint.remarks}"</p>
                             </motion.div>
@@ -1585,12 +1585,12 @@ export default function ComplaintList({
                             initial={animateReviewLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
                             animate={{ x: 0, opacity: 1, scale: 1 }}
                             transition={{ type: "spring", stiffness: 150, damping: 15 }}
-                            className="p-2.5 bg-gradient-to-r from-brand-accent/10 via-brand-accent/5 to-transparent rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold whitespace-pre-wrap leading-relaxed shadow-inner italic"
+                            className="p-4 sm:p-5 bg-gradient-to-r from-brand-accent/10 via-brand-accent/5 to-transparent rounded-xl border border-brand-accent/20 text-brand-accent text-sm sm:text-base font-semibold whitespace-pre-wrap leading-relaxed shadow-inner italic"
                           >
                             "{selectedComplaint.customerReview}"
                           </motion.div>
                         ) : (
-                          <div className="p-2.5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-800/85 text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1">
+                          <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-800/85 text-xs text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1.5">
                             <span>💬 Awaiting Telemetry / No Review Logged</span>
                           </div>
                         )}
