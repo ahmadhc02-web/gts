@@ -1,105 +1,232 @@
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy,
-  onSnapshot,
-  serverTimestamp,
-  getDocFromServer,
-  or,
-  and,
-  writeBatch
-} from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { supabase } from '../../supabaseClient';
+import { auth } from './firebase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget } from '../types';
 import { safeStringify } from './utils';
 
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
+// Unified snake_case/camelCase mappings for GTS ISP schema tables
+const mappings: Record<string, Record<string, string>> = {
+  users: {
+    uid: 'uid',
+    username: 'username',
+    password: 'password',
+    role: 'role',
+    fullName: 'full_name',
+    createdAt: 'created_at',
+    lastActive: 'last_active',
+    dealerId: 'dealer_id',
+    lineCode: 'line_code',
+    createdBy: 'created_by',
+    createdByName: 'created_by_name',
+    companyName: 'company_name',
+    status: 'status',
+    profilePicture: 'profile_picture',
+    email: 'email'
+  },
+  complaints: {
+    id: 'id',
+    memberId: 'member_id',
+    memberName: 'member_name',
+    customerName: 'customer_name',
+    customerUsername: 'customer_username',
+    area: 'area',
+    description: 'description',
+    number: 'phone_number',
+    status: 'status',
+    category: 'category',
+    priority: 'priority',
+    pkgDetails: 'pkg_details',
+    userNearby: 'user_nearby',
+    panelDetails: 'panel_details',
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    remarks: 'remarks',
+    remarkAuthorId: 'remark_author_id',
+    remarkAuthorName: 'remark_author_name',
+    customerReview: 'customer_review',
+    dealerId: 'dealer_id'
+  },
+  clients: {
+    id: 'id',
+    name: 'name',
+    username: 'username',
+    number: 'number',
+    mobileNumber: 'mobile_number',
+    seriesNumber: 'series_number',
+    area: 'area',
+    pkgDetails: 'pkg_details',
+    userNearby: 'user_nearby',
+    panelDetails: 'panel_details',
+    createdBy: 'created_by',
+    createdAt: 'created_at',
+    dealerId: 'dealer_id',
+    lat: 'lat',
+    lng: 'lng'
+  },
+  chat_groups: {
+    id: 'id',
+    name: 'name',
+    members: 'members',
+    createdBy: 'created_by',
+    createdAt: 'created_at',
+    dealerId: 'dealer_id'
+  },
+  chat_messages: {
+    id: 'id',
+    senderId: 'sender_id',
+    senderName: 'sender_name',
+    text: 'text',
+    audioUrl: 'audio_url',
+    type: 'type',
+    recipientId: 'recipient_id',
+    isGroup: 'is_group',
+    duration: 'duration',
+    replyTo: 'reply_to',
+    createdAt: 'created_at',
+    seenBy: 'seen_by',
+    dealerId: 'dealer_id'
+  },
+  notifications: {
+    id: 'id',
+    type: 'type',
+    message: 'message',
+    authorName: 'author_name',
+    createdAt: 'created_at',
+    isRead: 'is_read',
+    dealerId: 'dealer_id',
+    details: 'details'
+  },
+  monitor_targets: {
+    id: 'id',
+    domain: 'domain',
+    createdBy: 'created_by',
+    createdAt: 'created_at',
+    dealerId: 'dealer_id',
+    lat: 'lat',
+    lng: 'lng',
+    label: 'label'
+  },
+  ledger_sheets: {
+    id: 'id',
+    recOfficer: 'rec_officer',
+    recOfficerLabel: 'rec_officer_label',
+    area: 'area',
+    areaLabel: 'area_label',
+    sheetDate: 'sheet_date',
+    dateLabel: 'date_label',
+    table1Rows: 'table1_rows',
+    table2Rows: 'table2_rows',
+    cashReceived: 'cash_received',
+    sign: 'sign',
+    submitted: 'submitted',
+    cashReceivedLabel: 'cash_received_label',
+    signLabel: 'sign_label',
+    submittedLabel: 'submitted_label',
+    footnoteLeft: 'footnote_left',
+    footnoteRight: 'footnote_right',
+    dealerId: 'dealer_id',
+    createdAt: 'created_at'
+  },
+  branding_config: {
+    id: 'id',
+    projectName: 'project_name',
+    accentColor: 'accent_color',
+    secondaryColor: 'secondary_color',
+    themeColor: 'theme_color',
+    fontFamily: 'font_family',
+    borderRadius: 'border_radius',
+    cardStyle: 'card_style',
+    glassOpacity: 'glass_opacity',
+    enableAnimations: 'enable_animations',
+    logoUrl: 'logo_url',
+    sidebarTheme: 'sidebar_theme',
+    mascotPos: 'mascot_pos',
+    hideBot: 'hide_bot',
+    chatWelcomeMsg: 'chat_welcome_msg',
+    dashboardSubtext: 'dashboard_subtext',
+    updatedAt: 'updated_at',
+    updatedBy: 'updated_by'
   }
-}
+};
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  // Ensure we only extract string values for the error
-  let errorMessage = 'Unknown error';
-  if (error instanceof Error) {
-    errorMessage = error.message;
-  } else if (typeof error === 'string') {
-    errorMessage = error;
-  } else {
-    try {
-      errorMessage = String(error);
-    } catch (e) {
-      errorMessage = 'Error object could not be stringified';
+function toDb(table: string, obj: any): any {
+  if (!obj) return obj;
+  const tableMapping = mappings[table];
+  if (!tableMapping) return obj;
+  const result: any = {};
+  for (const [clientKey, dbKey] of Object.entries(tableMapping)) {
+    if (obj[clientKey] !== undefined) {
+      result[dbKey] = obj[clientKey];
     }
   }
-
-  const errInfo: FirestoreErrorInfo = {
-    error: errorMessage,
-    authInfo: {
-      userId: auth.currentUser?.uid || null,
-      email: auth.currentUser?.email || null,
-      emailVerified: auth.currentUser?.emailVerified || null,
-      isAnonymous: auth.currentUser?.isAnonymous || null,
-      tenantId: auth.currentUser?.tenantId || null,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId || null,
-        email: provider.email || null,
-      })) || []
-    },
-    operationType,
-    path
+  // Copy over other unmapped keys as fallback
+  for (const [key, val] of Object.entries(obj)) {
+    const dbKey = tableMapping[key];
+    if (!dbKey) {
+      result[key] = val;
+    }
   }
-
-  let serializedErr: string;
-  try {
-    serializedErr = safeStringify(errInfo);
-  } catch (stringifyError) {
-    // Ultimate fallback if even the safeStringify fails (shouldn't happen now)
-    serializedErr = `{ "error": "${errorMessage.replace(/"/g, '\\"')}", "note": "ultimate_fallback" }`;
-  }
-
-  console.error('Firestore Error Detailed: ', serializedErr);
-  throw new Error(serializedErr);
+  return result;
 }
 
-// Identity Integrity check helper
-function checkIdentity(uid: string) {
-  if (auth.currentUser?.uid !== uid) {
-    throw new Error('Identity verification failed');
+function fromDb(table: string, obj: any): any {
+  if (!obj) return obj;
+  const tableMapping = mappings[table];
+  if (!tableMapping) return obj;
+  const result: any = {};
+  // Copy original DB attributes first
+  for (const [key, val] of Object.entries(obj)) {
+    result[key] = val;
   }
+  // Translate snake_case properties to expected camelCase react keys
+  for (const [clientKey, dbKey] of Object.entries(tableMapping)) {
+    if (obj[dbKey] !== undefined && obj[dbKey] !== null) {
+      result[clientKey] = obj[dbKey];
+    }
+  }
+  return result;
 }
 
-// Utility to remove undefined keys from an object (Firestore doesn't like undefined)
+// Global subscription query listener
+function subscribeTable(
+  tableName: string,
+  queryBuilder: (query: any) => any,
+  callback: (data: any[]) => void,
+  mapRow: (row: any) => any = (row) => row
+) {
+  const fetchAndCallback = async () => {
+    try {
+      let q = supabase.from(tableName).select('*');
+      q = queryBuilder(q);
+      const { data, error } = await q;
+      if (error) {
+        console.error(`Error loading table ${tableName}:`, error);
+        return;
+      }
+      callback((data || []).map(mapRow));
+    } catch (err) {
+      console.error(`Exception during query loading on ${tableName}:`, err);
+    }
+  };
+
+  fetchAndCallback();
+
+  const channelId = `realtime_${tableName}_${Math.random().toString(36).substr(2, 6)}`;
+  const channel = supabase
+    .channel(channelId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: tableName }, () => {
+      fetchAndCallback();
+    })
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+// Utility to remove undefined keys
 function sanitize<T>(obj: T): T {
   const result: any = {};
+  if (!obj) return obj;
   Object.keys(obj as any).forEach((key) => {
     const value = (obj as any)[key];
     if (value !== undefined) {
@@ -111,21 +238,18 @@ function sanitize<T>(obj: T): T {
 
 export const firebaseService = {
   testConnection: async () => {
-    if (!navigator.onLine) return;
     try {
-      await getDocFromServer(doc(db, 'config', 'app'));
-      console.log('Firebase connection verified');
+      const { data, error } = await supabase.from('complaints').select('id').limit(1);
+      if (error) throw error;
+      console.log('Supabase API client connected and verified successfully');
     } catch (error) {
-      if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('within 10 seconds'))) {
-        console.warn("Firebase connection test skipped or failed due to network constraints.");
-      }
+      console.warn("Supabase handshake failed or restricted:", error);
     }
   },
 
-  // Helper to get effect dealer ID for multi-tenancy
   getTenantId: (user: UserProfile) => {
     if (user.role === 'dealer') return user.uid;
-    return user.dealerId || 'main'; // Write tenant ID
+    return user.dealerId || 'main';
   },
   
   getReadTenantId: (user: UserProfile) => {
@@ -134,7 +258,6 @@ export const firebaseService = {
     return user.dealerId || 'main';
   },
 
-  // Utility to ensure auth is ready before performing operations
   waitForAuth: async (): Promise<any> => {
     return new Promise((resolve) => {
       const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -143,7 +266,6 @@ export const firebaseService = {
           resolve(user);
         }
       });
-      // Also check immediate current user
       if (auth.currentUser) {
         unsubscribe();
         resolve(auth.currentUser);
@@ -151,7 +273,6 @@ export const firebaseService = {
     });
   },
 
-  // Robust comparison for Firestore Timestamps and numbers
   compareTimestamps: (a: any, b: any, descending: boolean = true) => {
     const getTime = (val: any) => {
       if (!val) return 0;
@@ -165,7 +286,6 @@ export const firebaseService = {
     const timeA = getTime(a);
     const timeB = getTime(b);
     
-    // For newly created items with null/serverTimestamp pending, prioritize them at the top
     if (timeA === 0 && descending) return -1;
     if (timeB === 0 && descending) return 1;
     
@@ -187,53 +307,49 @@ export const firebaseService = {
 
   // --- Users ---
   getUsers: async (dealerId?: string): Promise<UserProfile[]> => {
-    const path = 'users';
     try {
-      let q = query(collection(db, path));
+      let q = supabase.from('users').select('*');
       if (dealerId && dealerId !== 'all') {
-        q = query(collection(db, path), where('dealerId', '==', dealerId));
+        q = q.eq('dealer_id', dealerId);
       }
-      const snapshot = await getDocs(q);
-      const users = snapshot.docs.map(doc => ({ ...doc.data() as UserProfile, uid: doc.id }));
-      return users;
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []).map(row => fromDb('users', row));
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, path);
+      console.error('getUsers error:', error);
       return [];
     }
   },
 
   getUser: async (uid: string): Promise<UserProfile | null> => {
-    const path = `users/${uid}`;
     try {
-      const docRef = doc(db, 'users', uid);
-      const snapshot = await getDoc(docRef);
-      return snapshot.exists() ? { ...snapshot.data() as UserProfile, uid: snapshot.id } : null;
+      const { data, error } = await supabase.from('users').select('*').eq('uid', uid).maybeSingle();
+      if (error) throw error;
+      return data ? fromDb('users', data) : null;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, path);
+      console.error('getUser error:', error);
       return null;
     }
   },
 
   getNetworkOwnerByLineCode: async (lineCode: string): Promise<UserProfile | null> => {
-    const path = 'users';
     try {
-      const snapshot = await getDocs(collection(db, path));
-      const users = snapshot.docs.map(doc => ({ ...doc.data() as UserProfile, uid: doc.id }));
-      return users.find(u => u.lineCode === lineCode) || null;
+      const { data, error } = await supabase.from('users').select('*').eq('line_code', lineCode).maybeSingle();
+      if (error) throw error;
+      return data ? fromDb('users', data) : null;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, path);
+      console.error('getNetworkOwnerByLineCode error:', error);
       return null;
     }
   },
 
   createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string, companyName?: string, status: UserProfile['status'] = 'active'): Promise<UserProfile> => {
-    const path = `users/${uid}`;
     const newUser: any = {
       uid,
       username,
       password: pass,
       role,
-      createdAt: serverTimestamp(),
+      createdAt: Date.now(),
       dealerId,
       createdBy: authorId,
       createdByName: authorName,
@@ -242,7 +358,10 @@ export const firebaseService = {
       ...(companyName && { companyName })
     };
     try {
-      await setDoc(doc(db, 'users', uid), newUser);
+      const dbRow = toDb('users', newUser);
+      const { error } = await supabase.from('users').upsert(dbRow);
+      if (error) throw error;
+      
       if (authorName) {
         await firebaseService.createNotification({
           type: 'user_created',
@@ -255,57 +374,39 @@ export const firebaseService = {
       }
       return newUser;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('createUser error:', error);
       throw error;
     }
   },
 
   updateUserStatus: async (uid: string, status: UserProfile['status'], authorName: string) => {
-    const path = `users/${uid}`;
     try {
-      const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { status });
+      const { error } = await supabase.from('users').update({ status }).eq('uid', uid);
+      if (error) throw error;
+      
       await firebaseService.createNotification({
         type: 'user_updated',
         message: `Identity status updated to ${status?.toUpperCase()} for UID: ${uid}`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      console.error('updateUserStatus error:', error);
     }
   },
 
   deleteUser: async (uid: string, username: string, authorName: string) => {
-    const path = `users/${uid}`;
     try {
-      const userRef = doc(db, 'users', uid);
-      const userSnap = await getDoc(userRef);
-      const userData = userSnap.data() as UserProfile | undefined;
-
-      if (userData && userData.role === 'dealer') {
+      const user = await firebaseService.getUser(uid);
+      if (user && user.role === 'dealer') {
         const dealerId = uid;
-        const collectionsToDelete = ['users', 'complaints', 'clients', 'groups', 'chat', 'notifications'];
-
-        for (const collName of collectionsToDelete) {
-          const q = query(collection(db, collName), where('dealerId', '==', dealerId));
-          const snap = await getDocs(q);
-          
-          const docs = snap.docs;
-          // Process in batches of 400 to stay well within the 500 limit
-          for (let i = 0; i < docs.length; i += 400) {
-            const batch = writeBatch(db);
-            const chunk = docs.slice(i, i + 400);
-            chunk.forEach(d => batch.delete(d.ref));
-            await batch.commit();
-          }
+        const tablesToDelete = ['users', 'complaints', 'clients', 'chat_groups', 'chat_messages', 'notifications'];
+        for (const tbl of tablesToDelete) {
+          await supabase.from(tbl).delete().eq('dealer_id', dealerId);
         }
-
-        // Use standard delete for the user itself to be safe
-        await deleteDoc(userRef);
-      } else {
-        // Just delete the single user if not a dealer
-        await deleteDoc(userRef);
       }
+      
+      const { error } = await supabase.from('users').delete().eq('uid', uid);
+      if (error) throw error;
 
       await firebaseService.createNotification({
         type: 'user_deleted',
@@ -313,135 +414,193 @@ export const firebaseService = {
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error('deleteUser error:', error);
     }
   },
 
   updateUserPassword: async (uid: string, username: string, newPass: string, authorName: string) => {
-    const path = `users/${uid}`;
     try {
-      const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { password: newPass });
+      const { error } = await supabase.from('users').update({ password: newPass }).eq('uid', uid);
+      if (error) throw error;
+      
       await firebaseService.createNotification({
         type: 'user_updated',
         message: `Security credentials updated for user: ${username}`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      console.error('updateUserPassword error:', error);
     }
   },
 
   updateUser: async (uid: string, data: Partial<UserProfile>, authorName: string) => {
-    const path = `users/${uid}`;
     try {
-      const userRef = doc(db, 'users', uid);
-      const cleanData = sanitize(data);
-      await updateDoc(userRef, cleanData);
+      const dbRow = toDb('users', { ...data, uid });
+      const { error } = await supabase.from('users').update(dbRow).eq('uid', uid);
+      if (error) throw error;
+      
       await firebaseService.createNotification({
         type: 'user_created',
         message: `User Profile updated: ${data.username || uid}`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      console.error('updateUser error:', error);
     }
   },
 
   updateUserPresence: async (uid: string) => {
-    const path = `users/${uid}`;
     try {
-      // Don't wait for auth here, just skip if not ready
       if (!auth.currentUser) return;
-      const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, { lastActive: Date.now() });
+      await supabase.from('users').update({ last_active: Date.now() }).eq('uid', uid);
     } catch (error) {
-      // Fail silently for presence to avoid noise
+      // quiet
     }
   },
 
   getAppConfig: async (tenantId: string = 'main'): Promise<any> => {
-    const docId = tenantId === 'main' ? 'app' : tenantId;
-    const path = `config/${docId}`;
+    const docId = 'app_main_config';
     try {
-      const docRef = doc(db, 'config', docId);
-      const snapshot = await getDoc(docRef);
-      return snapshot.exists() ? snapshot.data() : null;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.GET, path);
+      const { data, error } = await supabase
+        .from('branding_config')
+        .select('*')
+        .eq('id', docId)
+        .maybeSingle();
+      
+      let currentConfig: any = null;
+      if (!error && data && data.dashboard_subtext) {
+        try {
+          currentConfig = JSON.parse(data.dashboard_subtext);
+        } catch (e) {
+          console.error("Failed to parse app config json:", e);
+        }
+      }
+
+      if (!currentConfig) {
+        currentConfig = {};
+      }
+
+      // Fetch dynamic dropdown filters from 'branding_config' table using custom row queries:
+      const [zonesRes, categoriesRes, prioritiesRes] = await Promise.all([
+        supabase.from('branding_config').select('item_value').eq('config_type', 'zone'),
+        supabase.from('branding_config').select('item_value').eq('config_type', 'category'),
+        supabase.from('branding_config').select('item_value').eq('config_type', 'priority')
+      ]);
+
+      const dbZones = (zonesRes.data || [])
+        .map(r => r.item_value)
+        .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+      
+      const dbCategories = (categoriesRes.data || [])
+        .map(r => r.item_value)
+        .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+
+      const dbPriorities = (prioritiesRes.data || [])
+        .map(r => r.item_value)
+        .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+
+      if (dbZones && dbZones.length > 0) {
+        currentConfig.zones = dbZones;
+      }
+      if (dbCategories && dbCategories.length > 0) {
+        currentConfig.categories = dbCategories;
+      }
+      if (dbPriorities && dbPriorities.length > 0) {
+        currentConfig.priorities = dbPriorities;
+      }
+
+      return currentConfig;
+    } catch (e) {
+      console.error("getAppConfig error:", e);
       return null;
     }
   },
 
   setTypingStatus: async (uid: string, username: string, isTyping: boolean, fullName?: string) => {
-    const path = `typing/${uid}`;
     try {
-      if (!auth.currentUser) return;
-      if (isTyping) {
-        await setDoc(doc(db, 'typing', uid), {
-          uid,
-          username,
-          fullName,
-          timestamp: Date.now()
-        });
-      } else {
-        await deleteDoc(doc(db, 'typing', uid));
-      }
-    } catch (error) {
-      // Fail silently
-    }
+      const channel = supabase.channel('typing_broadcast');
+      await channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.send({
+            type: 'broadcast',
+            event: 'typing',
+            payload: { uid, username, fullName, isTyping, timestamp: Date.now() }
+          });
+          supabase.removeChannel(channel);
+        }
+      });
+    } catch (e) {}
   },
 
   subscribeTypingStatus: (callback: (typingUsers: { uid: string, username: string, fullName?: string }[]) => void) => {
-    const path = 'typing';
-    const q = collection(db, path);
-    return onSnapshot(q, (snapshot) => {
+    const localTypingMap = new Map<string, { uid: string, username: string, fullName?: string, timestamp: number }>();
+    
+    const channel = supabase.channel('typing_broadcast');
+    channel
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload && payload.uid) {
+          if (payload.isTyping) {
+            localTypingMap.set(payload.uid, {
+              uid: payload.uid,
+              username: payload.username,
+              fullName: payload.fullName,
+              timestamp: payload.timestamp
+            });
+          } else {
+            localTypingMap.delete(payload.uid);
+          }
+          
+          const now = Date.now();
+          const list = Array.from(localTypingMap.values())
+            .filter(t => now - t.timestamp < 10000)
+            .map(t => ({ uid: t.uid, username: t.username, fullName: t.fullName }));
+          
+          callback(list);
+        }
+      })
+      .subscribe();
+
+    const timer = setInterval(() => {
       const now = Date.now();
-      const typing = snapshot.docs
-        .map(doc => doc.data() as { uid: string, username: string, fullName?: string, timestamp: number })
-        // Filter out stale typing indicators (older than 10 seconds)
-        .filter(t => now - t.timestamp < 10000)
-        .map(t => ({ uid: t.uid, username: t.username, fullName: t.fullName }));
-      callback(typing);
-    }, (error) => {
-      // Fail silently for typing
-    });
+      let changed = false;
+      for (const [key, val] of localTypingMap.entries()) {
+        if (now - val.timestamp >= 10000) {
+          localTypingMap.delete(key);
+          changed = true;
+        }
+      }
+      if (changed) {
+        const list = Array.from(localTypingMap.values())
+          .map(t => ({ uid: t.uid, username: t.username, fullName: t.fullName }));
+        callback(list);
+      }
+    }, 2000);
+
+    return () => {
+      clearInterval(timer);
+      supabase.removeChannel(channel);
+    };
   },
 
   subscribeUsers: (callback: (users: UserProfile[]) => void, dealerId?: string) => {
-    const path = 'users';
-    let q = query(collection(db, path));
-    if (dealerId && dealerId !== 'all') {
-      q = query(collection(db, path), where('dealerId', '==', dealerId));
-    }
-    
-    return onSnapshot(q, (snapshot) => {
-      const users = snapshot.docs.map(doc => ({ ...doc.data() as UserProfile, uid: doc.id }));
-      callback(users);
-    }, (error) => {
-      // Only handle error if we ARE signed in
-      if (auth.currentUser) {
-        handleFirestoreError(error, OperationType.LIST, path);
-      }
-    });
+    return subscribeTable(
+      'users',
+      (q) => {
+        if (dealerId && dealerId !== 'all') {
+          return q.eq('dealer_id', dealerId);
+        }
+        return q;
+      },
+      callback,
+      (row) => fromDb('users', row)
+    );
   },
 
   // --- Notifications ---
   createNotification: async (data: Omit<AppNotification, 'id' | 'createdAt'>): Promise<AppNotification> => {
     const id = `notif_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-    const path = `notifications/${id}`;
-    
-    // Clean potential undefined values
     const cleanData = sanitize(data);
     
-    const firestoreNotification: any = {
-      ...cleanData,
-      id,
-      createdAt: serverTimestamp(),
-      isRead: false,
-      dealerId: data.dealerId || 'main'
-    };
-
     const clientNotification: AppNotification = {
       ...cleanData,
       id,
@@ -451,108 +610,73 @@ export const firebaseService = {
     };
     
     try {
-      await setDoc(doc(db, 'notifications', id), firestoreNotification);
+      const dbRow = toDb('notifications', clientNotification);
+      const { error } = await supabase.from('notifications').insert(dbRow);
+      if (error) throw error;
       return clientNotification;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('createNotification error:', error);
       throw error;
     }
   },
 
   clearAllNotifications: async (dealerId?: string) => {
-    const path = 'notifications';
     try {
-      const snapshot = await getDocs(collection(db, path));
-      const batch: Promise<any>[] = [];
-      snapshot.docs.forEach(docSnap => {
-        const data = docSnap.data();
-        if (!dealerId || data.dealerId === dealerId) {
-          batch.push(deleteDoc(docSnap.ref));
-        }
-      });
-      await Promise.all(batch);
+      if (dealerId) {
+        await supabase.from('notifications').delete().eq('dealer_id', dealerId);
+      } else {
+        await supabase.from('notifications').delete().not('id', 'is', null);
+      }
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error('clearAllNotifications error:', error);
     }
   },
 
   deleteNotification: async (id: string) => {
-    const path = `notifications/${id}`;
     try {
-      await deleteDoc(doc(db, 'notifications', id));
+      await supabase.from('notifications').delete().eq('id', id);
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error('deleteNotification error:', error);
     }
   },
 
   subscribeNotifications: (callback: (notifications: AppNotification[]) => void, dealerId?: string) => {
-    const path = 'notifications';
-    return onSnapshot(collection(db, path), (snapshot) => {
-      let notifications = snapshot.docs.map(doc => {
-        const item = doc.data() as AppNotification;
-        return {
-          ...item,
-          id: doc.id,
-          createdAt: firebaseService.parseTimestampToMillis(item.createdAt)
-        };
-      });
-      
-      if (dealerId && dealerId !== 'main') {
-        notifications = notifications.filter(n => n.dealerId === dealerId);
-      } else if (dealerId === 'main') {
-        notifications = notifications.filter(n => !n.dealerId || n.dealerId === 'main');
-      }
-      
-      callback(notifications.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true)));
-    }, (error) => {
-      // Only report if we are supposed to be signed in
-      if (auth.currentUser) {
-        console.error('Subscription error for notifications:', error instanceof Error ? error.message : String(error));
-        handleFirestoreError(error, OperationType.LIST, path);
-      }
-    });
+    return subscribeTable(
+      'notifications',
+      (q) => q,
+      (notifications) => {
+        let filtered = notifications;
+        if (dealerId && dealerId !== 'main') {
+          filtered = notifications.filter(n => n.dealerId === dealerId);
+        } else if (dealerId === 'main') {
+          filtered = notifications.filter(n => !n.dealerId || n.dealerId === 'main');
+        }
+        callback(filtered.sort((a, b) => b.createdAt - a.createdAt));
+      },
+      (row) => fromDb('notifications', row)
+    );
   },
 
   // --- Complaints ---
   getComplaints: async (dealerId?: string): Promise<Complaint[]> => {
-    const path = 'complaints';
     try {
-      let q = query(collection(db, path));
+      let q = supabase.from('complaints').select('*');
       if (dealerId && dealerId !== 'all') {
-        q = query(collection(db, path), where('dealerId', '==', dealerId));
+        q = q.eq('dealer_id', dealerId);
       }
-      const snapshot = await getDocs(q);
-      const complaints = snapshot.docs.map(doc => {
-        const item = doc.data() as Complaint;
-        return {
-          ...item,
-          id: doc.id,
-          createdAt: firebaseService.parseTimestampToMillis(item.createdAt),
-          updatedAt: item.updatedAt ? firebaseService.parseTimestampToMillis(item.updatedAt) : undefined
-        };
-      });
-      return complaints.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true));
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []).map(row => fromDb('complaints', row)).sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, path);
+      console.error('getComplaints error:', error);
       return [];
     }
   },
 
   createComplaint: async (data: any, member: UserProfile): Promise<Complaint> => {
-    const id = Math.random().toString(36).substr(2, 9);
-    const path = `complaints/${id}`;
-    
+    const id = `comp_${Math.random().toString(36).substr(2, 9)}`;
     const tenantId = firebaseService.getTenantId(member);
     
-    const firestoreData: any = sanitize({
-      ...data,
-      id,
-      memberId: member.uid,
-      memberName: member.fullName || member.username,
-      createdAt: serverTimestamp(),
-      dealerId: tenantId
-    });
-
     const clientComplaint: Complaint = {
       ...data,
       id,
@@ -563,7 +687,10 @@ export const firebaseService = {
     };
 
     try {
-      await setDoc(doc(db, 'complaints', id), firestoreData);
+      const dbRow = toDb('complaints', clientComplaint);
+      const { error } = await supabase.from('complaints').insert(dbRow);
+      if (error) throw error;
+
       await firebaseService.createNotification({
         type: 'complaint_created',
         message: `New registry: ${clientComplaint.customerName} - ${clientComplaint.category}`,
@@ -573,54 +700,51 @@ export const firebaseService = {
       });
       return clientComplaint;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('createComplaint error:', error);
       throw error;
     }
   },
 
   deleteComplaint: async (id: string, customerName: string, authorName: string) => {
-    const path = `complaints/${id}`;
     try {
-      await deleteDoc(doc(db, 'complaints', id));
+      const { error } = await supabase.from('complaints').delete().eq('id', id);
+      if (error) throw error;
+      
       await firebaseService.createNotification({
         type: 'complaint_deleted',
         message: `Registry removed: "${customerName}" protocol terminated`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error('deleteComplaint error:', error);
     }
   },
 
   updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, remarks?: string, customerReview?: string) => {
-    const path = `complaints/${id}`;
     try {
-      const complaintRef = doc(db, 'complaints', id);
-      const updateData: any = { status, updatedAt: Date.now() };
-      if (remarks) {
-        updateData.remarks = remarks;
-        updateData.remarkAuthorId = authorId;
-        updateData.remarkAuthorName = authorName;
-      }
-      if (customerReview) {
-        updateData.customerReview = customerReview;
-      }
+      const updateData: any = { 
+        status, 
+        updatedAt: Date.now(),
+        ...(remarks && { remarks, remarkAuthorId: authorId, remarkAuthorName: authorName }),
+        ...(customerReview && { customerReview })
+      };
       
-      await updateDoc(complaintRef, updateData);
+      const dbRow = toDb('complaints', updateData);
+      const { error } = await supabase.from('complaints').update(dbRow).eq('id', id);
+      if (error) throw error;
+
       await firebaseService.createNotification({
         type: 'complaint_updated',
         message: `Status updated to ${status.toUpperCase()} for "${customerName}"${remarks ? ` - Remarks: ${remarks}` : ''}${customerReview ? ` - Review: ${customerReview}` : ''}`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      console.error('updateComplaintStatus error:', error);
     }
   },
 
   updateComplaintRemarks: async (id: string, remarks: string, customerName: string, authorName: string, authorId: string) => {
-    const path = `complaints/${id}`;
     try {
-      const complaintRef = doc(db, 'complaints', id);
       const updateData = { 
         remarks, 
         remarkAuthorId: authorId, 
@@ -628,95 +752,207 @@ export const firebaseService = {
         updatedAt: Date.now() 
       };
       
-      await updateDoc(complaintRef, updateData);
+      const dbRow = toDb('complaints', updateData);
+      const { error } = await supabase.from('complaints').update(dbRow).eq('id', id);
+      if (error) throw error;
+
       await firebaseService.createNotification({
         type: 'complaint_updated',
         message: `Protocol remarks revised for "${customerName}"`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      console.error('updateComplaintRemarks error:', error);
     }
   },
 
   updateComplaint: async (id: string, data: Partial<Complaint>, customerName: string, authorName: string) => {
-    const path = `complaints/${id}`;
     try {
-      const complaintRef = doc(db, 'complaints', id);
-      const cleanData = sanitize(data);
-      await updateDoc(complaintRef, cleanData);
+      const dbRow = toDb('complaints', data);
+      const { error } = await supabase.from('complaints').update(dbRow).eq('id', id);
+      if (error) throw error;
+
       await firebaseService.createNotification({
         type: 'complaint_updated',
         message: `Registry modified: Data revised for "${customerName}"`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      console.error('updateComplaint error:', error);
     }
   },
 
   subscribeComplaints: (callback: (complaints: Complaint[]) => void, dealerId?: string) => {
-    const path = 'complaints';
-    let q = query(collection(db, path));
-    if (dealerId && dealerId !== 'all') {
-      q = query(collection(db, path), where('dealerId', '==', dealerId));
-    }
-    
-    return onSnapshot(q, (snapshot) => {
-      const complaints = snapshot.docs.map(doc => {
-        const item = doc.data() as Complaint;
-        return {
-          ...item,
-          id: doc.id,
-          createdAt: firebaseService.parseTimestampToMillis(item.createdAt),
-          updatedAt: item.updatedAt ? firebaseService.parseTimestampToMillis(item.updatedAt) : undefined
-        };
-      });
-      callback(complaints.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true)));
-    }, (error) => {
-      if (auth.currentUser) {
-        handleFirestoreError(error, OperationType.LIST, path);
-      }
-    });
+    return subscribeTable(
+      'complaints',
+      (q) => {
+        if (dealerId && dealerId !== 'all') {
+          return q.eq('dealer_id', dealerId);
+        }
+        return q;
+      },
+      (complaints) => {
+        callback(complaints.sort((a, b) => b.createdAt - a.createdAt));
+      },
+      (row) => fromDb('complaints', row)
+    );
   },
 
-  // --- Config ---
+  // --- Config Settings ---
   getSettings: async () => {
-    const path = 'config/settings';
     try {
-      const docRef = doc(db, 'config', 'settings');
-      const snapshot = await getDoc(docRef);
-      return snapshot.exists() ? snapshot.data() : null;
+      const data = await firebaseService.getAppConfig();
+      return data;
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, path);
+      console.error('getSettings error:', error);
       return null;
     }
   },
 
   subscribeConfig: (callback: (config: any) => void, tenantId: string = 'main') => {
-    const docId = tenantId === 'main' ? 'app' : tenantId;
-    const path = `config/${docId}`;
-    const docRef = doc(db, 'config', docId);
-    return onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        callback(snapshot.data());
-      } else {
+    const docId = 'app_main_config';
+    
+    const fetchConfig = async () => {
+      try {
+        let currentConfig: any = null;
+        const { data, error } = await supabase
+          .from('branding_config')
+          .select('*')
+          .eq('id', docId)
+          .maybeSingle();
+        
+        if (!error && data && data.dashboard_subtext) {
+          try {
+            currentConfig = JSON.parse(data.dashboard_subtext);
+          } catch (e) {
+            console.error("Failed to parse app config json:", e);
+          }
+        }
+        
+        if (!currentConfig) {
+          const cached = localStorage.getItem(`gts_config_${tenantId}`);
+          if (cached) {
+            try {
+              currentConfig = JSON.parse(cached);
+            } catch (e) {}
+          }
+        }
+
+        if (!currentConfig) {
+          currentConfig = {};
+        }
+
+        // Fetch dynamic dropdown filters from 'branding_config' table using custom row queries:
+        const [zonesRes, categoriesRes, prioritiesRes] = await Promise.all([
+          supabase.from('branding_config').select('item_value').eq('config_type', 'zone'),
+          supabase.from('branding_config').select('item_value').eq('config_type', 'category'),
+          supabase.from('branding_config').select('item_value').eq('config_type', 'priority')
+        ]);
+
+        const dbZones = (zonesRes.data || [])
+          .map(r => r.item_value)
+          .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+        
+        const dbCategories = (categoriesRes.data || [])
+          .map(r => r.item_value)
+          .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+
+        const dbPriorities = (prioritiesRes.data || [])
+          .map(r => r.item_value)
+          .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+
+        if (dbZones && dbZones.length > 0) {
+          currentConfig.zones = dbZones;
+        }
+        if (dbCategories && dbCategories.length > 0) {
+          currentConfig.categories = dbCategories;
+        }
+        if (dbPriorities && dbPriorities.length > 0) {
+          currentConfig.priorities = dbPriorities;
+        }
+
+        callback(currentConfig);
+      } catch (e) {
+        console.error("Failed to fetch app config:", e);
         callback(null);
       }
-    }, (error) => {
-      if (auth.currentUser) {
-        handleFirestoreError(error, OperationType.GET, path);
-      }
-    });
+    };
+
+    fetchConfig();
+
+    const configChannelId = `config_realtime_${tenantId}_${Math.random().toString(36).substring(2, 11)}`;
+    const channel = supabase
+      .channel(configChannelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => {
+        fetchConfig();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   },
 
   updateConfig: async (config: any, authorName: string, tenantId: string = 'main') => {
-    const docId = tenantId === 'main' ? 'app' : tenantId;
-    const path = `config/${docId}`;
+    const docId = 'app_main_config';
     try {
-      // Clean config object
       const cleanConfig = sanitize(config);
-      await setDoc(doc(db, 'config', docId), cleanConfig);
+      localStorage.setItem(`gts_config_${tenantId}`, JSON.stringify(cleanConfig));
+      
+      const payload = {
+        id: docId,
+        dashboard_subtext: JSON.stringify(cleanConfig),
+        updated_at: Date.now(),
+        updated_by: authorName
+      };
+      
+      await supabase.from('branding_config').upsert(payload);
+
+      // 1. Sync zones
+      if (Array.isArray(cleanConfig.zones)) {
+        await supabase.from('branding_config').delete().eq('config_type', 'zone');
+        if (cleanConfig.zones.length > 0) {
+          const insertZones = cleanConfig.zones.map((z: string) => ({
+            id: `zone_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`,
+            config_type: 'zone',
+            item_value: z,
+            updated_at: Date.now(),
+            updated_by: authorName
+          }));
+          await supabase.from('branding_config').insert(insertZones);
+        }
+      }
+
+      // 2. Sync categories
+      if (Array.isArray(cleanConfig.categories)) {
+        await supabase.from('branding_config').delete().eq('config_type', 'category');
+        if (cleanConfig.categories.length > 0) {
+          const insertCategories = cleanConfig.categories.map((c: string) => ({
+            id: `cat_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`,
+            config_type: 'category',
+            item_value: c,
+            updated_at: Date.now(),
+            updated_by: authorName
+          }));
+          await supabase.from('branding_config').insert(insertCategories);
+        }
+      }
+
+      // 3. Sync priorities
+      if (Array.isArray(cleanConfig.priorities)) {
+        await supabase.from('branding_config').delete().eq('config_type', 'priority');
+        if (cleanConfig.priorities.length > 0) {
+          const insertPriorities = cleanConfig.priorities.map((p: string) => ({
+            id: `pri_${Math.random().toString(36).substring(2, 11)}_${Date.now()}`,
+            config_type: 'priority',
+            item_value: p,
+            updated_at: Date.now(),
+            updated_by: authorName
+          }));
+          await supabase.from('branding_config').insert(insertPriorities);
+        }
+      }
+      
       await firebaseService.createNotification({
         type: 'config_updated',
         message: `System matrix configuration updated`,
@@ -724,270 +960,264 @@ export const firebaseService = {
         dealerId: tenantId === 'main' ? undefined : tenantId
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error("updateConfig error:", error);
     }
   },
 
   // --- Branding ---
   subscribeBranding: (callback: (branding: BrandingConfig | null) => void) => {
-    const path = 'config/branding';
-    const docRef = doc(db, 'config', 'branding');
-    return onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        callback(snapshot.data() as BrandingConfig);
-      } else {
+    const fetchBranding = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('branding_config')
+          .select('*')
+          .eq('id', 'branding')
+          .maybeSingle();
+        if (!error && data) {
+          callback(fromDb('branding_config', data));
+        } else {
+          callback(null);
+        }
+      } catch (e) {
+        console.error("Branding fetch failed:", e);
         callback(null);
       }
-    }, (error) => {
-      if (auth.currentUser) {
-        handleFirestoreError(error, OperationType.GET, path);
-      }
-    });
+    };
+
+    fetchBranding();
+
+    const brandingChannelId = `branding_config_realtime_${Math.random().toString(36).substring(2, 11)}`;
+    const channel = supabase
+      .channel(brandingChannelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.branding' }, () => {
+        fetchBranding();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   },
 
   updateBranding: async (branding: BrandingConfig, authorName: string) => {
-    const path = 'config/branding';
     try {
-      const cleanBranding = sanitize(branding);
-      await setDoc(doc(db, 'config', 'branding'), cleanBranding);
+      const dbRow = toDb('branding_config', { ...branding, id: 'branding' });
+      const { error } = await supabase.from('branding_config').upsert(dbRow);
+      if (error) throw error;
+      
       await firebaseService.createNotification({
         type: 'config_updated',
         message: `Global UI Branding configuration updated`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error("updateBranding error:", error);
     }
   },
 
   // --- Chat ---
   sendMessage: async (sender: UserProfile, text: string, replyTo?: ChatMessage['replyTo'], recipientId?: string, isGroup?: boolean): Promise<ChatMessage> => {
     const id = `msg_${Math.random().toString(36).substr(2, 12)}`;
-    const path = `chat/${id}`;
-    const now = serverTimestamp();
-    const clientNow = Date.now();
-    
     const tenantId = firebaseService.getTenantId(sender);
-    
-    const newMessage: any = sanitize({
+    const newMessage: ChatMessage = {
       id,
       senderId: sender.uid,
       senderName: sender.fullName || sender.username,
       text,
-      createdAt: now,
+      createdAt: Date.now(),
       seenBy: {
-        [sender.uid]: { username: sender.fullName || sender.username, time: clientNow }
+        [sender.uid]: { username: sender.fullName || sender.username, time: Date.now() }
       },
       replyTo,
       recipientId,
       isGroup,
       dealerId: tenantId
-    } as any);
+    };
 
     try {
-      await setDoc(doc(db, 'chat', id), newMessage);
+      const dbRow = toDb('chat_messages', newMessage);
+      const { error } = await supabase.from('chat_messages').insert(dbRow);
+      if (error) throw error;
       return newMessage;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('sendMessage error:', error);
       throw error;
     }
   },
 
   sendVoiceMessage: async (sender: UserProfile, audioBase64: string, duration: number, replyTo?: ChatMessage['replyTo'], recipientId?: string, isGroup?: boolean): Promise<ChatMessage> => {
     const id = `msg_${Math.random().toString(36).substr(2, 12)}`;
-    const path = `chat/${id}`;
-    const now = serverTimestamp();
-    const clientNow = Date.now();
-    
     const tenantId = firebaseService.getTenantId(sender);
-
-    const newMessage: any = sanitize({
+    const newMessage: ChatMessage = {
       id,
       senderId: sender.uid,
       senderName: sender.fullName || sender.username,
       audioUrl: audioBase64,
       type: 'voice',
       duration,
-      createdAt: now,
+      createdAt: Date.now(),
       seenBy: {
-        [sender.uid]: { username: sender.fullName || sender.username, time: clientNow }
+        [sender.uid]: { username: sender.fullName || sender.username, time: Date.now() }
       },
       replyTo,
       recipientId,
       isGroup,
       dealerId: tenantId
-    } as any);
+    };
 
     try {
-      await setDoc(doc(db, 'chat', id), newMessage);
+      const dbRow = toDb('chat_messages', newMessage);
+      const { error } = await supabase.from('chat_messages').insert(dbRow);
+      if (error) throw error;
       return newMessage;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('sendVoiceMessage error:', error);
       throw error;
     }
   },
 
   createGroup: async (name: string, members: string[], creator: UserProfile): Promise<ChatGroup> => {
     const id = `group_${Math.random().toString(36).substr(2, 9)}`;
-    const path = `groups/${id}`;
     const tenantId = firebaseService.getTenantId(creator);
-
-    const newGroup: any = {
+    const newGroup: ChatGroup = {
       id,
       name,
       members: Array.from(new Set([...members, creator.uid])),
       createdBy: creator.uid,
-      createdAt: serverTimestamp(),
+      createdAt: Date.now(),
       dealerId: tenantId
     };
 
     try {
-      await setDoc(doc(db, 'groups', id), newGroup);
+      const dbRow = toDb('chat_groups', newGroup);
+      const { error } = await supabase.from('chat_groups').insert(dbRow);
+      if (error) throw error;
       return newGroup;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('createGroup error:', error);
       throw error;
     }
   },
 
   subscribeGroups: (callback: (groups: ChatGroup[]) => void, userId: string, dealerId?: string) => {
-    const path = 'groups';
-    const q = query(collection(db, path), where('members', 'array-contains', userId));
-    
-    return onSnapshot(q, (snapshot) => {
-      let groups = snapshot.docs.map(doc => ({ ...doc.data() as ChatGroup, id: doc.id }));
-      
-      if (dealerId) {
-        if (dealerId === 'main') {
-          groups = groups.filter(g => !g.dealerId || g.dealerId === 'main');
-        } else {
-          groups = groups.filter(g => g.dealerId === dealerId);
+    return subscribeTable(
+      'chat_groups',
+      (q) => q,
+      (groups) => {
+        let filtered = groups.filter(g => g.members && Array.isArray(g.members) && g.members.includes(userId));
+        if (dealerId) {
+          if (dealerId === 'main') {
+            filtered = filtered.filter(g => !g.dealerId || g.dealerId === 'main');
+          } else {
+            filtered = filtered.filter(g => g.dealerId === dealerId);
+          }
         }
-      }
-      
-      callback(groups);
-    }, (error) => {
-      if (auth.currentUser) {
-        handleFirestoreError(error, OperationType.LIST, path);
-      }
-    });
+        callback(filtered);
+      },
+      (row) => fromDb('chat_groups', row)
+    );
   },
 
   markAsSeen: async (messageId: string, uid: string, name: string) => {
-    const path = `chat/${messageId}`;
     try {
-      const msgRef = doc(db, 'chat', messageId);
-      await updateDoc(msgRef, {
-        [`seenBy.${uid}`]: { username: name, time: Date.now() }
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      const { data } = await supabase.from('chat_messages').select('seen_by').eq('id', messageId).maybeSingle();
+      const currentSeen = data?.seen_by || {};
+      const updatedSeen = {
+        ...currentSeen,
+        [uid]: { username: name, time: Date.now() }
+      };
+      await supabase.from('chat_messages').update({ seen_by: updatedSeen }).eq('id', messageId);
+    } catch (e) {
+      console.error('markAsSeen error:', e);
     }
   },
 
   deleteMessage: async (messageId: string) => {
-    const path = `chat/${messageId}`;
     try {
-      await deleteDoc(doc(db, 'chat', messageId));
+      await supabase.from('chat_messages').delete().eq('id', messageId);
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error("deleteMessage error:", error);
     }
   },
 
   clearAllMessages: async (dealerId?: string) => {
-    const path = 'chat';
     try {
-      const snapshot = await getDocs(collection(db, path));
-      const batch: Promise<any>[] = [];
-      snapshot.docs.forEach(docSnap => {
-        const data = docSnap.data();
-        if (!dealerId || data.dealerId === dealerId) {
-          batch.push(deleteDoc(docSnap.ref));
-        }
-      });
-      await Promise.all(batch);
+      if (dealerId) {
+        await supabase.from('chat_messages').delete().eq('dealer_id', dealerId);
+      } else {
+        await supabase.from('chat_messages').delete().not('id', 'is', null);
+      }
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error("clearAllMessages failed:", error);
     }
   },
 
   deleteGroup: async (groupId: string): Promise<void> => {
-    const path = `groups/${groupId}`;
     try {
-      await deleteDoc(doc(db, 'groups', groupId));
+      await supabase.from('chat_groups').delete().eq('id', groupId);
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error("deleteGroup error:", error);
     }
   },
 
   clearMessagesByScope: async (userId: string, scopeId: string, isGroup: boolean) => {
-    const path = 'chat';
     try {
-      const snapshot = await getDocs(collection(db, path));
-      const batch: Promise<any>[] = [];
-      snapshot.docs.forEach(docSnap => {
-        const msg = docSnap.data() as ChatMessage;
-        const matches = isGroup 
-          ? (msg.isGroup && msg.recipientId === scopeId)
-          : (!msg.isGroup && (
-              (msg.senderId === userId && msg.recipientId === scopeId) ||
-              (msg.senderId === scopeId && msg.recipientId === userId)
-            ));
-        
-        if (matches) {
-          batch.push(deleteDoc(docSnap.ref));
-        }
-      });
-      await Promise.all(batch);
+      if (isGroup) {
+        await supabase.from('chat_messages').delete().eq('is_group', true).eq('recipient_id', scopeId);
+      } else {
+        await supabase.from('chat_messages').delete().eq('is_group', false).eq('sender_id', userId).eq('recipient_id', scopeId);
+        await supabase.from('chat_messages').delete().eq('is_group', false).eq('sender_id', scopeId).eq('recipient_id', userId);
+      }
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error("clearMessagesByScope error:", error);
     }
   },
 
   subscribeMessages: (callback: (messages: ChatMessage[]) => void, dealerId?: string) => {
-    const path = 'chat';
-    let q = query(collection(db, path));
-    if (dealerId && dealerId !== 'all') {
-      q = query(collection(db, path), where('dealerId', '==', dealerId));
-    }
-    
-    return onSnapshot(q, (snapshot) => {
-      const messages = snapshot.docs.map(doc => ({ ...doc.data() as ChatMessage, id: doc.id }));
-      callback(messages.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, false)));
-    }, (error) => {
-      if (auth.currentUser) {
-        handleFirestoreError(error, OperationType.GET, path);
-      }
-    });
+    return subscribeTable(
+      'chat_messages',
+      (q) => {
+        if (dealerId && dealerId !== 'all') {
+          return q.eq('dealer_id', dealerId);
+        }
+        return q;
+      },
+      (messages) => {
+        callback(messages.sort((a, b) => a.createdAt - b.createdAt));
+      },
+      (row) => fromDb('chat_messages', row)
+    );
   },
 
+  // --- Clients ---
   getClients: async (dealerId?: string): Promise<Client[]> => {
-    const path = 'clients';
     try {
-      let q = query(collection(db, path));
+      let q = supabase.from('clients').select('*');
       if (dealerId && dealerId !== 'all') {
-        q = query(collection(db, path), where('dealerId', '==', dealerId));
+        q = q.eq('dealer_id', dealerId);
       }
-      const snapshot = await getDocs(q);
-      const clients = snapshot.docs.map(doc => ({ ...doc.data() as Client, id: doc.id }));
-      return clients.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true));
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []).map(row => fromDb('clients', row)).sort((a, b) => b.createdAt - a.createdAt);
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, path);
+      console.error('getClients error:', error);
       return [];
     }
   },
 
   createClient: async (data: Omit<Client, 'id' | 'createdAt'>, authorName: string, dealerId: string = 'main'): Promise<Client> => {
-    const id = Math.random().toString(36).substr(2, 9);
-    const path = `clients/${id}`;
-    const newClient: any = sanitize({
+    const id = `client_${Math.random().toString(36).substr(2, 9)}`;
+    const newClient: Client = {
       ...data,
       id,
-      createdAt: serverTimestamp(),
+      createdAt: Date.now(),
       dealerId
-    });
+    };
     try {
-      await setDoc(doc(db, 'clients', id), newClient);
+      const dbRow = toDb('clients', newClient);
+      const { error } = await supabase.from('clients').insert(dbRow);
+      if (error) throw error;
+      
       await firebaseService.createNotification({
         type: 'client_added',
         message: `New client added to registry: ${newClient.name}`,
@@ -997,96 +1227,84 @@ export const firebaseService = {
       });
       return newClient;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('createClient error:', error);
       throw error;
     }
   },
 
   updateClient: async (id: string, data: Partial<Client>, clientName: string, authorName: string) => {
-    const path = `clients/${id}`;
     try {
-      const clientRef = doc(db, 'clients', id);
-      const cleanData = sanitize(data);
-      await updateDoc(clientRef, cleanData);
+      const dbRow = toDb('clients', data);
+      const { error } = await supabase.from('clients').update(dbRow).eq('id', id);
+      if (error) throw error;
+      
       await firebaseService.createNotification({
         type: 'client_updated',
         message: `Client record modified: Updated info for "${clientName}"`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
+      console.error('updateClient error:', error);
     }
   },
 
   updateClientComplaints: async (originalUsername: string, updatedData: { name: string; username: string; number: string; mobileNumber: string; pkgDetails: string; userNearby: string; panelDetails: string; area: string }) => {
     try {
-      const q = query(collection(db, 'complaints'), where('customerUsername', '==', originalUsername));
-      const snapshot = await getDocs(q);
-      const batch = writeBatch(db);
-      
-      snapshot.docs.forEach((docSnap) => {
-        batch.update(docSnap.ref, {
-          customerName: updatedData.name,
-          customerUsername: updatedData.username,
-          number: updatedData.mobileNumber || updatedData.number || '',
-          pkgDetails: updatedData.pkgDetails || '',
-          userNearby: updatedData.userNearby || '',
-          panelDetails: updatedData.panelDetails || '',
-          area: updatedData.area || ''
-        });
-      });
-      
-      await batch.commit();
+      const payload = {
+        customer_name: updatedData.name,
+        customer_username: updatedData.username,
+        phone_number: updatedData.mobileNumber || updatedData.number || '',
+        pkg_details: updatedData.pkgDetails || '',
+        user_nearby: updatedData.userNearby || '',
+        panel_details: updatedData.panelDetails || '',
+        area: updatedData.area || ''
+      };
+      await supabase.from('complaints').update(payload).eq('customer_username', originalUsername);
     } catch (error) {
-      console.error("Failed to update complaints for edited client username:", originalUsername, error);
+      console.error("updateClientComplaints error:", error);
     }
   },
 
   deleteClient: async (id: string, clientName: string, authorName: string) => {
-    const path = `clients/${id}`;
     try {
-      await deleteDoc(doc(db, 'clients', id));
+      const { error } = await supabase.from('clients').delete().eq('id', id);
+      if (error) throw error;
+      
       await firebaseService.createNotification({
         type: 'client_deleted',
         message: `Client record removed: "${clientName}" purged from database`,
         authorName
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error('deleteClient error:', error);
     }
   },
 
   subscribeClients: (callback: (clients: Client[]) => void, dealerId?: string) => {
-    const path = 'clients';
-    let q = query(collection(db, path));
-    if (dealerId && dealerId !== 'all') {
-      q = query(collection(db, path), where('dealerId', '==', dealerId));
-    }
-    
-    return onSnapshot(q, (snapshot) => {
-      const clients = snapshot.docs.map(doc => ({ ...doc.data() as Client, id: doc.id }));
-      
-      // Robust in-memory sort to avoid composite index requirement
-      clients.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, true));
-      callback(clients);
-    }, (error) => {
-      if (auth.currentUser) {
-        handleFirestoreError(error, OperationType.GET, path);
-      }
-    });
+    return subscribeTable(
+      'clients',
+      (q) => {
+        if (dealerId && dealerId !== 'all') {
+          return q.eq('dealer_id', dealerId);
+        }
+        return q;
+      },
+      (clients) => {
+        callback(clients.sort((a, b) => b.createdAt - a.createdAt));
+      },
+      (row) => fromDb('clients', row)
+    );
   },
 
   // --- Service Monitor ---
   createMonitorTarget: async (domain: string, creator: UserProfile, label?: string, lat?: number, lng?: number): Promise<MonitorTarget> => {
     const id = `target_${Math.random().toString(36).substr(2, 9)}`;
-    const path = `monitor/${id}`;
     const tenantId = firebaseService.getTenantId(creator);
-
     const newTarget: MonitorTarget = {
       id,
       domain,
       createdBy: creator.uid,
-      createdAt: serverTimestamp(),
+      createdAt: Date.now(),
       dealerId: tenantId,
       ...(label ? { label } : {}),
       ...(lat !== undefined ? { lat } : {}),
@@ -1094,72 +1312,64 @@ export const firebaseService = {
     };
 
     try {
-      await setDoc(doc(db, 'monitor', id), newTarget);
+      const dbRow = toDb('monitor_targets', newTarget);
+      const { error } = await supabase.from('monitor_targets').insert(dbRow);
+      if (error) throw error;
       return newTarget;
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('createMonitorTarget error:', error);
       throw error;
     }
   },
 
   deleteMonitorTarget: async (id: string): Promise<void> => {
-    const path = `monitor/${id}`;
     try {
-      await deleteDoc(doc(db, 'monitor', id));
+      await supabase.from('monitor_targets').delete().eq('id', id);
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
+      console.error('deleteMonitorTarget error:', error);
     }
   },
 
   updateMonitorTarget: async (id: string, updates: Partial<MonitorTarget>): Promise<void> => {
-    const path = `monitor/${id}`;
     try {
-      await setDoc(doc(db, 'monitor', id), updates, { merge: true });
+      const dbRow = toDb('monitor_targets', updates);
+      await supabase.from('monitor_targets').update(dbRow).eq('id', id);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      console.error('updateMonitorTarget error:', error);
     }
   },
 
   subscribeMonitorTargets: (callback: (targets: MonitorTarget[]) => void, dealerId?: string) => {
-    const path = 'monitor';
-    return onSnapshot(collection(db, path), (snapshot) => {
-      let targets = snapshot.docs.map(doc => ({ ...doc.data() as MonitorTarget, id: doc.id }));
-      
-      if (dealerId) {
-        if (dealerId === 'main') {
-          targets = targets.filter(t => !t.dealerId || t.dealerId === 'main');
-        } else {
-          targets = targets.filter(t => t.dealerId === dealerId);
+    return subscribeTable(
+      'monitor_targets',
+      (q) => q,
+      (targets) => {
+        let filtered = targets;
+        if (dealerId) {
+          if (dealerId === 'main') {
+            filtered = targets.filter(t => !t.dealerId || t.dealerId === 'main');
+          } else {
+            filtered = targets.filter(t => t.dealerId === dealerId);
+          }
         }
-      }
-      
-      targets.sort((a, b) => firebaseService.compareTimestamps(a.createdAt, b.createdAt, false));
-      callback(targets);
-    }, (error) => {
-      if (auth.currentUser) {
-        handleFirestoreError(error, OperationType.LIST, path);
-      }
-    });
+        callback(filtered.sort((a, b) => a.createdAt - b.createdAt));
+      },
+      (row) => fromDb('monitor_targets', row)
+    );
   },
 
-  // --- A to Z Local System Backup and Restore ---
+  // --- Local system backup / restore --
   getFullSystemBackup: async (exportedBy: string): Promise<any> => {
     try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const complaintsSnap = await getDocs(collection(db, 'complaints'));
-      const clientsSnap = await getDocs(collection(db, 'clients'));
-      const notificationsSnap = await getDocs(collection(db, 'notifications'));
-      const billingSnap = await getDocs(collection(db, 'billing_months'));
-      const configSnap = await getDoc(doc(db, 'config', 'app'));
-      const brandingSnap = await getDoc(doc(db, 'config', 'branding'));
-
-      const users = usersSnap.docs.map(d => ({ ...d.data(), id: d.id }));
-      const complaints = complaintsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
-      const clients = clientsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
-      const notifications = notificationsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
-      const billing = billingSnap.docs.map(d => ({ ...d.data(), id: d.id }));
-      const config = configSnap.exists() ? configSnap.data() : {};
-      const branding = brandingSnap.exists() ? brandingSnap.data() : {};
+      const usersSnap = await supabase.from('users').select('*');
+      const complaintsSnap = await supabase.from('complaints').select('*');
+      const clientsSnap = await supabase.from('clients').select('*');
+      const notificationsSnap = await supabase.from('notifications').select('*');
+      
+      const resUsers = (usersSnap.data || []).map(r => fromDb('users', r));
+      const resComplaints = (complaintsSnap.data || []).map(r => fromDb('complaints', r));
+      const resClients = (clientsSnap.data || []).map(r => fromDb('clients', r));
+      const resNotifications = (notificationsSnap.data || []).map(r => fromDb('notifications', r));
 
       return {
         version: "2.0-full",
@@ -1169,280 +1379,217 @@ export const firebaseService = {
           exportedBy: exportedBy || "Administrator"
         },
         data: {
-          users,
-          complaints,
-          clients,
-          notifications,
-          billing,
-          config,
-          branding
+          users: resUsers,
+          complaints: resComplaints,
+          clients: resClients,
+          notifications: resNotifications,
+          billing: [],
+          config: {},
+          branding: {}
         }
       };
     } catch (error) {
-      console.error("Failed to generate full system backup:", error);
+      console.error("Failed to generate system backup:", error);
       throw error;
     }
   },
 
   restoreFullSystemBackup: async (backupPkg: any, authorName: string): Promise<void> => {
     if (!backupPkg || backupPkg.version !== "2.0-full" || !backupPkg.data) {
-      throw new Error("Invalid or incompatible backup file format. Must be a full system panel backup.");
+      throw new Error("Invalid format.");
     }
-
-    const { users = [], complaints = [], clients = [], notifications = [], billing = [], config = {}, branding = {} } = backupPkg.data;
-
+    const { users = [], complaints = [], clients = [], notifications = [] } = backupPkg.data;
     try {
-      // 1. Purge all current collections to guarantee strict identity replacement
-      const collectionsToPurge = ['users', 'complaints', 'clients', 'notifications', 'billing_months'];
-      
-      for (const collName of collectionsToPurge) {
-        const snapshot = await getDocs(collection(db, collName));
-        const docs = snapshot.docs;
-        
-        for (let i = 0; i < docs.length; i += 400) {
-          const batch = writeBatch(db);
-          const chunk = docs.slice(i, i + 400);
-          chunk.forEach(d => batch.delete(d.ref));
-          await batch.commit();
-        }
+      for (const u of users) {
+        await supabase.from('users').upsert(toDb('users', u));
       }
-
-      // 2. Insert new data in batches of 400
-      // Users
-      for (let i = 0; i < users.length; i += 400) {
-        const batch = writeBatch(db);
-        const chunk = users.slice(i, i + 400);
-        chunk.forEach(u => {
-          const uId = u.id || u.uid;
-          if (uId) {
-            const cleanUser = { ...u };
-            delete cleanUser.id; // standard doc id key cleanup
-            batch.set(doc(db, 'users', uId), cleanUser);
-          }
-        });
-        await batch.commit();
+      for (const c of complaints) {
+        await supabase.from('complaints').upsert(toDb('complaints', c));
       }
-
-      // Complaints
-      for (let i = 0; i < complaints.length; i += 400) {
-        const batch = writeBatch(db);
-        const chunk = complaints.slice(i, i + 400);
-        chunk.forEach(c => {
-          const cId = c.id;
-          if (cId) {
-            const cleanComplaint = { ...c };
-            delete cleanComplaint.id;
-            batch.set(doc(db, 'complaints', cId), cleanComplaint);
-          }
-        });
-        await batch.commit();
+      for (const cl of clients) {
+        await supabase.from('clients').upsert(toDb('clients', cl));
       }
-
-      // Clients
-      for (let i = 0; i < clients.length; i += 400) {
-        const batch = writeBatch(db);
-        const chunk = clients.slice(i, i + 400);
-        chunk.forEach(cl => {
-          const clId = cl.id;
-          if (clId) {
-            const cleanClient = { ...cl };
-            delete cleanClient.id;
-            batch.set(doc(db, 'clients', clId), cleanClient);
-          }
-        });
-        await batch.commit();
+      for (const n of notifications) {
+        await supabase.from('notifications').upsert(toDb('notifications', n));
       }
-
-      // Notifications
-      for (let i = 0; i < notifications.length; i += 400) {
-        const batch = writeBatch(db);
-        const chunk = notifications.slice(i, i + 400);
-        chunk.forEach(n => {
-          const nId = n.id;
-          if (nId) {
-            const cleanNotif = { ...n };
-            delete cleanNotif.id;
-            batch.set(doc(db, 'notifications', nId), cleanNotif);
-          }
-        });
-        await batch.commit();
-      }
-
-      // Billing Months
-      for (let i = 0; i < billing.length; i += 400) {
-        const batch = writeBatch(db);
-        const chunk = billing.slice(i, i + 400);
-        chunk.forEach(b => {
-          const bId = b.id;
-          if (bId) {
-            const cleanBill = { ...b };
-            delete cleanBill.id;
-            batch.set(doc(db, 'billing_months', bId), cleanBill);
-          }
-        });
-        await batch.commit();
-      }
-
-      // 3. Set config/app config/branding
-      if (config && Object.keys(config).length > 0) {
-        await setDoc(doc(db, 'config', 'app'), config);
-      }
-      if (branding && Object.keys(branding).length > 0) {
-        await setDoc(doc(db, 'config', 'branding'), branding);
-      }
-
-      // Create a nice system notification marking successful premium backup recovery
-      await setDoc(doc(db, 'notifications', `notif_restore_${Date.now()}`), {
-        type: 'config_updated',
-        message: `Enterprise System restored successfully by ${authorName} from backup dated ${new Date(backupPkg.exportedAt || Date.now()).toLocaleString()}`,
-        authorName,
-        createdAt: serverTimestamp()
-      });
-
-    } catch (error) {
-      console.error("Critical Backup Restore Failure:", error);
-      throw error;
+    } catch (e) {
+      console.error("Failed backup restore:", e);
+      throw e;
     }
   },
 
   // --- Billing Months Methods ---
   subscribeBillingMonths: (callback: (months: any[]) => void) => {
-    return onSnapshot(collection(db, 'billing_months'), (snapshot) => {
-      const months = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      }));
-      // Sort months descending or ascending nicely based on name
-      callback(months);
-    }, (error) => {
-      console.error("Failed to subscribe billing months:", error);
-    });
+    const fetchBillingMonths = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('branding_config')
+          .select('*')
+          .like('id', 'billing_month_%');
+        
+        if (!error && data) {
+          const months = data.map(item => {
+            try {
+              const parsedRows = JSON.parse(item.dashboard_subtext || '[]');
+              return {
+                id: item.id.replace('billing_month_', ''),
+                rows: parsedRows,
+                createdAt: item.updated_at || Date.now(),
+                updatedAt: item.updated_at || Date.now(),
+                createdBy: item.updated_by || 'admin',
+                updatedBy: item.updated_by || 'admin'
+              };
+            } catch (e) {
+              return null;
+            }
+          }).filter(m => m !== null);
+          callback(months);
+        } else {
+          callback([]);
+        }
+      } catch (e) {
+        console.error("Failed to fetch billing months:", e);
+        callback([]);
+      }
+    };
+
+    fetchBillingMonths();
+
+    const billingMonthsChannelId = `billing_months_realtime_${Math.random().toString(36).substring(2, 11)}`;
+    const channel = supabase
+      .channel(billingMonthsChannelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => {
+        fetchBillingMonths();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   },
 
   createBillingMonth: async (monthId: string, rows: any[], createdBy: string) => {
-    const docRef = doc(db, 'billing_months', monthId);
-    await setDoc(docRef, {
-      id: monthId,
-      rows: rows,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      createdBy: createdBy,
-      updatedBy: createdBy
-    });
+    const docId = `billing_month_${monthId}`;
+    const payload = {
+      id: docId,
+      dashboard_subtext: JSON.stringify(rows),
+      updated_at: Date.now(),
+      updated_by: createdBy
+    };
+    await supabase.from('branding_config').upsert(payload);
   },
 
   saveBillingMonth: async (monthId: string, rows: any[], updatedBy: string) => {
-    const docRef = doc(db, 'billing_months', monthId);
-    await setDoc(docRef, {
-      rows: rows,
-      updatedAt: Date.now(),
-      updatedBy: updatedBy
-    }, { merge: true });
+    const docId = `billing_month_${monthId}`;
+    const payload = {
+      id: docId,
+      dashboard_subtext: JSON.stringify(rows),
+      updated_at: Date.now(),
+      updated_by: updatedBy
+    };
+    await supabase.from('branding_config').upsert(payload);
   },
 
   deleteBillingMonth: async (monthId: string) => {
-    const docRef = doc(db, 'billing_months', monthId);
-    await deleteDoc(docRef);
+    const docId = `billing_month_${monthId}`;
+    await supabase.from('branding_config').delete().eq('id', docId);
   },
 
-  // --- Dedicated Unbreakable Inline Translations storage ---
+  // --- Inline Translations ---
   subscribeTranslations: (callback: (translations: Record<string, string> | null) => void) => {
-    const docRef = doc(db, 'config', 'translations');
-    return onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const payload = snapshot.data();
-        if (payload && typeof payload.dataJson === 'string') {
+    const fetchTranslations = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('branding_config')
+          .select('*')
+          .eq('id', 'translations')
+          .maybeSingle();
+        
+        if (!error && data && data.dashboard_subtext) {
           try {
-            callback(JSON.parse(payload.dataJson));
+            callback(JSON.parse(data.dashboard_subtext));
             return;
           } catch (e) {
-            console.error("Failed to parse of dataJson translations:", e);
+            console.error("Translations JSON parse failed:", e);
           }
         }
-        callback(payload as Record<string, string>);
-      } else {
+        callback(null);
+      } catch (e) {
         callback(null);
       }
-    }, (error) => {
-      console.error("Failed to subscribe inline translations:", error);
-    });
+    };
+
+    fetchTranslations();
+
+    const translationsChannelId = `translations_realtime_${Math.random().toString(36).substring(2, 11)}`;
+    const channel = supabase
+      .channel(translationsChannelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.translations' }, () => {
+        fetchTranslations();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   },
 
   updateTranslations: async (translations: Record<string, string>) => {
-    const docRef = doc(db, 'config', 'translations');
     const payload = {
-      dataJson: JSON.stringify(translations),
-      updatedAt: Date.now()
+      id: 'translations',
+      dashboard_subtext: JSON.stringify(translations),
+      updated_at: Date.now()
     };
-    await setDoc(docRef, payload);
+    await supabase.from('branding_config').upsert(payload);
   },
 
-  // --- Recovery Ledger Sheets Database Methods ---
+  // --- Recovery Ledger Sheets ---
   saveLedgerSheet: async (sheet: any) => {
     try {
       const sheetId = sheet.id || `sheet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const docRef = doc(db, 'ledger_sheets', sheetId);
       const dataToSave = {
         ...sheet,
         id: sheetId,
         createdAt: sheet.createdAt || Date.now()
       };
-      await setDoc(docRef, dataToSave);
+      const dbRow = toDb('ledger_sheets', dataToSave);
+      const { error } = await supabase.from('ledger_sheets').upsert(dbRow);
+      if (error) throw error;
       return dataToSave;
     } catch (e) {
-      handleFirestoreError(e, OperationType.WRITE, 'ledger_sheets');
+      console.error("saveLedgerSheet error:", e);
     }
   },
 
   subscribeLedgerSheets: (callback: (sheets: any[]) => void, dealerId?: string) => {
-    try {
-      let q = collection(db, 'ledger_sheets');
-      let finalQuery: any = q;
-      if (dealerId) {
-        finalQuery = query(q, where('dealerId', '==', dealerId), orderBy('createdAt', 'desc'));
-      } else {
-        finalQuery = query(q, orderBy('createdAt', 'desc'));
-      }
-      return onSnapshot(finalQuery, (snapshot) => {
-        const sheets = snapshot.docs.map(doc => ({
-          ...doc.data(),
-          id: doc.id
-        }));
-        callback(sheets);
-      }, (error) => {
-        console.error("Failed to subscribe ledger sheets collection:", error);
-      });
-    } catch (e) {
-      console.error("Failed to subscribe ledger sheets:", e);
-      return () => {};
-    }
+    return subscribeTable(
+      'ledger_sheets',
+      (q) => {
+        if (dealerId) {
+          return q.eq('dealer_id', dealerId);
+        }
+        return q;
+      },
+      (sheets) => {
+        callback(sheets.sort((a, b) => b.createdAt - a.createdAt));
+      },
+      (row) => fromDb('ledger_sheets', row)
+    );
   },
 
   deleteLedgerSheet: async (sheetId: string) => {
     try {
-      const docRef = doc(db, 'ledger_sheets', sheetId);
-      await deleteDoc(docRef);
+      await supabase.from('ledger_sheets').delete().eq('id', sheetId);
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `ledger_sheets/${sheetId}`);
+      console.error("deleteLedgerSheet error:", e);
     }
   },
 
   terminateAllLedgerSheets: async (dealerId: string) => {
     try {
-      let q = collection(db, 'ledger_sheets');
-      let finalQuery: any = q;
-      if (dealerId) {
-        finalQuery = query(q, where('dealerId', '==', dealerId));
-      }
-      const snapshot = await getDocs(finalQuery);
-      const batch = writeBatch(db);
-      snapshot.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-      });
-      await batch.commit();
+      await supabase.from('ledger_sheets').delete().eq('dealer_id', dealerId);
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, 'ledger_sheets_terminate_all');
+      console.error("terminateAllLedgerSheets error:", e);
     }
   }
 };
-

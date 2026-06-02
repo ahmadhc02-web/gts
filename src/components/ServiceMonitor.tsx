@@ -4,7 +4,6 @@ import { X, Activity, RefreshCw, Plus, Trash2, Wifi, TrendingUp } from 'lucide-r
 import { LineChart, Line, AreaChart, Area, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 import { cn } from '../lib/utils';
 import { firebaseService } from '../lib/firebaseService';
-import { auth } from '../lib/firebase';
 import { MonitorTarget, UserProfile } from '../types';
 import { toast } from 'sonner';
 

@@ -20,6 +20,7 @@ import FiberLoading from './FiberLoading';
 import EntrySheet from './EntrySheet';
 import BatchPrintModal from './BatchPrintModal';
 import GmailPanel from './GmailPanel';
+import { extractFirebaseCollections, generateSupabaseMigrationSQL, pushCollectionsToSupabase, getSupabaseClient } from '../lib/supabaseService';
 
 interface AdminPanelProps {
   complaints: Complaint[];
@@ -148,6 +149,14 @@ export default function AdminPanel({
   const [uploadedBackupData, setUploadedBackupData] = useState<any | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
+  // --- Supabase Client Integration and live Migration Console state ---
+  const [supabaseUrl, setSupabaseUrl] = useState(() => localStorage.getItem('gts_supabase_url') || '');
+  const [supabaseServiceKey, setSupabaseServiceKey] = useState(() => localStorage.getItem('gts_supabase_service_key') || '');
+  const [isExportingSql, setIsExportingSql] = useState(false);
+  const [isMigratingLive, setIsMigratingLive] = useState(false);
+  const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
+  const [migratedStatusSummary, setMigratedStatusSummary] = useState<{ col: string; count: number }[]>([]);
+
   const handleGenerateLocalBackup = async () => {
     setIsGeneratingBackup(true);
     try {
@@ -275,6 +284,112 @@ export default function AdminPanel({
     }
   };
 
+  const handleDownloadSupabaseSQL = async () => {
+    setIsExportingSql(true);
+    const toastId = toast.loading("Compiling Supabase SQL Migration Package...");
+    try {
+      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Starting extraction of Firebase Firestore collections...`]);
+      const data = await extractFirebaseCollections((col, count) => {
+        if (count === -1) {
+          setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Querying collection: ${col}...`]);
+        } else {
+          setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Extracted ${count} records from schema collection: ${col}.`]);
+        }
+      });
+
+      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Structuring SQL tables and security constraints...`]);
+      const sqlContent = generateSupabaseMigrationSQL(data);
+      
+      const blob = new Blob([sqlContent], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `supabase_migration_${new Date().toISOString().slice(0, 10)}.sql`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Successfully exported and triggered browser download!`]);
+      toast.success("SQL migration file created successfully!", {
+        id: toastId,
+        description: "Copy-paste this file directly in Supabase SQL Editor."
+      });
+    } catch (err: any) {
+      console.error(err);
+      setMigrationLogs(prev => [...prev, `[ERROR] SQL generation failed: ${err.message || err}`]);
+      toast.error("SQL Extraction Failed", {
+        id: toastId,
+        description: getCleanErrorMessage(err)
+      });
+    } finally {
+      setIsExportingSql(false);
+    }
+  };
+
+  const handleLiveSupabaseMigration = async () => {
+    if (!supabaseUrl || !supabaseServiceKey) {
+      toast.error("Required parameter missing", {
+        description: "Please specify both Supabase URL & Service Role key."
+      });
+      return;
+    }
+
+    // Save fields in cache
+    localStorage.setItem('gts_supabase_url', supabaseUrl);
+    localStorage.setItem('gts_supabase_service_key', supabaseServiceKey);
+
+    setIsMigratingLive(true);
+    setMigrationLogs([]);
+    const toastId = toast.loading("Executing live Supabase synchronization...");
+
+    try {
+      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Instantiating Supabase client object...`]);
+      const client = getSupabaseClient({ url: supabaseUrl, serviceKey: supabaseServiceKey });
+      if (!client) {
+        throw new Error("Unable to construct Supabase Client instance.");
+      }
+
+      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Fetching all document data from Firestore collections...`]);
+      const data = await extractFirebaseCollections((col, count) => {
+        if (count === -1) {
+          setMigrationLogs(prev => [...prev, `[INFO] Parsing Firebase records in: ${col}`]);
+        } else {
+          setMigrationLogs(prev => [...prev, `[INFO] Completed: fetched ${count} records from ${col}`]);
+        }
+      });
+
+      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Initializing live Supabase REST API bulk write pipeline...`]);
+      
+      await pushCollectionsToSupabase(client, data, (msg, status) => {
+        const time = new Date().toLocaleTimeString();
+        if (status === 'success') {
+          setMigrationLogs(prev => [...prev, `[SUCCESS ${time}] ${msg}`]);
+        } else if (status === 'error') {
+          setMigrationLogs(prev => [...prev, `[ERROR ${time}] ${msg}`]);
+        } else {
+          setMigrationLogs(prev => [...prev, `[${time}] ${msg}`]);
+        }
+      });
+
+      toast.success("Supabase live direct sync successfully executed!", {
+        id: toastId,
+        description: "Check your Supabase console to view your imported datasets."
+      });
+    } catch (err: any) {
+      console.error(err);
+      const errMsg = getCleanErrorMessage(err);
+      setMigrationLogs(prev => [...prev, `[FATAL] Direct update failed: ${errMsg}`]);
+      toast.error("Migration Aborted", {
+        id: toastId,
+        description: errMsg
+      });
+    } finally {
+      setIsMigratingLive(false);
+    }
+  };
+
+
   // Filter state controlled by status tiles
   const [forcedStatus, setForcedStatus] = useState<ComplaintStatus | 'all'>('all');
   const [forcedPriority, setForcedPriority] = useState<ComplaintPriority | 'all'>('all');
@@ -361,6 +476,19 @@ export default function AdminPanel({
     }, tenantId);
     return () => unsubscribe();
   }, [currentUser]);
+
+  useEffect(() => {
+    const handleClientsUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setMasterClients(customEvent.detail);
+      }
+    };
+    window.addEventListener('supabase-clients-updated', handleClientsUpdated);
+    return () => {
+      window.removeEventListener('supabase-clients-updated', handleClientsUpdated);
+    };
+  }, []);
 
   // Real-time sub for billing months (subscribes only once)
   useEffect(() => {
@@ -2845,6 +2973,122 @@ export default function AdminPanel({
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Supabase Link & Live Migration Console */}
+            <div className={cn("p-8 sm:p-12 mt-6", getCardStyle(branding.cardStyle))}>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-8 pb-8 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-5">
+                  <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500">
+                    <CloudUpload size={32} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-100">Supabase Migration & Link</h3>
+                    <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">Direct Browser Database Switcher Matrix</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={handleDownloadSupabaseSQL}
+                    disabled={isExportingSql || isMigratingLive}
+                    className="inline-flex items-center justify-center gap-2.5 px-6 py-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 disabled:opacity-50 shadow-sm"
+                  >
+                    {isExportingSql ? 'Generating SQL...' : 'Download Supabase SQL Script'}
+                    <HardDriveDownload size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                <div className="space-y-6">
+                  <h4 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-blue-500">
+                    <Info size={16} />
+                    Live Browser Migration
+                  </h4>
+                  <p className="text-slate-500 dark:text-slate-400 font-medium text-sm leading-relaxed">
+                    By entering your Supabase API credentials below, our frontend migration engine will fetch all current collections directly and sync/upload them automatically to your PostgreSQL public schema in parallel batches.
+                  </p>
+
+                  <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl space-y-2">
+                    <h5 className="text-[11px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                      <Zap size={12} className="text-amber-400" />
+                      Automatic Bypass Setup
+                    </h5>
+                    <p className="text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">
+                      The generated SQL script provisions tables and temporarily activates relaxed Row Level Security (RLS) bypass rules so your frontend can communicate with Supabase seamlessly without requiring server proxies.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Supabase Project URL
+                    </label>
+                    <input
+                      type="text"
+                      value={supabaseUrl}
+                      onChange={(e) => setSupabaseUrl(e.target.value)}
+                      placeholder="https://your-project.supabase.co"
+                      style={{ color: 'inherit' }}
+                      className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all placeholder:text-slate-400"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Supabase Service Role API Key (service_role)
+                    </label>
+                    <input
+                      type="password"
+                      value={supabaseServiceKey}
+                      onChange={(e) => setSupabaseServiceKey(e.target.value)}
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      style={{ color: 'inherit' }}
+                      className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all placeholder:text-slate-400"
+                    />
+                    <p className="text-[9px] font-semibold text-slate-400/85">
+                      💡 Use the <strong className="text-slate-500 dark:text-slate-300">service_role</strong> secret API key instead of anon key to bypass Postgres rate limits/write constraints.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleLiveSupabaseMigration}
+                    disabled={isMigratingLive || isExportingSql || !supabaseUrl || !supabaseServiceKey}
+                    className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-lg shadow-blue-500/10 active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {isMigratingLive ? 'Synchronizing Datasets...' : 'EXECUTE DIRECT API MIGRATION'}
+                    <Zap size={14} className="text-amber-400 animate-pulse" />
+                  </button>
+                </div>
+              </div>
+
+              {migrationLogs.length > 0 && (
+                <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                      Migration Console Terminal Logs
+                    </span>
+                    <button
+                      onClick={() => setMigrationLogs([])}
+                      className="text-[9px] font-black uppercase tracking-widest text-rose-500 shrink-0 hover:underline cursor-pointer"
+                    >
+                      Clear Logs
+                    </button>
+                  </div>
+                  <div className="font-mono text-[11px] text-emerald-400 bg-slate-950 p-5 rounded-xl max-h-60 overflow-y-auto space-y-1 border border-slate-900 shadow-inner scrollbar-thin">
+                    {migrationLogs.map((log, index) => (
+                      <div key={index} className="leading-relaxed whitespace-pre-wrap font-mono">
+                        {log}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

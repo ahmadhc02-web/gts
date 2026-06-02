@@ -1,8 +1,8 @@
 // src/services/googleSheetsService.ts
-import { auth } from '../lib/firebase';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { safeStringify } from '../lib/utils';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
+import { supabase } from '../../supabaseClient';
+import { GoogleAuthProvider } from 'firebase/auth';
 
 const getApiUrl = (endpoint: string): string => {
   // Always use relative path or resolve from current origin to ensure compatibility across Dev, Pre-prod, and exported containers.
@@ -59,110 +59,135 @@ provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
 export const googleSheetsService = {
   syncConfigToFirestore: async (updates: any) => {
     try {
-      const { db } = await import('../lib/firebase');
-      const { doc, setDoc, getDoc } = await import('firebase/firestore');
-      const docRef = doc(db, 'config', 'google_sheets');
-      const snap = await getDoc(docRef);
-      const existing = snap.exists() ? snap.data() : {};
-      await setDoc(docRef, {
-        ...existing,
-        ...updates,
-        updatedAt: Date.now()
-      });
+      const { data, error: fetchErr } = await supabase
+        .from('branding_config')
+        .select('*')
+        .eq('id', 'google_sheets')
+        .maybeSingle();
+
+      let existing = {};
+      if (!fetchErr && data && data.dashboard_subtext) {
+        try {
+          existing = JSON.parse(data.dashboard_subtext);
+        } catch (e) {}
+      }
+
+      const merged = { ...existing, ...updates, updatedAt: Date.now() };
+
+      const payload = {
+        id: 'google_sheets',
+        dashboard_subtext: JSON.stringify(merged),
+        updated_at: Date.now()
+      };
+
+      await supabase.from('branding_config').upsert(payload);
     } catch (e) {
-      console.warn("Failed syncing Google Sheets config to Firestore or permission denied:", e);
+      console.warn("Failed syncing Google Sheets config to Supabase:", e);
     }
   },
 
   loadConfigFromFirestore: async () => {
     try {
-      const { db } = await import('../lib/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-      const docRef = doc(db, 'config', 'google_sheets');
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.tokens) {
-          configCache.tokens = data.tokens;
-          safeLocalStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
-          window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: data.tokens }));
+      const { data, error } = await supabase
+        .from('branding_config')
+        .select('*')
+        .eq('id', 'google_sheets')
+        .maybeSingle();
+
+      if (!error && data && data.dashboard_subtext) {
+        const parsed = JSON.parse(data.dashboard_subtext);
+        if (parsed.tokens) {
+          configCache.tokens = parsed.tokens;
+          safeLocalStorage.setItem(TOKEN_KEY, safeStringify(parsed.tokens));
+          window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: parsed.tokens }));
         }
-        if (data.spreadsheetId) {
-          configCache.spreadsheetId = data.spreadsheetId;
-          safeLocalStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
+        if (parsed.spreadsheetId) {
+          configCache.spreadsheetId = parsed.spreadsheetId;
+          safeLocalStorage.setItem(SHEET_ID_KEY, parsed.spreadsheetId);
         }
-        if (data.sheetName) {
-          configCache.sheetName = data.sheetName;
-          safeLocalStorage.setItem(SHEET_NAME_KEY, data.sheetName);
+        if (parsed.sheetName) {
+          configCache.sheetName = parsed.sheetName;
+          safeLocalStorage.setItem(SHEET_NAME_KEY, parsed.sheetName);
         }
-        if (data.sheetRange) {
-          configCache.sheetRange = data.sheetRange;
-          safeLocalStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
+        if (parsed.sheetRange) {
+          configCache.sheetRange = parsed.sheetRange;
+          safeLocalStorage.setItem(SHEET_RANGE_KEY, parsed.sheetRange);
         }
-        return data;
+        return parsed;
       }
     } catch (e) {
-      console.warn("Failed loading Google Sheets config from Firestore:", e);
+      console.warn("Failed loading Google Sheets config from Supabase:", e);
     }
     return null;
   },
 
   subscribeGoogleSheetsConfig: (callback: (data: any) => void) => {
-    let unsubscribe = () => {};
-    // Dynamic import to stay clean and modular
-    import('../lib/firebase').then(({ db }) => {
-      import('firebase/firestore').then(({ doc, onSnapshot }) => {
-        const docRef = doc(db, 'config', 'google_sheets');
-        unsubscribe = onSnapshot(docRef, (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            
-            // Update the live in-memory global configCache
-            if (data.tokens) {
-              configCache.tokens = data.tokens;
-              safeLocalStorage.setItem(TOKEN_KEY, safeStringify(data.tokens));
-            } else {
-              configCache.tokens = null;
-              safeLocalStorage.removeItem(TOKEN_KEY);
-            }
-            
-            if (data.spreadsheetId) {
-              configCache.spreadsheetId = data.spreadsheetId;
-              safeLocalStorage.setItem(SHEET_ID_KEY, data.spreadsheetId);
-            } else {
-              configCache.spreadsheetId = null;
-              safeLocalStorage.removeItem(SHEET_ID_KEY);
-            }
-            
-            if (data.sheetName) {
-              configCache.sheetName = data.sheetName;
-              safeLocalStorage.setItem(SHEET_NAME_KEY, data.sheetName);
-            } else {
-              configCache.sheetName = 'Sheet1';
-              safeLocalStorage.removeItem(SHEET_NAME_KEY);
-            }
-            
-            if (data.sheetRange) {
-              configCache.sheetRange = data.sheetRange;
-              safeLocalStorage.setItem(SHEET_RANGE_KEY, data.sheetRange);
-            } else {
-              configCache.sheetRange = 'A1';
-              safeLocalStorage.removeItem(SHEET_RANGE_KEY);
-            }
+    const fetchConfig = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('branding_config')
+          .select('*')
+          .eq('id', 'google_sheets')
+          .maybeSingle();
 
-            // Immediately dispatch the local auth changed state so UI elements re-render with active synchronization badge
-            window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: data.tokens || null }));
-            callback(data);
+        if (!error && data && data.dashboard_subtext) {
+          const parsed = JSON.parse(data.dashboard_subtext);
+          
+          if (parsed.tokens) {
+            configCache.tokens = parsed.tokens;
+            safeLocalStorage.setItem(TOKEN_KEY, safeStringify(parsed.tokens));
           } else {
-            callback(null);
+            configCache.tokens = null;
+            safeLocalStorage.removeItem(TOKEN_KEY);
           }
-        }, (error) => {
-          console.warn("Error subscribing to Google Sheets config:", error);
-        });
-      }).catch(err => console.warn("Failed loading firestore inside subscription:", err));
-    }).catch(err => console.warn("Failed loading firebase inside subscription:", err));
+          
+          if (parsed.spreadsheetId) {
+            configCache.spreadsheetId = parsed.spreadsheetId;
+            safeLocalStorage.setItem(SHEET_ID_KEY, parsed.spreadsheetId);
+          } else {
+            configCache.spreadsheetId = null;
+            safeLocalStorage.removeItem(SHEET_ID_KEY);
+          }
+          
+          if (parsed.sheetName) {
+            configCache.sheetName = parsed.sheetName;
+            safeLocalStorage.setItem(SHEET_NAME_KEY, parsed.sheetName);
+          } else {
+            configCache.sheetName = 'Sheet1';
+            safeLocalStorage.removeItem(SHEET_NAME_KEY);
+          }
+          
+          if (parsed.sheetRange) {
+            configCache.sheetRange = parsed.sheetRange;
+            safeLocalStorage.setItem(SHEET_RANGE_KEY, parsed.sheetRange);
+          } else {
+            configCache.sheetRange = 'A1';
+            safeLocalStorage.removeItem(SHEET_RANGE_KEY);
+          }
 
-    return () => unsubscribe();
+          window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: parsed.tokens || null }));
+          callback(parsed);
+        } else {
+          callback(null);
+        }
+      } catch (e) {
+        console.warn("Failed loading Supabase inside subscription:", e);
+      }
+    };
+
+    fetchConfig();
+
+    const channelId = `google_sheets_config_realtime_${Math.random().toString(36).substring(2, 11)}`;
+    const channel = supabase
+      .channel(channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.google_sheets' }, () => {
+        fetchConfig();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   },
 
   getTokens: (): GoogleTokens | null => {
@@ -276,27 +301,35 @@ export const googleSheetsService = {
           console.warn("Standard popup blocked or failed:", popupErr);
         }
 
-        // Active Firestore synchronization listener so that even if the popup was opened in Chrome/Brave/Edge or externally,
-        // we detect the new tokens written to Firestore immediately!
-        let unsubFirestore = () => {};
+        // Active Supabase realtime synchronization listener so that even if the popup was opened in Chrome/Brave/Edge or externally,
+        // we detect the new tokens written to Supabase immediately!
+        let unsubSupabase = () => {};
         try {
-          const { db } = await import('../lib/firebase');
-          const { doc, onSnapshot } = await import('firebase/firestore');
-          const docRef = doc(db, 'config', 'google_sheets');
-          unsubFirestore = onSnapshot(docRef, (snap) => {
-            if (snap.exists()) {
-              const data = snap.data();
-              if (data && data.tokens && data.updatedAt && data.updatedAt >= startTime - 15000) {
-                console.log("googleSheetsService: Detected fresh tokens written to Firestore in real-time!");
-                googleSheetsService.saveTokens(data.tokens);
-                cleanup();
-                try { if (popup && !popup.closed) popup.close(); } catch (e) {}
-                resolve(data.tokens);
+          const channelId = `google_sheets_auth_realtime_${Math.random().toString(36).substring(2, 11)}`;
+          const channel = supabase
+            .channel(channelId)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.google_sheets' }, (payload) => {
+              const dataRow = payload.new as any;
+              if (dataRow && dataRow.dashboard_subtext) {
+                try {
+                  const data = JSON.parse(dataRow.dashboard_subtext);
+                  if (data && data.tokens && data.updatedAt && data.updatedAt >= startTime - 15000) {
+                    console.log("googleSheetsService: Detected fresh tokens written to Supabase in real-time!");
+                    googleSheetsService.saveTokens(data.tokens);
+                    cleanup();
+                    try { if (popup && !popup.closed) popup.close(); } catch (e) {}
+                    resolve(data.tokens);
+                  }
+                } catch (pe) {}
               }
-            }
-          });
+            })
+            .subscribe();
+
+          unsubSupabase = () => {
+            supabase.removeChannel(channel);
+          };
         } catch (fsErr) {
-          console.warn("Could not register live Firestore oauth listener fallback:", fsErr);
+          console.warn("Could not register live Supabase oauth listener fallback:", fsErr);
         }
 
         const messageHandler = (event: MessageEvent) => {
@@ -326,7 +359,7 @@ export const googleSheetsService = {
           } catch (e) {}
 
           if (popup && popup.closed) {
-            // Wait 2 more seconds in case Firestore pushes the fresh tokens or directTokensStr is arriving
+            // Wait 2 more seconds in case Supabase pushes the fresh tokens or directTokensStr is arriving
             setTimeout(() => {
               try {
                 const directTokensStr = safeLocalStorage.getItem('gts_sync_google_tokens_direct');
@@ -346,7 +379,7 @@ export const googleSheetsService = {
         const cleanup = () => {
           window.removeEventListener('message', messageHandler);
           clearInterval(checkTimer);
-          unsubFirestore();
+          unsubSupabase();
         };
 
         window.addEventListener('message', messageHandler);
@@ -358,66 +391,8 @@ export const googleSheetsService = {
   },
 
   initiateFirebaseAuth: async (): Promise<GoogleTokens> => {
-    try {
-      console.log("Initiating Google connection via native Firebase Auth service...");
-      // Check if user is offline
-      if (!navigator.onLine) {
-        throw new Error("You are currently offline. Please connect to the internet first.");
-      }
-
-      // Configure provider with custom parameters for a smooth popup experience
-      const customProvider = new GoogleAuthProvider();
-      customProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
-      customProvider.addScope('https://www.googleapis.com/auth/drive.file');
-      customProvider.addScope('https://www.googleapis.com/auth/drive');
-      customProvider.addScope('https://www.googleapis.com/auth/gmail.send');
-      customProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
-      customProvider.setCustomParameters({
-        prompt: 'consent',
-        access_type: 'offline'
-      });
-
-      // Execute smooth native Firebase Sign-In popup with Google Provider
-      const result = await signInWithPopup(auth, customProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      
-      if (!credential || !credential.accessToken) {
-        throw new Error("Failed to retrieve Google Access Token from Firebase credentials.");
-      }
-      
-      // Calculate token expiry (typically 3600 seconds from now)
-      const expiry_date = Date.now() + 3590 * 1000;
-      
-      // Retrieve modern credentials tokens
-      const tokens: GoogleTokens = {
-        access_token: credential.accessToken,
-        refresh_token: (credential as any).refreshToken || undefined,
-        token_type: "Bearer",
-        expiry_date: expiry_date,
-        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly"
-      };
-      
-      googleSheetsService.saveTokens(tokens);
-      console.log("Firebase Google Sheets credentials retrieved and saved successfully!");
-      return tokens;
-    } catch (fbAuthError: any) {
-      console.error("Firebase Auth Google connection failed:", fbAuthError);
-      
-      let friendlyMessage = fbAuthError.message || "Google Sheets connection failed.";
-      
-      // Construct intuitive instructions for common iframe & environment blockers
-      if (fbAuthError.code === 'auth/popup-blocked') {
-        friendlyMessage = "Popup blocked. Please allow popups for this website/iframe to connect Google Sheets.";
-      } else if (fbAuthError.code === 'auth/popup-closed-by-user') {
-        friendlyMessage = "Auth window closed before completion. Please try again.";
-      } else if (window.self !== window.top) {
-        friendlyMessage = "This app is running in an iframe, which restricts popups. Please open the app directly in a new tab to authorize with Firebase!";
-      } else if (fbAuthError.code === 'auth/unauthorized-domain') {
-        friendlyMessage = `This domain is not authorized in your Firebase Console. Please add '${window.location.hostname}' to the Authorized Domains list in Firebase Auth Settings.`;
-      }
-      
-      throw new Error(friendlyMessage);
-    }
+    console.log("Redirecting to permanent server-side oauth gateway (Supabase system integration)...");
+    return googleSheetsService.initiateAuth();
   },
 
   appendComplaint: async (complaint: any) => {
@@ -618,45 +593,8 @@ export const googleSheetsService = {
   },
 
   initiateBackupAuth: async (): Promise<GoogleTokens> => {
-    try {
-      console.log("Initiating Google connection for SECOND/BACKUP account via dynamic Firebase Auth...");
-      if (!navigator.onLine) {
-        throw new Error("You are currently offline. Please connect to the internet first.");
-      }
-      const customProvider = new GoogleAuthProvider();
-      customProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
-      customProvider.addScope('https://www.googleapis.com/auth/drive.file');
-      customProvider.addScope('https://www.googleapis.com/auth/drive');
-      customProvider.addScope('https://www.googleapis.com/auth/gmail.send');
-      customProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
-      customProvider.setCustomParameters({
-        prompt: 'select_account',
-        access_type: 'offline'
-      });
-
-      const result = await signInWithPopup(auth, customProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      
-      if (!credential || !credential.accessToken) {
-        throw new Error("Failed to retrieve Google Access Token for secondary account.");
-      }
-      
-      const expiry_date = Date.now() + 3590 * 1000;
-      const tokens: GoogleTokens = {
-        access_token: credential.accessToken,
-        refresh_token: (credential as any).refreshToken || undefined,
-        token_type: "Bearer",
-        expiry_date: expiry_date,
-        scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly"
-      };
-      
-      googleSheetsService.saveBackupTokens(tokens);
-      console.log("Secondary/Backup Google credentials retrieved and saved successfully!");
-      return tokens;
-    } catch (fbAuthError: any) {
-      console.error("Backup search auth failed:", fbAuthError);
-      throw new Error(fbAuthError.message || "2nd Google account login failed.");
-    }
+    console.log("Redirecting backup OAuth request to permanent server-side gateway (Supabase system integration)...");
+    return googleSheetsService.initiateAuth();
   },
 
   createBackupSpreadsheet: async (title: string, tokens: any) => {

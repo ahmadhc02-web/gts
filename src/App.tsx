@@ -16,6 +16,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { safeStringify } from './lib/utils';
 import FiberLoading from './components/FiberLoading';
 import ServiceMonitor from './components/ServiceMonitor';
+import { supabase } from '../supabaseClient';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
@@ -583,36 +584,19 @@ export default function App() {
       }
     };
 
-    import('firebase/auth').then(({ onAuthStateChanged, signInAnonymously }) => {
-      unsubscribeAuth = onAuthStateChanged(auth, async (userAuth) => {
-        if (userAuth) {
-          console.log('Firebase Auth: Operational session established', userAuth.uid);
-          setFirebaseUser(userAuth);
-          setFirebaseAuthReady(true);
-          if (!initialized) {
-            initialized = true;
-            await init(userAuth);
-          }
-        } else {
-          console.log('Firebase Auth: No session detected, initiating secure handshake...');
-          try {
-            await signInAnonymously(auth);
-          } catch (authErr) {
-            console.warn("Auth initialization restricted:", authErr);
-            setFirebaseAuthReady(true);
-            setIsLoading(false);
-            if (!initialized) {
-              initialized = true;
-              await init(null);
-            }
-          }
-        }
-      });
-    });
-
-    return () => {
-      if (unsubscribeAuth) unsubscribeAuth();
+    // Completely bypass Firebase Auth in favor of direct Supabase loading
+    const startBypass = async () => {
+      const mockUserAuth = { uid: 'local_anon_user' };
+      setFirebaseUser(mockUserAuth);
+      setFirebaseAuthReady(true);
+      if (!initialized) {
+        initialized = true;
+        await init(mockUserAuth);
+      }
     };
+    startBypass();
+
+    return () => {};
   }, []);
 
   // Real-time user updates for presence and management
@@ -677,6 +661,87 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
+  }, [user, firebaseAuthReady]);
+
+  // Real-time data fetch functions to instantly synchronize local states from Supabase
+  const fetchComplaints = async () => {
+    if (!user) return;
+    const tenantId = firebaseService.getReadTenantId(user);
+    try {
+      console.log("[Supabase Realtime Sync] Fetching updated complaints...");
+      const data = await firebaseService.getComplaints(tenantId);
+      setComplaints(data.sort((a, b) => b.createdAt - a.createdAt));
+    } catch (e) {
+      console.error("[Supabase Realtime Sync] fetchComplaints failed:", e);
+    }
+  };
+
+  const fetchClients = async () => {
+    if (!user) return;
+    const tenantId = firebaseService.getReadTenantId(user);
+    try {
+      console.log("[Supabase Realtime Sync] Fetching updated clients...");
+      const data = await firebaseService.getClients(tenantId);
+      // Dispatch custom window event to trigger updates across ClientManagement and AdminPanel components
+      window.dispatchEvent(new CustomEvent('supabase-clients-updated', { detail: data }));
+    } catch (e) {
+      console.error("[Supabase Realtime Sync] fetchClients failed:", e);
+    }
+  };
+
+  const fetchBrandingConfig = async () => {
+    if (!user) return;
+    const tenantId = firebaseService.getReadTenantId(user);
+    try {
+      console.log("[Supabase Realtime Sync] Fetching updated branding configs...");
+      const config = await firebaseService.getAppConfig(tenantId);
+      if (config) {
+        setAppConfig({
+          categories: config.categories || DEFAULT_CATEGORIES,
+          statuses: config.statuses || DEFAULT_STATUSES,
+          priorities: config.priorities || DEFAULT_PRIORITIES,
+          zones: config.zones || DEFAULT_ZONES,
+          billingSecurityKey: config.billingSecurityKey || '786786',
+        });
+      }
+    } catch (e) {
+      console.error("[Supabase Realtime Sync] fetchBrandingConfig failed:", e);
+    }
+  };
+
+  // 1. Setup a dynamic useEffect hook / Supabase Channel subscription that listens to ALL events ('*') on 'public.complaints', 'public.clients', and 'public.branding_config'.
+  useEffect(() => {
+    if (!user || !firebaseAuthReady) return;
+
+    console.log("Setting up parent Supabase Realtime channel for instant table synchronizations...");
+    const channelId = `supabase_main_sync_channel_${Math.random().toString(36).substring(2, 11)}`;
+    
+    const channel = supabase
+      .channel(channelId)
+      // Listen to complaints table
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, (payload) => {
+        console.log("[Supabase Realtime Event] complaints table postgres_change received:", payload);
+        // 2. Whenever an INSERT, UPDATE, or DELETE payload is received from Supabase, immediately trigger the corresponding data fetch function to refresh the local state instantly.
+        fetchComplaints();
+      })
+      // Listen to clients table
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, (payload) => {
+        console.log("[Supabase Realtime Event] clients table postgres_change received:", payload);
+        fetchClients();
+      })
+      // Listen to branding_config table
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, (payload) => {
+        console.log("[Supabase Realtime Event] branding_config table postgres_change received:", payload);
+        fetchBrandingConfig();
+      })
+      .subscribe();
+
+    // 3. Ensure that when the components unmount, the .unsubscribe() clean-up function is properly called to prevent any websocket memory leaks.
+    return () => {
+      console.log("Unsubscribing and removing Supabase sync channel to prevent websocket memory leaks...");
+      channel.unsubscribe();
+      supabase.removeChannel(channel);
+    };
   }, [user, firebaseAuthReady]);
 
   // 10-Minute Automatic Background Bulk System Backup Scheduler
@@ -1095,18 +1160,6 @@ export default function App() {
     setError(null);
 
     try {
-      // Identity Handshake: Ensure cloud session is operational
-      if (!auth.currentUser) {
-        console.log("No active session detected, establishing secure handshake...");
-        try {
-          const { signInAnonymously } = await import('firebase/auth');
-          await signInAnonymously(auth);
-        } catch (authErr) {
-          console.warn("Handshake restricted by local policy:", authErr);
-          // If we still can't sign in, we'll try to proceed, but Firestore may block us
-        }
-      }
-
       let effectiveUsers = users;
 
       // If user list is empty, performing hot fetch
@@ -1141,17 +1194,6 @@ export default function App() {
       if (foundUser) {
         if (foundUser.password === pass) {
           isCredentialsValid = true;
-        } else if (foundUser.email) {
-          try {
-            const { signInWithEmailAndPassword } = await import('firebase/auth');
-            await signInWithEmailAndPassword(auth, foundUser.email.trim(), pass);
-            await firebaseService.updateUser(foundUser.uid, { password: pass }, foundUser.fullName || foundUser.username);
-            foundUser.password = pass;
-            isCredentialsValid = true;
-            toast.success("Identity Verified: Password synchronized with recovery records.");
-          } catch (signInErr) {
-            console.warn("Local & Firebase Auth check both failed:", signInErr);
-          }
         }
       }
       

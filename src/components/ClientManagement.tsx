@@ -78,6 +78,20 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     return () => unsubscribe();
   }, [currentUser]);
 
+  useEffect(() => {
+    const handleClientsUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        setClients(customEvent.detail);
+        setIsLoading(false);
+      }
+    };
+    window.addEventListener('supabase-clients-updated', handleClientsUpdated);
+    return () => {
+      window.removeEventListener('supabase-clients-updated', handleClientsUpdated);
+    };
+  }, []);
+
   const resetForm = () => {
     setEditingId(null);
     setName('');
