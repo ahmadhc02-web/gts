@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
-  History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft
+  History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -20,6 +20,8 @@ interface EntrySheetProps {
   };
   activeRows?: any[]; // For pre-filling rows
   currentMonthId?: string;
+  isBillingUnlocked?: boolean;
+  appConfig?: any;
 }
 
 interface Table1Row {
@@ -39,11 +41,48 @@ interface Table2Row {
   ch: boolean;
 }
 
-export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = [], currentMonthId }: EntrySheetProps) {
+export default function EntrySheet({ 
+  isOpen, 
+  onClose, 
+  currentUser, 
+  activeRows = [], 
+  currentMonthId,
+  isBillingUnlocked,
+  appConfig
+}: EntrySheetProps) {
+  const workspaceRef = useRef<HTMLDivElement>(null);
+
   // Top fields
   const [recOfficer, setRecOfficer] = useState('');
   const [area, setArea] = useState('MAIN');
   const [sheetDate, setSheetDate] = useState('');
+
+  // Security and lock synchronization
+  const [localPasskey, setLocalPasskey] = useState('');
+  const [localUnlocked, setLocalUnlocked] = useState(() => {
+    return sessionStorage.getItem('gts_billing_unlocked') === 'true';
+  });
+
+  useEffect(() => {
+    if (isBillingUnlocked !== undefined) {
+      setLocalUnlocked(isBillingUnlocked);
+    }
+  }, [isBillingUnlocked]);
+
+  const isLocked = !localUnlocked;
+
+  const handleLocalUnlock = () => {
+    const requiredKey = appConfig?.billingSecurityKey || '786786';
+    if (localPasskey === requiredKey) {
+      setLocalUnlocked(true);
+      sessionStorage.setItem('gts_billing_unlocked', 'true');
+      // Dispatch custom event to notify rest of components in real-time
+      window.dispatchEvent(new CustomEvent('gts-billing-unlocked-changed', { detail: true }));
+      toast.success("🔑 ACCESS GRANTED", { description: "WiFi Billing & entry sheets unlocked for editing." });
+    } else {
+      toast.error("🔒 ACCESS DENIED", { description: "Incorrect or invalid Security Key." });
+    }
+  };
 
   // Editable top labels
   const [recOfficerLabel, setRecOfficerLabel] = useState('REC. OFFICER');
@@ -239,16 +278,50 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
     }
 
     const handleResize = () => {
-      const availableHeight = window.innerHeight - 110;
-      const paperHeight = 1122; // approx 297mm in pixels
-      const fitScale = Math.min(1, Math.max(0.4, availableHeight / paperHeight));
-      setCalculatedScale(fitScale);
+      let availableWidth = window.innerWidth - 32;
+      let availableHeight = window.innerHeight - 110 - (isLocked ? 95 : 0) - 16;
+
+      if (workspaceRef.current) {
+        const rect = workspaceRef.current.getBoundingClientRect();
+        const containerWidth = workspaceRef.current.clientWidth || rect.width;
+        const containerHeight = workspaceRef.current.clientHeight || rect.height;
+
+        const warningBanner = workspaceRef.current.querySelector(".bg-amber-500\\/10");
+        const warningHeight = warningBanner ? warningBanner.getBoundingClientRect().height + 16 : 0;
+
+        availableWidth = containerWidth - 32;
+        availableHeight = containerHeight - warningHeight - 24;
+      }
+
+      const paperHeight = 1122.5; // approx 297mm A4 height in pixels
+      const paperWidth = 793.7; // approx 210mm A4 width in pixels
+
+      const fitScaleHeight = availableHeight / paperHeight;
+      const fitScaleWidth = availableWidth / paperWidth;
+
+      const bestFitScale = Math.min(fitScaleHeight, fitScaleWidth);
+      const finalScale = Math.min(1.0, Math.max(0.25, bestFitScale));
+      setCalculatedScale(finalScale);
     };
 
     handleResize();
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [zoomOption]);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (workspaceRef.current && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        handleResize();
+      });
+      resizeObserver.observe(workspaceRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
+  }, [zoomOption, isLocked, isOpen]);
 
    // Function to reset all lines & boxes sizing parameters to default
   const resetSizingToDefault = () => {
@@ -355,6 +428,12 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
 
   // Handle auto-prefilling from current month database rows (unpaid / partial)
   const autoFillFromDb = () => {
+    if (isLocked) {
+      toast.error("🔒 SYSTEM SECURED", {
+        description: "Please unlock the Billing Security Shield to auto-fill or modify ledger sheets."
+      });
+      return;
+    }
     if (!activeRows || activeRows.length === 0) {
       toast.error("No active monthly rows found to import.");
       return;
@@ -410,6 +489,12 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
 
   // Save the currently active sheet (creates a new entry or updates an existing card in real-time)
   const handleSaveSheet = async () => {
+    if (isLocked) {
+      toast.error("🔒 SYSTEM SECURED", {
+        description: "Please unlock the Billing Security Shield to commit or update ledger sheets."
+      });
+      return;
+    }
     try {
       if (!recOfficer.trim()) {
         toast.error("Please specify a Recovery Officer name first.");
@@ -597,6 +682,13 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
   const handleDeleteHistorySheet = async (sheetId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid loading the sheet on card click
     
+    if (isLocked) {
+      toast.error("🔒 SYSTEM SECURED", {
+        description: "Please unlock the Billing Security Shield to delete historical logs."
+      });
+      return;
+    }
+
     const confirmDel = window.confirm("Are you sure you want to delete this historical ledger card?");
     if (!confirmDel) return;
 
@@ -677,6 +769,12 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
 
   // Purge/clear all month-end sheets from Firestore to start a new month cycle afresh
   const handleTerminateMonth = async () => {
+    if (isLocked) {
+      toast.error("🔒 SYSTEM SECURED", {
+        description: "Please unlock the Billing Security Shield to terminate the ongoing billing month."
+      });
+      return;
+    }
     const confirmReset = window.confirm(
       "☢️ WARNING: CRITICAL RESETS TRIGGERED\n\nThis will permanently delete ALL historical sheets & card records in your database forever. Please verify you have taken a full Google spreadsheet backup first.\n\nType OK to continue."
     );
@@ -698,6 +796,12 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
 
   // Confirmation handler for complete workspace reset & purge
   const handleResetWorkspaceAndHistory = async (deleteHistory: boolean) => {
+    if (isLocked) {
+      toast.error("🔒 SYSTEM SECURED", {
+        description: "Please unlock the Billing Security Shield to clear workspace records."
+      });
+      return;
+    }
     try {
       if (deleteHistory) {
         const tenantId = firebaseService.getReadTenantId(currentUser as any);
@@ -748,6 +852,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
 
   // Edit helper for Table 1
   const handleT1Change = (index: number, field: keyof Table1Row, value: any) => {
+    if (isLocked) return;
     const updated = [...table1Rows];
     let commentsVal = updated[index].comments;
 
@@ -777,6 +882,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
 
   // Edit helper for Table 2
   const handleT2Change = (index: number, field: keyof Table2Row, value: any) => {
+    if (isLocked) return;
     const updated = [...table2Rows];
     updated[index] = {
       ...updated[index],
@@ -786,6 +892,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
   };
 
   const handleSelectSuggestion = (index: number, client: any) => {
+    if (isLocked) return;
     // Find if there's an outstanding month payment entry for them
     const matchingActiveRow = activeRows?.find(r => 
       (r.username && r.username.toLowerCase() === client.username?.toLowerCase()) || 
@@ -883,10 +990,24 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
             <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 hidden sm:block" />
             <div>
               <h2 className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className={`w-2 h-2 rounded-full ${isLocked ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`} />
                 Ledger Workspace
               </h2>
-              <p className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest hidden sm:block">A4 PRINT-READY INTEGRATION CONSOLE</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest hidden sm:block">A4 PRINT-READY INTEGRATION CONSOLE</p>
+                <div className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700 hidden sm:block" />
+                {isLocked ? (
+                  <span className="inline-flex items-center gap-1 px-1 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[7.5px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                    <Shield size={8} />
+                    Locked
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-1 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                    <Check size={8} />
+                    Unlocked
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1342,9 +1463,49 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
             </AnimatePresence>
 
             {/* Center Area: Full Viewport Scale-to-Fit Workspace Area */}
-            <div className="flex-1 overflow-auto p-4 sm:p-6 flex items-start justify-center bg-slate-100 dark:bg-slate-900/40 scrollbar-thin relative h-full print:bg-transparent print:p-0 print:m-0 print:block print:overflow-visible print:h-auto select-none print:select-text">
+            <div 
+              ref={workspaceRef}
+              className="flex-1 overflow-auto p-4 sm:p-6 flex flex-col items-center justify-start bg-slate-100 dark:bg-slate-900/40 scrollbar-thin relative h-full print:bg-transparent print:p-0 print:m-0 print:block print:overflow-visible print:h-auto select-none print:select-text"
+            >
+              {isLocked && (
+                <div className="w-full max-w-[800px] bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden animate-in fade-in slide-in-from-top-2 duration-300 select-text shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 animate-pulse shrink-0">
+                      <Shield size={18} className="stroke-[2.5]" />
+                    </div>
+                    <div className="text-left">
+                      <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-900 dark:text-slate-50 flex items-center gap-1.5">
+                        Ledger Sheet Locked (View-Only)
+                      </h4>
+                      <p className="text-[9px] font-bold text-slate-450 dark:text-slate-500 uppercase tracking-widest mt-0.5 leading-normal max-w-sm sm:max-w-md">
+                        This recovery report and entry sheet is secured. Enter Security key passkey to enable edits.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <input
+                      type="password"
+                      value={localPasskey}
+                      onChange={(e) => setLocalPasskey(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleLocalUnlock();
+                      }}
+                      placeholder="ENTER PASSKEY..."
+                      className="w-full sm:w-36 px-2.5 py-1.5 text-[9px] font-mono font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-900 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleLocalUnlock}
+                      className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase text-[9px] tracking-wider rounded-xl transition-all shadow-md shrink-0 active:scale-95"
+                    >
+                      Unlock
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div 
-                className="relative flex items-start justify-center print:block print:w-auto print:h-auto shrink-0 print:static"
+                className="relative flex items-start justify-center print:block print:w-auto print:h-auto shrink-0 print:static my-auto mx-auto"
                 style={{
                   width: `calc(210mm * ${calculatedScale})`,
                   height: `calc(297mm * ${calculatedScale})`,
@@ -1368,7 +1529,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                     left: 0,
                     top: 0
                   }}
-                  className="print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[210mm] min-h-[297mm] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text"
+                  className={`print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[210mm] min-h-[297mm] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text ${isLocked ? 'pointer-events-none opacity-80 select-none' : ''}`}
                 >
             
             {/* Header Row - Aligned tight & left with Flex box for perfect viewport/A4 compatibility */}
@@ -1987,7 +2148,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                 value={cashReceived}
                 onChange={(e) => setCashReceived(e.target.value)}
                 className="w-full border-b border-slate-400 border-dashed py-1 bg-transparent hover:bg-slate-50 focus:bg-slate-100 outline-none text-[12px] font-bold text-slate-800"
-                placeholder="e.g. 15,200 Rs"
+                placeholder=""
               />
             </div>
  
@@ -2004,7 +2165,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                 value={sign}
                 onChange={(e) => setSign(e.target.value)}
                 className="w-full border-b border-slate-400 border-dashed py-1 bg-transparent text-center hover:bg-slate-50 focus:bg-slate-100 outline-none text-[12px] font-bold text-slate-800"
-                placeholder="Authorized Signatory"
+                placeholder=""
               />
             </div>
  
@@ -2021,7 +2182,7 @@ export default function EntrySheet({ isOpen, onClose, currentUser, activeRows = 
                 value={submitted}
                 onChange={(e) => setSubmitted(e.target.value)}
                 className="w-full border-b border-slate-400 border-dashed py-1 bg-transparent text-right hover:bg-slate-50 focus:bg-slate-100 outline-none text-[12px] font-bold text-slate-800"
-                placeholder="Receiver Name"
+                placeholder=""
               />
             </div>
           </div>

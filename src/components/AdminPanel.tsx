@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -432,7 +432,9 @@ export default function AdminPanel({
   };
 
   // --- Billing Security Key States and Controls ---
-  const [isBillingUnlocked, setIsBillingUnlocked] = useState(false);
+  const [isBillingUnlocked, setIsBillingUnlocked] = useState(() => {
+    return sessionStorage.getItem('gts_billing_unlocked') === 'true';
+  });
   const [billingKeyInput, setBillingKeyInput] = useState('');
   const [isEditingSecurityKey, setIsEditingSecurityKey] = useState(false);
   const [newSecurityKeyInput, setNewSecurityKeyInput] = useState('');
@@ -441,6 +443,9 @@ export default function AdminPanel({
     const requiredKey = appConfig.billingSecurityKey || '786786';
     if (billingKeyInput === requiredKey) {
       setIsBillingUnlocked(true);
+      sessionStorage.setItem('gts_billing_unlocked', 'true');
+      // Dispatch custom event to notify rest of components in real-time
+      window.dispatchEvent(new CustomEvent('gts-billing-unlocked-changed', { detail: true }));
       toast.success("🔑 ACCESS GRANTED", { description: "WiFi Billing sheet controls have been successfully unlocked for editing." });
     } else {
       toast.error("🔒 ACCESS DENIED", { description: "Incorrect or invalid Billing Security Key." });
@@ -487,6 +492,20 @@ export default function AdminPanel({
     window.addEventListener('supabase-clients-updated', handleClientsUpdated);
     return () => {
       window.removeEventListener('supabase-clients-updated', handleClientsUpdated);
+    };
+  }, []);
+
+  // Synchronise lock status across workspace modules in real-time
+  useEffect(() => {
+    const handleUnlockChanged = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail !== undefined) {
+        setIsBillingUnlocked(customEvent.detail);
+      }
+    };
+    window.addEventListener('gts-billing-unlocked-changed', handleUnlockChanged);
+    return () => {
+      window.removeEventListener('gts-billing-unlocked-changed', handleUnlockChanged);
     };
   }, []);
 
@@ -1733,7 +1752,13 @@ export default function AdminPanel({
         )}
 
         {activeTab === 'clients' && (
-          <ClientManagement appConfig={appConfig} isAdmin={true} currentUser={currentUser} currentUserName={users.find(u => u.uid === currentUser.uid)?.username || 'Admin'} />
+          <ClientManagement 
+            appConfig={appConfig} 
+            isAdmin={true} 
+            currentUser={currentUser} 
+            currentUserName={users.find(u => u.uid === currentUser.uid)?.username || 'Admin'} 
+            isBillingUnlocked={isBillingUnlocked}
+          />
         )}
 
         {activeTab === 'top10' && (
@@ -3457,6 +3482,9 @@ export default function AdminPanel({
                             type="button"
                             onClick={() => {
                               setIsBillingUnlocked(false);
+                              sessionStorage.removeItem('gts_billing_unlocked');
+                              // Dispatch custom event to notify rest of components in real-time
+                              window.dispatchEvent(new CustomEvent('gts-billing-unlocked-changed', { detail: false }));
                               setBillingKeyInput('');
                               toast.success("Billing spreadsheet re-locked successfully.");
                             }}
@@ -3475,51 +3503,109 @@ export default function AdminPanel({
             {currentMonthId ? (
               <>
                 {/* Advanced Bento-Style Metrics Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {[
                     {
                       label: "Expected Revenue",
                       val: `PKR ${(totalExpected).toLocaleString()}`,
-                      desc: `Base: PKR ${(totalBase).toLocaleString()} + CR: PKR ${(totalCr).toLocaleString()}`,
-                      borderClass: "border-blue-500",
-                      textClass: "text-blue-500"
+                      desc: `Base Amount: PKR ${(totalBase).toLocaleString()}`,
+                      borderColor: "border-l-indigo-500 dark:border-l-indigo-400",
+                      badgeColor: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20",
+                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(99,102,241,0.15)]",
+                      icon: <BarChart3 size={20} className="stroke-[2.5]" />
+                    },
+                    {
+                      label: "CR Payments",
+                      val: `PKR ${(totalCr).toLocaleString()}`,
+                      desc: `Arrears/Credit Recoveries`,
+                      borderColor: "border-l-fuchsia-500 dark:border-l-fuchsia-400",
+                      badgeColor: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 border border-fuchsia-500/20",
+                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(217,70,239,0.15)]",
+                      icon: <Coins size={20} className="stroke-[2.5]" />
                     },
                     {
                       label: "Fees Recovered",
                       val: `PKR ${(totalRecovered).toLocaleString()}`,
                       desc: `Actual payments received`,
-                      borderClass: "border-emerald-500",
-                      textClass: "text-emerald-500"
+                      borderColor: "border-l-emerald-500 dark:border-l-emerald-400",
+                      badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(16,185,129,0.15)]",
+                      icon: <CheckCircle size={20} className="stroke-[2.5]" />
                     },
                     {
                       label: "Outstanding Balances",
                       val: `PKR ${(totalOutstanding).toLocaleString()}`,
                       desc: "Pending subscriber fees",
-                      borderClass: "border-amber-500",
-                      textClass: "text-amber-500"
+                      borderColor: "border-l-amber-500 dark:border-l-amber-400",
+                      badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(245,158,11,0.15)]",
+                      icon: <AlertTriangle size={20} className="stroke-[2.5]" />
                     },
                     {
                       label: "Recovery Rate",
                       val: `${(recoveryRate).toFixed(1)}%`,
                       desc: "In-cycle performance index",
-                      borderClass: "border-purple-500",
-                      textClass: "text-purple-500"
+                      borderColor: "border-l-purple-500 dark:border-l-purple-400",
+                      badgeColor: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20",
+                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(139,92,246,0.15)]",
+                      icon: <TrendingUp size={20} className="stroke-[2.5]" />
                     },
                     {
                       label: "Subscribers Active",
-                      val: `${activeRows.length} Connections`,
+                      val: `${activeRows.length} Nodes`,
                       desc: `TDC: ${totalTDC} | Unpaid: ${totalPending}`,
-                      borderClass: "border-slate-800 dark:border-slate-200",
-                      textClass: "text-slate-800 dark:text-white"
+                      borderColor: "border-l-sky-500 dark:border-l-sky-400",
+                      badgeColor: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20",
+                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(14,165,233,0.15)]",
+                      icon: <Users size={20} className="stroke-[2.5]" />
                     }
                   ].map((card, i) => (
-                    <div key={i} className={cn("p-6", getCardStyle(branding.cardStyle), "border-l-4", card.borderClass, "space-y-1.5 shadow-sm hover:shadow-md transition-shadow")}>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{card.label}</span>
-                      <div className={cn("text-xl sm:text-2xl font-black font-mono leading-none tracking-tight", card.textClass)}>
-                        {card.val}
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 30 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      whileHover={{ y: -6, scale: 1.02 }}
+                      transition={{ 
+                        type: "spring",
+                        stiffness: 260,
+                        damping: 18,
+                        delay: i * 0.08
+                      }}
+                      className={cn(
+                        "group relative p-5 sm:p-6 bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-150 dark:border-slate-800 border-l-4",
+                        card.borderColor,
+                        "flex flex-col justify-between overflow-hidden shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 cursor-default",
+                        card.glowColor
+                      )}
+                    >
+                      {/* Subtle hover background accent glow */}
+                      <div className="absolute inset-0 bg-transparent group-hover:bg-slate-50/25 dark:group-hover:bg-slate-800/20 transition-colors pointer-events-none" />
+
+                      <div className="space-y-4 relative z-10">
+                        {/* Header: Label and Icon */}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-slate-400 leading-none">
+                            {card.label}
+                          </span>
+                          <div className={cn("p-1.5 sm:p-2 rounded-xl transition-transform duration-300 group-hover:scale-110 shrink-0", card.badgeColor)}>
+                            {card.icon}
+                          </div>
+                        </div>
+
+                        {/* Value and Stat */}
+                        <div className="space-y-1.5">
+                          <div className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight font-sans text-slate-900 dark:text-white leading-none" title={card.val}>
+                            {card.val}
+                          </div>
+                          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-relaxed whitespace-pre-wrap" title={card.desc}>
+                            {card.desc}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider truncate">{card.desc}</p>
-                    </div>
+
+                      {/* Glowing particle/indicator decoration inside card */}
+                      <div className="absolute bottom-2 right-2 w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-slate-400 dark:bg-slate-600" />
+                    </motion.div>
                   ))}
                 </div>
 
@@ -3986,6 +4072,8 @@ export default function AdminPanel({
         currentUser={currentUser}
         activeRows={activeRows}
         currentMonthId={currentMonthId}
+        isBillingUnlocked={isBillingUnlocked}
+        appConfig={appConfig}
       />
 
       {/* Batch Print Multi-month Dialog Overlay */}

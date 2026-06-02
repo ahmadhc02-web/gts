@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield } from 'lucide-react';
 import { Client, UserProfile } from '../types';
 import { firebaseService } from '../lib/firebaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
@@ -13,9 +13,10 @@ interface ClientManagementProps {
   isAdmin: boolean;
   currentUser: UserProfile;
   currentUserName: string;
+  isBillingUnlocked?: boolean;
 }
 
-export default function ClientManagement({ appConfig, isAdmin, currentUser, currentUserName }: ClientManagementProps) {
+export default function ClientManagement({ appConfig, isAdmin, currentUser, currentUserName, isBillingUnlocked }: ClientManagementProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,6 +40,31 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Security passkey synchronization from session storage or props
+  const [localPasskey, setLocalPasskey] = useState('');
+  const [localUnlocked, setLocalUnlocked] = useState(() => {
+    return sessionStorage.getItem('gts_billing_unlocked') === 'true';
+  });
+
+  useEffect(() => {
+    if (isBillingUnlocked !== undefined) {
+      setLocalUnlocked(isBillingUnlocked);
+    }
+  }, [isBillingUnlocked]);
+
+  const isLocked = !localUnlocked;
+
+  const handleLocalUnlock = () => {
+    const requiredKey = appConfig.billingSecurityKey || '786786';
+    if (localPasskey === requiredKey) {
+      setLocalUnlocked(true);
+      sessionStorage.setItem('gts_billing_unlocked', 'true');
+      toast.success("🔑 DATABASE UNLOCKED", { description: "You now have write and registry clearance." });
+    } else {
+      toast.error("🔒 ACCESS DENIED", { description: "Incorrect or invalid Security Key." });
+    }
+  };
 
   useEffect(() => {
     if (!area && appConfig.zones.length > 0) {
@@ -123,6 +149,13 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (isLocked) {
+      toast.error('🔑 SECURITY SHIELD ACTIVE', {
+        description: 'You must unlock the Billing Security Shield before registering or updating user profiles.'
+      });
+      return;
+    }
     
     // Hard Validation
     const trimmedName = name.trim();
@@ -226,6 +259,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         }
       }
       resetForm();
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
     } catch (error) {
       console.error("Client Write Failure:", error);
       toast.error('Critical Write Failure', {
@@ -277,6 +313,39 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       {isAdmin && (
         <div className="lg:col-span-1">
           <div className="business-card p-8 bg-white dark:bg-slate-950 shadow-2xl relative overflow-hidden group">
+            {isLocked && (
+              <div className="absolute inset-0 z-20 bg-slate-50/70 dark:bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 mb-4 shadow-lg shadow-amber-500/5 animate-pulse">
+                  <Shield size={26} />
+                </div>
+                <h4 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-slate-50">
+                  Registry Lock Panel
+                </h4>
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-2 max-w-[240px] leading-relaxed">
+                  Direct database record registration and modifications are secured. Enter Billing Sheet Security Shield passkey to unlock.
+                </p>
+                <div className="mt-5 space-y-2 w-full max-w-[200px]">
+                  <input
+                    type="password"
+                    value={localPasskey}
+                    onChange={(e) => setLocalPasskey(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleLocalUnlock();
+                    }}
+                    placeholder="PASSKEY..."
+                    className="w-full text-center px-4 py-2 text-xs font-mono font-black tracking-widest bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-slate-100 focus:border-amber-500 shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleLocalUnlock}
+                    className="w-full py-2.5 bg-amber-500 hover:bg-amber-600 dark:bg-brand-accent dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[9px] rounded-xl transition-all shadow-md active:scale-95"
+                  >
+                    Verify Key
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none transition-transform group-hover:scale-110">
               {editingId ? <Edit3 size={120} /> : <Terminal size={120} />}
             </div>
@@ -466,12 +535,24 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
               <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
                 Client Infrastructure Directory
               </h4>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   {isAdmin ? 'Global Administrator View' : 'Personnel View Port'} • Operational Matrix Active
                 </p>
-                <div className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700 mx-1" />
+                <div className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700" />
                 <span className="text-[10px] font-black text-brand-accent uppercase">{clients.length} Registered</span>
+                <div className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+                {isLocked ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                    <Shield size={10} className="stroke-[2.5]" />
+                    Locked (View-Only)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                    <Check size={10} className="stroke-[2.5]" />
+                    Unlocked (Editable)
+                  </span>
+                )}
               </div>
             </div>
             
@@ -598,9 +679,22 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                             <>
                               <button
                                 type="button"
-                                onClick={() => handleEdit(client)}
-                                className="p-2 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition-all"
-                                title="Edit Record"
+                                onClick={() => {
+                                  if (isLocked) {
+                                    toast.error("🔒 MUTATION LOCKED", {
+                                      description: "Please unlock the Billing Security Shield to edit."
+                                    });
+                                    return;
+                                  }
+                                  handleEdit(client);
+                                }}
+                                className={cn(
+                                  "p-2 rounded-lg transition-all",
+                                  isLocked 
+                                    ? "text-slate-300 dark:text-slate-700 cursor-not-allowed hover:bg-slate-100/50" 
+                                    : "text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10"
+                                )}
+                                title={isLocked ? "Registry modifications are locked" : "Edit Record"}
                               >
                                 <Edit3 size={16} />
                               </button>
@@ -608,7 +702,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                               {deletingId === client.id ? (
                                 <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-2 duration-200">
                                   <button
-                                    onClick={() => handleDelete(client.id, client.name)}
+                                    onClick={() => {
+                                      if (isLocked) {
+                                        toast.error("🔒 MUTATION LOCKED");
+                                        return;
+                                      }
+                                      handleDelete(client.id, client.name);
+                                    }}
+                                    disabled={isLocked}
                                     className="px-2.5 py-1 text-[9px] font-black text-white bg-rose-600 rounded-md hover:bg-rose-700 shadow-lg shadow-rose-500/20 uppercase tracking-widest"
                                   >
                                     Confirm
@@ -623,9 +724,22 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => setDeletingId(client.id)}
-                                  className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all"
-                                  title="Purge Record"
+                                  onClick={() => {
+                                    if (isLocked) {
+                                      toast.error("🔒 MUTATION LOCKED", {
+                                        description: "Please unlock the Billing Security Shield to delete."
+                                      });
+                                      return;
+                                    }
+                                    setDeletingId(client.id);
+                                  }}
+                                  className={cn(
+                                    "p-2 rounded-lg transition-all",
+                                    isLocked 
+                                      ? "text-slate-300 dark:text-slate-700 cursor-not-allowed hover:bg-slate-100/50" 
+                                      : "text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                                  )}
+                                  title={isLocked ? "Registry modifications are locked" : "Purge Record"}
                                 >
                                   <Trash2 size={16} />
                                 </button>

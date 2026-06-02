@@ -1709,7 +1709,7 @@ export default function ComplaintList({
                                         />
                                         <button
                                           type="button"
-                                          onClick={() => {
+                                          onClick={async () => {
                                             if (!statusRemarks.trim()) {
                                               toast.error("Please enter a Team Resolution Protocol first.");
                                               return;
@@ -1731,7 +1731,21 @@ export default function ComplaintList({
                                               sound.volume = 0.2;
                                               sound.play().catch(() => {});
                                             } catch (e) {}
-                                            toast.success("Protocol saved in memory.");
+
+                                            try {
+                                              if (onUpdateRemarks) {
+                                                await onUpdateRemarks(selectedComplaint.id, statusRemarks);
+                                                toast.success("Protocol remark saved to database.");
+                                              } else if (onEdit) {
+                                                await onEdit(selectedComplaint.id, { remarks: statusRemarks });
+                                                toast.success("Protocol remark saved to database.");
+                                              } else {
+                                                toast.success("Protocol saved in memory.");
+                                              }
+                                            } catch (err) {
+                                              console.error("Failed to update database remarks:", err);
+                                              toast.error("Failed to save to database. Kept in memory.");
+                                            }
                                           }}
                                           className="absolute bottom-2 right-2 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
                                         >
@@ -1789,7 +1803,7 @@ export default function ComplaintList({
                                         />
                                         <button
                                           type="button"
-                                          onClick={() => {
+                                          onClick={async () => {
                                             if (!customerReview.trim()) {
                                               toast.error("Please type a Customer Review first.");
                                               return;
@@ -1811,7 +1825,18 @@ export default function ComplaintList({
                                               sound.volume = 0.2;
                                               sound.play().catch(() => {});
                                             } catch (e) {}
-                                            toast.success("Customer review saved in memory.");
+
+                                            try {
+                                              if (onEdit) {
+                                                await onEdit(selectedComplaint.id, { customerReview: customerReview });
+                                                toast.success("Customer review saved to database.");
+                                              } else {
+                                                toast.success("Customer review saved in memory.");
+                                              }
+                                            } catch (err) {
+                                              console.error("Failed to update customer review:", err);
+                                              toast.error("Failed to save to database. Kept in memory.");
+                                            }
                                           }}
                                           className="absolute bottom-2 right-2 px-2 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-indigo-500/20"
                                         >
