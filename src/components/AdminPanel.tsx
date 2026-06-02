@@ -508,6 +508,102 @@ export default function AdminPanel({
     return () => unsubscribe();
   }, []);
 
+  // Automatic background synchronization:
+  // Detects newly created/updated master clients and automatically incorporates them or updates their details in the active billing sheet
+  useEffect(() => {
+    if (!currentMonthId || masterClients.length === 0 || billingMonths.length === 0) return;
+    const activeDoc = billingMonths.find(m => m.id === currentMonthId);
+    if (!activeDoc) return;
+
+    const existingRows = activeDoc.rows ? [...activeDoc.rows] : [];
+    let isChanged = false;
+    let newCount = 0;
+    let updatedCount = 0;
+
+    masterClients.forEach((c) => {
+      const existingIdx = existingRows.findIndex((r: any) => r.clientId === c.id || r.username === c.username);
+
+      let targetBase = 1000;
+      if (c.pkgDetails) {
+        const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
+        if (digitsMatch && digitsMatch.length > 0) {
+          targetBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
+        } else {
+          const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
+          if (lowDigits && lowDigits.length >= 3) {
+            targetBase = parseInt(lowDigits, 10);
+          }
+        }
+      }
+
+      if (existingIdx === -1) {
+        // Add missing client
+        existingRows.push({
+          clientId: c.id,
+          name: c.name || 'Anonymous client',
+          username: c.username,
+          mobileNumber: c.mobileNumber || c.number || '',
+          area: c.area || '',
+          rt: 'BILL',
+          baseAmount: targetBase,
+          cr: 0,
+          totalAmount: targetBase,
+          billingDay: '5',
+          paymentReceived: 0,
+          paymentStatus: 'unpaid',
+          comments: '',
+          occ: 'personal',
+          serNam: c.username,
+          pkgDetails: c.pkgDetails || '8Mb',
+          sag: '0',
+          lai: 'GN',
+          connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
+          devicePrice: '0',
+          abl: '0',
+          network: 'GN CITY'
+        });
+        isChanged = true;
+        newCount++;
+      } else {
+        // Double check details and update if changed
+        const row = { ...existingRows[existingIdx] };
+        let rowChanged = false;
+        if (row.name !== c.name) { row.name = c.name; rowChanged = true; }
+        if (row.mobileNumber !== (c.mobileNumber || c.number || '')) { row.mobileNumber = c.mobileNumber || c.number || ''; rowChanged = true; }
+        if (row.area !== c.area) { row.area = c.area; rowChanged = true; }
+        if (row.pkgDetails !== c.pkgDetails) {
+          row.pkgDetails = c.pkgDetails;
+          row.baseAmount = targetBase;
+          row.totalAmount = targetBase + (parseFloat(row.cr) || 0);
+          rowChanged = true;
+        }
+        if (rowChanged) {
+          existingRows[existingIdx] = row;
+          isChanged = true;
+          updatedCount++;
+        }
+      }
+    });
+
+    if (isChanged) {
+      console.log(`[Auto billingsync] Active billing sheet is out of sync. Synchronizing ${newCount} additions and ${updatedCount} updates...`);
+      const saveSync = async () => {
+        try {
+          await firebaseService.saveBillingMonth(currentMonthId, existingRows, 'System Sync');
+          if (newCount > 0 || updatedCount > 0) {
+            toast.success("Billing Sheet Reconciled", {
+              description: `Synced ${newCount} new clients and ${updatedCount} client profile updates instantly.`
+            });
+          }
+        } catch (err) {
+          console.error("Auto billing sync save failed:", err);
+        }
+      };
+      
+      saveSync();
+    }
+  }, [masterClients, currentMonthId, billingMonths]);
+
   const handleAddMonth = async () => {
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to unlock billing sheet creation." });
