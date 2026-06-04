@@ -659,10 +659,27 @@ export default function EntrySheet({
 
               if (matchedIdx !== -1) {
                 const amountVal = Number(r.amount) || 0;
+                const row = updatedBillingRows[matchedIdx];
+                const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
+                const newCr = Math.max(0, savedOrigCr - amountVal);
+                const base = parseFloat(row.baseAmount || 0);
+
+                // Auto calculate status based on payment vs total
+                const totalAmount = base + newCr;
+                let finalStatus = 'partial';
+                if (amountVal === 0) {
+                  finalStatus = 'unpaid';
+                } else if (amountVal >= totalAmount) {
+                  finalStatus = 'paid';
+                }
+
                 updatedBillingRows[matchedIdx] = {
-                  ...updatedBillingRows[matchedIdx],
+                  ...row,
+                  _originalCr: savedOrigCr,
+                  cr: newCr,
+                  totalAmount: totalAmount,
                   paymentReceived: amountVal,
-                  paymentStatus: 'paid'
+                  paymentStatus: finalStatus
                 };
                 updatedCount++;
               }
@@ -1209,6 +1226,10 @@ export default function EntrySheet({
 
         {/* CSS to overlay print and target only the A4 container physically */}
         <style dangerouslySetInnerHTML={{ __html: `
+          .print-paper-container,
+          .print-paper-container * {
+            font-family: Arial, "Helvetica Neue", Helvetica, sans-serif !important;
+          }
           @media print {
             @page {
               size: A4 portrait;
@@ -1317,6 +1338,7 @@ export default function EntrySheet({
               background-color: #e2e8f0 !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
+            }
           }
         `}} />
 

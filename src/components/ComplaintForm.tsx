@@ -42,6 +42,8 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
   const [status, setStatus] = useState<ComplaintStatus>('');
   const [category, setCategory] = useState<ComplaintCategory>('');
   const [priority, setPriority] = useState<ComplaintPriority>('');
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState('');
   
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [pendingCount, setPendingCount] = useState(0);
@@ -131,17 +133,18 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
     e.preventDefault();
     
     const formData = { 
-      customerName, 
-      customerUsername,
+      customerName: customerName.toUpperCase(), 
+      customerUsername: customerUsername.toUpperCase(),
       area: area || (appConfig.zones?.[0] || ''), 
-      description, 
-      number,
-      pkgDetails,
-      userNearby,
-      panelDetails,
+      description: description.toUpperCase(), 
+      number: number.toUpperCase(),
+      pkgDetails: pkgDetails.toUpperCase(),
+      userNearby: userNearby.toUpperCase(),
+      panelDetails: panelDetails.toUpperCase(),
       status: status || appConfig.statuses[0],
       category: category || appConfig.categories[0],
-      priority: priority || appConfig.priorities[0]
+      priority: priority || appConfig.priorities[0],
+      scheduledAt: isScheduled && scheduleDate ? new Date(scheduleDate).getTime() : undefined
     };
 
     if (isOffline) {
@@ -172,9 +175,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
     setStatus(appConfig.statuses[0]);
     setCategory(appConfig.categories[0]);
     setPriority(appConfig.priorities[0]);
+    setIsScheduled(false);
+    setScheduleDate('');
   };
 
-  const inputClasses = "w-full px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-brand-accent/10 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm text-center [text-align-last:center]";
+  const inputClasses = "w-full px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-brand-accent/10 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm text-center [text-align-last:center] uppercase placeholder:normal-case";
   const labelClasses = "block text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-2 text-center group-focus-within/field:text-brand-accent transition-colors duration-300";
 
   return (
@@ -236,7 +241,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   <input
                     type="text"
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
+                    onChange={(e) => setCustomerName(e.target.value.toUpperCase())}
                     placeholder="ENTER FULL NAME"
                     className={inputClasses}
                     required
@@ -251,7 +256,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                     type="text"
                     value={customerUsername}
                     onChange={(e) => {
-                      const val = e.target.value;
+                      const val = e.target.value.toUpperCase();
                       setCustomerUsername(val);
                       autoSelectArea(val);
                       setShowClientList(true);
@@ -299,7 +304,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   <input
                     type="tel"
                     value={number}
-                    onChange={(e) => setNumber(e.target.value)}
+                    onChange={(e) => setNumber(e.target.value.toUpperCase())}
                     placeholder="+92 XXX XXXXXXX"
                     className={inputClasses}
                     required
@@ -329,7 +334,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   <input
                     type="text"
                     value={panelDetails}
-                    onChange={(e) => setPanelDetails(e.target.value)}
+                    onChange={(e) => setPanelDetails(e.target.value.toUpperCase())}
                     placeholder="BOX / PORT DETAILS"
                     className={inputClasses}
                   />
@@ -342,7 +347,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   <input
                     type="text"
                     value={pkgDetails}
-                    onChange={(e) => setPkgDetails(e.target.value)}
+                    onChange={(e) => setPkgDetails(e.target.value.toUpperCase())}
                     placeholder="EX: 50MB FIBER"
                     className={inputClasses}
                   />
@@ -355,7 +360,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   <input
                     type="text"
                     value={userNearby}
-                    onChange={(e) => setUserNearby(e.target.value)}
+                    onChange={(e) => setUserNearby(e.target.value.toUpperCase())}
                     placeholder="NEARBY REFERENCE"
                     className={inputClasses}
                   />
@@ -418,12 +423,45 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               </motion.div>
             </motion.div>
 
+            {/* Premium, interactive schedule settings block */}
+            <motion.div layout className="p-5 mt-2 rounded-[1.25rem] border border-dashed border-slate-205 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/10 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col text-left">
+                  <span className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 tracking-wider">(Schedule ur Operations)</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isScheduled}
+                    onChange={(e) => setIsScheduled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-10 h-5.5 bg-slate-200 dark:bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-brand-accent"></div>
+                </label>
+              </div>
+
+              {isScheduled && (
+                <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200 group/field">
+                  <label className={labelClasses}>Scheduled At (12-Hour Early Window Trigger)</label>
+                  <div className="relative">
+                    <input
+                      type="datetime-local"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      required={isScheduled}
+                      className={cn(inputClasses, "cursor-text text-center font-mono py-2.5")}
+                    />
+                  </div>
+                </div>
+              )}
+            </motion.div>
+
             <motion.div layout className="space-y-1 group/field">
               <label className={labelClasses}>{customNames.description || 'Mission Objectives / Details'}</label>
               <div className="relative">
                 <textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => setDescription(e.target.value.toUpperCase())}
                   placeholder="DESCRIBE THE TECHNICAL ISSUE IN DETAIL..."
                   rows={4}
                   className={cn(inputClasses, "resize-none h-[11.5rem] py-4 rounded-3xl")}

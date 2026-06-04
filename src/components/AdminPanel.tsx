@@ -400,6 +400,8 @@ export default function AdminPanel({
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
   const [currentMonthId, setCurrentMonthId] = useState<string>('');
   const [isConfiguringNewMonth, setIsConfiguringNewMonth] = useState(false);
+  const [isDeleteSheetModalOpen, setIsDeleteSheetModalOpen] = useState(false);
+  const [sheetIdToDelete, setSheetIdToDelete] = useState('');
   const [newMonthName, setNewMonthName] = useState('');
   const [newMonthYear, setNewMonthYear] = useState('26');
   const [billingSearchQuery, setBillingSearchQuery] = useState('');
@@ -805,10 +807,26 @@ export default function AdminPanel({
 
       targetRow[field] = val;
 
-      if (field === 'baseAmount' || field === 'cr') {
+      if (field === 'cr') {
+        const crVal = parseFloat(val) || 0;
+        targetRow._originalCr = crVal;
+        targetRow.cr = crVal;
         const base = parseFloat(targetRow.baseAmount) || 0;
-        const cr = parseFloat(targetRow.cr) || 0;
-        targetRow.totalAmount = base + cr;
+        targetRow.totalAmount = base + crVal;
+      } else if (field === 'baseAmount') {
+        const baseVal = parseFloat(val) || 0;
+        const crVal = parseFloat(targetRow.cr) || 0;
+        targetRow.totalAmount = baseVal + crVal;
+      } else if (field === 'paymentReceived') {
+        const received = parseFloat(val) || 0;
+        if (targetRow._originalCr === undefined) {
+          targetRow._originalCr = parseFloat(targetRow.cr) || 0;
+        }
+        const origCr = parseFloat(targetRow._originalCr) || 0;
+        const base = parseFloat(targetRow.baseAmount) || 0;
+        
+        targetRow.cr = Math.max(0, origCr - received);
+        targetRow.totalAmount = base + targetRow.cr;
       }
 
       // Automatically calculate payment status
@@ -856,18 +874,24 @@ export default function AdminPanel({
     }
   };
 
-  const handleDeleteBillingMonth = async () => {
+  const handleDeleteBillingMonth = async (selectedMonthId: string) => {
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete entire billing sheets." });
       return;
     }
-    if (!currentMonthId) return;
-    if (!confirm(`⚠️ WARNING: Complete deletion selected!\n\nAre you sure you want to permanently delete the entire ${currentMonthId} monthly recovery sheet database?\n\nThis will destroy all payments entered for this month.`)) return;
+    if (!selectedMonthId) {
+      toast.error("Please select a recovery sheet to delete.");
+      return;
+    }
+    if (!confirm(`⚠️ WARNING: Complete deletion selected!\n\nAre you sure you want to permanently delete the entire ${selectedMonthId} monthly recovery sheet database?\n\nThis will destroy all payments entered for this month.`)) return;
 
     try {
-      await firebaseService.deleteBillingMonth(currentMonthId, activeDealerId);
-      toast.success(`${currentMonthId} recovery sheet was deleted from database successfully.`);
-      setCurrentMonthId('');
+      await firebaseService.deleteBillingMonth(selectedMonthId, activeDealerId);
+      toast.success(`${selectedMonthId} recovery sheet was deleted from database successfully.`);
+      if (currentMonthId === selectedMonthId) {
+        setCurrentMonthId('');
+      }
+      setIsDeleteSheetModalOpen(false);
     } catch (err: any) {
       console.error(err);
       toast.error("Purge month failed", { description: getCleanErrorMessage(err) });
@@ -1377,7 +1401,12 @@ export default function AdminPanel({
   const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalPending, recoveryRate } = useMemo(() => {
     const expected = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0);
     const base = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.baseAmount) || 0), 0);
-    const arrears = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.cr) || 0), 0);
+    const arrears = activeRows.reduce((acc: number, r: any) => {
+      if (r.paymentStatus === 'paid') return acc;
+      const overdue = (parseFloat(r.totalAmount) || 0) - (parseFloat(r.paymentReceived) || 0);
+      const unpaidCr = Math.min(parseFloat(r.cr) || 0, Math.max(0, overdue));
+      return acc + unpaidCr;
+    }, 0);
     const recovered = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.paymentReceived) || 0), 0);
     const outstanding = expected - recovered;
     const tdc = activeRows.filter((r: any) => r.paymentStatus === 'tdc').length;
@@ -1443,12 +1472,97 @@ export default function AdminPanel({
     document.body.removeChild(link);
   };
 
-  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400";
+  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
 
   return (
     <>
       <AnimatePresence>
+        {isDeleteSheetModalOpen && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsDeleteSheetModalOpen(false)}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-rose-500/30 overflow-hidden"
+            >
+              <div className="p-8 space-y-6">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 animate-pulse">
+                      <Trash2 size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Delete Recovery Sheet</h3>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Permanent Database Purge</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsDeleteSheetModalOpen(false)}
+                    className="p-1 px-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className={labelClasses}>Select Monthly Sheet</label>
+                    {billingMonths.length === 0 ? (
+                      <div className="py-3 text-center text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl">
+                        No Sheets Found in Database
+                      </div>
+                    ) : (
+                      <select
+                        value={sheetIdToDelete}
+                        onChange={(e) => setSheetIdToDelete(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500/30 font-medium"
+                      >
+                        <option value="">-- Choose Sheet --</option>
+                        {billingMonths.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.id} (Contains {m.rows?.length || 0} Clients)
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-rose-500/5 border border-rose-500/10 rounded-xl space-y-2 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed uppercase tracking-wider">
+                    <p className="font-extrabold text-rose-600 dark:text-rose-400">⚠️ CRITICAL NOTICE:</p>
+                    <p>Deleting a billing recovery sheet is completely irreversible. All collection logs, customer payment statuses, and specific arrears references for the chosen period will be deleted from the database permanently.</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteSheetModalOpen(false)}
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-black uppercase tracking-widest text-[10px] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!sheetIdToDelete}
+                    onClick={() => handleDeleteBillingMonth(sheetIdToDelete)}
+                    className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl font-black uppercase tracking-widest text-[10px] transition-all shadow-lg shadow-rose-500/15"
+                  >
+                    Delete Permanently
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {showGoogleConnectModal && (
           <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
             <motion.div 
@@ -1836,7 +1950,7 @@ export default function AdminPanel({
                     <input
                       type="text"
                       value={newUsername}
-                      onChange={(e) => setNewUsername(e.target.value)}
+                      onChange={(e) => setNewUsername(e.target.value.toUpperCase())}
                       placeholder="e.g. john_doe"
                       className={inputClasses}
                       required
@@ -1847,7 +1961,7 @@ export default function AdminPanel({
                     <input
                       type="text"
                       value={newFullName}
-                      onChange={(e) => setNewFullName(e.target.value)}
+                      onChange={(e) => setNewFullName(e.target.value.toUpperCase())}
                       placeholder="e.g. John Doe"
                       className={inputClasses}
                     />
@@ -2334,7 +2448,7 @@ export default function AdminPanel({
                     <input
                       type="text"
                       value={newUsername}
-                      onChange={(e) => setNewUsername(e.target.value)}
+                      onChange={(e) => setNewUsername(e.target.value.toUpperCase())}
                       placeholder="e.g. John Doe"
                       className={inputClasses}
                       required
@@ -2356,7 +2470,7 @@ export default function AdminPanel({
                     <input
                       type="text"
                       value={newLineCode}
-                      onChange={(e) => setNewLineCode(e.target.value)}
+                      onChange={(e) => setNewLineCode(e.target.value.toUpperCase())}
                       placeholder="e.g. DLR-99"
                       className={cn(inputClasses, "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/10")}
                       required
@@ -2367,7 +2481,7 @@ export default function AdminPanel({
                     <input
                       type="text"
                       value={newCompanyName}
-                      onChange={(e) => setNewCompanyName(e.target.value)}
+                      onChange={(e) => setNewCompanyName(e.target.value.toUpperCase())}
                       placeholder="e.g. Tech Solutions"
                       className={inputClasses}
                       required
@@ -3284,9 +3398,12 @@ export default function AdminPanel({
 
                       <button
                         type="button"
-                        onClick={handleDeleteBillingMonth}
+                        onClick={() => {
+                          setSheetIdToDelete(currentMonthId || (billingMonths[0]?.id || ''));
+                          setIsDeleteSheetModalOpen(true);
+                        }}
                         className="inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all active:scale-95 border border-rose-100 dark:border-rose-900/20"
-                        title="Purge current monthly recovery record sheet"
+                        title="Purge / delete monthly recovery sheets"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -3841,6 +3958,7 @@ export default function AdminPanel({
                                     <span className="text-slate-400 mr-0.5">PKR</span>
                                     <input
                                       type="number"
+                                      key={`${rowRef.clientId || rowRef.username}-baseAmount-${rowRef.baseAmount}`}
                                       defaultValue={rowRef.baseAmount}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0)}
@@ -3855,6 +3973,7 @@ export default function AdminPanel({
                                     <span className={cn("mr-0.5", outstandingCr > 0 ? "text-rose-500" : "text-slate-400")}>PKR</span>
                                     <input
                                       type="number"
+                                      key={`${rowRef.clientId || rowRef.username}-cr-${rowRef.cr}`}
                                       defaultValue={rowRef.cr}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
@@ -3888,6 +4007,7 @@ export default function AdminPanel({
                                     <span className="text-emerald-500/70 mr-0.5">PKR</span>
                                     <input
                                       type="number"
+                                      key={`${rowRef.clientId || rowRef.username}-paymentReceived-${rowRef.paymentReceived}`}
                                       defaultValue={rowRef.paymentReceived}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}

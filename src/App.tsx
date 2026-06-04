@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { signInAnonymously } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { safeLocalStorage } from './lib/safeLocalStorage';
@@ -13,7 +13,7 @@ import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
-import { safeStringify } from './lib/utils';
+import { safeStringify, processScheduledComplaints } from './lib/utils';
 import FiberLoading from './components/FiberLoading';
 import ServiceMonitor from './components/ServiceMonitor';
 import { supabase } from '../supabaseClient';
@@ -95,6 +95,9 @@ export default function App() {
   });
   const [activeTab, setActiveTab] = useState<string>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const processedComplaints = useMemo(() => {
+    return processScheduledComplaints(complaints);
+  }, [complaints]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -1665,7 +1668,7 @@ export default function App() {
         <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
       ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor') ? (
         <AdminPanel
-          complaints={complaints}
+          complaints={processedComplaints}
           users={users}
           currentUser={user}
           onDeleteComplaint={handleDeleteComplaint}
@@ -1698,7 +1701,7 @@ export default function App() {
         />
       ) : (
         <MemberPanel
-          complaints={complaints}
+          complaints={processedComplaints}
           currentUser={user}
           onRegisterComplaint={handleRegisterComplaint}
           onUpdateComplaintStatus={handleUpdateComplaintStatus}

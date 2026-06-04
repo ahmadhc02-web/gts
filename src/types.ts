@@ -31,6 +31,7 @@ export interface Complaint {
   remarkAuthorName?: string;
   customerReview?: string;
   dealerId?: string; // Multi-tenancy support
+  scheduledAt?: number; // millisecond timestamp
 }
 
 export interface UserProfile {
@@ -49,6 +50,10 @@ export interface UserProfile {
   status?: 'active' | 'pending' | 'blocked';
   profilePicture?: string;
   email?: string;
+  sidebarConfig?: {
+    visibleItems?: string[];
+    itemOrder?: string[];
+  };
 }
 
 export interface Client {

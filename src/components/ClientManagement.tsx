@@ -305,7 +305,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     currentPage * itemsPerPage
   );
 
-  const inputClasses = "w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600";
+  const inputClasses = "w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case";
   const labelClasses = "block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.15em] ml-1 mb-1.5";
 
   return (
@@ -381,7 +381,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   <input
                     type="text"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => setName(e.target.value.toUpperCase())}
                     placeholder="Ex: John Doe"
                     className={inputClasses}
                     required
@@ -396,7 +396,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   <input
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => setUsername(e.target.value.toUpperCase())}
                     placeholder="johndoe_id"
                     className={inputClasses}
                     required
@@ -412,7 +412,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     <input
                       type="tel"
                       value={number}
-                      onChange={(e) => setNumber(e.target.value)}
+                      onChange={(e) => setNumber(e.target.value.toUpperCase())}
                       placeholder="+92 XXX"
                       className={inputClasses}
                     />
@@ -425,7 +425,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     <input
                       type="tel"
                       value={mobileNumber}
-                      onChange={(e) => setMobileNumber(e.target.value)}
+                      onChange={(e) => setMobileNumber(e.target.value.toUpperCase())}
                       placeholder="+92 3XX"
                       className={inputClasses}
                     />
@@ -440,7 +440,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   <input
                     type="text"
                     value={pkgDetails}
-                    onChange={(e) => setPkgDetails(e.target.value)}
+                    onChange={(e) => setPkgDetails(e.target.value.toUpperCase())}
                     placeholder="Ex: 50Mbps Fiber"
                     className={inputClasses}
                   />
@@ -454,7 +454,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   <input
                     type="text"
                     value={userNearby}
-                    onChange={(e) => setUserNearby(e.target.value)}
+                    onChange={(e) => setUserNearby(e.target.value.toUpperCase())}
                     placeholder="Ex: Near City Garden Gate"
                     className={inputClasses}
                   />
@@ -468,7 +468,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   <input
                     type="text"
                     value={panelDetails}
-                    onChange={(e) => setPanelDetails(e.target.value)}
+                    onChange={(e) => setPanelDetails(e.target.value.toUpperCase())}
                     placeholder="Ex: DP-04 / Box-02 / Port-08"
                     className={inputClasses}
                   />
@@ -483,7 +483,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     <input
                       type="text"
                       value={seriesNumber}
-                      onChange={(e) => setSeriesNumber(e.target.value)}
+                      onChange={(e) => setSeriesNumber(e.target.value.toUpperCase())}
                       placeholder="S-000"
                       className={inputClasses}
                     />

@@ -428,6 +428,10 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
 
       {/* Advanced Global CSS overrides target only when printing batch container */}
       <style dangerouslySetInnerHTML={{ __html: `
+        .batch-print-page,
+        .batch-print-page * {
+          font-family: Arial, "Helvetica Neue", Helvetica, sans-serif !important;
+        }
         @media print {
           @page {
             size: A4 portrait;

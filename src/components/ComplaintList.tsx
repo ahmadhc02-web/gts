@@ -207,6 +207,15 @@ export default function ComplaintList({
 
     // Comprehensive Sorting
     filtered.sort((a, b) => {
+      // Prioritize active scheduled complaints at the absolute top of the list
+      const aIsSch = !!a.scheduledAt;
+      const bIsSch = !!b.scheduledAt;
+      if (aIsSch && !bIsSch) return -1;
+      if (!aIsSch && bIsSch) return 1;
+      if (aIsSch && bIsSch) {
+        return (a.scheduledAt || 0) - (b.scheduledAt || 0); // sort earlier scheduled times first
+      }
+
       let valA: any;
       let valB: any;
 
@@ -528,6 +537,153 @@ export default function ComplaintList({
 
   return (
     <div className="space-y-8">
+      {/* Print-only CSS Stylesheet overrides to format complaint list for A4 Portrait paper */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          /* Setup A4 Page Layout */
+          @page {
+            size: A4 portrait;
+            margin: 12mm 12mm 12mm 12mm;
+          }
+
+          /* Force exact print background adjustments & override colors */
+          body, html, #root, .space-y-8, table, tr, td, th {
+            background: #ffffff !important;
+            background-color: #ffffff !important;
+            color: #0c0f17 !important;
+            box-shadow: none !important;
+            text-shadow: none !important;
+            border-color: #cccccc !important;
+          }
+
+          /* General element reset for crisp print typography with Arial constraint */
+          * {
+            font-family: Arial, "Helvetica Neue", Helvetica, sans-serif !important;
+            transition: none !important;
+            animation: none !important;
+            box-shadow: none !important;
+            text-shadow: none !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* Hide UI layout: navigation bar, sidebar, chatbot, buttons, tabs, dropdowns, limit controls, pagination */
+          header,
+          aside,
+          footer,
+          #rail-menu-btn,
+          #sidebar-toggle-btn,
+          .print\\:hidden,
+          .fixed,
+          button,
+          select,
+          input,
+          nav,
+          .toast,
+          .sonner,
+          iframe,
+          .mb-6,
+          /* Hide search/filter bar container */
+          .bg-slate-50\\/50, 
+          /* Hide parent section/filters block */
+          .grid,
+          .flex-wrap,
+          .overflow-x-auto::-webkit-scrollbar,
+          /* Hide pagination wrapper */
+          .px-6.py-4.bg-slate-50 {
+            display: none !important;
+          }
+
+          /* Allow content container to stretch full length */
+          .min-h-screen, 
+          .min-h-screen > div, 
+          main, 
+          .overflow-hidden,
+          .overflow-x-auto,
+          .space-y-8,
+          div {
+            overflow: visible !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            transform: none !important;
+            min-height: 0 !important;
+            height: auto !important;
+          }
+
+          /* Strict table optimization for A4 width boundary */
+          table {
+            display: table !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            border-collapse: collapse !important;
+            margin-top: 10px !important;
+            page-break-inside: auto !important;
+          }
+
+          tr {
+            page-break-inside: avoid !important;
+            page-break-after: auto !important;
+          }
+
+          thead {
+            display: table-header-group !important;
+          }
+
+          th, td {
+            padding: 7px 8px !important;
+            font-size: 9.5px !important;
+            border-bottom: 1px solid #c0c0c0 !important;
+            text-align: left !important;
+            color: #0c0f17 !important;
+            background: transparent !important;
+          }
+
+          th {
+            border-bottom: 2px solid #000000 !important;
+            font-weight: bold !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.05em !important;
+          }
+
+          /* Hide Quick Actions column (last column) when printing list */
+          th:last-child,
+          td:last-child {
+            display: none !important;
+          }
+
+          /* Ensure category badge, priority & status indicators align cleanly without fancy colors */
+          .status-print-indicator,
+          .priority-print-indicator {
+            font-weight: bold !important;
+            text-transform: uppercase !important;
+            color: #000000 !important;
+          }
+        }
+      ` }} />
+
+      {/* Modern, Highly Polished Print-Only Header (Invisible in Dashboard context) */}
+      <div className="hidden print:block border-b-2 border-black pb-4 mb-6">
+        <div className="flex justify-between items-end">
+          <div>
+            <h1 className="text-xl font-bold uppercase tracking-wider text-slate-950 font-sans">
+              GTS Operational Complaints Registry
+            </h1>
+            <p className="text-xs text-slate-500 font-sans mt-1">
+              Enterprise Network & Client Status Management System
+            </p>
+          </div>
+          <div className="text-right text-[10px] font-mono text-slate-500">
+            <p className="font-bold">Date Exported: {new Date().toLocaleString()}</p>
+            <p>Active Scope: {timeRange} // {filteredComplaints.length} Records</p>
+          </div>
+        </div>
+      </div>
+
       <AnimatePresence>
         {complaintToDelete && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -757,6 +913,16 @@ export default function ComplaintList({
                         <CloudUpload size={14} className="text-blue-500" />
                         <span>Cloud Backup (Drive)</span>
                       </button>
+                      <button
+                        onClick={() => {
+                          window.print();
+                          setExportOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer border-t border-slate-150 dark:border-slate-800/85 pt-1.5 mt-1"
+                      >
+                        <Printer size={14} className="text-indigo-500" />
+                        <span>Print Registry (A4)</span>
+                      </button>
                     </div>
                   </motion.div>
                 )}
@@ -974,6 +1140,12 @@ export default function ComplaintList({
                             <span className="font-extrabold text-slate-950 dark:text-white uppercase tracking-tight text-xs group-hover:text-brand-accent transition-colors duration-300 leading-tight">
                               {complaint.customerName}
                             </span>
+                            {complaint.scheduledAt && (
+                              <div className="flex items-center gap-1.5 mt-1 text-[8.5px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-900/40 px-2 py-0.5 rounded-lg w-max uppercase tracking-wider animate-pulse">
+                                <Calendar size={10} className="shrink-0 text-indigo-500" />
+                                <span>Scheduled At: {new Date(complaint.scheduledAt).toLocaleString()}</span>
+                              </div>
+                            )}
                             <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
                               <Phone size={10} className="text-slate-400 shrink-0" />
                               <span>({complaint.number.slice(0,4)}) {complaint.number.slice(4)}</span>
@@ -1703,9 +1875,9 @@ export default function ComplaintList({
                                       <div className="relative">
                                         <textarea
                                           value={statusRemarks}
-                                          onChange={(e) => setStatusRemarks(e.target.value)}
+                                          onChange={(e) => setStatusRemarks(e.target.value.toUpperCase())}
                                           placeholder="Enter resolution protocol details..."
-                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
+                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
                                         />
                                         <button
                                           type="button"
@@ -1797,9 +1969,9 @@ export default function ComplaintList({
                                       <div className="relative">
                                         <textarea
                                           value={customerReview}
-                                          onChange={(e) => setCustomerReview(e.target.value)}
+                                          onChange={(e) => setCustomerReview(e.target.value.toUpperCase())}
                                           placeholder="Type customer feedback or review here..."
-                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm"
+                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
                                         />
                                         <button
                                           type="button"
@@ -1962,7 +2134,7 @@ function EditModal({
     }
   };
 
-  const inputClasses = "w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400";
+  const inputClasses = "w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5 tracking-widest ml-1";
 
   return (
@@ -1998,7 +2170,7 @@ function EditModal({
               <input
                 type="text"
                 value={data.customerName || ''}
-                onChange={(e) => setData({ ...data, customerName: e.target.value })}
+                onChange={(e) => setData({ ...data, customerName: e.target.value.toUpperCase() })}
                 className={inputClasses}
                 required
               />
@@ -2008,7 +2180,7 @@ function EditModal({
               <input
                 type="text"
                 value={data.customerUsername || ''}
-                onChange={(e) => setData({ ...data, customerUsername: e.target.value })}
+                onChange={(e) => setData({ ...data, customerUsername: e.target.value.toUpperCase() })}
                 className={inputClasses}
                 required
               />
@@ -2030,7 +2202,7 @@ function EditModal({
               <input
                 type="text"
                 value={data.number || ''}
-                onChange={(e) => setData({ ...data, number: e.target.value })}
+                onChange={(e) => setData({ ...data, number: e.target.value.toUpperCase() })}
                 className={inputClasses}
                 required
               />
@@ -2040,7 +2212,7 @@ function EditModal({
               <input
                 type="text"
                 value={data.pkgDetails || ''}
-                onChange={(e) => setData({ ...data, pkgDetails: e.target.value })}
+                onChange={(e) => setData({ ...data, pkgDetails: e.target.value.toUpperCase() })}
                 className={inputClasses}
               />
             </div>
@@ -2049,7 +2221,7 @@ function EditModal({
               <input
                 type="text"
                 value={data.userNearby || ''}
-                onChange={(e) => setData({ ...data, userNearby: e.target.value })}
+                onChange={(e) => setData({ ...data, userNearby: e.target.value.toUpperCase() })}
                 className={inputClasses}
               />
             </div>
@@ -2058,7 +2230,7 @@ function EditModal({
               <input
                 type="text"
                 value={data.panelDetails || ''}
-                onChange={(e) => setData({ ...data, panelDetails: e.target.value })}
+                onChange={(e) => setData({ ...data, panelDetails: e.target.value.toUpperCase() })}
                 className={inputClasses}
               />
             </div>
