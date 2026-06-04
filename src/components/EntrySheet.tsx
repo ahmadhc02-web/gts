@@ -30,6 +30,8 @@ interface Table1Row {
   amount: number;
   ch: boolean;
   originalAmount?: number;
+  clientId?: string;
+  clientUsername?: string;
 }
 
 interface Table2Row {
@@ -481,7 +483,9 @@ export default function EntrySheet({
         name: '',
         comments: '',
         amount: 0,
-        ch: false
+        ch: false,
+        clientId: '',
+        clientUsername: ''
       });
     }
     setTable1Rows(t1);
@@ -602,7 +606,9 @@ export default function EntrySheet({
           comments: r.comments || '',
           amount: Number(r.amount) || 0,
           ch: !!r.ch,
-          originalAmount: r.originalAmount || 0
+          originalAmount: r.originalAmount || 0,
+          clientId: r.clientId || '',
+          clientUsername: r.clientUsername || ''
         })),
         table2Rows: table2Rows.map(r => ({
           sr: r.sr,
@@ -642,7 +648,18 @@ export default function EntrySheet({
 
               let matchedIdx = -1;
 
-              if (hasId) {
+              // 1. Match using precise metadata from suggestions
+              if (r.clientId || r.clientUsername) {
+                const searchClientId = (r.clientId || '').trim().toLowerCase();
+                const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
+                matchedIdx = updatedBillingRows.findIndex(br => 
+                  (searchClientId && br.clientId && br.clientId.trim().toLowerCase() === searchClientId) ||
+                  (searchClientUsername && br.username && br.username.trim().toLowerCase() === searchClientUsername)
+                );
+              }
+
+              // 2. Fallback to typed matching by ID or Username
+              if (matchedIdx === -1 && hasId) {
                 const searchId = r.cId.trim().toLowerCase();
                 matchedIdx = updatedBillingRows.findIndex(br => 
                   (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
@@ -650,6 +667,7 @@ export default function EntrySheet({
                 );
               }
 
+              // 3. Last fallback: match by Name
               if (matchedIdx === -1 && hasName) {
                 const searchName = r.name.trim().toLowerCase();
                 matchedIdx = updatedBillingRows.findIndex(br => 
@@ -729,7 +747,9 @@ export default function EntrySheet({
       comments: r.comments || '',
       amount: Number(r.amount) || 0,
       ch: !!r.ch,
-      originalAmount: r.originalAmount || r.amount || 0
+      originalAmount: r.originalAmount || r.amount || 0,
+      clientId: r.clientId || '',
+      clientUsername: r.clientUsername || ''
     }));
     while (reT1.length < 22) {
       reT1.push({
@@ -738,7 +758,9 @@ export default function EntrySheet({
         name: '',
         comments: '',
         amount: 0,
-        ch: false
+        ch: false,
+        clientId: '',
+        clientUsername: ''
       });
     }
     setTable1Rows(reT1);
@@ -951,7 +973,9 @@ export default function EntrySheet({
     const updated = [...table1Rows];
     let commentsVal = updated[index].comments;
 
-    if (field === 'amount') {
+    if (field === 'comments') {
+      commentsVal = value;
+    } else if (field === 'amount') {
       const orig = updated[index].originalAmount;
       if (typeof orig === 'number') {
         const newAmt = parseFloat(value) || 0;
@@ -972,6 +996,11 @@ export default function EntrySheet({
       [field]: value,
       comments: commentsVal
     };
+
+    if (field === 'name') {
+      updated[index].clientId = undefined;
+      updated[index].clientUsername = undefined;
+    }
     setTable1Rows(updated);
   };
 
@@ -1014,7 +1043,9 @@ export default function EntrySheet({
       ...updated[index],
       name: client.name || '',
       amount: amount,
-      originalAmount: amount
+      originalAmount: amount,
+      clientId: client.id || '',
+      clientUsername: client.username || ''
     };
     
     setTable1Rows(updated);
@@ -1228,7 +1259,7 @@ export default function EntrySheet({
         <style dangerouslySetInnerHTML={{ __html: `
           .print-paper-container,
           .print-paper-container * {
-            font-family: Arial, "Helvetica Neue", Helvetica, sans-serif !important;
+            font-family: 'Lexend', sans-serif !important;
           }
           @media print {
             @page {
@@ -1963,29 +1994,36 @@ export default function EntrySheet({
                       style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
                       className="px-2 border-r border-black font-sans relative group/cell"
                     >
-                      <input
-                        type="text"
-                        value={row.name}
-                        onChange={(e) => {
-                          handleT1Change(index, 'name', e.target.value);
-                          setSearchQuery(e.target.value);
-                          setFocusedRowIndex(index);
-                          setFocusedField('name');
-                        }}
-                        onFocus={() => {
-                          setSearchQuery(row.name);
-                          setFocusedRowIndex(index);
-                          setFocusedField('name');
-                        }}
-                        onBlur={() => {
-                          setTimeout(() => {
-                            setFocusedRowIndex(null);
-                            setFocusedField(null);
-                          }, 250);
-                        }}
-                        style={{ fontSize: `${tableFontSize}px` }}
-                        className="w-full border-none p-0 text-slate-900 bg-transparent font-black tracking-tight focus:bg-slate-100 outline-none"
-                      />
+                      <div className="flex items-center justify-between gap-1 w-full">
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => {
+                            handleT1Change(index, 'name', e.target.value);
+                            setSearchQuery(e.target.value);
+                            setFocusedRowIndex(index);
+                            setFocusedField('name');
+                          }}
+                          onFocus={() => {
+                            setSearchQuery(row.name);
+                            setFocusedRowIndex(index);
+                            setFocusedField('name');
+                          }}
+                          onBlur={() => {
+                            setTimeout(() => {
+                              setFocusedRowIndex(null);
+                              setFocusedField(null);
+                            }, 250);
+                          }}
+                          style={{ fontSize: `${tableFontSize}px` }}
+                          className="flex-1 min-w-0 border-none p-0 text-slate-900 bg-transparent font-black tracking-tight focus:bg-slate-100 outline-none"
+                        />
+                        {row.clientUsername && (
+                          <span className="print:hidden text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:text-indigo-400 dark:bg-indigo-950 px-1 py-0.5 rounded leading-none shrink-0">
+                            @{row.clientUsername}
+                          </span>
+                        )}
+                      </div>
 
                       {focusedRowIndex === index && focusedField === 'name' && (
                         <div className="absolute top-[105%] left-0 w-[290px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-slate-800 shadow-2xl rounded-xl p-1.5 z-[999] max-h-56 overflow-y-auto print:hidden font-sans">

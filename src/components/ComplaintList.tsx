@@ -1027,8 +1027,16 @@ export default function ComplaintList({
                   </div>
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500">
-                  User ID & Sector
+                <th 
+                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
+                  onClick={() => handleSort('tactical')}
+                >
+                  <div className="flex items-center gap-1.5 ">
+                    <span>User ID & Sector</span>
+                    {sortConfig.key === 'tactical' && (
+                       sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
+                    )}
+                  </div>
                 </th>
 
                 <th 

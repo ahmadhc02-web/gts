@@ -11,13 +11,6 @@
         "role": { "type": "string", "enum": ["admin", "member", "dealer", "super_admin"] },
         "dealerId": { "type": "string", "description": "ID of the tenant/dealer this user belongs to." },
         "lineCode": { "type": "string", "description": "Unique code for dealer network access." },
-        "sidebarConfig": {
-          "type": "object",
-          "properties": {
-            "visibleItems": { "type": "array", "items": { "type": "string" } },
-            "itemOrder": { "type": "array", "items": { "type": "string" } }
-          }
-        },
         "createdAt": { "type": "number" }
       },
       "required": ["uid", "username", "role", "createdAt"]

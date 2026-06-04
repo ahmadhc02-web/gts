@@ -14,7 +14,6 @@ import FiberLoading from './FiberLoading';
 import InlineTextEditor from './InlineTextEditor';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { firebaseService } from '../lib/firebaseService';
-import { toast } from 'sonner';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -363,122 +362,25 @@ export default function Layout({
     }
   ];
 
-  const filteredCategories = categories.map(cat => {
-    // 1. Filter by role authorizations
-    const roleAuthorizedItems = cat.items.filter(item => {
+  const filteredCategories = categories.map(cat => ({
+    ...cat,
+    items: cat.items.filter(item => {
+      // Role-based filtering
       if (!user) return false;
+      
+      // If user is member, only show specific items requested: Operations, User Details, Active Nodes, Security, Gmail
       if (user.role === 'member') {
         return ['complaints', 'clients', 'nodes', 'settings', 'gmail'].includes(item.id);
       }
+      
+      // For other roles, check item.roles if defined
       if (item.roles && !item.roles.includes(user.role)) {
         return false;
       }
+      
       return true;
-    });
-
-    // 2. Filter by user's saved visibility config if custom visibility settings exist
-    let visibleItems = roleAuthorizedItems;
-    if (user?.sidebarConfig?.visibleItems) {
-      visibleItems = roleAuthorizedItems.filter(item => 
-        user.sidebarConfig?.visibleItems?.includes(item.id)
-      );
-    }
-
-    // 3. Order items based on user's custom saved ordering array
-    if (user?.sidebarConfig?.itemOrder) {
-      const orderMap = new Map(user.sidebarConfig.itemOrder.map((id, index) => [id, index]));
-      visibleItems = [...visibleItems].sort((a, b) => {
-        const orderA = orderMap.has(a.id) ? (orderMap.get(a.id) as number) : 999;
-        const orderB = orderMap.has(b.id) ? (orderMap.get(b.id) as number) : 999;
-        return orderA - orderB;
-      });
-    }
-
-    return {
-      ...cat,
-      items: visibleItems
-    };
-  }).filter(cat => cat.items.length > 0);
-
-  const [isSidebarConfigOpen, setIsSidebarConfigOpen] = useState(false);
-  const [configVisibleItems, setConfigVisibleItems] = useState<string[]>([]);
-  const [configItemOrder, setConfigItemOrder] = useState<string[]>([]);
-  const [isSavingConfig, setIsSavingConfig] = useState(false);
-
-  const getRoleAuthorizedItems = () => {
-    if (!user) return [];
-    return categories.flatMap(cat => cat.items).filter(item => {
-      if (user.role === 'member') {
-        return ['complaints', 'clients', 'nodes', 'settings', 'gmail'].includes(item.id);
-      }
-      if (item.roles && !item.roles.includes(user.role)) {
-        return false;
-      }
-      return true;
-    });
-  };
-
-  useEffect(() => {
-    if (isSidebarConfigOpen && user) {
-      const authorizedItems = getRoleAuthorizedItems();
-      const authorizedIds = authorizedItems.map(item => item.id);
-      
-      const savedVisible = user.sidebarConfig?.visibleItems || authorizedIds;
-      const validVisible = savedVisible.filter(id => authorizedIds.includes(id));
-      setConfigVisibleItems(validVisible);
-      
-      const savedOrder = user.sidebarConfig?.itemOrder || authorizedIds;
-      const filteredSavedOrder = savedOrder.filter(id => authorizedIds.includes(id));
-      const missingIds = authorizedIds.filter(id => !filteredSavedOrder.includes(id));
-      const fullOrder = [...filteredSavedOrder, ...missingIds];
-      setConfigItemOrder(fullOrder);
-    }
-  }, [isSidebarConfigOpen, user]);
-
-  const moveConfigItem = (index: number, direction: 'up' | 'down') => {
-    const newOrder = [...configItemOrder];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= newOrder.length) return;
-    
-    const temp = newOrder[index];
-    newOrder[index] = newOrder[targetIndex];
-    newOrder[targetIndex] = temp;
-    setConfigItemOrder(newOrder);
-  };
-
-  const toggleConfigItemVisibility = (id: string) => {
-    setConfigVisibleItems(prev => {
-      if (prev.includes(id)) {
-        if (prev.length <= 1) {
-          toast.warning("At least one navigation node must be visible.");
-          return prev;
-        }
-        return prev.filter(item => item !== id);
-      } else {
-        return [...prev, id];
-      }
-    });
-  };
-
-  const handleSaveSidebarConfig = async () => {
-    if (!user) return;
-    try {
-      setIsSavingConfig(true);
-      const newConfig = {
-        visibleItems: configVisibleItems,
-        itemOrder: configItemOrder
-      };
-      
-      await firebaseService.updateUser(user.uid, { sidebarConfig: newConfig }, user.fullName || user.username);
-      toast.success('Sidebar alignment configuration saved to your profile!');
-      setIsSidebarConfigOpen(false);
-    } catch (err) {
-      console.error(err);
-      toast.error('Failed to save alignment configuration.');
-    } finally {
-      setIsSavingConfig(false);
-    }
-  };
+    })
+  })).filter(cat => cat.items.length > 0);
 
   const toggleCat = (id: string) => {
     setExpandedCats(prev => 
@@ -610,24 +512,12 @@ export default function Layout({
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">Navigation Panel</p>
              </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <button 
-              onClick={() => {
-                setIsSidebarConfigOpen(true);
-                setIsSidebarOpen(false);
-              }}
-              className="p-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 transition-all hover:scale-110 cursor-pointer"
-              title="Configure Panel Menu Layout"
-            >
-              <Settings size={16} />
-            </button>
-            <button 
-              onClick={() => setIsSidebarOpen(false)}
-              className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 transition-colors"
-            >
-              <ChevronLeft size={20} />
-            </button>
-          </div>
+          <button 
+            onClick={() => setIsSidebarOpen(false)}
+            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 transition-colors"
+          >
+            <ChevronLeft size={20} />
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
@@ -858,157 +748,6 @@ export default function Layout({
                   >
                     Acknowledge
                   </button>
-                </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Sidebar Layout Customization Modal */}
-      <AnimatePresence>
-        {isSidebarConfigOpen && (
-          <>
-            <motion.div 
-               initial={{ opacity: 0 }}
-               animate={{ opacity: 1 }}
-               exit={{ opacity: 0 }}
-               onClick={() => setIsSidebarConfigOpen(false)}
-               className="fixed inset-0 bg-slate-950/60 backdrop-blur-md z-[300]"
-            />
-            <div className="fixed inset-0 flex items-center justify-center z-[310] p-4 pointer-events-none">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8, y: 100, filter: 'blur(20px)' }}
-                animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, scale: 0.8, y: -100, filter: 'blur(20px)' }}
-                className="w-full max-w-lg bg-white dark:bg-slate-950 rounded-[2.5rem] border border-slate-200/50 dark:border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.4)] pointer-events-auto overflow-hidden relative font-sans"
-              >
-                {/* Decorative gradients */}
-                <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/10 blur-[60px] rounded-full" />
-                <div className="absolute bottom-0 left-0 w-40 h-40 bg-emerald-500/10 blur-[60px] rounded-full" />
-
-                <div className="p-6 sm:p-8 relative z-10 flex flex-col max-h-[90vh]">
-                  {/* Header */}
-                  <div className="flex items-center justify-between mb-6 shrink-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 text-blue-600 dark:text-blue-400">
-                        <Settings size={20} className="sm:w-[24px] sm:h-[24px]" />
-                      </div>
-                      <div>
-                        <h4 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Align Left Panel</h4>
-                        <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest">Visibility & Custom Ordering</p>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => setIsSidebarConfigOpen(false)}
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-500 hover:scale-110 active:scale-95 transition-all cursor-pointer"
-                    >
-                      <X size={18} className="sm:w-[20px] sm:h-[20px]" />
-                    </button>
-                  </div>
-
-                  {/* Intro description */}
-                  <div className="mb-4 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed shrink-0">
-                    Set which navigation nodes are visible in your profile, and arrange their ordering using the navigation arrows. These options will persist across all your logged-in client consoles!
-                  </div>
-
-                  {/* List of custom options scrollable */}
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar max-h-[50vh]">
-                    {configItemOrder.map((itemId, idx) => {
-                      const allRawItems = categories.flatMap(cat => cat.items);
-                      const itemObj = allRawItems.find(item => item.id === itemId);
-                      if (!itemObj) return null;
-
-                      const isItemVisible = configVisibleItems.includes(itemId);
-                      const ItemIcon = itemObj.icon;
-
-                      return (
-                        <div 
-                          key={itemId}
-                          className={cn(
-                            "flex items-center justify-between p-3.5 rounded-2xl border transition-all",
-                            isItemVisible 
-                              ? "bg-slate-50/80 dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-800/60"
-                              : "bg-slate-100/30 dark:bg-slate-900/5 border-dashed border-slate-200/30 dark:border-slate-800/20 opacity-60"
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => toggleConfigItemVisibility(itemId)}
-                              className={cn(
-                                "w-5 h-5 rounded-md flex items-center justify-center border transition-all cursor-pointer",
-                                isItemVisible
-                                  ? "bg-blue-600 border-blue-600 text-white"
-                                  : "border-slate-300 dark:border-slate-700 bg-transparent"
-                              )}
-                            >
-                              {isItemVisible && <CheckCircle2 size={12} className="stroke-[3]" />}
-                            </button>
-
-                            <div className="flex items-center gap-2">
-                              <span className={cn(
-                                "p-1.5 rounded-lg border",
-                                isItemVisible 
-                                  ? "bg-blue-500/10 border-blue-500/20 text-blue-500"
-                                  : "bg-slate-500/10 border-slate-500/20 text-slate-400"
-                              )}>
-                                <ItemIcon size={14} />
-                              </span>
-                              <div className="text-left">
-                                <p className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 leading-none">
-                                  {itemObj.label}
-                                </p>
-                                <p className="text-[7px] sm:text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                                  ID: {itemId}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Order Buttons */}
-                          <div className="flex items-center gap-1">
-                            <button
-                              disabled={idx === 0}
-                              onClick={() => moveConfigItem(idx, 'up')}
-                              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
-                              title="Move Up"
-                            >
-                              <ChevronRight size={14} className="-rotate-90" />
-                            </button>
-                            <button
-                              disabled={idx === configItemOrder.length - 1}
-                              onClick={() => moveConfigItem(idx, 'down')}
-                              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-white disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
-                              title="Move Down"
-                            >
-                              <ChevronRight size={14} className="rotate-90" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Buttons */}
-                  <div className="mt-6 flex gap-3 shrink-0">
-                    <button
-                      onClick={() => setIsSidebarConfigOpen(false)}
-                      className="flex-1 py-3 border border-slate-250 dark:border-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-all cursor-pointer select-none"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      disabled={isSavingConfig}
-                      onClick={handleSaveSidebarConfig}
-                      className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 disabled:from-slate-600 disabled:to-slate-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-blue-500/10 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 select-none"
-                    >
-                      {isSavingConfig ? (
-                        <div className="w-4 h-4 border-2 border-white/35 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        "Save Alignment"
-                      )}
-                    </button>
-                  </div>
                 </div>
               </motion.div>
             </div>

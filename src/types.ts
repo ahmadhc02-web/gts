@@ -50,10 +50,6 @@ export interface UserProfile {
   status?: 'active' | 'pending' | 'blocked';
   profilePicture?: string;
   email?: string;
-  sidebarConfig?: {
-    visibleItems?: string[];
-    itemOrder?: string[];
-  };
 }
 
 export interface Client {

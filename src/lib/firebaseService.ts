@@ -20,8 +20,7 @@ const mappings: Record<string, Record<string, string>> = {
     companyName: 'company_name',
     status: 'status',
     profilePicture: 'profile_picture',
-    email: 'email',
-    sidebarConfig: 'sidebar_config'
+    email: 'email'
   },
   complaints: {
     id: 'id',
