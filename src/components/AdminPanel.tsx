@@ -2048,8 +2048,9 @@ export default function AdminPanel({
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
                    <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Link Access Directory</h4>
                 </div>
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-900/50">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50">
                     <tr className="border-b border-slate-100 dark:border-slate-800">
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Clearance</th>
@@ -2243,6 +2244,7 @@ export default function AdminPanel({
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           </div>
@@ -2503,8 +2505,9 @@ export default function AdminPanel({
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
                    <h4 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500">Authorized Dealers Registry</h4>
                 </div>
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-900/50">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left whitespace-nowrap">
+                    <thead className="bg-slate-50 dark:bg-slate-900/50">
                     <tr className="border-b border-slate-100 dark:border-slate-800">
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity / Company</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Line Code</th>
@@ -2627,6 +2630,7 @@ export default function AdminPanel({
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
             </div>
           </div>

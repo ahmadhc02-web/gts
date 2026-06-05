@@ -12,7 +12,6 @@ import { cn } from '../lib/utils';
 import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
 import { getCardStyle } from '../lib/styleUtils';
-import GmailPanel from './GmailPanel';
 
 interface MemberPanelProps {
   complaints: Complaint[];
@@ -375,14 +374,6 @@ export default function MemberPanel({
 
         {activeTab === 'clients' && (
           <ClientManagement appConfig={appConfig} isAdmin={false} currentUser={currentUser} currentUserName={currentUser.username} />
-        )}
-
-        {activeTab === 'gmail' && (
-          <GmailPanel
-            currentUser={currentUser}
-            appConfig={appConfig}
-            complaints={complaints}
-          />
         )}
 
           {activeTab === 'profile' && (

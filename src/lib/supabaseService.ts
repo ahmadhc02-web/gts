@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { collection, getDocs } from 'firebase/firestore';
 import { getDb } from './firebase';
+import { supabase as defaultSupabase } from '../../supabaseClient';
 
 /**
  * ------------------------------------------------------------------
@@ -46,6 +47,7 @@ export function generateSupabaseMigrationSQL(data: {
   monitorTargets: any[];
   ledgerSheets: any[];
   branding: any;
+  usersData?: any[];
 }): string {
   
   const escapeSQL = (val: any): string => {
@@ -222,6 +224,35 @@ CREATE TABLE IF NOT EXISTS public.branding_config (
   updated_by VARCHAR(255)
 );
 
+CREATE TABLE IF NOT EXISTS public.users_data (
+  id VARCHAR(255) PRIMARY KEY,
+  month_id VARCHAR(100) NOT NULL,
+  client_id VARCHAR(255),
+  name VARCHAR(255),
+  username VARCHAR(255),
+  mobile_number VARCHAR(100),
+  area VARCHAR(255),
+  rt VARCHAR(100),
+  base_amount NUMERIC DEFAULT 0,
+  cr NUMERIC DEFAULT 0,
+  total_amount NUMERIC DEFAULT 0,
+  billing_day VARCHAR(50),
+  payment_received NUMERIC DEFAULT 0,
+  payment_status VARCHAR(50) DEFAULT 'unpaid',
+  comments TEXT,
+  occ VARCHAR(100),
+  ser_nam VARCHAR(255),
+  pkg_details TEXT,
+  sag VARCHAR(100),
+  lai VARCHAR(100),
+  connection_date VARCHAR(100),
+  device_price VARCHAR(100),
+  abl VARCHAR(100),
+  network VARCHAR(100),
+  dealer_id VARCHAR(255) DEFAULT 'main',
+  updated_at BIGINT
+);
+
 -- Row Level Security (RLS) policies activation
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.complaints ENABLE ROW LEVEL SECURITY;
@@ -232,8 +263,12 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.monitor_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ledger_sheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.branding_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users_data ENABLE ROW LEVEL SECURITY;
 
 -- Dynamic bypass security policy bindings for fast frontend onboarding
+DROP POLICY IF EXISTS "Public access policy usr_data" ON public.users_data;
+CREATE POLICY "Public access policy usr_data" ON public.users_data FOR ALL USING (true) WITH CHECK (true);
+
 DROP POLICY IF EXISTS "Public access policy usr" ON public.users;
 CREATE POLICY "Public access policy usr" ON public.users FOR ALL USING (true) WITH CHECK (true);
 
@@ -347,6 +382,16 @@ CREATE POLICY "Public access policy brand" ON public.branding_config FOR ALL USI
     sql += `ON CONFLICT (id) DO UPDATE SET\n  project_name=EXCLUDED.project_name, accent_color=EXCLUDED.accent_color, secondary_color=EXCLUDED.secondary_color, theme_color=EXCLUDED.theme_color, updated_at=EXCLUDED.updated_at;\n`;
   }
 
+  // === J: Users Data (Billing Monthly Rows) ===
+  const usersDataRows = data.usersData || [];
+  if (usersDataRows.length > 0) {
+    sql += `\n-- Insert user billing recovery records:\n`;
+    sql += `INSERT INTO public.users_data (id, month_id, client_id, name, username, mobile_number, area, rt, base_amount, cr, total_amount, billing_day, payment_received, payment_status, comments, occ, ser_nam, pkg_details, sag, lai, connection_date, device_price, abl, network, dealer_id, updated_at) VALUES\n`;
+    sql += usersDataRows.map(ud => {
+      return `  (${escapeSQL(ud.id)}, ${escapeSQL(ud.month_id)}, ${escapeSQL(ud.client_id)}, ${escapeSQL(ud.name)}, ${escapeSQL(ud.username)}, ${escapeSQL(ud.mobile_number)}, ${escapeSQL(ud.area)}, ${escapeSQL(ud.rt)}, ${escapeSQL(ud.base_amount)}, ${escapeSQL(ud.cr)}, ${escapeSQL(ud.total_amount)}, ${escapeSQL(ud.billing_day)}, ${escapeSQL(ud.payment_received)}, ${escapeSQL(ud.payment_status)}, ${escapeSQL(ud.comments)}, ${escapeSQL(ud.occ)}, ${escapeSQL(ud.ser_nam)}, ${escapeSQL(ud.pkg_details)}, ${escapeSQL(ud.sag)}, ${escapeSQL(ud.lai)}, ${escapeSQL(ud.connection_date)}, ${escapeSQL(ud.device_price)}, ${escapeSQL(ud.abl)}, ${escapeSQL(ud.network)}, ${escapeSQL(ud.dealer_id)}, ${escapeSQL(ud.updated_at)})`;
+    }).join(',\n') + `\nON CONFLICT (id) DO UPDATE SET\n  name=EXCLUDED.name, username=EXCLUDED.username, payment_status=EXCLUDED.payment_status, payment_received=EXCLUDED.payment_received, cr=EXCLUDED.cr, total_amount=EXCLUDED.total_amount, comments=EXCLUDED.comments, updated_at=EXCLUDED.updated_at;\n`;
+  }
+
   sql += `\nCOMMIT;\n`;
   return sql;
 }
@@ -365,6 +410,7 @@ export async function extractFirebaseCollections(onProgress?: (colName: string, 
     monitorTargets: any[];
     ledgerSheets: any[];
     branding: any | null;
+    usersData: any[];
   } = {
     users: [],
     complaints: [],
@@ -374,7 +420,8 @@ export async function extractFirebaseCollections(onProgress?: (colName: string, 
     notifications: [],
     monitorTargets: [],
     ledgerSheets: [],
-    branding: null
+    branding: null,
+    usersData: []
   };
 
   const targets = [
@@ -412,6 +459,65 @@ export async function extractFirebaseCollections(onProgress?: (colName: string, 
     console.warn("Unable to fetch configuration doc:", e);
   }
 
+  // Extract all billing month sheets, parse and flatten them to usersData for migration
+  try {
+    if (onProgress) onProgress('usersData', -1);
+    const { data: bData, error } = await defaultSupabase
+      .from('branding_config')
+      .select('*');
+
+    if (!error && bData) {
+      bData.forEach(item => {
+        if (item.id.startsWith('billing_month_')) {
+          try {
+            const parsedRows = JSON.parse(item.dashboard_subtext || '[]');
+            const displayId = item.id.replace('billing_month_', '');
+            const dealerId = item.id.includes('billing_month_') && item.id.split('_').length > 3 ? item.id.split('_')[2] : 'main';
+            if (Array.isArray(parsedRows)) {
+              parsedRows.forEach((r: any, idx: number) => {
+                const uniqueId = `bm_${displayId}_${r.clientId || r.username || idx}`;
+                result.usersData.push({
+                  id: uniqueId,
+                  month_id: displayId,
+                  client_id: r.clientId || null,
+                  name: r.name || null,
+                  username: r.username || null,
+                  mobile_number: r.mobileNumber || null,
+                  area: r.area || null,
+                  rt: r.rt || null,
+                  base_amount: Number(r.baseAmount) || 0,
+                  cr: Number(r.cr) || 0,
+                  total_amount: Number(r.totalAmount) || 0,
+                  billing_day: r.billingDay || '5',
+                  payment_received: Number(r.paymentReceived) || 0,
+                  payment_status: r.paymentStatus || 'unpaid',
+                  comments: r.comments || null,
+                  occ: r.occ || null,
+                  ser_nam: r.serNam || null,
+                  pkg_details: r.pkgDetails || null,
+                  sag: r.sag || null,
+                  lai: r.lai || null,
+                  connection_date: r.connectionDate || null,
+                  device_price: r.devicePrice || null,
+                  abl: r.abl || null,
+                  network: r.network || null,
+                  dealer_id: dealerId,
+                  updated_at: item.updated_at || Date.now()
+                });
+              });
+            }
+          } catch (e) {
+            console.warn("Error parsing billing month for migration:", e);
+          }
+        }
+      });
+    }
+    if (onProgress) onProgress('usersData', result.usersData.length);
+  } catch (e) {
+    console.warn("Unable to fetch billing months for migration flattening:", e);
+    if (onProgress) onProgress('usersData', 0);
+  }
+
   return result;
 }
 
@@ -431,7 +537,8 @@ export async function pushCollectionsToSupabase(
     { key: 'chatMessages', table: 'chat_messages' },
     { key: 'notifications', table: 'notifications' },
     { key: 'monitorTargets', table: 'monitor_targets' },
-    { key: 'ledgerSheets', table: 'ledger_sheets' }
+    { key: 'ledgerSheets', table: 'ledger_sheets' },
+    { key: 'usersData', table: 'users_data' }
   ];
 
   for (const item of mapTableData) {

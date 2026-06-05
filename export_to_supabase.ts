@@ -236,6 +236,36 @@ CREATE TABLE IF NOT EXISTS public.branding_config (
   updated_by VARCHAR(255)
 );
 
+-- === USERS DATA (BILLING SHEETS) TABLE ===
+CREATE TABLE IF NOT EXISTS public.users_data (
+  id VARCHAR(255) PRIMARY KEY,
+  month_id VARCHAR(100) NOT NULL,
+  client_id VARCHAR(255),
+  name VARCHAR(255),
+  username VARCHAR(255),
+  mobile_number VARCHAR(100),
+  area VARCHAR(255),
+  rt VARCHAR(100),
+  base_amount NUMERIC DEFAULT 0,
+  cr NUMERIC DEFAULT 0,
+  total_amount NUMERIC DEFAULT 0,
+  billing_day VARCHAR(50),
+  payment_received NUMERIC DEFAULT 0,
+  payment_status VARCHAR(50) DEFAULT 'unpaid',
+  comments TEXT,
+  occ VARCHAR(100),
+  ser_nam VARCHAR(255),
+  pkg_details TEXT,
+  sag VARCHAR(100),
+  lai VARCHAR(100),
+  connection_date VARCHAR(100),
+  device_price VARCHAR(100),
+  abl VARCHAR(100),
+  network VARCHAR(100),
+  dealer_id VARCHAR(255) DEFAULT 'main',
+  updated_at BIGINT
+);
+
 -- Enable Row Level Security (RLS) on all tables for Supabase standard security
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.complaints ENABLE ROW LEVEL SECURITY;
@@ -246,6 +276,11 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.monitor_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ledger_sheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.branding_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users_data ENABLE ROW LEVEL SECURITY;
+
+-- Create basic permissible bypass policies for simplified transition
+DROP POLICY IF EXISTS "Public access policy usr_data" ON public.users_data;
+CREATE POLICY "Public access policy usr_data" ON public.users_data FOR ALL USING (true) WITH CHECK (true);
 
 -- Create basic permissible bypass policies for simplified transition
 CREATE POLICY "Allow public select of users" ON public.users FOR SELECT USING (true);

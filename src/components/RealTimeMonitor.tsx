@@ -42,7 +42,8 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     const todayStr = new Date().toDateString();
     
     complaints.forEach(c => {
-      const isResolved = c.status?.toUpperCase() === 'RESOLVED' || c.status?.toUpperCase() === 'CLOSED';
+      const status = c.status?.toUpperCase() || '';
+      const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
       if (isResolved) {
         resolved++;
       } else {
@@ -86,14 +87,22 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
         const endOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
         
-        const count = complaints.filter(c => {
+        const totalCount = complaints.filter(c => {
           if (!c.createdAt) return false;
           return c.createdAt >= startOfDay && c.createdAt <= endOfDay;
         }).length;
-        
+
+        const resolvedCount = complaints.filter(c => {
+          if (!c.createdAt) return false;
+          const status = c.status?.toUpperCase() || '';
+          const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
+          return isResolved && c.createdAt >= startOfDay && c.createdAt <= endOfDay;
+        }).length;
+
         data.push({
           name: label,
-          total: count
+          total: totalCount,
+          resolved: resolvedCount
         });
       }
       return data;
@@ -110,14 +119,22 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
         const endOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
         
-        const count = complaints.filter(c => {
+        const totalCount = complaints.filter(c => {
           if (!c.createdAt) return false;
           return c.createdAt >= startOfDay && c.createdAt <= endOfDay;
+        }).length;
+
+        const resolvedCount = complaints.filter(c => {
+          if (!c.createdAt) return false;
+          const status = c.status?.toUpperCase() || '';
+          const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
+          return isResolved && c.createdAt >= startOfDay && c.createdAt <= endOfDay;
         }).length;
         
         data.push({
           name: label,
-          total: count
+          total: totalCount,
+          resolved: resolvedCount
         });
       }
       return data;
@@ -134,38 +151,46 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         const startOfM = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0).getTime();
         const endOfM = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
         
-        const count = complaints.filter(c => {
+        const totalCount = complaints.filter(c => {
           if (!c.createdAt) return false;
           return c.createdAt >= startOfM && c.createdAt <= endOfM;
         }).length;
         
+        const resolvedCount = complaints.filter(c => {
+          if (!c.createdAt) return false;
+          const status = c.status?.toUpperCase() || '';
+          const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
+          return isResolved && c.createdAt >= startOfM && c.createdAt <= endOfM;
+        }).length;
+        
         data.push({
           name: label,
-          total: count
+          total: totalCount,
+          resolved: resolvedCount
         });
       }
       return data;
     }
   }, [complaints, reportType]);
 
-  // Render a custom glowing dot for precise circular nodes with brand-accent halo 
-  const renderCustomDot = (props: any) => {
-    const { cx, cy, index, payload } = props;
-    if (payload.total === 0) return null; // don't draw dots for 0 to keep it extremely clean
+  // Custom dots rendering
+  const renderCustomDot = (colorStr: string, activeColorStr: string) => (props: any) => {
+    const { cx, cy, index, payload, dataKey } = props;
+    if (payload[dataKey] === 0) return null;
     return (
-      <g key={`dot-${index}`}>
+      <g key={`dot-${dataKey}-${index}`}>
         <circle 
           cx={cx} 
           cy={cy} 
           r={6} 
-          fill="rgba(37, 99, 235, 0.15)" 
+          fill={activeColorStr} 
           className="animate-pulse"
         />
         <circle 
           cx={cx} 
           cy={cy} 
           r={3} 
-          fill="#2563eb" 
+          fill={colorStr} 
           stroke="#ffffff" 
           strokeWidth={1} 
         />
@@ -173,22 +198,21 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     );
   };
 
-  // Render active dot glow
-  const renderCustomActiveDot = (props: any) => {
-    const { cx, cy } = props;
+  const renderCustomActiveDot = (colorStr: string, activeColorStr: string) => (props: any) => {
+    const { cx, cy, dataKey } = props;
     return (
       <g>
         <circle 
           cx={cx} 
           cy={cy} 
           r={10} 
-          fill="rgba(37, 99, 235, 0.3)" 
+          fill={activeColorStr} 
         />
         <circle 
           cx={cx} 
           cy={cy} 
           r={5} 
-          fill="#2563eb" 
+          fill={colorStr} 
           stroke="#ffffff" 
           strokeWidth={1.5} 
         />
@@ -260,9 +284,16 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                   <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25}/>
                   <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
                 </linearGradient>
+                <linearGradient id="chartGradientGreen" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                </linearGradient>
                 {/* Subtle drop shadow for line */}
                 <filter id="softLineShadow" x="-10%" y="-10%" width="120%" height="130%">
                   <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#2563eb" floodOpacity="0.12" />
+                </filter>
+                <filter id="softLineShadowGreen" x="-10%" y="-10%" width="120%" height="130%">
+                  <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#10b981" floodOpacity="0.12" />
                 </filter>
               </defs>
 
@@ -302,21 +333,35 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em'
                 }}
-                itemStyle={{ color: '#2563eb', fontWeight: '900', padding: 0 }}
+                itemStyle={{ fontWeight: '900', padding: 0 }}
                 cursor={{ stroke: 'rgba(59, 130, 246, 0.08)', strokeWidth: 1.5 }}
               />
 
               <Area
                 type="monotone"
                 dataKey="total"
-                name="Complaints"
+                name="Total Complaints"
                 stroke="#2563eb"
                 strokeWidth={2.5}
                 fillOpacity={1}
                 fill="url(#chartGradient)"
-                dot={renderCustomDot}
-                activeDot={renderCustomActiveDot}
+                dot={renderCustomDot("#2563eb", "rgba(37, 99, 235, 0.15)")}
+                activeDot={renderCustomActiveDot("#2563eb", "rgba(37, 99, 235, 0.3)")}
                 filter="url(#softLineShadow)"
+                animationDuration={1000}
+              />
+
+              <Area
+                type="monotone"
+                dataKey="resolved"
+                name="Resolved (Complete)"
+                stroke="#10b981"
+                strokeWidth={2.5}
+                fillOpacity={1}
+                fill="url(#chartGradientGreen)"
+                dot={renderCustomDot("#10b981", "rgba(16, 185, 129, 0.15)")}
+                activeDot={renderCustomActiveDot("#10b981", "rgba(16, 185, 129, 0.3)")}
+                filter="url(#softLineShadowGreen)"
                 animationDuration={1000}
               />
             </AreaChart>

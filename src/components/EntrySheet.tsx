@@ -109,6 +109,10 @@ export default function EntrySheet({
   const [footnoteLeft, setFootnoteLeft] = useState('Enterprise Ledger Dispatch System');
   const [footnoteRight, setFootnoteRight] = useState('GENv2.5 // A4 PRINTABLE');
 
+  // Multi-sheet state and active page tracking variables
+  const [sheets, setSheets] = useState<any[]>([]);
+  const [activeSheetIdx, setActiveSheetIdx] = useState<number>(0);
+
   // Table 1 rows (22 rows)
   const [table1Rows, setTable1Rows] = useState<Table1Row[]>([]);
   // Table 2 rows (3 rows)
@@ -357,20 +361,34 @@ export default function EntrySheet({
     }
 
     const handleResize = () => {
-      let availableWidth = window.innerWidth - 32;
-      let availableHeight = window.innerHeight - 110 - (isLocked ? 95 : 0) - 16;
+      let viewWidth = window.innerWidth;
+      let viewHeight = window.innerHeight;
 
-      if (workspaceRef.current) {
-        const rect = workspaceRef.current.getBoundingClientRect();
-        const containerWidth = workspaceRef.current.clientWidth || rect.width;
-        const containerHeight = workspaceRef.current.clientHeight || rect.height;
-
-        const warningBanner = workspaceRef.current.querySelector(".bg-amber-500\\/10");
-        const warningHeight = warningBanner ? warningBanner.getBoundingClientRect().height + 16 : 0;
-
-        availableWidth = containerWidth - 32;
-        availableHeight = containerHeight - warningHeight - 24;
+      const isDesktop = window.innerWidth >= 1024;
+      
+      // Subtract sidebar widths if active to calculate precise width available for workspace
+      if (showSizingPanel) {
+        if (isDesktop) viewWidth -= 280;
       }
+      if (showHistoryPanel) {
+        if (isDesktop) viewWidth -= 380;
+      }
+
+      // Deduct top navbar header height (approx 72px)
+      let availableHeight = viewHeight - 72;
+
+      // Deduct lock banner height if visible (approx 120px)
+      if (isLocked) {
+        availableHeight -= 120;
+      }
+
+      // Comfort padding
+      availableHeight -= 24;
+      let availableWidth = viewWidth - (window.innerWidth < 640 ? 16 : 48);
+
+      // Clamp limits
+      availableHeight = Math.max(150, availableHeight);
+      availableWidth = Math.max(150, availableWidth);
 
       const paperHeight = 1122.5; // approx 297mm A4 height in pixels
       const paperWidth = 793.7; // approx 210mm A4 width in pixels
@@ -378,8 +396,14 @@ export default function EntrySheet({
       const fitScaleHeight = availableHeight / paperHeight;
       const fitScaleWidth = availableWidth / paperWidth;
 
-      const bestFitScale = Math.min(fitScaleHeight, fitScaleWidth);
-      const finalScale = Math.min(1.0, Math.max(0.25, bestFitScale));
+      let bestFitScale = Math.min(fitScaleHeight, fitScaleWidth);
+      
+      // Scale multiplier to guarantee 100% full visibility with safety margins (no scrolling)
+      if (zoomOption === 'fit') {
+        bestFitScale = bestFitScale * 0.93;
+      }
+
+      const finalScale = Math.min(1.0, Math.max(0.15, bestFitScale));
       setCalculatedScale(finalScale);
     };
 
@@ -400,7 +424,7 @@ export default function EntrySheet({
         resizeObserver.disconnect();
       }
     };
-  }, [zoomOption, isLocked, isOpen]);
+  }, [zoomOption, isLocked, isOpen, showSizingPanel, showHistoryPanel]);
 
    // Function to reset all lines & boxes sizing parameters to default
   const resetSizingToDefault = () => {
@@ -445,6 +469,82 @@ export default function EntrySheet({
   const [sign, setSign] = useState('');
   const [submitted, setSubmitted] = useState('');
 
+  const isSwappingRef = useRef(false);
+
+  // Synchronize changes in live active states back into sheets list slice
+  useEffect(() => {
+    if (sheets.length === 0 || isSwappingRef.current) return;
+    setSheets(prev => {
+      const next = [...prev];
+      if (next[activeSheetIdx]) {
+        next[activeSheetIdx] = {
+          ...next[activeSheetIdx],
+          recOfficer,
+          area,
+          sheetDate,
+          table1Rows,
+          table2Rows,
+          cashReceived: String(cashReceived),
+          sign,
+          submitted,
+          recOfficerLabel,
+          areaLabel,
+          dateLabel,
+          t1Headers,
+          t2Headers,
+          t1TotalLabel,
+          t2TotalLabel,
+          cashReceivedLabel,
+          signLabel,
+          submittedLabel,
+          footnoteLeft,
+          footnoteRight,
+        };
+      }
+      return next;
+    });
+  }, [
+    recOfficer, area, sheetDate, table1Rows, table2Rows, cashReceived, sign, submitted,
+    recOfficerLabel, areaLabel, dateLabel, t1Headers, t2Headers, t1TotalLabel, t2TotalLabel,
+    cashReceivedLabel, signLabel, submittedLabel, footnoteLeft, footnoteRight,
+    activeSheetIdx
+  ]);
+
+  // Load selected sheet states back into active workspace editor on index changes
+  useEffect(() => {
+    if (sheets.length === 0 || !sheets[activeSheetIdx]) return;
+    const target = sheets[activeSheetIdx];
+    isSwappingRef.current = true;
+    
+    setRecOfficer(target.recOfficer || '');
+    setRecOfficerLabel(target.recOfficerLabel || 'REC. OFFICER');
+    setArea(target.area || 'MAIN');
+    setAreaLabel(target.areaLabel || 'AREA');
+    if (target.sheetDate) {
+      setSheetDate(target.sheetDate);
+    }
+    setDateLabel(target.dateLabel || 'DATE');
+    setTable1Rows(target.table1Rows || []);
+    setTable2Rows(target.table2Rows || []);
+    setCashReceived(target.cashReceived || '');
+    setSign(target.sign || '');
+    setSubmitted(target.submitted || '');
+    setCashReceivedLabel(target.cashReceivedLabel || 'CASH RECEIVED');
+    setSignLabel(target.signLabel || 'SIGN');
+    setSubmittedLabel(target.submittedLabel || 'SUBMITTED');
+    setFootnoteLeft(target.footnoteLeft || 'Enterprise Ledger Dispatch System');
+    setFootnoteRight(target.footnoteRight || 'GENv2.5 // A4 PRINTABLE');
+    setT1Headers(target.t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH']);
+    setT2Headers(target.t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH']);
+    setT1TotalLabel(target.t1TotalLabel || 'TOTAL');
+    setT2TotalLabel(target.t2TotalLabel || 'TOTAL');
+    
+    const timer = setTimeout(() => {
+      isSwappingRef.current = false;
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [activeSheetIdx, sheets.length]);
+
   // Setup initial empty ledger rows
   const resetToBlank = () => {
     // Current date format matching: DD - MM - YYYY
@@ -452,7 +552,8 @@ export default function EntrySheet({
     const day = String(today.getDate()).padStart(2, '0');
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const year = today.getFullYear();
-    setSheetDate(`${day} - ${month} - ${year}`);
+    const formattedDate = `${day} - ${month} - ${year}`;
+    setSheetDate(formattedDate);
     
     setRecOfficer(currentUser.fullName || currentUser.username.toUpperCase());
     setArea('MAIN');
@@ -491,15 +592,138 @@ export default function EntrySheet({
     setTable1Rows(t1);
 
     // Create 3 static rows for Table 2
-    setTable2Rows([
+    const t2 = [
       { sr: 1, name: 'Bank', amount: 0, ch: false },
       { sr: 2, name: 'Panel Balance', amount: 0, ch: false },
       { sr: 3, name: 'Cash Hand', amount: 0, ch: false }
-    ]);
+    ];
+    setTable2Rows(t2);
 
     setCashReceived('');
     setSign('');
     setSubmitted('');
+
+    // Setup initial single sheets list
+    const blankSheet = {
+      id: Math.random().toString(36).substring(7),
+      recOfficer: '',
+      recOfficerLabel: 'REC. OFFICER',
+      area: 'MAIN',
+      areaLabel: 'AREA',
+      sheetDate: formattedDate,
+      dateLabel: 'DATE',
+      table1Rows: t1,
+      table2Rows: t2,
+      cashReceived: '',
+      sign: '',
+      submitted: '',
+      footnoteLeft: 'Enterprise Ledger Dispatch System',
+      footnoteRight: 'GENv2.5 // A4 PRINTABLE',
+      t1Headers: ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
+      t2Headers: ['SR', 'NAME', 'AMOUNT', 'CH'],
+      t1TotalLabel: 'TOTAL',
+      t2TotalLabel: 'TOTAL',
+      cashReceivedLabel: 'CASH RECEIVED',
+      signLabel: 'SIGN',
+      submittedLabel: 'SUBMITTED',
+    };
+    
+    isSwappingRef.current = true;
+    setSheets([blankSheet]);
+    setActiveSheetIdx(0);
+    setTimeout(() => {
+      isSwappingRef.current = false;
+    }, 50);
+  };
+
+  // Add a new A4 sheet item under the same date directly on the right side of the list
+  const handleAddSheet = (index: number) => {
+    if (isLocked) {
+      toast.error("🔒 SYSTEM SECURED", { description: "Unlock Billing security shield to add new sheets." });
+      return;
+    }
+    
+    const blankT1Rows: Table1Row[] = [];
+    for (let i = 1; i <= 22; i++) {
+      blankT1Rows.push({
+        sr: i,
+        cId: '',
+        name: '',
+        comments: '',
+        amount: 0,
+        ch: false,
+        clientId: '',
+        clientUsername: ''
+      });
+    }
+    
+    const blankT2Rows = [
+      { sr: 1, name: 'Bank', amount: 0, ch: false },
+      { sr: 2, name: 'Panel Balance', amount: 0, ch: false },
+      { sr: 3, name: 'Cash Hand', amount: 0, ch: false }
+    ];
+    
+    // Inherit layout parameters from currently active/edited sheet for seamless multi-page consistency, while keeping data rows blank
+    const newSheet = {
+      id: Math.random().toString(36).substring(7),
+      recOfficer: recOfficer || currentUser.fullName || currentUser.username.toUpperCase(),
+      recOfficerLabel: recOfficerLabel || 'REC. OFFICER',
+      area: area || 'MAIN',
+      areaLabel: areaLabel || 'AREA',
+      sheetDate: sheetDate || new Date().toISOString().split('T')[0],
+      dateLabel: dateLabel || 'DATE',
+      table1Rows: blankT1Rows,
+      table2Rows: blankT2Rows,
+      cashReceived: '',
+      sign: '',
+      submitted: '',
+      footnoteLeft: footnoteLeft || 'Enterprise Ledger Dispatch System',
+      footnoteRight: footnoteRight || 'GENv2.5 // A4 PRINTABLE',
+      t1Headers: t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
+      t2Headers: t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH'],
+      t1TotalLabel: t1TotalLabel || 'TOTAL',
+      t2TotalLabel: t2TotalLabel || 'TOTAL',
+      cashReceivedLabel: cashReceivedLabel || 'CASH RECEIVED',
+      signLabel: signLabel || 'SIGN',
+      submittedLabel: submittedLabel || 'SUBMITTED',
+    };
+    
+    setSheets(prev => {
+      const updated = [...prev];
+      updated.splice(index + 1, 0, newSheet);
+      return updated;
+    });
+    
+    setTimeout(() => {
+      isSwappingRef.current = true;
+      setActiveSheetIdx(index + 1);
+      toast.success("📄 NEW A4 SHEET CREATED", { description: `Sheet Added to the right side of Sheet ${index + 1} sharing date ${sheetDate}.` });
+    }, 50);
+  };
+
+  // Delete a specific sheet from the multi-sheet compilation view
+  const handleDeleteSheetItem = (index: number) => {
+    if (isLocked) {
+      toast.error("🔒 SYSTEM SECURED", { description: "Unlock Billing security shield to discard pages." });
+      return;
+    }
+    
+    if (sheets.length <= 1) {
+      toast.info("Clearing active sheet as it is the only page remaining.");
+      resetToBlank();
+      return;
+    }
+    
+    setSheets(prev => {
+      const updated = [...prev];
+      updated.splice(index, 1);
+      return updated;
+    });
+    
+    const nextIdx = Math.max(0, index - 1);
+    isSwappingRef.current = true;
+    setActiveSheetIdx(nextIdx);
+    toast.success("🗑️ SHEET DELETED", { description: `A4 Sheet Page ${index + 1} has been completely discarded.` });
   };
 
   // Run on load
@@ -577,150 +801,199 @@ export default function EntrySheet({
       return;
     }
     try {
-      if (!recOfficer.trim()) {
-        toast.error("Please specify a Recovery Officer name first.");
-        return;
-      }
-
-      // Check if some rows contain data to prevent completely empty submissions
-      const hasT1Data = table1Rows.some(r => r.cId.trim() || r.name.trim() || r.amount > 0);
-      const hasT2Data = table2Rows.some(r => r.name.trim() || r.amount > 0);
-      if (!hasT1Data && !hasT2Data) {
-        toast.error("The ledger sheet is completely empty. Please enter some records first!");
-        return;
+      // Build finalized synced list of sheets
+      const currentSyncSheets = [...sheets];
+      if (currentSyncSheets[activeSheetIdx]) {
+        currentSyncSheets[activeSheetIdx] = {
+          ...currentSyncSheets[activeSheetIdx],
+          recOfficer,
+          area,
+          sheetDate,
+          table1Rows,
+          table2Rows,
+          cashReceived: String(cashReceived),
+          sign,
+          submitted,
+          recOfficerLabel,
+          areaLabel,
+          dateLabel,
+          t1Headers,
+          t2Headers,
+          t1TotalLabel,
+          t2TotalLabel,
+          cashReceivedLabel,
+          signLabel,
+          submittedLabel,
+          footnoteLeft,
+          footnoteRight,
+        };
       }
 
       const tenantId = firebaseService.getReadTenantId(currentUser as any);
-      const sheetPayload = {
-        id: loadedSheetId || undefined,
-        recOfficer,
-        recOfficerLabel,
-        area,
-        areaLabel,
-        sheetDate,
-        dateLabel,
-        table1Rows: table1Rows.map(r => ({
-          sr: r.sr,
-          cId: r.cId || '',
-          name: r.name || '',
-          comments: r.comments || '',
-          amount: Number(r.amount) || 0,
-          ch: !!r.ch,
-          originalAmount: r.originalAmount || 0,
-          clientId: r.clientId || '',
-          clientUsername: r.clientUsername || ''
-        })),
-        table2Rows: table2Rows.map(r => ({
-          sr: r.sr,
-          name: r.name || '',
-          amount: Number(r.amount) || 0,
-          ch: !!r.ch
-        })),
-        cashReceived,
-        sign,
-        submitted,
-        cashReceivedLabel,
-        signLabel,
-        submittedLabel,
-        footnoteLeft,
-        footnoteRight,
-        dealerId: tenantId || 'main',
-        createdAt: loadedSheetId ? undefined : Date.now() // Retain creation date on update
-      };
+      let anySaved = false;
+      let totalUpdatedBillingCount = 0;
 
-      toast.loading(loadedSheetId ? "Updating ledger card in history..." : "Moving active ledger sheet down to history...", { id: "ledger-save" });
-
-      const saved = await firebaseService.saveLedgerSheet(sheetPayload);
-      toast.dismiss("ledger-save");
-      if (saved) {
-        toast.success(loadedSheetId ? "Ledger card updated successfully!" : "Ledger sheet successfully saved to Monthly History!");
-
-        // Auto-update matched master clients inside the currently active/selected billing month
-        if (currentMonthId && activeRows && activeRows.length > 0) {
-          try {
-            const updatedBillingRows = [...activeRows];
-            let updatedCount = 0;
-
-            sheetPayload.table1Rows.forEach((r) => {
-              const hasId = r.cId && r.cId.trim();
-              const hasName = r.name && r.name.trim();
-              if (!hasId && !hasName) return; // skip empty rows
-
-              let matchedIdx = -1;
-
-              // 1. Match using precise metadata from suggestions
-              if (r.clientId || r.clientUsername) {
-                const searchClientId = (r.clientId || '').trim().toLowerCase();
-                const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
-                matchedIdx = updatedBillingRows.findIndex(br => 
-                  (searchClientId && br.clientId && br.clientId.trim().toLowerCase() === searchClientId) ||
-                  (searchClientUsername && br.username && br.username.trim().toLowerCase() === searchClientUsername)
-                );
-              }
-
-              // 2. Fallback to typed matching by ID or Username
-              if (matchedIdx === -1 && hasId) {
-                const searchId = r.cId.trim().toLowerCase();
-                matchedIdx = updatedBillingRows.findIndex(br => 
-                  (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
-                  (br.username && br.username.trim().toLowerCase() === searchId)
-                );
-              }
-
-              // 3. Last fallback: match by Name
-              if (matchedIdx === -1 && hasName) {
-                const searchName = r.name.trim().toLowerCase();
-                matchedIdx = updatedBillingRows.findIndex(br => 
-                  br.name && br.name.trim().toLowerCase() === searchName
-                );
-              }
-
-              if (matchedIdx !== -1) {
-                const amountVal = Number(r.amount) || 0;
-                const row = updatedBillingRows[matchedIdx];
-                const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
-                const newCr = Math.max(0, savedOrigCr - amountVal);
-                const base = parseFloat(row.baseAmount || 0);
-
-                // Auto calculate status based on payment vs total
-                const totalAmount = base + newCr;
-                let finalStatus = 'partial';
-                if (amountVal === 0) {
-                  finalStatus = 'unpaid';
-                } else if (amountVal >= totalAmount) {
-                  finalStatus = 'paid';
-                }
-
-                updatedBillingRows[matchedIdx] = {
-                  ...row,
-                  _originalCr: savedOrigCr,
-                  cr: newCr,
-                  totalAmount: totalAmount,
-                  paymentReceived: amountVal,
-                  paymentStatus: finalStatus
-                };
-                updatedCount++;
-              }
-            });
-
-            if (updatedCount > 0) {
-              await firebaseService.saveBillingMonth(
-                currentMonthId, 
-                updatedBillingRows, 
-                currentUser.username || 'admin',
-                activeDealerId
-              );
-              toast.success(`Automatically updated ${updatedCount} subscriber(s) to PAID with designated recovery amounts in ${currentMonthId}!`);
-            }
-          } catch (billingErr: any) {
-            console.error("Failed to auto-update billing status:", billingErr);
+      for (let i = 0; i < currentSyncSheets.length; i++) {
+        const sh = currentSyncSheets[i];
+        
+        // Skip empty sheets if we have multiple sheets
+        const hasT1Data = (sh.table1Rows || []).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT2Data = (sh.table2Rows || []).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
+        const officerName = sh.recOfficer || '';
+        
+        if (!officerName.trim()) {
+          if (currentSyncSheets.length === 1) {
+            toast.error("Please specify a Recovery Officer name first.");
+            return;
           }
+          continue; // skip empty sheet title
+        }
+        
+        if (!hasT1Data && !hasT2Data) {
+          if (currentSyncSheets.length === 1) {
+            toast.error("The ledger sheet is completely empty. Please enter some records first!");
+            return;
+          }
+          continue; // skip completely empty pages
         }
 
-        // "jesy sheet histry main move hojy to bahr new empty sheet automatic creat hojy same"
+        const isCurrentlyLoadedSheet = (i === activeSheetIdx) && loadedSheetId;
+        const sheetPayload = {
+          id: isCurrentlyLoadedSheet ? loadedSheetId : undefined,
+          recOfficer: sh.recOfficer,
+          recOfficerLabel: sh.recOfficerLabel || 'REC. OFFICER',
+          area: sh.area || 'MAIN',
+          areaLabel: sh.areaLabel || 'AREA',
+          sheetDate: sh.sheetDate || sheetDate || '',
+          dateLabel: sh.dateLabel || 'DATE',
+          table1Rows: (sh.table1Rows || []).map(r => ({
+            sr: r.sr,
+            cId: r.cId || '',
+            name: r.name || '',
+            comments: r.comments || '',
+            amount: Number(r.amount) || 0,
+            ch: !!r.ch,
+            originalAmount: r.originalAmount || 0,
+            clientId: r.clientId || '',
+            clientUsername: r.clientUsername || ''
+          })),
+          table2Rows: (sh.table2Rows || []).map(r => ({
+            sr: r.sr,
+            name: r.name || '',
+            amount: Number(r.amount) || 0,
+            ch: !!r.ch
+          })),
+          cashReceived: sh.cashReceived || '',
+          sign: sh.sign || '',
+          submitted: sh.submitted || '',
+          cashReceivedLabel: sh.cashReceivedLabel || 'CASH RECEIVED',
+          signLabel: sh.signLabel || 'SIGN',
+          submittedLabel: sh.submittedLabel || 'SUBMITTED',
+          footnoteLeft: sh.footnoteLeft || 'Enterprise Ledger Dispatch System',
+          footnoteRight: sh.footnoteRight || 'GENv2.5 // A4 PRINTABLE',
+          dealerId: tenantId || 'main',
+          createdAt: isCurrentlyLoadedSheet ? undefined : Date.now()
+        };
+
+        toast.loading(`Saving Sheet ${i + 1} (${sh.recOfficer})...`, { id: `ledger-save-${i}` });
+        const savedDoc = await firebaseService.saveLedgerSheet(sheetPayload);
+        toast.dismiss(`ledger-save-${i}`);
+
+        if (savedDoc) {
+          anySaved = true;
+
+          // Auto-update matched master clients inside the currently active/selected billing month
+          if (currentMonthId && activeRows && activeRows.length > 0) {
+            try {
+              const updatedBillingRows = [...activeRows];
+              let updatedCount = 0;
+
+              sheetPayload.table1Rows.forEach((r) => {
+                const hasId = r.cId && r.cId.trim();
+                const hasName = r.name && r.name.trim();
+                if (!hasId && !hasName) return; // skip empty rows
+
+                let matchedIdx = -1;
+
+                // 1. Match using precise metadata from suggestions
+                if (r.clientId || r.clientUsername) {
+                  const searchClientId = (r.clientId || '').trim().toLowerCase();
+                  const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
+                  matchedIdx = updatedBillingRows.findIndex(br => 
+                    (searchClientId && br.clientId && br.clientId.trim().toLowerCase() === searchClientId) ||
+                    (searchClientUsername && br.username && br.username.trim().toLowerCase() === searchClientUsername)
+                  );
+                }
+
+                // 2. Fallback to typed matching by ID or Username
+                if (matchedIdx === -1 && hasId) {
+                  const searchId = r.cId.trim().toLowerCase();
+                  matchedIdx = updatedBillingRows.findIndex(br => 
+                    (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
+                    (br.username && br.username.trim().toLowerCase() === searchId)
+                  );
+                }
+
+                // 3. Last fallback: match by Name
+                if (matchedIdx === -1 && hasName) {
+                  const searchName = r.name.trim().toLowerCase();
+                  matchedIdx = updatedBillingRows.findIndex(br => 
+                    br.name && br.name.trim().toLowerCase() === searchName
+                  );
+                }
+
+                if (matchedIdx !== -1) {
+                  const amountVal = Number(r.amount) || 0;
+                  const row = updatedBillingRows[matchedIdx];
+                  const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
+                  const newCr = Math.max(0, savedOrigCr - amountVal);
+                  const base = parseFloat(row.baseAmount || 0);
+
+                  // Auto calculate status based on payment vs total
+                  const totalAmount = base + newCr;
+                  let finalStatus = 'partial';
+                  if (amountVal === 0) {
+                    finalStatus = 'unpaid';
+                  } else if (amountVal >= totalAmount) {
+                    finalStatus = 'paid';
+                  }
+
+                  updatedBillingRows[matchedIdx] = {
+                    ...row,
+                    _originalCr: savedOrigCr,
+                    cr: newCr,
+                    totalAmount: totalAmount,
+                    paymentReceived: amountVal,
+                    paymentStatus: finalStatus
+                  };
+                  updatedCount++;
+                }
+              });
+
+              if (updatedCount > 0) {
+                totalUpdatedBillingCount += updatedCount;
+                await firebaseService.saveBillingMonth(
+                  currentMonthId, 
+                  updatedBillingRows, 
+                  currentUser.username || 'admin',
+                  activeDealerId
+                );
+              }
+            } catch (billingErr: any) {
+              console.error("Failed to auto-update billing status for sheet index:", i, billingErr);
+            }
+          }
+        }
+      }
+
+      if (anySaved) {
+        toast.success(loadedSheetId ? "Ledger page(s) updated successfully!" : "Ledger sheet compile successfully saved to Monthly History!");
+        if (totalUpdatedBillingCount > 0) {
+          toast.success(`Automatically updated ${totalUpdatedBillingCount} subscriber(s) designated recovery amounts in ${currentMonthId}!`);
+        }
+        
         resetToBlank();
         setLoadedSheetId(null);
-        // "histry butten per click kru to waja cards show hongy sheet ke" => transition to history tab
         setShowHistoryPanel(true);
       }
     } catch (e: any) {
@@ -791,6 +1064,38 @@ export default function EntrySheet({
 
     setFootnoteLeft(sheet.footnoteLeft || 'Enterprise Ledger Dispatch System');
     setFootnoteRight(sheet.footnoteRight || 'GENv2.5 // A4 PRINTABLE');
+
+    // Initialize multi-sheet view to hold this restored card
+    const restoredSheet: any = {
+      id: sheet.id || Math.random().toString(36).substring(7),
+      recOfficer: sheet.recOfficer || '',
+      recOfficerLabel: sheet.recOfficerLabel || 'REC. OFFICER',
+      area: sheet.area || 'MAIN',
+      areaLabel: sheet.areaLabel || 'AREA',
+      sheetDate: sheet.sheetDate || '',
+      dateLabel: sheet.dateLabel || 'DATE',
+      table1Rows: reT1,
+      table2Rows: reT2,
+      cashReceived: sheet.cashReceived || '',
+      sign: sheet.sign || '',
+      submitted: sheet.submitted || '',
+      cashReceivedLabel: sheet.cashReceivedLabel || 'CASH RECEIVED',
+      signLabel: sheet.signLabel || 'SIGN',
+      submittedLabel: sheet.submittedLabel || 'SUBMITTED',
+      footnoteLeft: sheet.footnoteLeft || 'Enterprise Ledger Dispatch System',
+      footnoteRight: sheet.footnoteRight || 'GENv2.5 // A4 PRINTABLE',
+      t1Headers: sheet.t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
+      t2Headers: sheet.t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH'],
+      t1TotalLabel: sheet.t1TotalLabel || 'TOTAL',
+      t2TotalLabel: sheet.t2TotalLabel || 'TOTAL',
+    };
+    
+    isSwappingRef.current = true;
+    setSheets([restoredSheet]);
+    setActiveSheetIdx(0);
+    setTimeout(() => {
+      isSwappingRef.current = false;
+    }, 50);
 
     toast.info(`Loaded sheet card for recovery officer: ${sheet.recOfficer}`);
   };
@@ -1274,7 +1579,7 @@ export default function EntrySheet({
               print-color-adjust: exact !important;
               width: 210mm !important;
               height: 297mm !important;
-              overflow: hidden !important;
+              overflow: visible !important;
             }
             #root {
               display: none !important;
@@ -1290,20 +1595,17 @@ export default function EntrySheet({
               height: auto !important;
             }
             .print-paper-container {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
+              position: relative !important;
               width: 210mm !important;
               height: 297mm !important;
-              margin: 0 !important;
+              margin: 0 auto 10mm auto !important;
               padding: ${paperPaddingY}mm ${paperPaddingX}mm !important;
               border: none !important;
               box-shadow: none !important;
               background: white !important;
               color: black !important;
               box-sizing: border-box !important;
-              page-break-after: avoid !important;
-              page-break-before: avoid !important;
+              page-break-after: always !important;
               page-break-inside: avoid !important;
               break-inside: avoid !important;
               overflow: hidden !important;
@@ -1374,16 +1676,16 @@ export default function EntrySheet({
         `}} />
 
         {/* Main Integrated Workspace (No more double screen scrolling or nested popups!) */}
-        <div className="flex-1 w-full flex flex-row items-stretch overflow-hidden print:block print:p-0 print:overflow-visible print:h-auto">
+        <div className="flex-1 w-full flex flex-row items-stretch overflow-hidden print:block print:p-0 print:overflow-visible print:h-auto relative">
           {/* Left Inline Sizing Designer Panel with custom enter animations */}
           <AnimatePresence mode="popLayout">
           {showSizingPanel && (
             <motion.div 
               initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: 280 }}
+              animate={{ opacity: 1, width: window.innerWidth < 1024 ? (window.innerWidth - 32) : 280 }}
               exit={{ opacity: 0, width: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="w-[280px] bg-[#fdfdfd] dark:bg-slate-900 border-r border-slate-205 dark:border-slate-800/85 p-4 overflow-y-auto shrink-0 print:hidden h-full text-slate-850 dark:text-slate-100 select-none text-left scrollbar-thin flex flex-col gap-3 font-mono"
+              className={`bg-[#fdfdfd] dark:bg-slate-900 border-r border-slate-205 dark:border-slate-800/85 p-4 overflow-y-auto shrink-0 print:hidden h-full text-slate-850 dark:text-slate-100 select-none text-left scrollbar-thin flex flex-col gap-3 font-mono z-[400] ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 left-0 shadow-2xl max-w-full' : 'relative w-[280px]'}`}
             >
                 
                 <div className="flex items-center justify-between pb-2.5 border-b border-slate-150 dark:border-slate-800 mb-3">
@@ -1596,7 +1898,11 @@ export default function EntrySheet({
             {/* Center Area: Full Viewport Scale-to-Fit Workspace Area */}
             <div 
               ref={workspaceRef}
-              className="flex-1 overflow-auto p-4 sm:p-6 flex flex-col items-center justify-start bg-slate-100 dark:bg-slate-900/40 scrollbar-thin relative h-full print:bg-transparent print:p-0 print:m-0 print:block print:overflow-visible print:h-auto select-none print:select-text"
+              className={`flex-1 flex flex-col items-center bg-slate-100 dark:bg-slate-900/40 scrollbar-thin relative h-full print:bg-transparent print:p-0 print:m-0 print:block print:overflow-visible print:h-auto select-none print:select-text ${
+                zoomOption === 'fit' 
+                  ? 'p-2 sm:p-3 overflow-y-hidden overflow-x-auto justify-center' 
+                  : 'p-4 sm:p-6 overflow-auto justify-start'
+              }`}
             >
               {isLocked && (
                 <div className="w-full max-w-[800px] bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden animate-in fade-in slide-in-from-top-2 duration-300 select-text shrink-0">
@@ -1635,33 +1941,143 @@ export default function EntrySheet({
                 </div>
               )}
 
-              <div 
-                className="relative flex items-start justify-center print:block print:w-auto print:h-auto shrink-0 print:static my-auto mx-auto"
-                style={{
-                  width: `calc(210mm * ${calculatedScale})`,
-                  height: `calc(297mm * ${calculatedScale})`,
-                  minWidth: `calc(210mm * ${calculatedScale})`,
-                  minHeight: `calc(297mm * ${calculatedScale})`,
-                }}
-              >
-                {/* A4 Paper Mockup Sheet Container */}
-                <motion.div 
-                  initial={{ opacity: 0, y: 30, scale: 0.99 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ delay: 0.15, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-                  style={{ 
-                    paddingLeft: `${paperPaddingX}mm`, 
-                    paddingRight: `${paperPaddingX}mm`, 
-                    paddingTop: `${paperPaddingY}mm`, 
-                    paddingBottom: `${paperPaddingY}mm`,
-                    transform: `scale(${calculatedScale})`,
-                    transformOrigin: 'top left',
-                    position: 'absolute',
-                    left: 0,
-                    top: 0
-                  }}
-                  className={`print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[210mm] min-h-[297mm] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text ${isLocked ? 'pointer-events-none opacity-80 select-none' : ''}`}
-                >
+              {/* Reference current live editing states safely via a proxy object mapped into shadow variables */}
+              {(() => {
+                const liveState = {
+                  recOfficer,
+                  recOfficerLabel,
+                  area,
+                  areaLabel,
+                  sheetDate,
+                  dateLabel,
+                  table1Rows,
+                  table2Rows,
+                  cashReceived,
+                  sign,
+                  submitted,
+                  cashReceivedLabel,
+                  signLabel,
+                  submittedLabel,
+                  footnoteLeft,
+                  footnoteRight,
+                  t1Headers,
+                  t2Headers,
+                  t1TotalLabel,
+                  t2TotalLabel,
+                };
+
+                return (
+                  <div className={`flex flex-row justify-start sm:justify-center gap-6 overflow-x-auto min-w-full select-text print:block print:w-auto print:h-auto print:static ${
+                    zoomOption === 'fit' ? 'items-center pb-2 pt-2' : 'items-start pb-10 pt-4'
+                  }`}>
+                    <div className="flex flex-row gap-6 mx-auto w-max px-2 sm:px-0">
+                    {sheets.map((sh, sheetIdx) => {
+                      const isActive = activeSheetIdx === sheetIdx;
+
+                      // Shadowing our states inside mapped list callback cleanly avoiding Temporal Dead Zone scope conflicts
+                      const recOfficer = isActive ? liveState.recOfficer : (sh.recOfficer || '');
+                      const recOfficerLabel = isActive ? liveState.recOfficerLabel : (sh.recOfficerLabel || 'REC. OFFICER');
+                      const area = isActive ? liveState.area : (sh.area || 'MAIN');
+                      const areaLabel = isActive ? liveState.areaLabel : (sh.areaLabel || 'AREA');
+                      const sheetDate = isActive ? liveState.sheetDate : (sh.sheetDate || '');
+                      const dateLabel = isActive ? liveState.dateLabel : (sh.dateLabel || 'DATE');
+                      const table1Rows = isActive ? liveState.table1Rows : (sh.table1Rows || []);
+                      const table2Rows = isActive ? liveState.table2Rows : (sh.table2Rows || []);
+                      const cashReceived = isActive ? liveState.cashReceived : (sh.cashReceived || '');
+                      const sign = isActive ? liveState.sign : (sh.sign || '');
+                      const submitted = isActive ? liveState.submitted : (sh.submitted || '');
+                      const cashReceivedLabel = isActive ? liveState.cashReceivedLabel : (sh.cashReceivedLabel || 'CASH RECEIVED');
+                      const signLabel = isActive ? liveState.signLabel : (sh.signLabel || 'SIGN');
+                      const submittedLabel = isActive ? liveState.submittedLabel : (sh.submittedLabel || 'SUBMITTED');
+                      const footnoteLeft = isActive ? liveState.footnoteLeft : (sh.footnoteLeft || 'Enterprise Ledger Dispatch System');
+                      const footnoteRight = isActive ? liveState.footnoteRight : (sh.footnoteRight || 'GENv2.5 // A4 PRINTABLE');
+                      const t1Headers = isActive ? liveState.t1Headers : (sh.t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH']);
+                      const t2Headers = isActive ? liveState.t2Headers : (sh.t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH']);
+                      const t1TotalLabel = isActive ? liveState.t1TotalLabel : (sh.t1TotalLabel || 'TOTAL');
+                      const t2TotalLabel = isActive ? liveState.t2TotalLabel : (sh.t2TotalLabel || 'TOTAL');
+
+                      const totalAmount1 = table1Rows.reduce((acc: number, r: any) => acc + (Number(r.amount) || 0), 0);
+                      const totalAmount2 = table2Rows.reduce((acc: number, r: any) => acc + (Number(r.amount) || 0), 0);
+                      const grandTotal = totalAmount1 + totalAmount2;
+
+                      return (
+                        <div 
+                          key={sh.id || sheetIdx}
+                          onMouseDownCapture={() => {
+                            if (activeSheetIdx !== sheetIdx) {
+                              isSwappingRef.current = true;
+                              setActiveSheetIdx(sheetIdx);
+                            }
+                          }}
+                          onFocusCapture={() => {
+                            if (activeSheetIdx !== sheetIdx) {
+                              isSwappingRef.current = true;
+                              setActiveSheetIdx(sheetIdx);
+                            }
+                          }}
+                          className={`group relative flex flex-col items-center shrink-0 print:block print:w-auto print:h-auto print:static my-auto transition-all ${
+                            isActive 
+                              ? `ring-2 ring-indigo-650/40 dark:ring-indigo-400/50 ring-offset-4 ring-offset-slate-100 dark:ring-offset-slate-900 rounded-lg z-10 ${zoomOption === 'fit' ? 'scale-100' : 'scale-102'}` 
+                              : 'opacity-70 saturate-75 hover:opacity-95 hover:saturate-100'
+                          }`}
+                          style={{
+                            width: `${793.7 * calculatedScale}px`,
+                            height: `${1122.5 * calculatedScale}px`,
+                            minWidth: `${793.7 * calculatedScale}px`,
+                            minHeight: `${1122.5 * calculatedScale}px`,
+                          }}
+                        >
+                          {/* Floating tools bar in top-right corner of sheet paper */}
+                          <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-md hover:shadow-lg border border-slate-200 dark:border-slate-800 rounded-lg px-1.5 py-1 transition-all duration-200 z-[110] print:hidden select-none">
+                            <span className="text-[8px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider mr-1 px-1 py-0.5 bg-slate-100 dark:bg-slate-950 rounded">
+                              Page {sheetIdx + 1} of {sheets.length}
+                            </span>
+                            
+                            {/* Option to create a new sheet with SAME DATE directly to the right side of the list */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddSheet(sheetIdx);
+                              }}
+                              className="p-1 rounded bg-indigo-50 dark:bg-indigo-950/45 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-505 dark:text-indigo-400 border border-slate-200 dark:border-slate-800 cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center p-0.5"
+                              title="Create multi-page layout (Add new same-date Sheet to the right side)"
+                            >
+                              <FolderPlus size={10} className="stroke-[2.5]" />
+                            </button>
+                            
+                            {/* Option to delete sheet (Dusbin / Trash) */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSheetItem(sheetIdx);
+                              }}
+                              className="p-1 rounded bg-rose-50 dark:bg-rose-950/45 hover:bg-slate-100 dark:hover:bg-slate-800 text-rose-505 dark:text-rose-400 border border-slate-200 dark:border-slate-800 cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center p-0.5"
+                              title="Delete sheet (Dusbin)"
+                            >
+                              <Trash2 size={10} className="stroke-[2.5]" />
+                            </button>
+                          </div>
+
+                          {/* A4 Paper Mockup Sheet Container */}
+                          <motion.div 
+                            initial={{ opacity: 0, y: 30, scale: 0.99 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ delay: 0.15, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                            style={{ 
+                              paddingLeft: `${paperPaddingX}mm`, 
+                              paddingRight: `${paperPaddingX}mm`, 
+                              paddingTop: `${paperPaddingY}mm`, 
+                              paddingBottom: `${paperPaddingY}mm`,
+                              transform: `scale(${calculatedScale})`,
+                              transformOrigin: 'top left',
+                              position: 'absolute',
+                              left: 0,
+                              top: 0
+                            }}
+                            className={`print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[793.7px] min-h-[1122.5px] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text ${isLocked ? 'pointer-events-none opacity-80 select-none' : ''}`}
+                          >
             
             {/* Header Row - Aligned tight & left with Flex box for perfect viewport/A4 compatibility */}
             <div 
@@ -1762,7 +2178,7 @@ export default function EntrySheet({
                         setT1Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
+                      className="w-full min-w-0 text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
                       title="Double-click/type to edit column header"
                     />
                   </th>
@@ -1779,7 +2195,7 @@ export default function EntrySheet({
                         setT1Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
+                      className="w-full min-w-0 text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
                       title="Double-click/type to edit column header"
                     />
                     <button
@@ -1804,7 +2220,7 @@ export default function EntrySheet({
                         setT1Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
+                      className="w-full min-w-0 text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
                       title="Double-click/type to edit column header"
                     />
                     <button
@@ -1829,7 +2245,7 @@ export default function EntrySheet({
                         setT1Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
+                      className="w-full min-w-0 text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
                       title="Double-click/type to edit column header"
                     />
                     <button
@@ -1854,7 +2270,7 @@ export default function EntrySheet({
                         setT1Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-right bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase pr-4"
+                      className="w-full min-w-0 text-right bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase pr-4"
                       title="Double-click/type to edit column header"
                     />
                     <button
@@ -1879,7 +2295,7 @@ export default function EntrySheet({
                         setT1Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
+                      className="w-full min-w-0 text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
                       title="Double-click/type to edit column header"
                     />
                   </th>
@@ -1910,7 +2326,7 @@ export default function EntrySheet({
                         value={row.sr}
                         onChange={(e) => handleT1Change(index, 'sr', e.target.value)}
                         style={{ fontSize: `${tableFontSize - 0.5}px` }}
-                        className="w-full border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
+                        className="w-full min-w-0 border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
                         title="Double-click/type to edit Serial"
                       />
                     </td>
@@ -1941,7 +2357,7 @@ export default function EntrySheet({
                           }, 250);
                         }}
                         style={{ fontSize: `${tableFontSize - 0.5}px` }}
-                        className="w-full border-none p-0 text-center text-slate-900 bg-transparent focus:bg-slate-100 font-bold tracking-tight outline-none"
+                        className="w-full min-w-0 border-none p-0 text-center text-slate-900 bg-transparent focus:bg-slate-100 font-bold tracking-tight outline-none"
                       />
                       
                       {focusedRowIndex === index && focusedField === 'cId' && (
@@ -2080,7 +2496,7 @@ export default function EntrySheet({
                         value={row.comments}
                         onChange={(e) => handleT1Change(index, 'comments', e.target.value)}
                         style={{ fontSize: `${tableFontSize - 0.5}px` }}
-                        className="w-full border-none p-0 text-slate-600 dark:text-slate-600 bg-transparent font-semibold focus:bg-slate-100 outline-none"
+                        className="w-full min-w-0 border-none p-0 text-slate-600 dark:text-slate-600 bg-transparent font-semibold focus:bg-slate-100 outline-none"
                       />
                     </td>
  
@@ -2095,7 +2511,7 @@ export default function EntrySheet({
                         placeholder="0"
                         onChange={(e) => handleT1Change(index, 'amount', parseFloat(e.target.value) || 0)}
                         style={{ fontSize: `${tableFontSize}px` }}
-                        className="w-full border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
+                        className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
                       />
                     </td>
  
@@ -2154,7 +2570,7 @@ export default function EntrySheet({
                         setT2Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
+                      className="w-full min-w-0 text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
                       title="Double-click/type to edit heading"
                     />
                   </th>
@@ -2171,7 +2587,7 @@ export default function EntrySheet({
                         setT2Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
+                      className="w-full min-w-0 text-left bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase px-1"
                       title="Double-click/type to edit heading"
                     />
                     <button
@@ -2196,7 +2612,7 @@ export default function EntrySheet({
                         setT2Headers(h);
                       }}
                       style={{ fontSize: `${tableFontSize}px` }}
-                      className="w-full text-right bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase pr-4"
+                      className="w-full min-w-0 text-right bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase pr-4"
                       title="Double-click/type to edit heading"
                     />
                     <button
@@ -2240,7 +2656,7 @@ export default function EntrySheet({
                         value={row.sr}
                         onChange={(e) => handleT2Change(index, 'sr', e.target.value)}
                         style={{ fontSize: `${tableFontSize - 0.5}px` }}
-                        className="w-full border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
+                        className="w-full min-w-0 border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
                         title="Double-click/type to edit Serial"
                       />
                     </td>
@@ -2255,7 +2671,7 @@ export default function EntrySheet({
                         value={row.name}
                         onChange={(e) => handleT2Change(index, 'name', e.target.value)}
                         style={{ fontSize: `${tableFontSize}px` }}
-                        className="w-full border-none p-0 text-slate-900 font-black tracking-wide bg-transparent focus:bg-slate-100 outline-none uppercase font-mono"
+                        className="w-full min-w-0 border-none p-0 text-slate-900 font-black tracking-wide bg-transparent focus:bg-slate-100 outline-none uppercase font-mono"
                       />
                     </td>
  
@@ -2270,7 +2686,7 @@ export default function EntrySheet({
                         placeholder="0"
                         onChange={(e) => handleT2Change(index, 'amount', parseFloat(e.target.value) || 0)}
                         style={{ fontSize: `${tableFontSize}px` }}
-                        className="w-full border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
+                        className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
                       />
                     </td>
  
@@ -2391,8 +2807,14 @@ export default function EntrySheet({
             />
           </div>
  
-        </motion.div> {/* print-paper-container ends */}
-              </div> {/* relative wrapper ends */}
+                          </motion.div> {/* print-paper-container ends */}
+                        </div>
+                      );
+                    })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div> {/* center scale workspace ends */}
 
         {/* Financial Ledger Sheets Registry & Backup Sidebar Panel on the right */}
@@ -2401,7 +2823,7 @@ export default function EntrySheet({
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ type: 'spring', stiffness: 260, damping: 25 }}
-            className="w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[300]"
+            className={`w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[400] max-w-full ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 right-0 shadow-2xl' : 'relative'}`}
           >
             {/* Title */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">

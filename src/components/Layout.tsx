@@ -355,7 +355,7 @@ export default function Layout({
       label: 'System Settings',
       items: [
         { id: 'settings', label: 'Security', icon: Shield },
-        { id: 'gmail', label: 'Gmail Center', icon: Mail },
+        { id: 'gmail', label: 'Gmail Center', icon: Mail, roles: ['super_admin'] },
         { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin'] },
         { id: 'branding', label: 'CUSTOMIZATION', icon: Palette, roles: ['super_admin', 'editor'] },
       ]
@@ -368,9 +368,9 @@ export default function Layout({
       // Role-based filtering
       if (!user) return false;
       
-      // If user is member, only show specific items requested: Operations, User Details, Active Nodes, Security, Gmail
+      // If user is member, only show specific items requested: Operations, User Details, Active Nodes, Security
       if (user.role === 'member') {
-        return ['complaints', 'clients', 'nodes', 'settings', 'gmail'].includes(item.id);
+        return ['complaints', 'clients', 'nodes', 'settings'].includes(item.id);
       }
       
       // For other roles, check item.roles if defined

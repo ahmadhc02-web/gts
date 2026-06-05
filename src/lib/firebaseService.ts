@@ -1509,6 +1509,49 @@ export const firebaseService = {
       updated_by: createdBy
     };
     await supabase.from('branding_config').upsert(payload);
+
+    try {
+      const dbRows = rows.map((r, i) => {
+        const uniqueId = dealerId 
+          ? `bm_${dealerId}_${monthId}_${r.clientId || r.username || i}`
+          : `bm_${monthId}_${r.clientId || r.username || i}`;
+        return {
+          id: uniqueId,
+          month_id: monthId,
+          client_id: r.clientId || null,
+          name: r.name || null,
+          username: r.username || null,
+          mobile_number: r.mobileNumber || null,
+          area: r.area || null,
+          rt: r.rt || null,
+          base_amount: Number(r.baseAmount) || 0,
+          cr: Number(r.cr) || 0,
+          total_amount: Number(r.totalAmount) || 0,
+          billing_day: r.billingDay || '5',
+          payment_received: Number(r.paymentReceived) || 0,
+          payment_status: r.paymentStatus || 'unpaid',
+          comments: r.comments || null,
+          occ: r.occ || null,
+          ser_nam: r.serNam || null,
+          pkg_details: r.pkgDetails || null,
+          sag: r.sag || null,
+          lai: r.lai || null,
+          connection_date: r.connectionDate || null,
+          device_price: r.devicePrice || null,
+          abl: r.abl || null,
+          network: r.network || null,
+          dealer_id: dealerId || 'main',
+          updated_at: Date.now()
+        };
+      });
+
+      for (let index = 0; index < dbRows.length; index += 50) {
+        const chunk = dbRows.slice(index, index + 50);
+        await supabase.from('users_data').upsert(chunk, { onConflict: 'id' });
+      }
+    } catch (e) {
+      console.error("Failed to sync created billing month rows into users_data:", e);
+    }
   },
 
   saveBillingMonth: async (monthId: string, rows: any[], updatedBy: string, dealerId?: string) => {
@@ -1520,11 +1563,60 @@ export const firebaseService = {
       updated_by: updatedBy
     };
     await supabase.from('branding_config').upsert(payload);
+
+    try {
+      const dbRows = rows.map((r, i) => {
+        const uniqueId = dealerId 
+          ? `bm_${dealerId}_${monthId}_${r.clientId || r.username || i}`
+          : `bm_${monthId}_${r.clientId || r.username || i}`;
+        return {
+          id: uniqueId,
+          month_id: monthId,
+          client_id: r.clientId || null,
+          name: r.name || null,
+          username: r.username || null,
+          mobile_number: r.mobileNumber || null,
+          area: r.area || null,
+          rt: r.rt || null,
+          base_amount: Number(r.baseAmount) || 0,
+          cr: Number(r.cr) || 0,
+          total_amount: Number(r.totalAmount) || 0,
+          billing_day: r.billingDay || '5',
+          payment_received: Number(r.paymentReceived) || 0,
+          payment_status: r.paymentStatus || 'unpaid',
+          comments: r.comments || null,
+          occ: r.occ || null,
+          ser_nam: r.serNam || null,
+          pkg_details: r.pkgDetails || null,
+          sag: r.sag || null,
+          lai: r.lai || null,
+          connection_date: r.connectionDate || null,
+          device_price: r.devicePrice || null,
+          abl: r.abl || null,
+          network: r.network || null,
+          dealer_id: dealerId || 'main',
+          updated_at: Date.now()
+        };
+      });
+
+      for (let index = 0; index < dbRows.length; index += 50) {
+        const chunk = dbRows.slice(index, index + 50);
+        await supabase.from('users_data').upsert(chunk, { onConflict: 'id' });
+      }
+    } catch (e) {
+      console.error("Failed to sync saved billing month rows into users_data:", e);
+    }
   },
 
   deleteBillingMonth: async (monthId: string, dealerId?: string) => {
     const docId = dealerId ? `billing_month_${dealerId}_${monthId}` : `billing_month_${monthId}`;
     await supabase.from('branding_config').delete().eq('id', docId);
+
+    try {
+      await supabase.from('users_data').delete().eq('month_id', monthId).eq('dealer_id', dealerId || 'main');
+    } catch (e) {
+      console.error("Failed to delete billing month rows from users_data database table:", e);
+    }
   },
 
   // --- Inline Translations ---
