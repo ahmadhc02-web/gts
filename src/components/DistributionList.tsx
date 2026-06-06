@@ -11,26 +11,26 @@ interface DistributionListProps {
   chartType?: 'area' | 'category';
 }
 
-const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#f97316'];
+const COLORS = ['#0f172a', '#334155', '#2563eb', '#1d4ed8', '#10b981', '#059669', '#f59e0b', '#d97706', '#6366f1'];
 
 const getItemColor = (name: string, index: number, isCategory: boolean) => {
   const n = name.trim().toLowerCase();
   if (isCategory) {
-    if (n.includes('speed') || n.includes('slow')) return '#F43F5E'; // rose/red
-    if (n.includes('offline') || n.includes('break')) return '#F97316'; // orange
-    if (n.includes('router') || n.includes('config')) return '#475569'; // slate
-    if (n.includes('new') || n.includes('connection')) return '#3B82F6'; // blue
-    if (n.includes('wifi') || n.includes('wireless') || n.includes('issue')) return '#06B6D4'; // teal/cyan
+    if (n.includes('speed') || n.includes('slow')) return '#dc2626'; // Red
+    if (n.includes('offline') || n.includes('break')) return '#ea580c'; // Orange
+    if (n.includes('router') || n.includes('config')) return '#475569'; // Slate
+    if (n.includes('new') || n.includes('connection')) return '#2563eb'; // Blue
+    if (n.includes('wifi') || n.includes('wireless') || n.includes('issue')) return '#059669'; // Emerald
   } else {
     // Zones mapping mockups
-    if (n.includes('tsipp')) return '#F59E0B'; // Yellow-Orange
-    if (n.includes('ts')) return '#10B981'; // TS green
-    if (n.includes('chirr')) return '#3B82F6'; // CHIRR blue
-    if (n.includes('hc')) return '#EF4444'; // HC red
-    if (n.includes('sdk')) return '#8B5CF6'; // SDK violet/purple
-    if (n.includes('model')) return '#10B981';
-    if (n.includes('gulberg')) return '#3B82F6';
-    if (n.includes('satellite')) return '#8B5CF6';
+    if (n.includes('tsipp')) return '#ea580c'; 
+    if (n.includes('ts')) return '#059669'; 
+    if (n.includes('chirr')) return '#2563eb'; 
+    if (n.includes('hc')) return '#dc2626'; 
+    if (n.includes('sdk')) return '#4f46e5'; 
+    if (n.includes('model')) return '#059669';
+    if (n.includes('gulberg')) return '#2563eb';
+    if (n.includes('satellite')) return '#4f46e5';
   }
   return COLORS[index % COLORS.length];
 };
@@ -88,18 +88,18 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                 {data.length > 0 ? (
                   <div className="flex flex-col w-full h-full justify-between">
                      {/* Chart Container - Top Portion - Height adjusted for visual balance */}
-                     <div className="w-full h-[255px] relative flex items-center justify-center">
+                      <div className="w-full h-[285px] relative flex items-center justify-center">
                       {/* Centered Label with elegant concentric double border layout matching photo */}
-                      <div className="absolute w-[114px] h-[114px] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center pointer-events-none z-10 shadow-[inner_0_2px_4px_rgba(0,0,0,0.06),0_12px_24px_-6px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 transition-colors">
-                        <div className="w-[100px] h-[100px] rounded-full border border-dashed border-slate-200 dark:border-slate-700/60 flex items-center justify-center">
-                          <span className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-900 dark:text-white">
-                            {chartType === 'area' ? 'ZONE' : 'CATEGORY'}
+                      <div className="absolute w-[92px] h-[92px] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center pointer-events-none z-10 shadow-[inner_0_2px_4px_rgba(0,0,0,0.06),0_12px_24px_-6px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 transition-colors">
+                        <div className="w-[80px] h-[80px] rounded-full border border-dashed border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-center">
+                          <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white leading-tight">
+                            {chartType === 'area' ? 'ZONE' : 'CATG.'}
                           </span>
                         </div>
                       </div>
   
                       <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
+                        <PieChart margin={{ top: 15, right: 55, left: 55, bottom: 15 }}>
                           <defs>
                              <filter id="pieShadow" x="-10%" y="-10%" width="120%" height="120%">
                                <feDropShadow dx="1" dy="3" stdDeviation="2" floodOpacity="0.15" />
@@ -108,12 +108,42 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                           <Pie 
                             data={chartType === 'area' ? data.slice(0, 6) : data.slice(0, 4)} 
                             cx="50%" cy="50%" 
-                            innerRadius="54%" outerRadius="98%" 
-                            paddingAngle={3}
+                            innerRadius="44%" outerRadius="75%" 
+                            paddingAngle={5}
                             cornerRadius={8}
                             dataKey="count"
                             nameKey="name"
                             stroke="none"
+                            labelLine={false}
+                            label={(props) => {
+                              const { cx, cy, midAngle, outerRadius, name, percent, index } = props;
+                              const RADIAN = Math.PI / 180;
+                              const radiusMid = outerRadius * 1.35;
+                              
+                              const x = cx + radiusMid * Math.cos(-midAngle * RADIAN);
+                              const y = cy + radiusMid * Math.sin(-midAngle * RADIAN);
+                              
+                              const p1x = cx + outerRadius * Math.cos(-midAngle * RADIAN);
+                              const p1y = cy + outerRadius * Math.sin(-midAngle * RADIAN);
+ 
+                              const itemColor = getItemColor(name, index, chartType === 'category');
+                              
+                              const xDir = Math.cos(-midAngle * RADIAN) >= 0 ? 1 : -1;
+                              const ex = x + (xDir * 28);
+                              const textX = xDir > 0 ? x + 4 : x - 4;
+ 
+                              if (percent === 0) return null;
+ 
+                              return (
+                                <g>
+                                  <polyline points={`${p1x},${p1y} ${x},${y} ${ex},${y}`} stroke={itemColor} fill="none" strokeWidth={2} opacity={0.8} />
+                                  <circle cx={ex} cy={y} r={3} fill={itemColor} />
+                                  <text x={textX} y={y - 7} fill={itemColor} textAnchor={xDir > 0 ? 'start' : 'end'} dominantBaseline="baseline" fontSize="10.5" fontWeight="900" style={{textTransform: 'uppercase', letterSpacing: '0.05em', filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.3))'}}>
+                                    {name} <tspan fillOpacity={0.8} fontWeight="800">{(percent * 100).toFixed(0)}%</tspan>
+                                  </text>
+                                </g>
+                              );
+                            }}
                             onClick={(entry) => {
                               setViewBy(chartType);
                               setSelectedItem(entry.name);
@@ -154,74 +184,8 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-  
-                    {/* Compact, Cozy Flex Legend Placed Underneath the Chart Frame */}
-                    {chartType === 'area' ? (
-                      <div className="mt-3 flex-wrap flex justify-center items-center gap-x-2.5 gap-y-1.5 px-1 border-t border-slate-100 dark:border-slate-800/60 pt-3.5 pb-0.5 overflow-y-auto custom-scrollbar max-h-[85px]">
-                        {data.slice(0, 6).map((item, idx) => {
-                          const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
-                          const itemColor = getItemColor(item.name, idx, false);
-                          
-                          return (
-                            <div 
-                              key={`${item.name}-${idx}`} 
-                              className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-800/80 border border-slate-100 dark:border-slate-800/50 transition-all duration-300 cursor-pointer select-none group"
-                              onClick={() => {
-                                setViewBy('area');
-                                setSelectedItem(item.name);
-                              }}
-                            >
-                              <div 
-                                className="w-4 h-4 rounded-md shrink-0 flex items-center justify-center group-hover:scale-110 transition-transform" 
-                                style={{ backgroundColor: `${itemColor}12` }}
-                              >
-                                <MapPin size={10} style={{ color: itemColor }} className="shrink-0" />
-                              </div>
-                              <span className="text-[10px] font-black uppercase text-slate-700 dark:text-slate-300 tracking-tight">
-                                {item.name}
-                              </span>
-                              <span className="text-[10px] font-black font-mono text-emerald-600 dark:text-emerald-400 ml-0.5">
-                                {percentage}%
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="mt-3 flex-wrap flex justify-center items-center gap-x-2.5 gap-y-1.5 px-1 border-t border-slate-100 dark:border-slate-800/60 pt-3.5 pb-0.5 overflow-y-auto custom-scrollbar max-h-[85px]">
-                        {data.slice(0, 4).map((item, idx) => {
-                          const percentage = total > 0 ? Math.round((item.count / total) * 100) : 0;
-                          const itemColor = getItemColor(item.name, idx, true);
-                          const icon = getCategoryIcon(item.name, itemColor);
-                          
-                          return (
-                            <div 
-                              key={`${item.name}-${idx}`} 
-                              className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-800/80 border border-slate-100 dark:border-slate-800/50 transition-all duration-300 cursor-pointer select-none group"
-                              onClick={() => {
-                                setViewBy('category');
-                                setSelectedItem(item.name);
-                              }}
-                            >
-                              <div 
-                                className="w-4 h-4 rounded-md shrink-0 flex items-center justify-center group-hover:scale-110 transition-transform" 
-                                style={{ backgroundColor: `${itemColor}12` }}
-                              >
-                                {icon}
-                              </div>
-                              <span className="text-[10px] font-black uppercase text-slate-700 dark:text-slate-300 tracking-tight">
-                                {item.name}
-                              </span>
-                              <span className="text-[10px] font-black font-mono text-emerald-600 dark:text-emerald-400 ml-0.5">
-                                {percentage}%
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                 </div>
-               ) : (
+                  </div>
+                ) : (
                  <div className="flex-1 flex items-center justify-center">
                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No Data</p>
                  </div>

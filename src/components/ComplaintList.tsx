@@ -27,6 +27,16 @@ interface ComplaintListProps {
   branding: BrandingConfig;
 }
 
+const getEffectiveStatus = (c: Complaint, currentTime: number = Date.now()): ComplaintStatus => {
+  if (c.status === 'scheduled' && c.scheduledAt) {
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+    if (c.scheduledAt - currentTime <= TWELVE_HOURS) {
+      return 'pending';
+    }
+  }
+  return c.status;
+};
+
 export default function ComplaintList({ 
   complaints, 
   onDelete, 
@@ -41,6 +51,7 @@ export default function ComplaintList({
   appConfig,
   branding
 }: ComplaintListProps) {
+  const now = Date.now();
   const customNames = branding.customNames || {};
   const currentUserId = currentUser.uid;
   const [startDate, setStartDate] = React.useState('');
@@ -66,6 +77,7 @@ export default function ComplaintList({
   const [animateReviewLeft, setAnimateReviewLeft] = React.useState(false);
   const [showLeftThankYou, setShowLeftThankYou] = React.useState(false);
   const [showScheduleModal, setShowScheduleModal] = React.useState(false);
+  const [showInlineSchedulePicker, setShowInlineSchedulePicker] = React.useState(false);
   const [scheduleModalDate, setScheduleModalDate] = React.useState('');
 
   const playPopupSound = () => {
@@ -179,7 +191,16 @@ export default function ComplaintList({
     
     // Status filter
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(c => c.status === statusFilter);
+      filtered = filtered.filter(c => {
+        const effStatus = getEffectiveStatus(c, now);
+        if (statusFilter === 'pending') {
+          return effStatus === 'pending';
+        }
+        if (statusFilter === 'scheduled') {
+          return c.status === 'scheduled';
+        }
+        return effStatus === statusFilter;
+      });
     }
 
     // Priority filter
@@ -208,7 +229,6 @@ export default function ComplaintList({
     }
 
     // 12h Scheduled Rule
-    const now = Date.now();
     const TWELVE_HOURS = 12 * 60 * 60 * 1000;
     filtered = filtered.filter(c => {
       if (statusFilter === 'scheduled') return true;
@@ -221,8 +241,8 @@ export default function ComplaintList({
     // Comprehensive Sorting
     filtered.sort((a, b) => {
       // Prioritize active scheduled complaints at the absolute top of the list
-      const aIsSch = !!a.scheduledAt;
-      const bIsSch = !!b.scheduledAt;
+      const aIsSch = a.status === 'scheduled' && !!a.scheduledAt;
+      const bIsSch = b.status === 'scheduled' && !!b.scheduledAt;
       if (aIsSch && !bIsSch) return -1;
       if (!aIsSch && bIsSch) return 1;
       if (aIsSch && bIsSch) {
@@ -252,8 +272,8 @@ export default function ComplaintList({
           break;
         case 'status':
           const statusWeight = { 'pending': 1, 'in process': 2, 'scheduled': 3, 'important': 4, 'complete': 5 };
-          valA = statusWeight[a.status] || 0;
-          valB = statusWeight[b.status] || 0;
+          valA = statusWeight[getEffectiveStatus(a, now)] || 0;
+          valB = statusWeight[getEffectiveStatus(b, now)] || 0;
           break;
         case 'category':
           valA = (a.category || '').toLowerCase();
@@ -1148,11 +1168,11 @@ export default function ComplaintList({
                       onClick={() => setSelectedComplaint(complaint)}
                       className={cn(
                         "group hover:scale-[1.002] active:scale-[0.999] hover:shadow-[0_4px_24px_rgba(0,0,0,0.02)] dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.25)] border-y border-slate-100/50 dark:border-slate-800/40 transition-all duration-300 cursor-pointer relative",
-                        complaint.status === 'complete' 
+                        getEffectiveStatus(complaint, now) === 'complete' 
                           ? 'bg-emerald-500/[0.005] dark:bg-slate-950/20 hover:bg-emerald-500/[0.02] dark:hover:bg-emerald-500/[0.03]' 
-                          : complaint.status === 'in process'
+                          : getEffectiveStatus(complaint, now) === 'in process'
                             ? 'bg-blue-500/[0.005] dark:bg-slate-950/20 hover:bg-blue-500/[0.02] dark:hover:bg-blue-500/[0.03]'
-                            : complaint.status === 'scheduled'
+                            : getEffectiveStatus(complaint, now) === 'scheduled'
                               ? 'bg-purple-500/[0.005] dark:bg-slate-950/20 hover:bg-purple-500/[0.02] dark:hover:bg-purple-500/[0.03]'
                               : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.015] dark:hover:bg-slate-500/[0.025]'
                       )}
@@ -1162,9 +1182,9 @@ export default function ComplaintList({
                         {/* Interactive Status Indicator bar */}
                         <div className={cn(
                           "absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-md transition-all duration-300 group-hover:w-1.5",
-                          complaint.status === 'complete' ? 'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]' :
-                          complaint.status === 'in process' ? 'bg-blue-500 shadow-[2px_0_10px_rgba(59,130,246,0.4)]' :
-                          complaint.status === 'scheduled' ? 'bg-purple-500 shadow-[2px_0_10px_rgba(168,85,247,0.4)]' :
+                          getEffectiveStatus(complaint, now) === 'complete' ? 'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]' :
+                          getEffectiveStatus(complaint, now) === 'in process' ? 'bg-blue-500 shadow-[2px_0_10px_rgba(59,130,246,0.4)]' :
+                          getEffectiveStatus(complaint, now) === 'scheduled' ? 'bg-purple-500 shadow-[2px_0_10px_rgba(168,85,247,0.4)]' :
                           'bg-amber-500 shadow-[2px_0_10px_rgba(245,158,11,0.4)]'
                         )} />
                         
@@ -1264,22 +1284,22 @@ export default function ComplaintList({
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               "flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]",
-                              complaint.status === 'complete' 
+                              getEffectiveStatus(complaint, now) === 'complete' 
                                 ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400' 
-                                : complaint.status === 'in process'
+                                : getEffectiveStatus(complaint, now) === 'in process'
                                 ? 'bg-blue-500/10 text-blue-600 border-blue-500/25 dark:text-blue-400'
-                                : complaint.status === 'scheduled'
+                                : getEffectiveStatus(complaint, now) === 'scheduled'
                                 ? 'bg-purple-500/10 text-purple-600 border-purple-500/25 dark:text-purple-400'
                                 : 'bg-amber-500/10 text-amber-600 border-amber-500/25 dark:text-amber-400'
                             )}>
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full",
-                                complaint.status === 'complete' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
-                                complaint.status === 'in process' ? 'bg-blue-500 shadow-[0_0_6px_#3b82f6]' : 
-                                complaint.status === 'scheduled' ? 'bg-purple-500 shadow-[0_0_6px_#a855f7]' : 
+                                getEffectiveStatus(complaint, now) === 'complete' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
+                                getEffectiveStatus(complaint, now) === 'in process' ? 'bg-blue-500 shadow-[0_0_6px_#3b82f6]' : 
+                                getEffectiveStatus(complaint, now) === 'scheduled' ? 'bg-purple-500 shadow-[0_0_6px_#a855f7]' : 
                                 'bg-amber-500 shadow-[0_0_6px_#f59e0b]'
                               )} />
-                              <span>{complaint.status}</span>
+                              <span>{getEffectiveStatus(complaint, now)}</span>
                             </span>
                             
                             {/* Delegate staff avatar */}
@@ -1288,7 +1308,7 @@ export default function ComplaintList({
                             </div>
                           </div>
                           
-                          {complaint.status === 'in process' && (() => {
+                          {getEffectiveStatus(complaint, now) === 'in process' && (() => {
                             const prog = calculateProtocolProgress(complaint.remarks);
                             if (prog.percentage <= 0) return null;
                             return (
@@ -2093,20 +2113,26 @@ export default function ComplaintList({
                             <button
                               key={`stat-${i}`}
                               onClick={() => {
-                                if (s === 'scheduled') {
-                                  setScheduleModalDate('');
-                                  setShowScheduleModal(true);
+                                if (s.toLowerCase() === 'scheduled') {
+                                  const existingDate = selectedComplaint.scheduledAt 
+                                    ? new Date(selectedComplaint.scheduledAt - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16) 
+                                    : '';
+                                  setScheduleModalDate(existingDate);
+                                  setShowInlineSchedulePicker(!showInlineSchedulePicker);
                                   return;
                                 }
-                                if (s === 'complete' && (!statusRemarks.trim() || !customerReview.trim())) {
+                                setShowInlineSchedulePicker(false);
+                                if (s.toLowerCase() === 'complete' && (!statusRemarks.trim() || !customerReview.trim())) {
                                   toast.error('Both Resolution Protocol and Customer Review are required for completion.');
                                   return;
                                 }
-                                if (onEdit && selectedComplaint.scheduledAt && s !== 'scheduled') {
-                                  onEdit(selectedComplaint.id, { status: s, scheduledAt: undefined });
+                                if (onEdit && selectedComplaint.scheduledAt && s.toLowerCase() !== 'scheduled') {
+                                  onEdit(selectedComplaint.id, { status: s as ComplaintStatus, scheduledAt: undefined });
                                 }
-                                onStatusChange(selectedComplaint.id, s, statusRemarks, customerReview);
-                                setSelectedComplaint({ ...selectedComplaint, status: s, scheduledAt: undefined, remarks: statusRemarks, customerReview: customerReview });
+                                if (onStatusChange) {
+                                  onStatusChange(selectedComplaint.id, s as ComplaintStatus, statusRemarks, customerReview);
+                                }
+                                setSelectedComplaint({ ...selectedComplaint, status: s as ComplaintStatus, scheduledAt: undefined, remarks: statusRemarks, customerReview: customerReview });
                                 setStatusRemarks('');
                                 setCustomerReview('');
                                 setHideStatusRemarksBox(false);
@@ -2114,7 +2140,7 @@ export default function ComplaintList({
                               }}
                               className={cn(
                                 "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                                selectedComplaint.status === s 
+                                selectedComplaint.status.toLowerCase() === s.toLowerCase() 
                                   ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-lg shadow-brand-accent/20" 
                                   : "bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-800 hover:border-slate-300"
                               )}
@@ -2123,6 +2149,80 @@ export default function ComplaintList({
                             </button>
                           ))}
                         </div>
+
+                        {/* INLINE ANIMATED SCHEDULE DATEPICKER */}
+                        <AnimatePresence>
+                          {showInlineSchedulePicker && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                              animate={{ height: 'auto', opacity: 1, marginTop: 8 }}
+                              exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                              transition={{ type: "spring", stiffness: 200, damping: 22 }}
+                              className="overflow-hidden bg-purple-500/[0.04] dark:bg-purple-950/20 border border-purple-500/20 rounded-xl p-3.5 space-y-3 origin-top"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className="p-1.5 bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400 rounded-lg">
+                                  <Calendar size={12} />
+                                </div>
+                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Set Dispatch Window</span>
+                              </div>
+                              <input
+                                type="datetime-local"
+                                value={scheduleModalDate}
+                                onChange={(e) => setScheduleModalDate(e.target.value)}
+                                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-purple-500 text-center"
+                              />
+                              <p className="text-[8px] font-medium text-slate-400 dark:text-slate-500 text-center leading-normal">
+                                Scheduled records will remain visually submerged until 12 hours prior to dispatch.
+                              </p>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowInlineSchedulePicker(false)}
+                                  className="flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!scheduleModalDate) {
+                                      toast.error('Please select a valid schedule date.');
+                                      return;
+                                    }
+                                    const scheduledTime = new Date(scheduleModalDate).getTime();
+                                    if (onEdit) {
+                                      await onEdit(selectedComplaint.id, {
+                                        status: 'scheduled',
+                                        scheduledAt: scheduledTime
+                                      });
+                                    }
+                                    if (onStatusChange) {
+                                      await onStatusChange(selectedComplaint.id, 'scheduled', statusRemarks, customerReview);
+                                    }
+                                    setSelectedComplaint({ 
+                                      ...selectedComplaint, 
+                                      status: 'scheduled', 
+                                      scheduledAt: scheduledTime,
+                                      remarks: statusRemarks,
+                                      customerReview: customerReview
+                                    });
+                                    setStatusRemarks('');
+                                    setCustomerReview('');
+                                    setHideStatusRemarksBox(false);
+                                    setHideCustomerReviewBox(false);
+                                    setShowInlineSchedulePicker(false);
+                                    toast.success('Complaint Scheduled successfully.');
+                                  }}
+                                  className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-md shadow-purple-500/20 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  <CheckCircle size={10} />
+                                  <span>Done</span>
+                                </button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                         
                         {onDelete && (
                           <button
@@ -2147,91 +2247,7 @@ export default function ComplaintList({
         )}
       </AnimatePresence>
 
-      {/* SCHEDULE MODAL */}
-      <AnimatePresence>
-        {showScheduleModal && selectedComplaint && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowScheduleModal(false)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 overflow-hidden"
-            >
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 to-brand-accent object-cover"></div>
-              
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-purple-50 dark:bg-purple-500/10 rounded-2xl border border-purple-100 dark:border-purple-500/20 text-purple-600 dark:text-purple-400">
-                  <Calendar size={24} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 mb-0.5">Schedule Protocol</h3>
-                  <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Set dispatch window</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4 mb-6">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block">Dispatch Date</label>
-                  <input
-                    type="datetime-local"
-                    value={scheduleModalDate}
-                    onChange={(e) => setScheduleModalDate(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 font-bold focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all outline-none"
-                    required
-                  />
-                  <p className="text-[9px] font-medium text-slate-400 mt-2 px-1">Note: Scheduled records will remain visually submerged until 12 hours prior to dispatch time.</p>
-                </div>
-              </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowScheduleModal(false)}
-                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!scheduleModalDate) {
-                      toast.error('Please select a valid schedule date.');
-                      return;
-                    }
-                    if (onEdit) {
-                      await onEdit(selectedComplaint.id, {
-                        status: 'scheduled',
-                        scheduledAt: new Date(scheduleModalDate).getTime()
-                      });
-                      setSelectedComplaint({ 
-                        ...selectedComplaint, 
-                        status: 'scheduled', 
-                        scheduledAt: new Date(scheduleModalDate).getTime(),
-                        remarks: statusRemarks,
-                        customerReview: customerReview
-                      });
-                      setStatusRemarks('');
-                      setCustomerReview('');
-                      setHideStatusRemarksBox(false);
-                      setHideCustomerReviewBox(false);
-                      setShowScheduleModal(false);
-                    }
-                  }}
-                  className="flex-1 py-3 justify-center items-center gap-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-purple-500/20 transition-all active:scale-[0.98] flex"
-                >
-                  <Save size={14} />
-                  <span>Commit</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
     </div>
   );
