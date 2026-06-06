@@ -65,6 +65,8 @@ export default function ComplaintList({
   const [animateRemarksLeft, setAnimateRemarksLeft] = React.useState(false);
   const [animateReviewLeft, setAnimateReviewLeft] = React.useState(false);
   const [showLeftThankYou, setShowLeftThankYou] = React.useState(false);
+  const [showScheduleModal, setShowScheduleModal] = React.useState(false);
+  const [scheduleModalDate, setScheduleModalDate] = React.useState('');
 
   const playPopupSound = () => {
     try {
@@ -205,6 +207,17 @@ export default function ComplaintList({
       filtered = filtered.filter(c => c.createdAt <= end);
     }
 
+    // 12h Scheduled Rule
+    const now = Date.now();
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+    filtered = filtered.filter(c => {
+      if (statusFilter === 'scheduled') return true;
+      if (c.status === 'scheduled' && c.scheduledAt) {
+        return c.scheduledAt - now <= TWELVE_HOURS;
+      }
+      return true;
+    });
+
     // Comprehensive Sorting
     filtered.sort((a, b) => {
       // Prioritize active scheduled complaints at the absolute top of the list
@@ -238,7 +251,7 @@ export default function ComplaintList({
           valB = priorityWeight[b.priority || 'Low'] || 0;
           break;
         case 'status':
-          const statusWeight = { 'pending': 1, 'in process': 2, 'important': 3, 'complete': 4 };
+          const statusWeight = { 'pending': 1, 'in process': 2, 'scheduled': 3, 'important': 4, 'complete': 5 };
           valA = statusWeight[a.status] || 0;
           valB = statusWeight[b.status] || 0;
           break;
@@ -308,6 +321,7 @@ export default function ComplaintList({
     switch (status) {
       case 'complete': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
       case 'in process': return 'text-blue-500 bg-blue-500/10 border-blue-500/20';
+      case 'scheduled': return 'text-purple-500 bg-purple-500/10 border-purple-500/20';
       case 'important': return 'text-amber-500 bg-amber-500/10 border-amber-500/20 shadow-sm shadow-amber-500/10';
       case 'pending': default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
     }
@@ -861,6 +875,17 @@ export default function ComplaintList({
               >
                 In Process
               </button>
+              <button
+                onClick={() => setStatusFilter('scheduled')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                  statusFilter === 'scheduled'
+                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-330"
+                )}
+              >
+                Scheduled
+              </button>
             </div>
 
             {/* EXPORT consolidated dropdown */}
@@ -1127,7 +1152,9 @@ export default function ComplaintList({
                           ? 'bg-emerald-500/[0.005] dark:bg-slate-950/20 hover:bg-emerald-500/[0.02] dark:hover:bg-emerald-500/[0.03]' 
                           : complaint.status === 'in process'
                             ? 'bg-blue-500/[0.005] dark:bg-slate-950/20 hover:bg-blue-500/[0.02] dark:hover:bg-blue-500/[0.03]'
-                            : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.015] dark:hover:bg-slate-500/[0.025]'
+                            : complaint.status === 'scheduled'
+                              ? 'bg-purple-500/[0.005] dark:bg-slate-950/20 hover:bg-purple-500/[0.02] dark:hover:bg-purple-500/[0.03]'
+                              : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.015] dark:hover:bg-slate-500/[0.025]'
                       )}
                     >
                       {/* CLIENT & CONTACT */}
@@ -1137,6 +1164,7 @@ export default function ComplaintList({
                           "absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-md transition-all duration-300 group-hover:w-1.5",
                           complaint.status === 'complete' ? 'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]' :
                           complaint.status === 'in process' ? 'bg-blue-500 shadow-[2px_0_10px_rgba(59,130,246,0.4)]' :
+                          complaint.status === 'scheduled' ? 'bg-purple-500 shadow-[2px_0_10px_rgba(168,85,247,0.4)]' :
                           'bg-amber-500 shadow-[2px_0_10px_rgba(245,158,11,0.4)]'
                         )} />
                         
@@ -1240,12 +1268,15 @@ export default function ComplaintList({
                                 ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400' 
                                 : complaint.status === 'in process'
                                 ? 'bg-blue-500/10 text-blue-600 border-blue-500/25 dark:text-blue-400'
+                                : complaint.status === 'scheduled'
+                                ? 'bg-purple-500/10 text-purple-600 border-purple-500/25 dark:text-purple-400'
                                 : 'bg-amber-500/10 text-amber-600 border-amber-500/25 dark:text-amber-400'
                             )}>
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full",
                                 complaint.status === 'complete' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
                                 complaint.status === 'in process' ? 'bg-blue-500 shadow-[0_0_6px_#3b82f6]' : 
+                                complaint.status === 'scheduled' ? 'bg-purple-500 shadow-[0_0_6px_#a855f7]' : 
                                 'bg-amber-500 shadow-[0_0_6px_#f59e0b]'
                               )} />
                               <span>{complaint.status}</span>
@@ -2062,12 +2093,20 @@ export default function ComplaintList({
                             <button
                               key={`stat-${i}`}
                               onClick={() => {
+                                if (s === 'scheduled') {
+                                  setScheduleModalDate('');
+                                  setShowScheduleModal(true);
+                                  return;
+                                }
                                 if (s === 'complete' && (!statusRemarks.trim() || !customerReview.trim())) {
                                   toast.error('Both Resolution Protocol and Customer Review are required for completion.');
                                   return;
                                 }
+                                if (onEdit && selectedComplaint.scheduledAt && s !== 'scheduled') {
+                                  onEdit(selectedComplaint.id, { status: s, scheduledAt: undefined });
+                                }
                                 onStatusChange(selectedComplaint.id, s, statusRemarks, customerReview);
-                                setSelectedComplaint({ ...selectedComplaint, status: s, remarks: statusRemarks, customerReview: customerReview });
+                                setSelectedComplaint({ ...selectedComplaint, status: s, scheduledAt: undefined, remarks: statusRemarks, customerReview: customerReview });
                                 setStatusRemarks('');
                                 setCustomerReview('');
                                 setHideStatusRemarksBox(false);
@@ -2107,6 +2146,93 @@ export default function ComplaintList({
           </div>
         )}
       </AnimatePresence>
+
+      {/* SCHEDULE MODAL */}
+      <AnimatePresence>
+        {showScheduleModal && selectedComplaint && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowScheduleModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 to-brand-accent object-cover"></div>
+              
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-3 bg-purple-50 dark:bg-purple-500/10 rounded-2xl border border-purple-100 dark:border-purple-500/20 text-purple-600 dark:text-purple-400">
+                  <Calendar size={24} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 mb-0.5">Schedule Protocol</h3>
+                  <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Set dispatch window</p>
+                </div>
+              </div>
+              
+              <div className="space-y-4 mb-6">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block">Dispatch Date</label>
+                  <input
+                    type="datetime-local"
+                    value={scheduleModalDate}
+                    onChange={(e) => setScheduleModalDate(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 font-bold focus:ring-2 focus:ring-brand-accent/20 focus:border-brand-accent transition-all outline-none"
+                    required
+                  />
+                  <p className="text-[9px] font-medium text-slate-400 mt-2 px-1">Note: Scheduled records will remain visually submerged until 12 hours prior to dispatch time.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowScheduleModal(false)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!scheduleModalDate) {
+                      toast.error('Please select a valid schedule date.');
+                      return;
+                    }
+                    if (onEdit) {
+                      await onEdit(selectedComplaint.id, {
+                        status: 'scheduled',
+                        scheduledAt: new Date(scheduleModalDate).getTime()
+                      });
+                      setSelectedComplaint({ 
+                        ...selectedComplaint, 
+                        status: 'scheduled', 
+                        scheduledAt: new Date(scheduleModalDate).getTime(),
+                        remarks: statusRemarks,
+                        customerReview: customerReview
+                      });
+                      setStatusRemarks('');
+                      setCustomerReview('');
+                      setHideStatusRemarksBox(false);
+                      setHideCustomerReviewBox(false);
+                      setShowScheduleModal(false);
+                    }
+                  }}
+                  className="flex-1 py-3 justify-center items-center gap-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-purple-500/20 transition-all active:scale-[0.98] flex"
+                >
+                  <Save size={14} />
+                  <span>Commit</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

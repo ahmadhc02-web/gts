@@ -8,7 +8,7 @@ export const DEFAULT_CATEGORIES = [
   'Slow Connection'
 ];
 
-export const DEFAULT_STATUSES = ['pending', 'in process', 'complete', 'important'];
+export const DEFAULT_STATUSES = ['pending', 'in process', 'scheduled', 'complete', 'important'];
 
 export const DEFAULT_PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 

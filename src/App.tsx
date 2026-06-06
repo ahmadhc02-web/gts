@@ -613,9 +613,12 @@ export default function App() {
     // Subscribe to app config for the current tenant
     const unsubscribeConfig = firebaseService.subscribeConfig((data) => {
       if (data) {
+        const fetchedStatuses = data.statuses || DEFAULT_STATUSES;
+        const finalStatuses = fetchedStatuses.includes('scheduled') ? fetchedStatuses : [...fetchedStatuses, 'scheduled'];
+        
         setAppConfig({
           categories: data.categories || DEFAULT_CATEGORIES,
-          statuses: data.statuses || DEFAULT_STATUSES,
+          statuses: finalStatuses,
           priorities: data.priorities || DEFAULT_PRIORITIES,
           zones: data.zones || DEFAULT_ZONES,
           billingSecurityKey: data.billingSecurityKey || '786786',
@@ -699,9 +702,12 @@ export default function App() {
       console.log("[Supabase Realtime Sync] Fetching updated branding configs...");
       const config = await firebaseService.getAppConfig(tenantId);
       if (config) {
+        const fetchedStatuses = config.statuses || DEFAULT_STATUSES;
+        const finalStatuses = fetchedStatuses.includes('scheduled') ? fetchedStatuses : [...fetchedStatuses, 'scheduled'];
+        
         setAppConfig({
           categories: config.categories || DEFAULT_CATEGORIES,
-          statuses: config.statuses || DEFAULT_STATUSES,
+          statuses: finalStatuses,
           priorities: config.priorities || DEFAULT_PRIORITIES,
           zones: config.zones || DEFAULT_ZONES,
           billingSecurityKey: config.billingSecurityKey || '786786',

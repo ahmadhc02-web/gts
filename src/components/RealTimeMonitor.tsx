@@ -93,10 +93,11 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         }).length;
 
         const resolvedCount = complaints.filter(c => {
-          if (!c.createdAt) return false;
+          const timestamp = c.updatedAt || c.createdAt;
+          if (!timestamp) return false;
           const status = c.status?.toUpperCase() || '';
           const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
-          return isResolved && c.createdAt >= startOfDay && c.createdAt <= endOfDay;
+          return isResolved && timestamp >= startOfDay && timestamp <= endOfDay;
         }).length;
 
         data.push({
@@ -125,10 +126,11 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         }).length;
 
         const resolvedCount = complaints.filter(c => {
-          if (!c.createdAt) return false;
+          const timestamp = c.updatedAt || c.createdAt;
+          if (!timestamp) return false;
           const status = c.status?.toUpperCase() || '';
           const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
-          return isResolved && c.createdAt >= startOfDay && c.createdAt <= endOfDay;
+          return isResolved && timestamp >= startOfDay && timestamp <= endOfDay;
         }).length;
         
         data.push({
@@ -157,10 +159,11 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         }).length;
         
         const resolvedCount = complaints.filter(c => {
-          if (!c.createdAt) return false;
+          const timestamp = c.updatedAt || c.createdAt;
+          if (!timestamp) return false;
           const status = c.status?.toUpperCase() || '';
           const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
-          return isResolved && c.createdAt >= startOfM && c.createdAt <= endOfM;
+          return isResolved && timestamp >= startOfM && timestamp <= endOfM;
         }).length;
         
         data.push({
