@@ -46,9 +46,9 @@ export default function HighFrequencyNodes({ complaints = [] }: HighFrequencyNod
   }, [complaints, highFreqRange]);
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div className="h-full flex flex-col space-y-6">
+      <div className="flex-1 flex flex-col bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-[0_22px_48px_rgba(0,0,0,0.12),_0_8px_24px_rgba(245,158,11,0.08)] overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
               <Flame size={20} />
@@ -82,7 +82,7 @@ export default function HighFrequencyNodes({ complaints = [] }: HighFrequencyNod
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="flex-1 overflow-y-auto min-h-0 space-y-2 pr-2 custom-scrollbar">
           {topUsers.length > 0 ? (
             topUsers.map((user, idx) => (
               <div key={user.name + '-' + idx} className="space-y-2">

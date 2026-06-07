@@ -11,27 +11,28 @@ interface DistributionListProps {
   chartType?: 'area' | 'category';
 }
 
-const COLORS = ['#0f172a', '#334155', '#2563eb', '#1d4ed8', '#10b981', '#059669', '#f59e0b', '#d97706', '#6366f1'];
+const COLORS = [
+  '#1E3A8A', // Deep Blue / Navy
+  '#10B981', // Crisp Emerald
+  '#F59E0B', // Rich Amber/Gold
+  '#6D28D9', // Deep Violet
+  '#0EA5E9', // Ocean Sky
+  '#EF4444', // Crimson Red
+  '#14B8A6', // Premium Teal
+  '#F97316', // Vibrant Orange
+  '#8B5CF6', // Royal Purple
+  '#06B6D4', // Vibrant Cyan
+  '#64748B', // Slate Grey
+  '#84CC16', // Apple Green
+];
 
 const getItemColor = (name: string, index: number, isCategory: boolean) => {
   const n = name.trim().toLowerCase();
-  if (isCategory) {
-    if (n.includes('speed') || n.includes('slow')) return '#dc2626'; // Red
-    if (n.includes('offline') || n.includes('break')) return '#ea580c'; // Orange
-    if (n.includes('router') || n.includes('config')) return '#475569'; // Slate
-    if (n.includes('new') || n.includes('connection')) return '#2563eb'; // Blue
-    if (n.includes('wifi') || n.includes('wireless') || n.includes('issue')) return '#059669'; // Emerald
-  } else {
-    // Zones mapping mockups
-    if (n.includes('tsipp')) return '#ea580c'; 
-    if (n.includes('ts')) return '#059669'; 
-    if (n.includes('chirr')) return '#2563eb'; 
-    if (n.includes('hc')) return '#dc2626'; 
-    if (n.includes('sdk')) return '#4f46e5'; 
-    if (n.includes('model')) return '#059669';
-    if (n.includes('gulberg')) return '#2563eb';
-    if (n.includes('satellite')) return '#4f46e5';
+  // Specifically map Redlight issues to a striking red color
+  if (isCategory && (n.includes('redlight') || n.includes('red light') || n.includes('red-light'))) {
+    return '#DC2626'; // Premium striking red
   }
+  // Always use a unique color per index for maximum distinction and premium variance
   return COLORS[index % COLORS.length];
 };
 
@@ -87,11 +88,10 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
            <div className="w-full flex items-center relative h-full rounded-2xl overflow-hidden p-5">
                 {data.length > 0 ? (
                   <div className="flex flex-col w-full h-full justify-between">
-                     {/* Chart Container - Top Portion - Height adjusted for visual balance */}
-                      <div className="w-full h-[285px] relative flex items-center justify-center">
+                    <div className="flex-1 w-full relative flex items-center justify-center">
                       {/* Centered Label with elegant concentric double border layout matching photo */}
-                      <div className="absolute w-[92px] h-[92px] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center pointer-events-none z-10 shadow-[inner_0_2px_4px_rgba(0,0,0,0.06),0_12px_24px_-6px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 transition-colors">
-                        <div className="w-[80px] h-[80px] rounded-full border border-dashed border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-center">
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[84px] h-[84px] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center pointer-events-none z-10 shadow-[inner_0_2px_4px_rgba(0,0,0,0.06),0_12px_24px_-6px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 transition-colors">
+                        <div className="w-[72px] h-[72px] rounded-full border border-dashed border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-center">
                           <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white leading-tight">
                             {chartType === 'area' ? 'ZONE' : 'CATG.'}
                           </span>
@@ -99,7 +99,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                       </div>
   
                       <ResponsiveContainer width="100%" height="100%">
-                        <PieChart margin={{ top: 15, right: 55, left: 55, bottom: 15 }}>
+                        <PieChart margin={{ top: 0, right: 30, left: 30, bottom: 0 }}>
                           <defs>
                              <filter id="pieShadow" x="-10%" y="-10%" width="120%" height="120%">
                                <feDropShadow dx="1" dy="3" stdDeviation="2" floodOpacity="0.15" />
@@ -108,7 +108,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                           <Pie 
                             data={chartType === 'area' ? data.slice(0, 6) : data.slice(0, 4)} 
                             cx="50%" cy="50%" 
-                            innerRadius="44%" outerRadius="75%" 
+                            innerRadius={55} outerRadius={95} 
                             paddingAngle={5}
                             cornerRadius={8}
                             dataKey="count"
@@ -118,7 +118,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                             label={(props) => {
                               const { cx, cy, midAngle, outerRadius, name, percent, index } = props;
                               const RADIAN = Math.PI / 180;
-                              const radiusMid = outerRadius * 1.35;
+                              const radiusMid = outerRadius * 1.25;
                               
                               const x = cx + radiusMid * Math.cos(-midAngle * RADIAN);
                               const y = cy + radiusMid * Math.sin(-midAngle * RADIAN);
@@ -129,17 +129,22 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                               const itemColor = getItemColor(name, index, chartType === 'category');
                               
                               const xDir = Math.cos(-midAngle * RADIAN) >= 0 ? 1 : -1;
-                              const ex = x + (xDir * 28);
-                              const textX = xDir > 0 ? x + 4 : x - 4;
+                              const ex = x + (xDir * 14);
+                              const textX = xDir > 0 ? ex + 4 : ex - 4;
  
                               if (percent === 0) return null;
+                              
+                              let displayName = name;
+                              if (displayName.toLowerCase() === 'new connection') {
+                                displayName = 'NEW CONN.';
+                              }
  
                               return (
                                 <g>
                                   <polyline points={`${p1x},${p1y} ${x},${y} ${ex},${y}`} stroke={itemColor} fill="none" strokeWidth={2} opacity={0.8} />
                                   <circle cx={ex} cy={y} r={3} fill={itemColor} />
-                                  <text x={textX} y={y - 7} fill={itemColor} textAnchor={xDir > 0 ? 'start' : 'end'} dominantBaseline="baseline" fontSize="10.5" fontWeight="900" style={{textTransform: 'uppercase', letterSpacing: '0.05em', filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.3))'}}>
-                                    {name} <tspan fillOpacity={0.8} fontWeight="800">{(percent * 100).toFixed(0)}%</tspan>
+                                  <text x={textX} y={y - 5} fill={itemColor} textAnchor={xDir > 0 ? 'start' : 'end'} dominantBaseline="baseline" fontSize="10" fontWeight="900" style={{textTransform: 'uppercase', letterSpacing: '0.02em', filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.3))'}}>
+                                    {displayName} <tspan fillOpacity={0.8} fontWeight="800">{(percent * 100).toFixed(0)}%</tspan>
                                   </text>
                                 </g>
                               );

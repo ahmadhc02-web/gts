@@ -1200,15 +1200,15 @@ export default function AdminPanel({
               {stats.map((stat, idx) => (
                 <motion.div
                   key={`stat-tile-${idx}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.05, duration: 0.3, ease: "easeOut" }}
+                  initial={{ opacity: 0, y: 30, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ delay: idx * 0.06, type: "spring", stiffness: 280, damping: 20 }}
                   whileHover={{ 
-                    y: -6, 
-                    scale: 1.025,
+                    y: -8, 
+                    scale: 1.03,
                     boxShadow: "0 25px 45px -10px rgba(0, 0, 0, 0.08), 0 10px 20px -8px rgba(0, 0, 0, 0.04)"
                   }}
-                  whileTap={{ scale: 0.98 }}
+                  whileTap={{ scale: 0.96 }}
                   onClick={() => handleTileClick(stat.filter)}
                   title={stat.tooltip}
                   className={cn(
@@ -1286,31 +1286,30 @@ export default function AdminPanel({
               <AnimatePresence mode="wait">
                 {isChartsVisible && (
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.9, filter: 'blur(20px)', y: 20 }}
+                    initial={{ opacity: 0, scale: 0.9, filter: 'blur(10px)', y: 20 }}
                     animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', y: 0 }}
                     exit={{ 
                       opacity: 0, 
-                      scale: 0.8, 
-                      x: -400, 
-                      y: -100, 
-                      rotate: -15, 
-                      skewX: -40, 
-                      filter: 'blur(50px)',
-                      transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] }
+                      scale: 0.9, 
+                      y: -20, 
+                      filter: 'blur(10px)',
+                      transition: { duration: 0.3, ease: 'easeIn' }
                     }}
                     transition={{ 
-                      duration: 0.4, 
-                      ease: [0.16, 1, 0.3, 1] 
+                      type: 'spring',
+                      stiffness: 260,
+                      damping: 25,
+                      mass: 0.8
                     }}
-                    className="grid grid-cols-1 xl:grid-cols-3 lg:grid-cols-2 gap-6 origin-right"
+                    className="grid grid-cols-1 lg:grid-cols-3 gap-6 origin-top"
                   >
-                    <div className="h-[300px] sm:h-[400px] transition-all duration-300">
+                    <div className="h-[280px] sm:h-[300px] transition-all duration-300">
                       <DistributionList complaints={complaints} chartType="area" />
                     </div>
-                    <div className="h-[300px] sm:h-[400px] md:col-span-1 lg:col-span-2 xl:col-span-1 transition-all duration-300">
+                    <div className="h-[280px] sm:h-[300px] transition-all duration-300">
                       <RealTimeMonitor complaints={complaints} />
                     </div>
-                    <div className="h-[300px] sm:h-[400px] transition-all duration-300">
+                    <div className="h-[280px] sm:h-[300px] transition-all duration-300">
                       <DistributionList complaints={complaints} chartType="category" />
                     </div>
                   </motion.div>
@@ -1832,23 +1831,21 @@ export default function AdminPanel({
             <AnimatePresence mode="wait">
               {isFormVisible && (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.9, filter: 'blur(20px)', y: 20 }}
+                  initial={{ opacity: 0, scale: 0.95, filter: 'blur(10px)', y: 20 }}
                   animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', y: 0 }}
                   exit={{ 
                     opacity: 0, 
-                    scale: 0.8, 
-                    x: 400, 
-                    y: -100, 
-                    rotate: 15, 
-                    skewX: 40, 
-                    filter: 'blur(50px)',
-                    transition: { duration: 1.2, ease: [0.4, 0, 0.2, 1] }
+                    scale: 0.95, 
+                    y: -20, 
+                    filter: 'blur(10px)',
+                    transition: { duration: 0.3, ease: 'easeIn' }
                   }}
                   transition={{ 
-                    duration: 0.8, 
-                    ease: [0.16, 1, 0.3, 1]
+                    type: 'spring',
+                    stiffness: 280,
+                    damping: 25
                   }}
-                  className="origin-left"
+                  className="origin-top"
                 >
                   <div className="pt-2 pb-8">
                     <ComplaintForm 
