@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
   History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
-  ArrowUpDown
+  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -53,6 +53,193 @@ export default function EntrySheet({
   const workspaceRef = useRef<HTMLDivElement>(null);
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
   const activeDealerId = isDealerTied ? firebaseService.getTenantId(currentUser) : undefined;
+
+  // --- Folders & Dashboard State ---
+  const [activeView, setActiveView] = useState<'dashboard' | 'editor'>('dashboard');
+  const [folders, setFolders] = useState<any[]>(() => {
+    const saved = localStorage.getItem('gts_ledger_folders');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // If it already is June Data exclusively, return it
+        if (parsed.length === 1 && parsed[0].name === 'June Data') {
+          return parsed;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    // Return June Data as the single absolute default folder
+    return [
+      { id: 'june_data', name: 'June Data', createdAt: Date.now() }
+    ];
+  });
+
+  const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('gts_ledger_sheet_folders');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return {};
+  });
+
+  // Folder UI inputs
+  const [newFolderNameInput, setNewFolderNameInput] = useState('');
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [dashboardSearchQuery, setDashboardSearchQuery] = useState('');
+  const [openedFolderId, setOpenedFolderId] = useState<string | null>(null);
+
+  // Whenever Entry Sheet is opened, always reset view to the root folders dashboard view
+  useEffect(() => {
+    if (isOpen) {
+      setActiveView('dashboard');
+      setOpenedFolderId(null);
+    }
+  }, [isOpen]);
+
+  // Auto save folders
+  useEffect(() => {
+    localStorage.setItem('gts_ledger_folders', JSON.stringify(folders));
+  }, [folders]);
+
+  useEffect(() => {
+    localStorage.setItem('gts_ledger_sheet_folders', JSON.stringify(sheetFolderMap));
+  }, [sheetFolderMap]);
+
+  const handleCreateFolder = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanName = newFolderNameInput.trim();
+    if (!cleanName) {
+      toast.error("Please enter a valid folder name");
+      return;
+    }
+    if (folders.some(f => f.name.toLowerCase() === cleanName.toLowerCase())) {
+      toast.error("A folder with this name already exists!");
+      return;
+    }
+    const nFolder = {
+      id: `folder_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: cleanName,
+      createdAt: Date.now()
+    };
+    setFolders(prev => [...prev, nFolder]);
+    setNewFolderNameInput('');
+    setIsCreatingFolder(false);
+    toast.success(`📁 Folder "${cleanName}" created successfully!`);
+  };
+
+  const handleDeleteFolder = (folderId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (folders.length <= 1) {
+      toast.error("You must keep at least one folder in the system.");
+      return;
+    }
+    const conf = window.confirm("Are you sure you want to delete this folder? Sheets inside will become Uncategorized.");
+    if (!conf) return;
+
+    setFolders(prev => prev.filter(f => f.id !== folderId));
+    setSheetFolderMap(prev => {
+      const next = { ...prev };
+      Object.keys(next).forEach(sheetId => {
+        if (next[sheetId] === folderId) {
+          delete next[sheetId];
+        }
+      });
+      return next;
+    });
+    toast.success("Folder deleted");
+  };
+
+  const handleCreateSheetInFolder = (folderId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (isLocked) {
+      toast.error("🔒 SYSTEM SECURED", { description: "Please unlock the Billing Security Shield first." });
+      return;
+    }
+
+    // Default table rows creation
+    const tRef: Table1Row[] = [];
+    for (let i = 1; i <= 22; i++) {
+      tRef.push({
+        sr: i,
+        cId: '',
+        name: '',
+        comments: '',
+        amount: 0,
+        ch: false,
+        clientId: '',
+        clientUsername: ''
+      });
+    }
+    const t2 = [
+      { sr: 1, name: 'Bank', amount: 0, ch: false },
+      { sr: 2, name: 'Panel Balance', amount: 0, ch: false },
+      { sr: 3, name: 'Cash Hand', amount: 0, ch: false }
+    ];
+
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    const formattedDate = `${day} - ${month} - ${year}`;
+
+    const newSheetId = `sheet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    // Set editor fields
+    setLoadedSheetId(newSheetId);
+    setRecOfficer(currentUser.fullName || currentUser.username.toUpperCase());
+    setArea('MAIN');
+    setSheetDate(formattedDate);
+    setTable1Rows(tRef);
+    setTable2Rows(t2);
+    setCashReceived('');
+    setSign('');
+    setSubmitted('');
+
+    const blankSheet = {
+      id: newSheetId,
+      recOfficer: currentUser.fullName || currentUser.username.toUpperCase(),
+      recOfficerLabel: 'REC. OFFICER',
+      area: 'MAIN',
+      areaLabel: 'AREA',
+      sheetDate: formattedDate,
+      dateLabel: 'DATE',
+      table1Rows: tRef,
+      table2Rows: t2,
+      cashReceived: '',
+      sign: '',
+      submitted: '',
+      footnoteLeft: 'Enterprise Ledger Dispatch System',
+      footnoteRight: 'GENv2.5 // A4 PRINTABLE',
+      t1Headers: ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
+      t2Headers: ['SR', 'NAME', 'AMOUNT', 'CH'],
+      t1TotalLabel: 'TOTAL',
+      t2TotalLabel: 'TOTAL',
+      cashReceivedLabel: 'CASH RECEIVED',
+      signLabel: 'SIGN',
+      submittedLabel: 'SUBMITTED',
+    };
+
+    isSwappingRef.current = true;
+    setSheets([blankSheet]);
+    setActiveSheetIdx(0);
+    setTimeout(() => {
+      isSwappingRef.current = false;
+    }, 50);
+
+    // Map sheet id
+    setSheetFolderMap(prev => ({
+      ...prev,
+      [newSheetId]: folderId
+    }));
+
+    setActiveView('editor');
+    toast.success("📄 Created empty sheet inside selected folder! Let's fill it.");
+  };
 
   // Top fields
   const [recOfficer, setRecOfficer] = useState('');
@@ -202,6 +389,39 @@ export default function EntrySheet({
 
   // Ledger Card Monthly History and Backup States
   const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
+
+  // Auto-migrate and synchronize: put every existing sheet inside 'June Data' and clean other folders
+  useEffect(() => {
+    const juneFolder = folders.find(f => f.name.toLowerCase() === 'june data') || { id: 'june_data', name: 'June Data', createdAt: Date.now() };
+    
+    // Ensure folders contains ONLY June Data
+    if (folders.length !== 1 || folders[0].id !== juneFolder.id || folders[0].name !== 'June Data') {
+      setFolders([juneFolder]);
+    }
+
+    // Map all current sheets from ledgerHistory into the correct june_data folder
+    let mapChanged = false;
+    const nextMap = { ...sheetFolderMap };
+    
+    ledgerHistory.forEach(sh => {
+      if (nextMap[sh.id] !== juneFolder.id) {
+        nextMap[sh.id] = juneFolder.id;
+        mapChanged = true;
+      }
+    });
+
+    // Remove obsolete sheets not present in current history
+    Object.keys(nextMap).forEach(key => {
+      if (!ledgerHistory.some(sh => sh.id === key)) {
+        delete nextMap[key];
+        mapChanged = true;
+      }
+    });
+
+    if (mapChanged) {
+      setSheetFolderMap(nextMap);
+    }
+  }, [ledgerHistory, folders]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [loadedSheetId, setLoadedSheetId] = useState<string | null>(null);
@@ -351,60 +571,66 @@ export default function EntrySheet({
     return (saved as 'fit' | '100%' | '85%' | '75%') || 'fit';
   });
   const [calculatedScale, setCalculatedScale] = useState(1);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
+  const handlePaperFocus = (e: React.FocusEvent) => {
+    setIsInputFocused(true);
+    const targetEl = e.target as HTMLElement;
+    if (targetEl && typeof targetEl.scrollIntoView === 'function') {
+      setTimeout(() => {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      }, 150);
+    }
+  };
+
+  const handlePaperBlur = (e: React.FocusEvent) => {
+    const currentTarget = e.currentTarget;
+    setTimeout(() => {
+      if (!currentTarget.contains(document.activeElement)) {
+        setIsInputFocused(false);
+      }
+    }, 100);
+  };
 
   useEffect(() => {
-    if (zoomOption !== 'fit') {
-      if (zoomOption === '100%') setCalculatedScale(1);
-      else if (zoomOption === '85%') setCalculatedScale(0.85);
-      else if (zoomOption === '75%') setCalculatedScale(0.72);
-      return;
-    }
-
     const handleResize = () => {
-      let viewWidth = window.innerWidth;
-      let viewHeight = window.innerHeight;
-
-      const isDesktop = window.innerWidth >= 1024;
+      let baseScale = 1;
       
-      // Subtract sidebar widths if active to calculate precise width available for workspace
-      if (showSizingPanel) {
-        if (isDesktop) viewWidth -= 280;
-      }
-      if (showHistoryPanel) {
-        if (isDesktop) viewWidth -= 380;
-      }
+      if (zoomOption !== 'fit') {
+        if (zoomOption === '100%') baseScale = 1.0;
+        else if (zoomOption === '85%') baseScale = 0.85;
+        else if (zoomOption === '75%') baseScale = 0.72;
+      } else {
+        let availableWidth = window.innerWidth;
+        let availableHeight = window.innerHeight - (window.innerWidth < 640 ? 100 : 80);
 
-      // Deduct top navbar header height (approx 72px)
-      let availableHeight = viewHeight - 72;
+        if (workspaceRef.current) {
+          availableWidth = workspaceRef.current.clientWidth || window.innerWidth;
+          availableHeight = workspaceRef.current.clientHeight || (window.innerHeight - (window.innerWidth < 640 ? 100 : 80));
+        }
 
-      // Deduct lock banner height if visible (approx 120px)
-      if (isLocked) {
-        availableHeight -= 120;
-      }
+        const padX = window.innerWidth < 640 ? 12 : 24;
+        const padY = window.innerWidth < 640 ? 12 : 24;
 
-      // Comfort padding
-      availableHeight -= 24;
-      let availableWidth = viewWidth - (window.innerWidth < 640 ? 16 : 48);
+        const safeWidth = Math.max(150, availableWidth - padX);
+        const safeHeight = Math.max(150, availableHeight - padY);
 
-      // Clamp limits
-      availableHeight = Math.max(150, availableHeight);
-      availableWidth = Math.max(150, availableWidth);
+        const paperWidth = 793.7;
+        const paperHeight = 1122.5;
 
-      const paperHeight = 1122.5; // approx 297mm A4 height in pixels
-      const paperWidth = 793.7; // approx 210mm A4 width in pixels
+        const fitScaleWidth = safeWidth / paperWidth;
+        const fitScaleHeight = safeHeight / paperHeight;
 
-      const fitScaleHeight = availableHeight / paperHeight;
-      const fitScaleWidth = availableWidth / paperWidth;
-
-      let bestFitScale = Math.min(fitScaleHeight, fitScaleWidth);
-      
-      // Scale multiplier to guarantee 100% full visibility with safety margins (no scrolling)
-      if (zoomOption === 'fit') {
-        bestFitScale = bestFitScale * 0.93;
+        baseScale = Math.min(fitScaleWidth, fitScaleHeight);
+        baseScale = Math.max(0.18, Math.min(1.0, baseScale * 0.97));
       }
 
-      const finalScale = Math.min(1.0, Math.max(0.15, bestFitScale));
-      setCalculatedScale(finalScale);
+      if (isInputFocused) {
+        const minComfortZoom = 0.88;
+        setCalculatedScale(Math.max(minComfortZoom, Math.min(1.15, baseScale * 1.35)));
+      } else {
+        setCalculatedScale(baseScale);
+      }
     };
 
     handleResize();
@@ -424,7 +650,7 @@ export default function EntrySheet({
         resizeObserver.disconnect();
       }
     };
-  }, [zoomOption, isLocked, isOpen, showSizingPanel, showHistoryPanel]);
+  }, [zoomOption, isLocked, isOpen, showSizingPanel, showHistoryPanel, isInputFocused, activeView]);
 
    // Function to reset all lines & boxes sizing parameters to default
   const resetSizingToDefault = () => {
@@ -833,6 +1059,8 @@ export default function EntrySheet({
       let anySaved = false;
       let totalUpdatedBillingCount = 0;
 
+      let lastSavedId: string | null = null;
+
       for (let i = 0; i < currentSyncSheets.length; i++) {
         const sh = currentSyncSheets[i];
         
@@ -901,6 +1129,22 @@ export default function EntrySheet({
 
         if (savedDoc) {
           anySaved = true;
+          if (savedDoc.id) {
+            lastSavedId = savedDoc.id;
+          }
+
+          // Map new generated Firestore ID to sheetFolderMap
+          if (savedDoc.id && !isCurrentlyLoadedSheet && loadedSheetId) {
+            const mappedFolder = sheetFolderMap[loadedSheetId];
+            if (mappedFolder) {
+              setSheetFolderMap(prev => {
+                const updated = { ...prev };
+                updated[savedDoc.id] = mappedFolder;
+                delete updated[loadedSheetId];
+                return updated;
+              });
+            }
+          }
 
           // Auto-update matched master clients inside the currently active/selected billing month
           if (currentMonthId && activeRows && activeRows.length > 0) {
@@ -987,14 +1231,25 @@ export default function EntrySheet({
       }
 
       if (anySaved) {
-        toast.success(loadedSheetId ? "Ledger page(s) updated successfully!" : "Ledger sheet compile successfully saved to Monthly History!");
+        toast.success(loadedSheetId ? "Ledger page updated successfully!" : "Ledger sheet compile successfully saved!");
         if (totalUpdatedBillingCount > 0) {
           toast.success(`Automatically updated ${totalUpdatedBillingCount} subscriber(s) designated recovery amounts in ${currentMonthId}!`);
         }
         
-        resetToBlank();
-        setLoadedSheetId(null);
-        setShowHistoryPanel(true);
+        // Pin the saved ID as the currently loaded sheet so subsequent edits modify this same sheet
+        if (lastSavedId) {
+          setLoadedSheetId(lastSavedId);
+          setSheets(prev => {
+            const next = [...prev];
+            if (next[activeSheetIdx]) {
+              next[activeSheetIdx] = {
+                ...next[activeSheetIdx],
+                id: lastSavedId
+              };
+            }
+            return next;
+          });
+        }
       }
     } catch (e: any) {
       toast.dismiss("ledger-save");
@@ -1098,6 +1353,7 @@ export default function EntrySheet({
     }, 50);
 
     toast.info(`Loaded sheet card for recovery officer: ${sheet.recOfficer}`);
+    setActiveView('editor');
   };
 
   // Delete a single historical card from Firestore registry logs
@@ -1399,6 +1655,542 @@ export default function EntrySheet({
     window.print();
   };
 
+  const renderDashboard = () => {
+    // Group sheets into folders based on sheetFolderMap
+    const uncategorizedSheets = ledgerHistory.filter(sh => !sheetFolderMap[sh.id]);
+    
+    // Filter search query across sheets
+    const filterKeyword = dashboardSearchQuery.toLowerCase().trim();
+    const doesMatchSearch = (sh: any) => {
+      if (!filterKeyword) return true;
+      if (sh.recOfficer?.toLowerCase().includes(filterKeyword)) return true;
+      if (sh.area?.toLowerCase().includes(filterKeyword)) return true;
+      if (sh.sheetDate?.toLowerCase().includes(filterKeyword)) return true;
+      return false;
+    };
+
+    const activeFolder = folders.find(f => f.id === openedFolderId);
+    const openedFolderSheets = activeFolder 
+      ? ledgerHistory.filter(sh => sheetFolderMap[sh.id] === activeFolder.id && doesMatchSearch(sh)) 
+      : [];
+
+    return (
+      <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-6 flex flex-col gap-6 select-none scrollbar-thin">
+        {/* Upper Header info */}
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-850 pb-5">
+          <div className="text-left">
+            <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <FolderOpen className="text-blue-500 animate-pulse" size={26} />
+              GTS Operational Vault
+            </h1>
+            <p className="text-xs text-slate-450 dark:text-slate-400 font-semibold uppercase tracking-wide">
+              {openedFolderId 
+                ? `Exploring database files located in /${activeFolder?.name || 'Volume'}`
+                : "Double-click or tap any directory folder to explore recovery records, build, and organize operation dispatches."
+              }
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+            {/* Search filter */}
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search Sheets..."
+                value={dashboardSearchQuery}
+                onChange={(e) => setDashboardSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-1 focus:ring-blue-550 transition-all text-slate-900 dark:text-white font-bold"
+              />
+            </div>
+
+            {/* Create Folder toggler */}
+            {!isCreatingFolder ? (
+              <button
+                onClick={() => setIsCreatingFolder(true)}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+              >
+                <FolderPlus size={14} />
+                New Folder
+              </button>
+            ) : (
+              <form onSubmit={handleCreateFolder} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                <input
+                  type="text"
+                  placeholder="Folder Name..."
+                  value={newFolderNameInput}
+                  onChange={(e) => setNewFolderNameInput(e.target.value)}
+                  className="px-3 py-1.5 text-xs bg-transparent border-none outline-none text-slate-950 dark:text-slate-100 w-36 font-bold"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all text-xs font-bold"
+                >
+                  Create
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsCreatingFolder(false); setNewFolderNameInput(''); }}
+                  className="p-1.5 bg-slate-300 dark:bg-slate-800 text-slate-705 dark:text-slate-300 rounded-lg text-xs font-bold"
+                >
+                  Cancel
+                </button>
+              </form>
+            )}
+
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-800 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-rose-600/15"
+            >
+              <X size={14} className="stroke-[3]" />
+              Exit Vault
+            </button>
+          </div>
+        </div>
+
+        {/* Directory Breadcrumbs / Back button */}
+        {openedFolderId && (
+          <div className="flex items-center gap-3 text-left">
+            <button
+              onClick={() => setOpenedFolderId(null)}
+              className="px-3.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
+            >
+              <ChevronLeft size={16} className="text-slate-505" />
+              Back to PC Directory
+            </button>
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-850" />
+            <div className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-2">
+              <span>GTS SYSTEM DRIVE</span>
+              <span className="text-slate-300 dark:text-slate-700">/</span>
+              <span className="text-blue-500 flex items-center gap-1">
+                <FolderOpen size={13} className="fill-blue-500/10" />
+                {activeFolder?.name}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!openedFolderId ? (
+          /* ================= ROOT DIRECTORY (PC DESKTOP FOLDERS) ================= */
+          <div className="flex flex-col gap-8 text-left">
+            {/* Enhanced Directory Header resembling a sleek storage utility dashboard */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-200/60 dark:border-slate-800/60">
+              <div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-150 flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-550 dark:bg-blue-550 animate-pulse shrink-0" />
+                    Directory System Drive (C:)
+                  </h2>
+                  <span className="text-[9px] bg-blue-550/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 px-2.5 py-0.5 rounded-full font-black uppercase tracking-widest border border-blue-550/20">
+                    STATUS: SECURED
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold mt-1.5 uppercase tracking-wider">
+                  GTS ISP LEDGER CONTAINER METRIC SYSTEM • SHIELD COMPLIANT
+                </p>
+              </div>
+
+              {/* Dynamic Storage Space Meter */}
+              <div className="flex flex-col gap-2 min-w-[240px] sm:min-w-[280px] bg-slate-50/55 dark:bg-slate-900/25 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-850/60 shadow-inner backdrop-blur-md">
+                <div className="flex justify-between text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                  <span>Ledger Disk Index</span>
+                  <span className="text-slate-700 dark:text-slate-350">
+                    {folders.length} Volume • {ledgerHistory.length} Sheets
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-550 to-indigo-600 rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(37,99,235,0.3)]"
+                    style={{ width: `${Math.min(100, Math.max(15, (ledgerHistory.length / 32) * 100))}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[8px] font-black uppercase text-slate-405 dark:text-slate-500 tracking-widest">
+                  <span>SYSTEM FREELAND COMPLETED</span>
+                  <span>June Vol Lock</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Folders grid styled as real PC drive folder icons */}
+            <div className="flex flex-col gap-3 mt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5 sm:gap-6">
+                {folders.map((folder) => {
+                  const folderSheets = ledgerHistory.filter(sh => sheetFolderMap[sh.id] === folder.id && doesMatchSearch(sh));
+                  return (
+                    <motion.div
+                      key={folder.id}
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      whileHover={{ scale: 1.035, y: -6 }}
+                      transition={{ type: "spring", stiffness: 220, damping: 18 }}
+                      onClick={() => setOpenedFolderId(folder.id)}
+                      className="group cursor-pointer p-5 bg-gradient-to-b from-white to-slate-50/70 dark:from-slate-900/80 dark:to-slate-950/90 border border-slate-205 dark:border-slate-850/70 hover:border-blue-500/40 dark:hover:border-blue-400/35 hover:shadow-[0_20px_45px_rgba(59,130,246,0.06)] rounded-3xl flex flex-col items-center justify-between text-center gap-4 transition-all duration-300 relative overflow-hidden backdrop-blur-md select-none min-h-[195px]"
+                    >
+                      {/* Folder PC-style Visual Representation Shape */}
+                      <div className="relative w-24 h-20 flex items-center justify-center shrink-0 mb-1 pointer-events-none perspective-500">
+                        {/* Glowing shadow effect behind folder */}
+                        <div className="absolute inset-2 bg-amber-400/10 dark:bg-blue-500/10 blur-xl rounded-full opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all duration-300" />
+
+                        {/* Golden/Blue Manila folder back tab (lifts up) */}
+                        <div className="absolute top-0.5 left-2 w-8 h-4 bg-amber-500 dark:bg-blue-650 rounded-t-lg opacity-90 -translate-y-px group-hover:-translate-y-1.5 transition-transform duration-300 ease-out origin-bottom" style={{ clipPath: 'polygon(0% 100%, 10% 0%, 90% 0%, 100% 100%)' }} />
+                        
+                        {/* Back Cover shadow layer */}
+                        <div className="absolute top-2.5 inset-x-2 bottom-0.5 bg-amber-600/10 dark:bg-black/35 rounded-lg filter blur-[1px] translate-y-0.5" />
+                        
+                        {/* Main folder back cover */}
+                        <div className="absolute top-2 inset-x-2 bottom-0 bg-gradient-to-br from-amber-500 to-amber-600 dark:from-blue-650 dark:to-blue-700 rounded-lg group-hover:scale-[1.02] transition-transform duration-300 ease-out shadow-inner border border-amber-400/20 dark:border-blue-550/20" />
+                        
+                        {/* Peeking multiple document sheets inside (animated overlapping slides) */}
+                        {folderSheets.length > 0 ? (
+                          <>
+                            {/* Back document sheet */}
+                            <div className="absolute w-14 h-13 bg-slate-100 dark:bg-slate-800 rounded-md shadow-sm border border-slate-200/50 dark:border-slate-700/60 -top-1.5 left-4.5 rotate-[-8deg] group-hover:-translate-y-5.5 group-hover:rotate-[-16deg] group-hover:scale-105 transition-all duration-300 ease-out flex flex-col gap-1 p-1.5 overflow-hidden">
+                              <div className="w-8 h-1 bg-amber-500/20 dark:bg-blue-500/20 rounded-full" />
+                              <div className="w-10 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
+                              <div className="w-6 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
+                            </div>
+                            {/* Middle document sheet */}
+                            <div className="absolute w-14 h-13 bg-slate-50 dark:bg-slate-850 rounded-md shadow border border-slate-200/60 dark:border-slate-750/60 -top-2 left-6.5 rotate-[4deg] group-hover:-translate-y-7 group-hover:rotate-[14deg] group-hover:scale-105 transition-all duration-310 ease-out flex flex-col gap-1 p-1.5 overflow-hidden z-10">
+                              <div className="w-6 h-1 bg-emerald-500/20 dark:bg-emerald-500/20 rounded-full" />
+                              <div className="w-10 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
+                              <div className="w-8 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
+                            </div>
+                            {/* Frontmost document sheet */}
+                            <div className="absolute w-14 h-13 bg-white dark:bg-slate-900 rounded-md shadow-md border border-slate-250 dark:border-slate-700 -top-2.5 left-5.5 rotate-[-2deg] group-hover:-translate-y-8 group-hover:rotate-[-2deg] group-hover:scale-110 transition-all duration-320 ease-out flex flex-col gap-1.5 p-1.5 overflow-hidden z-15">
+                              <div className="w-9 h-1 bg-blue-500/35 dark:bg-cyan-550/35 rounded-full" />
+                              <div className="w-10 h-0.5 bg-slate-400/25 dark:bg-slate-650/35 rounded-full" />
+                              <div className="w-11 h-0.5 bg-slate-400/25 dark:bg-slate-650/35 rounded-full" />
+                            </div>
+                          </>
+                        ) : (
+                          /* Empty Folder Placement Glow */
+                          <div className="absolute w-12 h-10 bg-transparent border border-dashed border-amber-500/30 dark:border-blue-550/30 rounded-md -top-1 left-6 opacity-0 group-hover:opacity-100 group-hover:-translate-y-4.5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 flex items-center justify-center">
+                            <Plus size={12} className="text-amber-500 dark:text-blue-400 animate-pulse stroke-[3]" />
+                          </div>
+                        )}
+
+                        {/* Front cover sleeve of folder (it rotates and translates slightly on hover) */}
+                        <div className="absolute bottom-1 inset-x-2 h-13 bg-gradient-to-br from-amber-400 to-amber-500 dark:from-sky-500 dark:to-blue-650 rounded-b-lg rounded-t-md shadow-[0_4px_12px_rgba(0,0,0,0.1)] border-t border-white/35 dark:border-white/20 group-hover:rotate-x-12 group-hover:scale-y-[1.04] group-hover:translate-y-1 transition-all duration-300 z-20 flex items-center justify-center transform-gpu origin-bottom">
+                          <div className="absolute inset-x-0 top-0.5 h-px bg-white/30 dark:bg-white/25" />
+                          <div className="px-2 py-0.5 bg-black/15 dark:bg-black/25 rounded-md shadow-inner">
+                            <span className="text-[10px] font-black text-white dark:text-sky-100 uppercase tracking-widest leading-none">
+                              {folderSheets.length}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Info & Labels */}
+                      <div className="w-full">
+                        <p className="font-extrabold text-slate-800 dark:text-slate-100 truncate text-xs sm:text-[13px] group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-150 leading-tight">
+                          {folder.name}
+                        </p>
+                        
+                        {/* Modern Badge for amount or sheets */}
+                        <div className="mt-3 flex flex-col gap-1 items-center justify-center">
+                          {folderSheets.length > 0 ? (
+                            <>
+                              {/* Display sum of collections if greater than 0 */}
+                              {(() => {
+                                const totalAmount = folderSheets.reduce((sum, sh) => {
+                                  const t1 = (sh.table1Rows || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
+                                  const t2 = (sh.table2Rows || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
+                                  return sum + t1 + t2;
+                                }, 0);
+                                if (totalAmount > 0) {
+                                  return (
+                                    <span className="text-[9.5px] font-mono font-black text-emerald-600 bg-emerald-500/10 dark:text-emerald-400 dark:bg-emerald-500/5 px-2.5 py-0.5 rounded-full border border-emerald-500/20 shadow-sm select-none">
+                                      Rs. {totalAmount.toLocaleString()}
+                                    </span>
+                                  );
+                                } else {
+                                  return (
+                                    <span className="text-[8px] font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase">
+                                      Empty Folder
+                                    </span>
+                                  );
+                                }
+                              })()}
+                              <span className="text-[8px] font-black text-slate-450 dark:text-slate-500 uppercase tracking-widest mt-1.5 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                {folderSheets.length} {folderSheets.length === 1 ? 'Sheet' : 'Sheets'} • Active
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-[9px] font-extrabold text-slate-400 bg-slate-100 dark:text-slate-550 dark:bg-slate-905 px-2 py-0.5 rounded-full border border-slate-205 select-none">
+                                No sheets
+                              </span>
+                              <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1.5">
+                                Empty directory
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quick delete option */}
+                      {folder.id !== 'june_data' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFolder(folder.id, e);
+                          }}
+                          className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 active:scale-90 shadow-sm border border-transparent hover:border-rose-100 dark:hover:border-rose-900/30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm z-30"
+                          title="Delete Directory"
+                        >
+                          <Trash2 size={12} className="stroke-[2.5]" />
+                        </button>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Uncategorized loose sheets as high-fidelity interactive file cards */}
+            {uncategorizedSheets.length > 0 && (
+              <div className="flex flex-col gap-3 mt-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                    Loose Desktop Sheets
+                  </h2>
+                  <span className="text-[9px] bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md font-extrabold">
+                    {uncategorizedSheets.length} Unsorted
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {uncategorizedSheets.filter(doesMatchSearch).map((sh) => {
+                    const t1Am = (sh.table1Rows || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
+                    const t2Am = (sh.table2Rows || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
+                    const docTotal = t1Am + t2Am;
+                    const filledLines = (sh.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
+                    return (
+                      <motion.div
+                        key={sh.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        whileHover={{ y: -4, scale: 1.015 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 22 }}
+                        className="p-4.5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/80 dark:to-slate-950/80 backdrop-blur-md border border-slate-205 dark:border-slate-850 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow-lg transition-all duration-200 group cursor-pointer"
+                        onClick={() => handleLoadHistorySheet(sh)}
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className="p-3 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/20 dark:to-amber-900/10 text-amber-550 dark:text-amber-400 rounded-xl group-hover:scale-110 group-hover:from-amber-100 group-hover:to-amber-200 dark:group-hover:from-amber-900/30 dark:group-hover:to-amber-850/20 transition-all duration-300 shrink-0 shadow-sm border border-amber-200/5 shadow-amber-350/5">
+                            <FileText className="w-5 h-5 stroke-[2]" />
+                          </div>
+                          <div className="min-w-0 text-left">
+                            <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate leading-none group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-150">
+                              {sh.sheetDate || "No Date"}
+                            </p>
+                            <p className="text-[9px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-widest truncate leading-tight mt-1.5 flex flex-wrap items-center gap-1.5">
+                              <span className="font-extrabold text-slate-500 dark:text-slate-400">{sh.recOfficer || "No Officer"}</span>
+                              <span className="text-slate-300 dark:text-slate-800">•</span>
+                              <span className="text-slate-400 dark:text-slate-500 text-[8.5px]">{sh.area || "Main"}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1.5 shrink-0 text-right">
+                          <div className="flex items-center gap-1.5">
+                            {docTotal > 0 ? (
+                              <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-550/10 dark:bg-emerald-500/5 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                                Rs. {docTotal.toLocaleString()}
+                              </span>
+                            ) : (
+                              <span className="text-[8.5px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-widest bg-slate-100 dark:bg-slate-850 px-2 py-0.5 rounded-lg border border-slate-200/50 dark:border-slate-800/50">
+                                Draft
+                              </span>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteHistorySheet(sh.id, e);
+                              }}
+                              className="p-1 text-slate-450 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors border border-transparent hover:border-rose-100 dark:hover:border-rose-900/30"
+                              title="Delete Sheet"
+                            >
+                              <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              value=""
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const destId = e.target.value;
+                                if (destId) {
+                                  setSheetFolderMap(prev => ({
+                                    ...prev,
+                                    [sh.id]: destId
+                                  }));
+                                  toast.success(`Organized sheet into ${folders.find(f => f.id === destId)?.name}`);
+                                }
+                              }}
+                              className="py-0.5 px-2 border border-slate-200 dark:border-slate-800/80 rounded-lg bg-white dark:bg-slate-950 text-[8.5px] font-black uppercase text-slate-500 shrink-0 cursor-pointer focus:ring-1 focus:ring-blue-500 transition-shadow outline-none"
+                            >
+                              <option value="">Sort Folder...</option>
+                              {folders.map(f => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                              ))}
+                            </select>
+                            <span className="text-[8px] font-mono font-black text-slate-450 dark:text-slate-600 bg-slate-50 dark:bg-slate-900/50 px-1.5 py-0.5 rounded border border-slate-150 dark:border-slate-800/40">
+                              {filledLines} Lns
+                            </span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* ================= INSIDE OPENED DIRECTORY VIEW ================= */
+          <div className="flex flex-col gap-6 text-left">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {/* Creator Card (the "+" option card explicitly requested) */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                whileHover={{ scale: 1.02, y: -3 }}
+                transition={{ type: "spring", stiffness: 350, damping: 22 }}
+                onClick={() => handleCreateSheetInFolder(activeFolder.id)}
+                className="group cursor-pointer border-2 border-dashed border-blue-400/50 dark:border-blue-900/40 hover:border-blue-500 dark:hover:border-blue-400 rounded-3xl p-6 bg-blue-50/10 dark:bg-blue-950/5 hover:bg-blue-50/25 flex flex-col items-center justify-center text-center gap-4 min-h-[180px] transition-all duration-300"
+              >
+                <div className="p-3 bg-blue-600 dark:bg-blue-500 text-white rounded-2xl group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/20 group-hover:shadow-blue-500/30">
+                  <Plus className="w-5 h-5 stroke-[3]" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-blue-600 dark:text-blue-400 text-sm uppercase tracking-wide">
+                    Create New Sheet
+                  </h4>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
+                    Add logged ledger to /{activeFolder.name}
+                  </p>
+                </div>
+              </motion.div>
+
+              {/* List of Sheet Cards configured as folder-like details */}
+              {openedFolderSheets.length === 0 ? (
+                <div className="col-span-full py-16 text-center flex flex-col items-center justify-center gap-2 bg-slate-50/50 dark:bg-slate-900/10 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <FileText className="w-8 h-8 text-slate-300 dark:text-slate-700 stroke-[1.8] animate-bounce" />
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none mt-1">
+                    This directory is empty
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
+                    Click the creator card to start logging recoveries
+                  </p>
+                </div>
+              ) : (
+                openedFolderSheets.map((sh) => {
+                  const t1Am = (sh.table1Rows || []).reduce((sum: number, r: any) => sum + (r.amount || 0), 0);
+                  const t2Am = (sh.table2Rows || []).reduce((sum: number, r: any) => sum + (r.amount || 0), 0);
+                  const sheetTotal = t1Am + t2Am;
+                  const filledLines = (sh.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
+
+                  return (
+                    <motion.div
+                      key={sh.id}
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      whileHover={{ y: -4, scale: 1.015 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                      className="p-5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/90 dark:to-slate-950/90 border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-3xl flex flex-col justify-between gap-5 shadow-sm hover:shadow-xl hover:shadow-blue-550/[0.03] group relative select-none"
+                    >
+                      {/* Visual paper-sheet card layout */}
+                      <div className="flex items-start justify-between min-w-0">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 text-blue-550 dark:text-blue-450 rounded-2xl group-hover:scale-110 group-hover:bg-blue-100 group-hover:text-blue-650 dark:group-hover:bg-blue-900/40 transition-all duration-200">
+                            <FileSpreadsheet className="w-5 h-5 stroke-[2]" />
+                          </div>
+                          <div className="min-w-0">
+                            {/* Date as requested highlighted on top */}
+                            <p className="text-sm font-extrabold text-slate-850 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate leading-tight transition-colors duration-150">
+                              {sh.sheetDate || "No Date"}
+                            </p>
+                            {/* Name of recovery officer underneath */}
+                            <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1.5 leading-none truncate">
+                              {sh.recOfficer || "Unknown Rec. Officer"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {sheetTotal > 0 ? (
+                          <div className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/45 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-mono font-black border border-emerald-150 dark:border-emerald-900/20 shrink-0">
+                            Rs. {sheetTotal.toLocaleString()}
+                          </div>
+                        ) : (
+                          <div className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800/60 text-slate-405 dark:text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-wider shrink-0">
+                            Draft
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Operational Details Area Metas */}
+                      <div className="grid grid-cols-2 gap-3 py-3 border-y border-slate-100 dark:border-slate-850/60">
+                        <div>
+                          <span className="block text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Area Center</span>
+                          <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase truncate block mt-1">{sh.area || "Main"}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Logged Records</span>
+                          <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase mt-1 block">
+                            {filledLines} {filledLines === 1 ? 'entry' : 'entries'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Folder Reorganization or direct editing actions */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleLoadHistorySheet(sh)}
+                          className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer hover:shadow-md hover:shadow-blue-500/15"
+                        >
+                          Open Sheet
+                        </button>
+
+                        {/* Folder destination selector */}
+                        <select
+                          value={activeFolder.id}
+                          onChange={(e) => {
+                            const destId = e.target.value;
+                            setSheetFolderMap(prev => ({
+                              ...prev,
+                              [sh.id]: destId
+                            }));
+                            toast.success(`Moved sheet to ${folders.find(f => f.id === destId)?.name || 'folder'}`);
+                          }}
+                          className="py-1 px-2 border border-slate-205 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 text-[9px] font-black uppercase text-slate-500 cursor-pointer outline-none focus:ring-1 focus:ring-blue-500 transition-shadow shrink-0"
+                          title="Move to other folder"
+                        >
+                          {folders.map(f => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </select>
+
+                        <button
+                          onClick={(e) => handleDeleteHistorySheet(sh.id, e)}
+                          className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all border border-transparent hover:border-rose-100 dark:hover:border-rose-900/30 shrink-0"
+                          title="Delete Sheet"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return createPortal(
     <>
       <motion.div 
@@ -1407,20 +2199,31 @@ export default function EntrySheet({
         transition={{ duration: 0.22 }}
         className="print-overlay-wrapper fixed inset-0 bg-slate-100 dark:bg-slate-950 z-[250] flex flex-col items-stretch justify-start overflow-hidden print:p-0 print:bg-transparent print:backdrop-blur-none print:block print:static text-slate-950 dark:text-slate-100 font-sans"
       >
-        {/* Full-Width Workspace Premium Navbar (Replaces the floating right toolbar) */}
-        <div className="w-full bg-[#fcfcfc] dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-4 z-[310] print:hidden shrink-0 select-none">
-          {/* Left Block */}
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <button
-              onClick={onClose}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 active:scale-95 border border-slate-200 dark:border-slate-700 cursor-pointer"
-            >
-              <ChevronLeft size={14} className="text-blue-500" />
-              Portal
-            </button>
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 hidden sm:block" />
-            <div>
-              <h2 className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-1.5">
+        {activeView === 'dashboard' ? (
+          renderDashboard()
+        ) : (
+          <>
+            {/* Full-Width Workspace Premium Navbar (Replaces the floating right toolbar) */}
+            <div className="w-full bg-[#fcfcfc] dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm px-3 sm:px-6 py-1.5 sm:py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-4 z-[310] print:hidden shrink-0 select-none">
+              {/* Left Block */}
+              <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto shrink-0">
+                <button
+                  onClick={onClose}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 active:scale-95 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                >
+                  <ChevronLeft size={14} className="text-blue-500" />
+                  Portal
+                </button>
+                <button
+                  onClick={() => setActiveView('dashboard')}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-455 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 active:scale-95 border border-blue-200 dark:border-blue-900/50 cursor-pointer"
+                >
+                  <Folder size={12} className="stroke-[2.5]" />
+                  Folders Dashboard
+                </button>
+                <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+                <div>
+                  <h2 className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${isLocked ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`} />
                 Ledger Workspace
               </h2>
@@ -1467,7 +2270,7 @@ export default function EntrySheet({
           </div>
 
           {/* Right Block: Main controller actions */}
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end overflow-x-auto scrollbar-none pb-1 sm:pb-0 shrink-0">
             {/* Viewport Scale Control */}
             <div className="flex items-center bg-slate-100 dark:bg-slate-950 rounded-xl p-0.5 border border-slate-250 dark:border-slate-800 text-[9px] font-black uppercase shrink-0">
               <span className="text-slate-400 dark:text-slate-500 px-1.5 font-black text-[8px]">ZOOM</span>
@@ -1598,6 +2401,7 @@ export default function EntrySheet({
               position: relative !important;
               width: 210mm !important;
               height: 297mm !important;
+              transform: none !important;
               margin: 0 auto 10mm auto !important;
               padding: ${paperPaddingY}mm ${paperPaddingX}mm !important;
               border: none !important;
@@ -1898,9 +2702,9 @@ export default function EntrySheet({
             {/* Center Area: Full Viewport Scale-to-Fit Workspace Area */}
             <div 
               ref={workspaceRef}
-              className={`flex-1 flex flex-col items-center bg-slate-100 dark:bg-slate-900/40 scrollbar-thin relative h-full print:bg-transparent print:p-0 print:m-0 print:block print:overflow-visible print:h-auto select-none print:select-text ${
-                zoomOption === 'fit' 
-                  ? 'p-2 sm:p-3 overflow-y-hidden overflow-x-auto justify-center' 
+              className={`flex-1 flex flex-col items-center bg-slate-100 dark:bg-slate-900/40 scrollbar-none relative h-full print:bg-transparent print:p-0 print:m-0 print:block print:overflow-visible print:h-auto select-none print:select-text ${
+                (zoomOption === 'fit' && !isInputFocused)
+                  ? 'p-2 sm:p-3 overflow-hidden justify-center' 
                   : 'p-4 sm:p-6 overflow-auto justify-start'
               }`}
             >
@@ -1968,7 +2772,7 @@ export default function EntrySheet({
 
                 return (
                   <div className={`flex flex-row justify-start sm:justify-center gap-6 overflow-x-auto min-w-full select-text print:block print:w-auto print:h-auto print:static ${
-                    zoomOption === 'fit' ? 'items-center pb-2 pt-2' : 'items-start pb-10 pt-4'
+                    (zoomOption === 'fit' && !isInputFocused) ? 'items-start pb-2 pt-2 my-auto' : 'items-start pb-10 pt-4'
                   }`}>
                     <div className="flex flex-row gap-6 mx-auto w-max px-2 sm:px-0">
                     {sheets.map((sh, sheetIdx) => {
@@ -2077,6 +2881,8 @@ export default function EntrySheet({
                               top: 0
                             }}
                             className={`print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[793.7px] min-h-[1122.5px] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text ${isLocked ? 'pointer-events-none opacity-80 select-none' : ''}`}
+                            onFocusCapture={handlePaperFocus}
+                            onBlurCapture={handlePaperBlur}
                           >
             
             {/* Header Row - Aligned tight & left with Flex box for perfect viewport/A4 compatibility */}
@@ -3027,6 +3833,8 @@ export default function EntrySheet({
           </motion.div>
         )}
         </div> {/* Main Integrated Workspace ends */}
+          </>
+        )}
       </motion.div> {/* print-overlay-wrapper ends */}
 
       {/* Beautiful Reset & Purge Confirmation Modal */}

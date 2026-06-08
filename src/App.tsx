@@ -482,15 +482,6 @@ export default function App() {
   }, [firebaseAuthReady]);
 
   useEffect(() => {
-    // Clear Android notifications on app load
-    if (typeof window !== "undefined" && (window as any).Android && typeof (window as any).Android.clearNotifications === "function") {
-      try {
-        (window as any).Android.clearNotifications();
-      } catch (err) {
-        console.error("Android clearNotifications error:", err);
-      }
-    }
-    
     let unsubscribeAuth: (() => void) | undefined;
     let initialized = false;
 
@@ -863,13 +854,7 @@ export default function App() {
           });
 
           // Background Notification
-          if ((window as any).Android) {
-            try {
-              (window as any).Android.postNotification(`GTS: ${latest.type.toUpperCase()}`, `${latest.message} - By ${latest.authorName}`);
-            } catch (err) {
-              console.error("Android bridge error:", err);
-            }
-          } else if ((window as any).AndroidInterface) {
+          if ((window as any).AndroidInterface) {
             try {
               (window as any).AndroidInterface.showNotification(`GTS: ${latest.type.toUpperCase()}`, `${latest.message} - By ${latest.authorName}`);
             } catch (err) {
@@ -938,13 +923,7 @@ export default function App() {
           }
 
           // Mobile Notification
-          if ((window as any).Android) {
-            try {
-              (window as any).Android.postNotification(`New from ${latest.senderName}`, latest.text || (latest.type === 'voice' ? '🎤 Voice Message' : 'New Message'));
-            } catch (err) {
-              console.error("Android bridge error:", err);
-            }
-          } else if ((window as any).AndroidInterface) {
+          if ((window as any).AndroidInterface) {
             try {
               (window as any).AndroidInterface.showNotification(`New from ${latest.senderName}`, latest.text || (latest.type === 'voice' ? '🎤 Voice Message' : 'New Message'));
             } catch (err) {
