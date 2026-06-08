@@ -87,7 +87,7 @@
 
 @layer utilities {
   .business-card {
-    @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm transition-all duration-300;
+    @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl shadow-black/10 dark:shadow-black/50 transition-all duration-300;
     border-radius: var(--radius-global);
   }
   

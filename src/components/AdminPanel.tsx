@@ -1212,7 +1212,7 @@ export default function AdminPanel({
                   onClick={() => handleTileClick(stat.filter)}
                   title={stat.tooltip}
                   className={cn(
-                    "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.03),0_4px_12px_-3px_rgba(0,0,0,0.01)] dark:shadow-[0_15px_45px_-10px_rgba(0,0,0,0.35),0_6px_20px_-6px_rgba(0,0,0,0.2)] border-slate-100 dark:border-slate-900 flex flex-col justify-between transition-all duration-300 group cursor-pointer",
+                    "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 border-slate-100 dark:border-slate-900 flex flex-col justify-between transition-all duration-300 group cursor-pointer",
                     stat.color,
                     (forcedStatus === stat.filter.status && forcedPriority === stat.filter.priority && stat.label !== 'Total Registry') ? "ring-2 ring-brand-accent scale-105" : ""
                   )}
@@ -4145,6 +4145,29 @@ export default function AdminPanel({
                             </tr>
                           )}
                         </tbody>
+                        <tfoot className="sticky bottom-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] border-t-2 border-slate-300 dark:border-slate-700">
+                          <tr className="font-black uppercase text-[11px] tracking-wider text-slate-800 dark:text-slate-200">
+                            <td colSpan={6} className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right">
+                              SHEET TOTALS (FILTERED): 
+                            </td>
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-mono bg-slate-50 dark:bg-slate-950/30">
+                              {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.baseAmount) || 0), 0)).toLocaleString()}
+                            </td>
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-mono text-rose-600 dark:text-rose-400 bg-slate-50 dark:bg-slate-950/30">
+                              {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.cr) || 0), 0)).toLocaleString()}
+                            </td>
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-mono bg-slate-200/50 dark:bg-slate-800/50">
+                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.totalAmount) || 0), 0)).toLocaleString()}
+                            </td>
+                            <td className="py-4 px-3 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-950/30"></td>
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-mono text-lg text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 shadow-inner">
+                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.paymentReceived) || 0), 0)).toLocaleString()}
+                            </td>
+                            <td colSpan={10} className="py-4 px-4 border-slate-200/50 dark:border-slate-800/50 text-left font-sans text-[10px] text-slate-500 dark:text-slate-500 uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
+                              (Cumulative total of {filteredRows.length} shown rows)
+                            </td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
                   </div>

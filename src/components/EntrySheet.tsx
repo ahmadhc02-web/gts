@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
   History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
-  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3
+  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -423,6 +423,9 @@ export default function EntrySheet({
     }
   }, [ledgerHistory, folders]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
+  const [showUserLedger, setShowUserLedger] = useState(false);
+  const [ledgerSearchUser, setLedgerSearchUser] = useState('');
+  const [ledgerSelectedFolder, setLedgerSelectedFolder] = useState('all');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [loadedSheetId, setLoadedSheetId] = useState<string | null>(null);
   const [showConfirmResetModal, setShowConfirmResetModal] = useState(false);
@@ -1655,6 +1658,201 @@ export default function EntrySheet({
     window.print();
   };
 
+  const renderUserLedger = () => {
+    let filteredSheets = ledgerHistory;
+    if (ledgerSelectedFolder !== 'all') {
+      filteredSheets = ledgerHistory.filter(sh => sheetFolderMap[sh.id] === ledgerSelectedFolder);
+    }
+
+    const keyword = ledgerSearchUser.toLowerCase().trim();
+    const results: any[] = [];
+
+    if (keyword) {
+      filteredSheets.forEach(sh => {
+        const folderId = sheetFolderMap[sh.id];
+        const folder = folders.find(f => f.id === folderId);
+        const folderName = folder ? folder.name : 'Uncategorized';
+
+        // Check T1
+        (sh.table1Rows || []).forEach((r: any) => {
+          const match = r.cId?.toLowerCase().includes(keyword) || r.name?.toLowerCase().includes(keyword) || r.clientUsername?.toLowerCase().includes(keyword);
+          if (match && Number(r.amount) > 0) {
+            results.push({
+              sheetId: sh.id,
+              date: sh.sheetDate || 'Unknown Date',
+              recOfficer: sh.recOfficer || 'Unknown',
+              folderName,
+              userName: r.name || r.clientUsername || r.clientId || r.cId,
+              amount: Number(r.amount) || 0,
+              comments: r.comments || '',
+              type: 'T1'
+            });
+          }
+        });
+
+        // Check T2
+        (sh.table2Rows || []).forEach((r: any) => {
+          const match = r.name?.toLowerCase().includes(keyword);
+          if (match && Number(r.amount) > 0) {
+            results.push({
+              sheetId: sh.id,
+              date: sh.sheetDate || 'Unknown Date',
+              recOfficer: sh.recOfficer || 'Unknown',
+              folderName,
+              userName: r.name,
+              amount: Number(r.amount) || 0,
+              comments: '',
+              type: 'T2'
+            });
+          }
+        });
+      });
+    }
+    
+    // Sort results by date descendant
+    results.sort((a, b) => {
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    return (
+      <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-6 sm:p-8 flex flex-col gap-6 select-none scrollbar-thin print:p-0 print:bg-white print:h-auto print:overflow-visible">
+        <div className="max-w-5xl mx-auto w-full space-y-6 print:space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 print:hidden">
+             <div className="flex items-center gap-3">
+               <button onClick={() => setShowUserLedger(false)} className="p-2 bg-slate-200 dark:bg-slate-800 rounded-xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
+                 <ArrowLeft size={18} />
+               </button>
+               <h1 className="text-xl font-black uppercase text-slate-900 dark:text-white flex items-center gap-2">
+                 <UserPlus size={22} className="text-blue-500" />
+                 User Ledger Vault
+               </h1>
+             </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm print:hidden">
+             <div className="flex-1 space-y-1">
+               <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Search User</label>
+               <div className="relative">
+                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                 <input 
+                   type="text" 
+                   value={ledgerSearchUser}
+                   onChange={(e) => setLedgerSearchUser(e.target.value)}
+                   placeholder="Enter Name, User ID, or PPPoE..." 
+                   className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 text-sm font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 transition-all outline-none"
+                 />
+               </div>
+             </div>
+             
+             <div className="w-full sm:w-64 space-y-1">
+               <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Filter By Month (Folder)</label>
+               <select 
+                 value={ledgerSelectedFolder}
+                 onChange={(e) => setLedgerSelectedFolder(e.target.value)}
+                 className="w-full px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 text-sm font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 transition-all outline-none"
+               >
+                 <option value="all">ALL VOLUMES / MONTHS</option>
+                 {folders.map(f => (
+                   <option key={f.id} value={f.id}>{f.name.toUpperCase()}</option>
+                 ))}
+               </select>
+             </div>
+          </div>
+
+          {keyword ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm print:border-none print:shadow-none print:rounded-none">
+               <div className="px-5 py-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center print:bg-white print:border-none print:p-0 print:mb-4">
+                 <div>
+                   <h2 className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 tracking-wider print:text-lg print:text-black">
+                     Transaction History Statement
+                   </h2>
+                   <p className="hidden print:block text-xs font-bold text-slate-500 mt-1 uppercase">
+                     User Reference: {ledgerSearchUser}
+                   </p>
+                 </div>
+                 <div className="flex items-center gap-3">
+                   <button 
+                     onClick={() => {
+                       toast.info("Tip: Select 'Save as PDF' from the printer destination.", { duration: 4000 });
+                       setTimeout(() => window.print(), 200);
+                     }}
+                     className="print:hidden text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 dark:hover:bg-rose-900/40 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                   >
+                     <FileDown size={14} />
+                     SAVE PDF
+                   </button>
+                   <button 
+                     onClick={() => window.print()}
+                     className="print:hidden text-[10px] font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                   >
+                     <Printer size={14} />
+                     PRINT HISTORY
+                   </button>
+                   <span className="text-[10px] font-bold text-blue-500 bg-blue-500/10 px-2 py-1 rounded-md print:hidden">
+                     {results.length} Matches
+                   </span>
+                 </div>
+               </div>
+               
+               <div className="overflow-x-auto print:overflow-visible">
+                 <table className="w-full text-left whitespace-nowrap text-xs">
+                   <thead className="bg-slate-100 dark:bg-slate-900/50">
+                     <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                       <th className="py-3 px-5">Date</th>
+                       <th className="py-3 px-5">Folder</th>
+                       <th className="py-3 px-5">User / Target</th>
+                       <th className="py-3 px-5">Recovery Officer</th>
+                       <th className="py-3 px-5">Comments/Ref</th>
+                       <th className="py-3 px-5 text-right">Amount (PKR)</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                     {results.length > 0 ? results.map((res, i) => (
+                       <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-950/50 transition-colors">
+                         <td className="py-3 px-5 font-mono text-slate-800 dark:text-slate-200">{res.date}</td>
+                         <td className="py-3 px-5"><span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 rounded font-bold uppercase text-[9px] text-slate-600 dark:text-slate-400">{res.folderName}</span></td>
+                         <td className="py-3 px-5 font-bold text-slate-900 dark:text-white capitalize">{res.userName}</td>
+                         <td className="py-3 px-5 text-slate-600 dark:text-slate-400">{res.recOfficer}</td>
+                         <td className="py-3 px-5 text-slate-500 text-[10px] italic">{res.comments || '-'}</td>
+                         <td className="py-3 px-5 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
+                           + {res.amount.toLocaleString()}
+                         </td>
+                       </tr>
+                     )) : (
+                       <tr>
+                         <td colSpan={6} className="py-12 text-center text-slate-400 font-medium text-sm">
+                           No payments logged for "{ledgerSearchUser}"
+                         </td>
+                       </tr>
+                     )}
+                   </tbody>
+                   {results.length > 0 && (
+                     <tfoot className="bg-slate-50 dark:bg-slate-900">
+                       <tr className="border-t-2 border-slate-200 dark:border-slate-800 font-black uppercase text-[11px] text-slate-800 dark:text-slate-200">
+                         <td colSpan={5} className="py-4 px-5 text-right">Total Aggregate Recovery:</td>
+                         <td className="py-4 px-5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/10 shadow-inner">
+                           PKR {results.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()}
+                         </td>
+                       </tr>
+                     </tfoot>
+                   )}
+                 </table>
+               </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-400 space-y-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+              <Search className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto opacity-50" />
+              <div className="text-center">
+                <p className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-1">Vault Awaiting Query</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">Enter a user name, PPPoE ID, or reference in the search above to instantly pull their full lifetime recovery lineage.</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderDashboard = () => {
     // Group sheets into folders based on sheetFolderMap
     const uncategorizedSheets = ledgerHistory.filter(sh => !sheetFolderMap[sh.id]);
@@ -1785,6 +1983,13 @@ export default function EntrySheet({
                   <span className="text-[9px] bg-blue-550/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 px-2.5 py-0.5 rounded-full font-black uppercase tracking-widest border border-blue-550/20">
                     STATUS: SECURED
                   </span>
+                  <button 
+                    onClick={() => setShowUserLedger(true)}
+                    className="ml-auto text-[9px] bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-3 py-1.5 rounded-lg font-black uppercase tracking-widest hover:scale-105 transition-transform flex items-center gap-1.5"
+                  >
+                    <UserPlus size={12} />
+                    User Ledger Vault
+                  </button>
                 </div>
                 <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold mt-1.5 uppercase tracking-wider">
                   GTS ISP LEDGER CONTAINER METRIC SYSTEM • SHIELD COMPLIANT
@@ -1894,9 +2099,8 @@ export default function EntrySheet({
                               {/* Display sum of collections if greater than 0 */}
                               {(() => {
                                 const totalAmount = folderSheets.reduce((sum, sh) => {
-                                  const t1 = (sh.table1Rows || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
-                                  const t2 = (sh.table2Rows || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
-                                  return sum + t1 + t2;
+                                  const t1 = (sh.table1Rows || []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
+                                  return sum + t1;
                                 }, 0);
                                 if (totalAmount > 0) {
                                   return (
@@ -1962,9 +2166,8 @@ export default function EntrySheet({
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {uncategorizedSheets.filter(doesMatchSearch).map((sh) => {
-                    const t1Am = (sh.table1Rows || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
-                    const t2Am = (sh.table2Rows || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
-                    const docTotal = t1Am + t2Am;
+                    const t1Am = (sh.table1Rows || []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
+                    const docTotal = t1Am;
                     const filledLines = (sh.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
                     return (
                       <motion.div
@@ -2087,9 +2290,8 @@ export default function EntrySheet({
                 </div>
               ) : (
                 openedFolderSheets.map((sh) => {
-                  const t1Am = (sh.table1Rows || []).reduce((sum: number, r: any) => sum + (r.amount || 0), 0);
-                  const t2Am = (sh.table2Rows || []).reduce((sum: number, r: any) => sum + (r.amount || 0), 0);
-                  const sheetTotal = t1Am + t2Am;
+                  const t1Am = (sh.table1Rows || []).reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
+                  const sheetTotal = t1Am;
                   const filledLines = (sh.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
 
                   return (
@@ -2200,7 +2402,7 @@ export default function EntrySheet({
         className="print-overlay-wrapper fixed inset-0 bg-slate-100 dark:bg-slate-950 z-[250] flex flex-col items-stretch justify-start overflow-hidden print:p-0 print:bg-transparent print:backdrop-blur-none print:block print:static text-slate-950 dark:text-slate-100 font-sans"
       >
         {activeView === 'dashboard' ? (
-          renderDashboard()
+          showUserLedger ? renderUserLedger() : renderDashboard()
         ) : (
           <>
             {/* Full-Width Workspace Premium Navbar (Replaces the floating right toolbar) */}

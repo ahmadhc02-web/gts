@@ -5,35 +5,55 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } 
 import { Complaint } from '../types';
 import { cn } from '../lib/utils';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
+import { useTheme } from '../hooks/useTheme';
 
 interface DistributionListProps {
   complaints: Complaint[];
   chartType?: 'area' | 'category';
 }
 
-const COLORS = [
-  '#1E3A8A', // Deep Blue / Navy
-  '#10B981', // Crisp Emerald
-  '#F59E0B', // Rich Amber/Gold
-  '#6D28D9', // Deep Violet
-  '#0EA5E9', // Ocean Sky
-  '#EF4444', // Crimson Red
-  '#14B8A6', // Premium Teal
-  '#F97316', // Vibrant Orange
-  '#8B5CF6', // Royal Purple
-  '#06B6D4', // Vibrant Cyan
-  '#64748B', // Slate Grey
-  '#84CC16', // Apple Green
+const LIGHT_COLORS = [
+  '#3B82F6', // Blue 500
+  '#10B981', // Emerald 500
+  '#F59E0B', // Amber 500
+  '#8B5CF6', // Violet 500
+  '#0EA5E9', // Sky 500
+  '#EF4444', // Red 500
+  '#14B8A6', // Teal 500
+  '#F97316', // Orange 500
+  '#A855F7', // Purple 500
+  '#06B6D4', // Cyan 500
+  '#64748B', // Slate 500
+  '#84CC16', // Lime 500
 ];
 
-const getItemColor = (name: string, index: number, isCategory: boolean) => {
+const DARK_COLORS = [
+  '#93C5FD', // Vivid Neon Blue (Blue 300)
+  '#6EE7B7', // Vivid Mint (Emerald 300)
+  '#FDE047', // Vivid Yellow (Yellow 300)
+  '#C4B5FD', // Vivid Purple (Violet 300)
+  '#7DD3FC', // Vivid Sky (Sky 300)
+  '#FCA5A5', // Vivid Light Red (Red 300)
+  '#5EEAD4', // Vivid Aqua (Teal 300)
+  '#FDBA74', // Vivid Peach (Orange 300)
+  '#F0ABFC', // Vivid Fuchsia (Fuchsia 300)
+  '#67E8F9', // Vivid Cyan (Cyan 300)
+  '#E2E8F0', // Bright Silver (Slate 200)
+  '#BEF264', // Vivid Lime (Lime 300)
+];
+
+const getItemColor = (name: string, index: number, isCategory: boolean, isDark: boolean) => {
   const n = name.trim().toLowerCase();
+  
+  // Use dark colors for both light and dark modes
+  const themeColors = LIGHT_COLORS;
+  
   // Specifically map Redlight issues to a striking red color
   if (isCategory && (n.includes('redlight') || n.includes('red light') || n.includes('red-light'))) {
-    return '#DC2626'; // Premium striking red
+    return '#EF4444'; // Red 500
   }
   // Always use a unique color per index for maximum distinction and premium variance
-  return COLORS[index % COLORS.length];
+  return themeColors[index % themeColors.length];
 };
 
 const getCategoryIcon = (categoryName: string, color: string) => {
@@ -57,6 +77,8 @@ const getCategoryIcon = (categoryName: string, color: string) => {
 };
 
 export default function DistributionList({ complaints, chartType = 'area' }: DistributionListProps) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [viewBy, setViewBy] = useState<'area' | 'category'>('area');
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
@@ -76,7 +98,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
   
   return (
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 pb-0">
-      <div className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col relative overflow-hidden shadow-[0_20px_45px_-12px_rgba(0,0,0,0.12),0_8px_20px_-8px_rgba(0,0,0,0.08)] dark:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.6),0_10px_22px_-8px_rgba(0,0,0,0.4)]">
+      <div className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col relative overflow-hidden shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 transition-shadow">
         {/* Soft pastel decorative ambient blobs exactly like mockup photo */}
         {chartType === 'area' ? (
           <div className="absolute top-4 -right-16 w-48 h-48 bg-emerald-400/8 blur-[48px] rounded-full pointer-events-none z-0" />
@@ -126,7 +148,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                               const p1x = cx + outerRadius * Math.cos(-midAngle * RADIAN);
                               const p1y = cy + outerRadius * Math.sin(-midAngle * RADIAN);
  
-                              const itemColor = getItemColor(name, index, chartType === 'category');
+                              const itemColor = getItemColor(name, index, chartType === 'category', isDark);
                               
                               const xDir = Math.cos(-midAngle * RADIAN) >= 0 ? 1 : -1;
                               const ex = x + (xDir * 14);
@@ -159,7 +181,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                             animationEasing="ease-out"
                           >
                             {(chartType === 'area' ? data.slice(0, 6) : data.slice(0, 4)).map((entry, index) => {
-                              const itemColor = getItemColor(entry.name, index, chartType === 'category');
+                              const itemColor = getItemColor(entry.name, index, chartType === 'category', isDark);
                               return (
                                 <Cell 
                                   key={`cell-${index}`} 

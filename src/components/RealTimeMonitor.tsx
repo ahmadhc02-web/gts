@@ -241,7 +241,7 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 font-lexend animate-fade-in relative z-10">
       {/* Container Card with clean-edge dashboard feel on soft light-grey textured background */}
       <div 
-        className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-5 flex flex-col relative overflow-hidden shadow-[0_22px_48px_rgba(0,0,0,0.12),_0_8px_24px_rgba(37,99,235,0.08)] dark:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8),_0_10px_30px_rgba(37,99,235,0.04)] transition-all duration-300 hover:shadow-[0_30px_60px_rgba(0,0,0,0.15),_0_12px_32px_rgba(37,99,235,0.12)] dark:hover:shadow-[0_35px_70px_-12px_rgba(0,0,0,0.9),_0_15px_35px_rgba(37,99,235,0.06)]"
+        className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-5 flex flex-col relative overflow-hidden shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 transition-all duration-300"
         style={{
           backgroundImage: 'radial-gradient(rgba(148, 163, 184, 0.08) 1.2px, transparent 1.2px)',
           backgroundSize: '24px 24px'
