@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { google } from "googleapis";
 import fs from "fs";
 import { GoogleGenAI, Type } from "@google/genai";
+import cors from "cors";
 
 dotenv.config();
 
@@ -22,16 +23,16 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Robust CORS Middleware supporting Netlify/external frontends
-  app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(200);
-    }
-    next();
-  });
+  // Robust CORS Middleware supporting Hugging Face, Netlify, and other external frontends
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow all origins dynamically to support true credentials-based connections
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"]
+  }));
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.raw({ limit: '50mb', type: 'application/octet-stream' }));
