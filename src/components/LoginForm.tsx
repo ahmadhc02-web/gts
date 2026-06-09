@@ -5,6 +5,18 @@ import { cn } from '../lib/utils';
 import NetworkBackground from './NetworkBackground';
 import { firebaseService } from '../lib/firebaseService';
 
+const getApiUrl = (endpoint: string): string => {
+  const host = window.location.hostname;
+  if (
+    host === 'localhost' || 
+    host === '127.0.0.1' || 
+    host.includes('.run.app')
+  ) {
+    return endpoint;
+  }
+  return `https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app${endpoint}`;
+};
+
 // Typing sound effect using Web Audio API
 const playTypeSound = async () => {
   try {
@@ -136,7 +148,7 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
     setRecoveryError(null);
     setRecoverySuccess(null);
     try {
-      const response = await fetch('/api/auth/send-otp', {
+      const response = await fetch(getApiUrl('/api/auth/send-otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: recoveryUsername.trim() })
@@ -161,7 +173,7 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
     setIsRecovering(true);
     setRecoveryError(null);
     try {
-      const response = await fetch('/api/auth/verify-otp', {
+      const response = await fetch(getApiUrl('/api/auth/verify-otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: recoveryUsername.trim(), code: recoveryOtp.trim() })
@@ -196,7 +208,7 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
     setIsRecovering(true);
     setRecoveryError(null);
     try {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch(getApiUrl('/api/auth/reset-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

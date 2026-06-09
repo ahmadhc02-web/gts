@@ -10,6 +10,18 @@ import { toast } from 'sonner';
 import { firebaseService } from '../lib/firebaseService';
 import { Complaint } from '../types';
 
+const getApiUrl = (endpoint: string): string => {
+  const host = window.location.hostname;
+  if (
+    host === 'localhost' || 
+    host === '127.0.0.1' || 
+    host.includes('.run.app')
+  ) {
+    return endpoint;
+  }
+  return `https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app${endpoint}`;
+};
+
 interface AIHelpPanelProps {
   onClose: () => void;
   currentUser: {
@@ -113,7 +125,7 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
   const fetchTrends = async () => {
     setLoadingTrends(true);
     try {
-      const response = await fetch('/api/gemini/analyze-trends');
+      const response = await fetch(getApiUrl('/api/gemini/analyze-trends'));
       if (!response.ok) {
         throw new Error('Failed to retrieve AI Trend recommendations.');
       }
@@ -160,7 +172,7 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
         text: m.text
       }));
 
-      const res = await fetch('/api/gemini/ask', {
+      const res = await fetch(getApiUrl('/api/gemini/ask'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -221,7 +233,7 @@ Provide:
 2. **TROUBLESHOOTING STEP-BY-STEP CHECKLIST**: 3 actionable, specific steps for a support technician to verify (referencing realistic optical signal RX levels: ideal range -18dBm to -25dBm, OLT loop tracing, router pinging, or DNS flushes).
 3. **Copy-paste friendly empathetic CUSTOMER ANSWER TEMPLATE (In Roman Urdu/Hindi + English mixed, e.g., 'Aap ka Router offline dikha raha hai...'):** Keep the tone peaceful, reassuring, polite, and reassuring. Always include simple actions for the consumer (such as power cycling) and let them know a teammate is working on it.`;
 
-      const res = await fetch('/api/gemini/ask', {
+      const res = await fetch(getApiUrl('/api/gemini/ask'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

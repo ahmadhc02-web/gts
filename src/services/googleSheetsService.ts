@@ -5,8 +5,15 @@ import { supabase } from '../../supabaseClient';
 import { GoogleAuthProvider } from 'firebase/auth';
 
 const getApiUrl = (endpoint: string): string => {
-  // Always use relative path or resolve from current origin to ensure compatibility across Dev, Pre-prod, and exported containers.
-  return endpoint;
+  const host = window.location.hostname;
+  if (
+    host === 'localhost' || 
+    host === '127.0.0.1' || 
+    host.includes('.run.app')
+  ) {
+    return endpoint;
+  }
+  return `https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app${endpoint}`;
 };
 
 export interface GoogleTokens {

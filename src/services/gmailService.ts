@@ -6,9 +6,7 @@ const getApiUrl = (endpoint: string): string => {
   if (
     host === 'localhost' || 
     host === '127.0.0.1' || 
-    host.includes('.run.app') ||
-    host.includes('hf.space') ||
-    host.includes('huggingface.co')
+    host.includes('.run.app')
   ) {
     return endpoint;
   }
