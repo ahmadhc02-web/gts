@@ -42,5 +42,10 @@ export const DEFAULT_BRANDING = {
   fontFamily: "Inter, sans-serif",
   mascotPos: { x: 4, y: 88 },
   chatWelcomeMsg: "Welcome to the Tactical Response Hub. How can I assist you today?",
-  dashboardSubtext: "GTS Tactical Command & Response Matrix"
+  dashboardSubtext: "GTS Tactical Command & Response Matrix",
+  hiddenTabs: [],
+  homeSections: [],
+  tabNames: {},
+  customNames: {},
+  dashboardStats: []
 };

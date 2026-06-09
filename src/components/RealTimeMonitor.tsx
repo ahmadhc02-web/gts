@@ -252,20 +252,20 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 blur-[48px] rounded-full pointer-events-none z-0" />
 
         {/* Top Header: Controls & Action Details */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 relative z-10 w-full border-b border-slate-100 dark:border-slate-800/40 pb-3">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between gap-2 mb-4 relative z-10 w-full border-b border-slate-100 dark:border-slate-800/40 pb-3">
+          <div className="flex items-center gap-1 shrink-0">
             <span className="text-[10px] font-black tracking-widest text-[#2563eb] bg-[#2563eb]/10 px-2.5 py-1 rounded-lg uppercase">
-              COMPLAINTS MONITOR
+              MONITOR
             </span>
           </div>
 
-          <div className="flex items-center justify-between sm:justify-end gap-40">
+          <div className="flex items-center shrink-0">
             <div className="flex items-center bg-slate-100/80 dark:bg-slate-900/80 p-0.5 rounded-lg border border-slate-200/60 dark:border-slate-800">
               {(['weekly', 'monthly', 'yearly'] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setReportType(type)}
-                  className={`px-3 py-1 text-[9px] font-black tracking-wider rounded-md uppercase transition-all duration-200 ${
+                  className={`px-2.5 sm:px-3 py-1 text-[9px] font-black tracking-wider rounded-md uppercase transition-all duration-200 ${
                     reportType === type 
                       ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' 
                       : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 font-bold'

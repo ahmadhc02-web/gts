@@ -277,13 +277,13 @@ export default function MemberPanel({
               }}
               className="grid grid-cols-1 lg:grid-cols-3 gap-6 origin-top"
             >
-              <div className="h-[280px] sm:h-[300px] shadow-sm rounded-2xl">
+              <div className="h-[350px] sm:h-[380px] shadow-sm rounded-2xl">
                 <DistributionList complaints={complaints} chartType="area" />
               </div>
-              <div className="h-[280px] sm:h-[300px] shadow-sm rounded-2xl">
+              <div className="h-[350px] sm:h-[380px] shadow-sm rounded-2xl">
                 <RealTimeMonitor complaints={complaints} />
               </div>
-              <div className="h-[280px] sm:h-[300px] shadow-sm rounded-2xl">
+              <div className="h-[350px] sm:h-[380px] shadow-sm rounded-2xl">
                 <DistributionList complaints={complaints} chartType="category" />
               </div>
             </motion.div>

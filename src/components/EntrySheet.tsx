@@ -11,6 +11,8 @@ import { firebaseService } from '../lib/firebaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { Client, UserProfile } from '../types';
 import { getCleanErrorMessage } from '../lib/styleUtils';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface EntrySheetProps {
   isOpen: boolean;
@@ -92,6 +94,47 @@ export default function EntrySheet({
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState('');
   const [openedFolderId, setOpenedFolderId] = useState<string | null>(null);
+
+  // User search popup state variables
+  const [showUserSearchPopup, setShowUserSearchPopup] = useState(false);
+  const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
+
+  const handleSearchUserClick = () => {
+    const q = (dashboardSearchQuery || '').trim().toLowerCase();
+    if (!q) {
+      toast.error("Please enter a User ID or Customer Name containing what you wish to locate!");
+      return;
+    }
+
+    const results: any[] = [];
+    ledgerHistory.forEach((sheet) => {
+      const matchedRows = (sheet.table1Rows || []).filter((r: any) => {
+        const rowCId = String(r.cId || '').trim().toLowerCase();
+        const rowName = String(r.name || '').trim().toLowerCase();
+        const rowComments = String(r.comments || '').trim().toLowerCase();
+        const rowClientId = String(r.clientId || '').trim().toLowerCase();
+        const rowClientUsername = String(r.clientUsername || '').trim().toLowerCase();
+
+        return (
+          rowCId.includes(q) ||
+          rowName.includes(q) ||
+          rowComments.includes(q) ||
+          rowClientId.includes(q) ||
+          rowClientUsername.includes(q)
+        );
+      });
+
+      if (matchedRows.length > 0) {
+        results.push({
+          sheet,
+          matchedRows
+        });
+      }
+    });
+
+    setUserSearchResults(results);
+    setShowUserSearchPopup(true);
+  };
 
   // Whenever Entry Sheet is opened, always reset view to the root folders dashboard view
   useEffect(() => {
@@ -1658,6 +1701,62 @@ export default function EntrySheet({
     window.print();
   };
 
+  const exportUserLedgerToPDF = (resultsArray: any[]) => {
+    if (resultsArray.length === 0) {
+      toast.error('No ledger history found for the current search.');
+      return;
+    }
+
+    const doc = new jsPDF();
+    
+    // Add title line
+    doc.setFontSize(22);
+    doc.setTextColor(15, 23, 42); // slate-900 color
+    doc.text('Green Tech Services', 14, 20);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139); // slate-500 color
+    doc.text('User Ledger Vault | Enterprise Management Console', 14, 27);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text('TRANSACTION HISTORY STATEMENT', 14, 38);
+
+    doc.setFontSize(9);
+    doc.setTextColor(71, 85, 105); // slate-600 color
+    doc.text(`User Reference: ${ledgerSearchUser}`, 14, 44);
+    doc.text(`Generated On: ${new Date().toLocaleString()}`, 14, 49);
+
+    const tableRows = resultsArray.map(res => [
+      res.date,
+      res.folderName,
+      `${res.userName}\nPPPoE ID: ${res.userId || '-'}\nPKG: ${res.pkgDetails || '-'}\nPANEL: ${res.panelDetails || '-'}`,
+      res.recOfficer,
+      res.comments || '-',
+      `PKR ${res.amount.toLocaleString()}`
+    ]);
+
+    const totalAggregate = resultsArray.reduce((acc, curr) => acc + curr.amount, 0);
+
+    autoTable(doc, {
+      startY: 56,
+      head: [['Date', 'Folder/Month', 'User / Target & Connection Details', 'Recovery Officer', 'Comments/Ref', 'Amount']],
+      body: tableRows,
+      theme: 'grid',
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+      foot: [['', '', '', '', 'Total Aggregate Recovery:', `PKR ${totalAggregate.toLocaleString()}`]],
+      footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
+      styles: { fontSize: 8 },
+      columnStyles: {
+        5: { halign: 'right', fontStyle: 'bold' }
+      }
+    });
+
+    const safeSearchName = ledgerSearchUser.replace(/[^a-zA-Z0-9]/g, '_');
+    doc.save(`GTS_Ledger_Statement_${safeSearchName}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    toast.success('Transaction history downloaded successfully as PDF!');
+  };
+
   const renderUserLedger = () => {
     let filteredSheets = ledgerHistory;
     if (ledgerSelectedFolder !== 'all') {
@@ -1677,6 +1776,14 @@ export default function EntrySheet({
         (sh.table1Rows || []).forEach((r: any) => {
           const match = r.cId?.toLowerCase().includes(keyword) || r.name?.toLowerCase().includes(keyword) || r.clientUsername?.toLowerCase().includes(keyword);
           if (match && Number(r.amount) > 0) {
+            // Find corresponding client for extra connection info
+            const matchClient = clients.find(c => 
+              (r.clientUsername && c.username?.toLowerCase() === r.clientUsername.toLowerCase()) ||
+              (r.cId && c.username?.toLowerCase() === r.cId.toLowerCase()) ||
+              (r.clientId && c.id === r.clientId) ||
+              (c.name?.toLowerCase() === (r.name || '').toLowerCase())
+            );
+
             results.push({
               sheetId: sh.id,
               date: sh.sheetDate || 'Unknown Date',
@@ -1685,7 +1792,10 @@ export default function EntrySheet({
               userName: r.name || r.clientUsername || r.clientId || r.cId,
               amount: Number(r.amount) || 0,
               comments: r.comments || '',
-              type: 'T1'
+              type: 'T1',
+              userId: matchClient?.username || r.cId || r.clientUsername || '-',
+              pkgDetails: matchClient?.pkgDetails || '-',
+              panelDetails: matchClient?.panelDetails || '-'
             });
           }
         });
@@ -1694,6 +1804,12 @@ export default function EntrySheet({
         (sh.table2Rows || []).forEach((r: any) => {
           const match = r.name?.toLowerCase().includes(keyword);
           if (match && Number(r.amount) > 0) {
+            // Find corresponding client
+            const matchClient = clients.find(c => 
+              c.name?.toLowerCase() === (r.name || '').toLowerCase() ||
+              c.username?.toLowerCase() === (r.name || '').toLowerCase()
+            );
+
             results.push({
               sheetId: sh.id,
               date: sh.sheetDate || 'Unknown Date',
@@ -1702,7 +1818,10 @@ export default function EntrySheet({
               userName: r.name,
               amount: Number(r.amount) || 0,
               comments: '',
-              type: 'T2'
+              type: 'T2',
+              userId: matchClient?.username || '-',
+              pkgDetails: matchClient?.pkgDetails || '-',
+              panelDetails: matchClient?.panelDetails || '-'
             });
           }
         });
@@ -1716,6 +1835,28 @@ export default function EntrySheet({
 
     return (
       <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-6 sm:p-8 flex flex-col gap-6 select-none scrollbar-thin print:p-0 print:bg-white print:h-auto print:overflow-visible">
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media print {
+            body * {
+              visibility: hidden !important;
+            }
+            .user-ledger-print-block, .user-ledger-print-block * {
+              visibility: visible !important;
+            }
+            .user-ledger-print-block {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              border: none !important;
+              box-shadow: none !important;
+              background: white !important;
+              color: black !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+          }
+        `}} />
         <div className="max-w-5xl mx-auto w-full space-y-6 print:space-y-4">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 print:hidden">
              <div className="flex items-center gap-3">
@@ -1760,7 +1901,7 @@ export default function EntrySheet({
           </div>
 
           {keyword ? (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm print:border-none print:shadow-none print:rounded-none">
+            <div className="user-ledger-print-block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm print:border-none print:shadow-none print:rounded-none">
                <div className="px-5 py-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center print:bg-white print:border-none print:p-0 print:mb-4">
                  <div>
                    <h2 className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 tracking-wider print:text-lg print:text-black">
@@ -1772,14 +1913,11 @@ export default function EntrySheet({
                  </div>
                  <div className="flex items-center gap-3">
                    <button 
-                     onClick={() => {
-                       toast.info("Tip: Select 'Save as PDF' from the printer destination.", { duration: 4000 });
-                       setTimeout(() => window.print(), 200);
-                     }}
+                     onClick={() => exportUserLedgerToPDF(results)}
                      className="print:hidden text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 dark:hover:bg-rose-900/40 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
                    >
                      <FileDown size={14} />
-                     SAVE PDF
+                     EXPORT PDF
                    </button>
                    <button 
                      onClick={() => window.print()}
@@ -1811,7 +1949,28 @@ export default function EntrySheet({
                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-950/50 transition-colors">
                          <td className="py-3 px-5 font-mono text-slate-800 dark:text-slate-200">{res.date}</td>
                          <td className="py-3 px-5"><span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 rounded font-bold uppercase text-[9px] text-slate-600 dark:text-slate-400">{res.folderName}</span></td>
-                         <td className="py-3 px-5 font-bold text-slate-900 dark:text-white capitalize">{res.userName}</td>
+                         <td className="py-3 px-5 font-bold text-slate-900 dark:text-white capitalize">
+                            <div className="flex flex-col gap-1 text-left">
+                              <span className="font-bold text-slate-900 dark:text-white capitalize text-xs">{res.userName}</span>
+                              <div className="flex flex-wrap gap-1 items-center mt-0.5">
+                                {res.userId && res.userId !== '-' && (
+                                  <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 font-mono text-[9px] font-black rounded border border-blue-105 dark:border-blue-900/20">
+                                    ID: {res.userId}
+                                  </span>
+                                )}
+                                {res.pkgDetails && res.pkgDetails !== '-' && (
+                                  <span className="px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[9px] font-bold rounded border border-indigo-105 dark:border-indigo-900/20">
+                                    PKG: {res.pkgDetails}
+                                  </span>
+                                )}
+                                {res.panelDetails && res.panelDetails !== '-' && (
+                                  <span className="px-1.5 py-0.5 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 text-[9px] font-bold rounded border border-amber-105 dark:border-amber-900/15">
+                                    PANEL: {res.panelDetails}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
                          <td className="py-3 px-5 text-slate-600 dark:text-slate-400">{res.recOfficer}</td>
                          <td className="py-3 px-5 text-slate-500 text-[10px] italic">{res.comments || '-'}</td>
                          <td className="py-3 px-5 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/5">
@@ -1864,6 +2023,36 @@ export default function EntrySheet({
       if (sh.recOfficer?.toLowerCase().includes(filterKeyword)) return true;
       if (sh.area?.toLowerCase().includes(filterKeyword)) return true;
       if (sh.sheetDate?.toLowerCase().includes(filterKeyword)) return true;
+
+      // Deep search inside client entries in Table 1
+      if (sh.table1Rows && Array.isArray(sh.table1Rows)) {
+        const matchT1 = sh.table1Rows.some((r: any) => {
+          const cId = String(r.cId || '').toLowerCase();
+          const name = String(r.name || '').toLowerCase();
+          const comments = String(r.comments || '').toLowerCase();
+          const clientId = String(r.clientId || '').toLowerCase();
+          const clientUsername = String(r.clientUsername || '').toLowerCase();
+
+          return (
+            cId.includes(filterKeyword) ||
+            name.includes(filterKeyword) ||
+            comments.includes(filterKeyword) ||
+            clientId.includes(filterKeyword) ||
+            clientUsername.includes(filterKeyword)
+          );
+        });
+        if (matchT1) return true;
+      }
+
+      // Deep search inside Table 2 rows
+      if (sh.table2Rows && Array.isArray(sh.table2Rows)) {
+        const matchT2 = sh.table2Rows.some((r: any) => {
+          const name = String(r.name || '').toLowerCase();
+          return name.includes(filterKeyword);
+        });
+        if (matchT2) return true;
+      }
+
       return false;
     };
 
@@ -1890,17 +2079,30 @@ export default function EntrySheet({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-            {/* Search filter */}
-            <div className="relative w-full md:w-64">
-              <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search Sheets..."
-                value={dashboardSearchQuery}
-                onChange={(e) => setDashboardSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-1 focus:ring-blue-550 transition-all text-slate-900 dark:text-white font-bold"
-              />
-            </div>
+            {/* Search filter - displayed only when a folder is selected */}
+            {openedFolderId && (
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search Sheets..."
+                    value={dashboardSearchQuery}
+                    onChange={(e) => setDashboardSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl outline-none focus:ring-1 focus:ring-blue-550 transition-all text-slate-900 dark:text-white font-bold"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSearchUserClick}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-650 via-emerald-600 to-teal-600 hover:from-emerald-500 hover:via-emerald-555 hover:to-teal-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-emerald-500/20 active:scale-95 shadow-md shadow-emerald-600/10 shrink-0"
+                  title="Search User Entry"
+                >
+                  <Sparkles size={11} className="text-white animate-pulse" />
+                  <span>Search Entry</span>
+                </button>
+              </div>
+            )}
 
             {/* Create Folder toggler */}
             {!isCreatingFolder ? (
@@ -4041,6 +4243,160 @@ export default function EntrySheet({
 
       {/* Beautiful Reset & Purge Confirmation Modal */}
       <AnimatePresence>
+        {/* User Search Entry Locator Popup Screen */}
+        {showUserSearchPopup && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 15, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden text-left"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-slate-850 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-500 shrink-0 border border-emerald-100 dark:border-emerald-900/50">
+                    <Sparkles size={20} className="animate-pulse text-emerald-500" />
+                  </div>
+                  <div>
+                    <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-emerald-500 font-mono">
+                      Entry Locator Registry Match
+                    </h4>
+                    <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                      Search results for: "<span className="text-emerald-500">{dashboardSearchQuery}</span>"
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowUserSearchPopup(false)}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-750 dark:hover:text-slate-200 rounded-lg transition-all cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1 space-y-6 scrollbar-thin">
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
+                  FOUND {userSearchResults.length} LEDGER {userSearchResults.length === 1 ? 'SHEET' : 'SHEETS'} CONTAINER IN SYSTEM MEMORY:
+                </p>
+
+                {userSearchResults.length === 0 ? (
+                  <div className="py-16 text-center flex flex-col items-center justify-center gap-3 bg-slate-50/50 dark:bg-slate-950/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                    <div className="p-4 bg-slate-100 dark:bg-slate-900 rounded-full text-slate-400">
+                      <Search size={32} />
+                    </div>
+                    <p className="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider mt-1">
+                      No matching records found
+                    </p>
+                    <p className="text-xs text-slate-450 dark:text-slate-550 max-w-sm mx-auto uppercase tracking-wide leading-relaxed font-semibold">
+                      We couldn't locate any consumer entry containing user ID, Name, or reference matching "{dashboardSearchQuery}" inside your active monthly sheets.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {userSearchResults.map((res: any, idx) => {
+                      const sh = res.sheet;
+                      const matchedRows = res.matchedRows;
+                      const folderName = sheetFolderMap[sh.id] 
+                        ? (folders.find(f => f.id === sheetFolderMap[sh.id])?.name || "Uncategorized")
+                        : "Uncategorized";
+
+                      return (
+                        <div
+                          key={`res-${sh.id}-${idx}`}
+                          className="p-5 bg-slate-50/80 dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-850 rounded-2.5xl hover:border-slate-300 dark:hover:border-slate-750 transition-all space-y-4 text-left"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-105 dark:border-slate-850">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-550 dark:text-blue-400 rounded-xl">
+                                <FileSpreadsheet size={18} />
+                              </div>
+                              <div className="text-left">
+                                <span className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-650 dark:text-slate-350 px-2 py-0.5 rounded-full font-black uppercase tracking-widest text-[8px] mr-1 ml-0 border border-slate-300/30">
+                                  Folder: /{folderName}
+                                </span>
+                                <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mt-1.5">
+                                  Sheet Date: {sh.sheetDate || "No Date"}
+                                </h4>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-[9px] font-black text-slate-400 dark:text-slate-550 uppercase">
+                                    Officer: <span className="text-slate-755 dark:text-slate-350 text-emerald-500">{sh.recOfficer || "N/A"}</span>
+                                  </span>
+                                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                                  <span className="text-[9px] font-black text-slate-400 dark:text-slate-550 uppercase">
+                                    Area: <span className="text-slate-755 dark:text-slate-350">{sh.area || "N/A"}</span>
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleLoadHistorySheet(sh);
+                                setShowUserSearchPopup(false);
+                              }}
+                              className="px-4 py-2 bg-gradient-to-r from-blue-650 to-indigo-650 hover:from-blue-550 hover:to-indigo-555 text-white rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-blue-550/15 border-none"
+                            >
+                              <span>Open Sheet</span>
+                              <ChevronRight size={13} />
+                            </button>
+                          </div>
+
+                          {/* Matched row list within this sheet */}
+                          <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
+                            <table className="w-full text-left text-xs">
+                              <thead>
+                                <tr className="bg-slate-105/60 dark:bg-slate-900/60 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-550 border-b border-slate-100 dark:border-slate-805">
+                                  <th className="px-3 py-2">C. ID</th>
+                                  <th className="px-3 py-2">Name</th>
+                                  <th className="px-3 py-2">Comments / Ref</th>
+                                  <th className="px-3 py-2 text-right">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {matchedRows.map((row: any, rIdx: number) => (
+                                  <tr
+                                    key={`row-${rIdx}`}
+                                    className="border-b border-slate-100/60 dark:border-slate-850 last:border-none font-bold text-slate-750 dark:text-slate-100"
+                                  >
+                                    <td className="px-3 py-2 text-[10px] font-mono text-blue-500">{row.cId || "N/A"}</td>
+                                    <td className="px-3 py-2 font-black uppercase text-[10.5px]">{row.name || "N/A"}</td>
+                                    <td className="px-3 py-2 text-[10px] text-slate-450 dark:text-slate-400 font-semibold">{row.comments || "—"}</td>
+                                    <td className="px-3 py-2 text-right font-black text-emerald-500 font-mono text-[11px]">
+                                      Rs. {row.amount?.toLocaleString() || "0"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-5 border-t border-slate-100 dark:border-slate-850 flex justify-end gap-2 bg-slate-100/10 dark:bg-slate-900/20 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowUserSearchPopup(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-705 text-slate-750 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer border border-slate-205/50 dark:border-slate-700 font-bold"
+                >
+                  Close Results
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {showConfirmResetModal && (
           <motion.div
             initial={{ opacity: 0 }}

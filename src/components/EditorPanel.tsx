@@ -5,7 +5,8 @@ import {
   Monitor, Info, Check, Image as ImageIcon, Box, Zap, MousePointer, 
   Layers, Sliders, Settings2, Shield, User as UserIcon, Bell, MessageSquare, Type,
   Contact, ClipboardList, MapPin, Key, Phone, Package, MapPinned, ShieldAlert, Activity, FileSpreadsheet,
-  TrendingUp, Users, CheckCircle2, Clock, ExternalLink, RotateCcw, Undo2, Redo2
+  TrendingUp, Users, CheckCircle2, Clock, ExternalLink, RotateCcw, Undo2, Redo2,
+  Flame, BarChart3, PlusSquare, Map as MapIcon, Settings, CloudUpload, CreditCard
 } from 'lucide-react';
 import { BrandingConfig, UserProfile, Notification } from '../types';
 import { cn } from '../lib/utils';
@@ -1010,6 +1011,126 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              <div className="business-card p-8 bg-white dark:bg-slate-950">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div>
+                    <h4 className={cn(sectionHeaderClasses, "mb-1")}><LayoutIcon size={18} /> Left Side Icon Rail Customization</h4>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Toggle which icons show up in the left-hand panel of icons on the desktop layout (Max 12)</p>
+                  </div>
+                  {(() => {
+                    const allOpts = [
+                      'complaints', 'nodes', 'dealers_data', 'submit', 'map', 
+                      'clients', 'top10', 'users', 'dealers', 'config', 
+                      'settings', 'integrations', 'branding', 'billing', 'chat', 'monitor'
+                    ];
+                    const activeCount = allOpts.filter(id => !(config.hiddenTabs || []).includes(id)).length;
+                    const isAtLimit = activeCount >= 12;
+
+                    return (
+                      <div className={cn(
+                        "flex items-center gap-3 px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-wider self-start sm:self-center shrink-0",
+                        isAtLimit 
+                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-sm" 
+                          : "bg-blue-600/10 text-blue-600 border-blue-500/20"
+                      )}>
+                        <div className="flex items-center gap-2">
+                          <span className={cn("w-2 h-2 rounded-full animate-pulse", isAtLimit ? "bg-amber-500" : "bg-blue-600")} />
+                          Active Icons:
+                        </div>
+                        <span className="text-sm font-extrabold">{activeCount} / 12</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[
+                    { id: 'complaints', label: 'Operations & Registry', category: 'Main Operations', icon: ClipboardList },
+                    { id: 'nodes', label: 'Active Nodes Status', category: 'Main Operations', icon: Flame },
+                    { id: 'dealers_data', label: 'Dealers Aggregation Data', category: 'Main Operations', icon: BarChart3 },
+                    { id: 'submit', label: 'Complain Registration Form', category: 'Main Operations', icon: PlusSquare },
+                    { id: 'map', label: 'Live Network Map', category: 'Main Operations', icon: MapIcon },
+                    { id: 'clients', label: 'User Details / Directory', category: 'Analytics & Users', icon: Contact },
+                    { id: 'top10', label: 'Top 10 Complainer Analytics', category: 'Analytics & Users', icon: TrendingUp },
+                    { id: 'users', label: 'Operational Login Profiles', category: 'Analytics & Users', icon: Users },
+                    { id: 'dealers', label: 'Partner / Dealer Directory', category: 'Configurations', icon: ShieldAlert },
+                    { id: 'config', label: 'Workflow Config Settings', category: 'Configurations', icon: Settings },
+                    { id: 'settings', label: 'Security & Access Protocol', category: 'System Settings', icon: Shield },
+                    { id: 'integrations', label: 'Google Sheets Integration', category: 'System Settings', icon: CloudUpload },
+                    { id: 'branding', label: 'Design Customization Desk', category: 'System Settings', icon: Palette },
+                    { id: 'billing', label: 'Billing Mod / Billing Desk', category: 'Quick Actions & Extras', icon: CreditCard },
+                    { id: 'chat', label: 'AI Help Chat Quick Action', category: 'Quick Actions & Extras', icon: MessageSquare },
+                    { id: 'monitor', label: 'Monitor Quick Action', category: 'Quick Actions & Extras', icon: Activity },
+                  ].map((item) => {
+                    const isHidden = (config.hiddenTabs || []).includes(item.id);
+                    const allOpts = [
+                      'complaints', 'nodes', 'dealers_data', 'submit', 'map', 
+                      'clients', 'top10', 'users', 'dealers', 'config', 
+                      'settings', 'integrations', 'branding', 'billing', 'chat', 'monitor'
+                    ];
+                    const activeCount = allOpts.filter(id => !(config.hiddenTabs || []).includes(id)).length;
+
+                    return (
+                      <div 
+                        key={item.id} 
+                        className={cn(
+                          "p-4 rounded-xl transition-all duration-300 border flex items-center justify-between gap-4",
+                          !isHidden 
+                            ? "bg-slate-50/50 dark:bg-slate-900/30 border-blue-500/10 dark:border-blue-500/5 shadow-[0_4px_12px_rgba(59,130,246,0.02)]" 
+                            : "bg-slate-100/40 dark:bg-slate-950/20 border-slate-200 dark:border-slate-900 opacity-60 hover:opacity-80"
+                        )}
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className={cn(
+                            "p-2.5 rounded-xl border shrink-0 mt-0.5",
+                            !isHidden 
+                              ? "bg-blue-600/10 text-blue-600 border-blue-500/20" 
+                              : "bg-slate-200 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800"
+                          )}>
+                            <item.icon size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-[8px] font-black uppercase text-brand-accent tracking-wider block mb-0.5">{item.category}</span>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block truncate">{item.label}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const currentHidden = config.hiddenTabs || [];
+                            
+                            if (isHidden) {
+                              // Trying to activate (remove from hidden)
+                              if (activeCount >= 12) {
+                                toast.error("Limits of 12 active icons reached! Please disable another icon first to maintain layout beauty.");
+                                return;
+                              }
+                              
+                              const nextHidden = currentHidden.filter(id => id !== item.id);
+                              setConfig({ ...config, hiddenTabs: nextHidden });
+                              toast.success(`"${item.label}" icon enabled perfectly on left rail!`);
+                            } else {
+                              // Deactivating (add to hidden)
+                              const nextHidden = [...currentHidden, item.id];
+                              setConfig({ ...config, hiddenTabs: nextHidden });
+                              toast.success(`"${item.label}" icon hidden from left rail.`);
+                            }
+                          }}
+                          className={cn(
+                            "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-all duration-300 cursor-pointer shadow-inner",
+                            !isHidden ? "bg-blue-600" : "bg-slate-300 dark:bg-slate-850"
+                          )}
+                        >
+                          <span className={cn(
+                            "inline-block h-4 w-4 transform rounded-full bg-white transition-all duration-300 shadow-md",
+                            !isHidden ? "translate-x-6" : "translate-x-1"
+                          )} />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

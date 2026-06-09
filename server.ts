@@ -51,17 +51,34 @@ async function startServer() {
         return res.status(400).json({ error: "Access ID (Username) is required." });
       }
 
-      // 1. Fetch user from Firestore
+      // 1. Fetch user from Supabase if possible
+      let foundUser: any = null;
+      try {
+        const SUPABASE_URL = 'https://jduamzoyllfspdqucncw.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM'; // Using the generic anon key that frontend uses
+        const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users?select=*`, {
+          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+        });
+        const users = await resUser.json();
+        if (users && Array.isArray(users)) {
+          foundUser = users.find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+        }
+      } catch (suErr) {
+        console.warn("Server: Supabase user check failed, falling back to Firestore:", suErr);
+      }
+
       const db = await getFirestoreOnServer();
       if (!db) {
         return res.status(500).json({ error: "Database not initialized on server." });
       }
       const { collection: serverCollection, getDocs: serverGetDocs, doc: serverDoc, setDoc: serverSetDoc } = await import('firebase/firestore');
 
-      const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
-      const foundUser: any = usersSnap.docs
-        .map(d => ({ ...(d.data() as any), id: d.id }))
-        .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+      if (!foundUser) {
+        const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
+        foundUser = usersSnap.docs
+          .map(d => ({ ...(d.data() as any), id: d.id }))
+          .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+      }
 
       if (!foundUser) {
         return res.status(404).json({ error: "Identity registry does not contain this Access ID." });
@@ -125,42 +142,40 @@ async function startServer() {
         </div>
       `;
 
-      if (tokens && tokens.access_token) {
-        try {
-          const { auth } = await getAuthorizedClient(req, tokens);
-          const gmail = google.gmail({ version: 'v1', auth });
+      // Method 2: Direct Brevo API (Fetch)
+      try {
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'api-key': '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',
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            sender: {
+              name: 'GREEN TECH SERVICES',
+              email: 'greennet757@gmail.com'
+            },
+            to: [
+              {
+                email: foundUser.email,
+                name: foundUser.fullName || foundUser.username
+              }
+            ],
+            subject: subject,
+            htmlContent: emailHtml
+          })
+        });
 
-          // Encode MIME message in RFC 2822 base64url standard
-          const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
-          const mimeParts = [
-            `To: ${foundUser.email}`,
-            `Subject: ${utf8Subject}`,
-            'Content-Type: text/html; charset=utf-8',
-            'MIME-Version: 1.0',
-            '',
-            emailHtml
-          ];
-          const mimeMessage = mimeParts.join('\n');
-          const base64Encoded = Buffer.from(mimeMessage)
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-
-          await gmail.users.messages.send({
-            userId: 'me',
-            requestBody: {
-              raw: base64Encoded
-            }
-          });
-          emailStatus = "sent_gmail_api";
-        } catch (err: any) {
-          console.error("Gmail API sending failed:", err);
-          errorDetail = err.message || String(err);
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error('Brevo API Error: ' + JSON.stringify(errData));
         }
-      } else {
-        console.warn("No active Google connection config found in Firestore.");
-        errorDetail = "Google sheets/Gmail account is not connected. Please ask your administrator to connect their Google Sheets/Gmail inside the Integrations Center.";
+
+        emailStatus = "sent_brevo_api";
+      } catch (err: any) {
+        console.error("Brevo API sending failed:", err);
+        errorDetail = err.message || String(err);
       }
 
       // Output the code ONLY to terminal console for local debugging (invisible to the client page)
@@ -172,10 +187,10 @@ async function startServer() {
       console.log(`Access Link: ${resetUrl}`);
       console.log("========================================");
 
-      // Verify that the email was successfully sent via authorized Gmail SMTP
-      if (emailStatus !== "sent_gmail_api") {
+      // Verify that the email was successfully sent via Brevo
+      if (emailStatus !== "sent_brevo_api") {
         return res.status(400).json({
-          error: `Gmail sending failed: ${errorDetail || "Google connection config is offline."}. Please authenticate/reconnect your Google Account inside the Gmail Center.`
+          error: `Verification sending failed: ${errorDetail || "Brevo connection error."}. Please try again.`
         });
       }
 
@@ -264,19 +279,51 @@ async function startServer() {
         return res.status(400).json({ error: "Passcode verification mismatch." });
       }
 
-      // 2. Locate user
+      // 2. Locate user and Update in Supabase fallback if exists
+      let foundUser: any = null;
+      let patchedInSupabase = false;
+      const SUPABASE_URL = 'https://jduamzoyllfspdqucncw.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+      try {
+        // Try patching Supabase matching the username
+        const suPatch = await fetch(`${SUPABASE_URL}/rest/v1/users?username=ilike.${encodeURIComponent(username.trim())}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({ password: newPassword })
+        });
+        const suRes = await suPatch.json();
+        if (suRes && Array.isArray(suRes) && suRes.length > 0) {
+          foundUser = suRes[0];
+          patchedInSupabase = true;
+          console.log(`Server: Passcode reset correctly applied to Supabase layer for ${foundUser.username}`);
+        }
+      } catch (suErr) {
+        console.warn("Server: Supabase password patch failed:", suErr);
+      }
+
       const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
-      const foundUser: any = usersSnap.docs
+      const fbUser: any = usersSnap.docs
         .map(d => ({ ...(d.data() as any), id: d.id }))
         .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
-
-      if (!foundUser) {
+        
+      if (!foundUser && !fbUser) {
         return res.status(404).json({ error: "User record matching description no longer exists." });
       }
 
-      // 3. Update password!
-      const userRef = serverDoc(db, 'users', foundUser.id);
-      await serverUpdateDoc(userRef, { password: newPassword });
+      if (!foundUser && fbUser) {
+        foundUser = fbUser;
+      }
+
+      // 3. Update password in Firestore as well for sync!
+      if (fbUser) {
+        const userRef = serverDoc(db, 'users', fbUser.id);
+        await serverUpdateDoc(userRef, { password: newPassword });
+      }
 
       // --- Create Notification for security audit in Firestore ---
       const notifRef = serverDoc(serverCollection(db, 'notifications'));
@@ -320,6 +367,136 @@ async function startServer() {
     return aiClient;
   }
 
+  // --- Resilient AI Fallback & Simulation Engines ---
+  function getSimulatedTrendsResponse(complaints: any[]) {
+    return {
+      overallStatus: "alert",
+      recentTrendSummary: "Continuous road maintenance near Sector G-11 has damaged underground fiber cables. Multiple reports indicate high signal loss in Northern Zone. Most client issues resolves in under 45 minutes.",
+      topIssues: [
+        { category: "Fiber Cut", count: Math.max(3, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('fiber') || String(c.description || '').toLowerCase().includes('cut')).length), severity: "high", areaSuggested: "Sector G-11" },
+        { category: "Slow Speed / Latency", count: Math.max(2, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('speed') || String(c.description || '').toLowerCase().includes('slow')).length), severity: "medium", areaSuggested: "Northern Zone" },
+        { category: "No Internet", count: Math.max(4, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('no internet')).length), severity: "high", areaSuggested: "Main Block" }
+      ],
+      actionableSuggestions: [
+        {
+          title: "Physical Fiber Duct Damage in Sector G-11",
+          category: "Fiber Cut",
+          description: "Civic roadworks have sliced the optical feed. splicing crew is active on site.",
+          troubleshootingSteps: [
+            "Verify Optical Line Terminal (OLT) port status",
+            "Measure loss using OTDR distance tracking",
+            "Notify subscribers in Sector G-11 about physical repairs"
+          ],
+          templateResponse: "G-11 area mein roadworks activity ki wajah se fiber cable cut ho gayi hai. Humari splicing team mauqe par jor laga rahi hai. Agle 30-45 minutes mein speed aur connection automatic fully active ho jayenge. Pareshani ke liye moazrat."
+        },
+        {
+          title: "IP Lease Attenuation or Gateway Congestion",
+          category: "Slow Speed / Latency",
+          description: "Upstream route peering link saturated during hot hours. Instruct customer to flush local DNS cache.",
+          troubleshootingSteps: [
+            "Suggest user configuration set to Google DNS: 8.8.8.8",
+            "Instruct user to turn off router for 5 minutes",
+            "Flush regional MAC address leases on gateway Core Node 2"
+          ],
+          templateResponse: "Aap apna router power strip se nikal kar 5 min ke liye off rakhein phir lagayein. Is se dynamic IP change ho kar optimized static route per connect ho jayega aur latency auto drop ho jayegi."
+        }
+      ],
+      generatedAt: Date.now(),
+      isSimulated: true
+    };
+  }
+
+  function getSimulatedAskResponse(question: string, searchGrounding: boolean) {
+    const query = (question || '').toLowerCase();
+    let answer = "";
+    let sources: any[] = [];
+
+    if (searchGrounding) {
+      sources = [
+        { title: "GTS ISP Network Status Feed", uri: "https://gts-noc.net/status" },
+        { title: "Regional Fiber Core Routing Map", uri: "https://gts-noc.net/fiber-routing" }
+      ];
+    }
+
+    const headerMessage = searchGrounding 
+      ? `**[Search Grounding Active — Grounded against Real-time Network Ports]**\n\n`
+      : `**[ISP AI Mentor Active Standby]**\n\n`;
+
+    if (query.includes("hello") || query.includes("hi ") || query.startsWith("hi") || query.includes("assalam") || query.includes("aoa") || query.includes("hey") || query.includes("help") || query.includes("madad")) {
+      answer = `${headerMessage}Assalam-o-Alaikum! I am your GTS ISP AI Mentor. Online control channel completely active.
+      
+Kaise madad karoon aapki? Aap mujh se koi bhi technical sawal ya customer ticket log pooch sakte hain:
+- **Fiber Splicing** guidelines aur OTDR loss levels.
+- **Router resetting** aur ONU configuration step-by-step.
+- **Slow speed** ya wifi latency troubleshooting.
+- **Support Templates** sub-dealers ya subscribers ke liye.`;
+    } else if (query.includes("offline") || query.includes("online")) {
+      answer = `${headerMessage}**AI Resolver Engine Analysis:**
+- **Status:** 100% ONLINE AND OPERATIONAL.
+- **Diagnostic Gateway:** All channels active, fiber links synced in real-time.
+- **Sync Protocol:** Firestore & local cache state fully connected.
+
+*Urdu Support Template:*
+"Humara automatic billing aur complaint control pool active/online hai. Kisi bhi break optical link ki link update database main real-time sync ho rahi hai."`;
+    } else if (query.includes("password") || query.includes("reset") || query.includes("router") || query.includes("wifi")) {
+      answer = `${headerMessage}### Router and ONU Configuration & Password Reset Protocol:
+
+**1. Root Cause Analysis:**
+Subscribers often experience offline state due to IP lease expiration or incorrect PPPoE authentication.
+
+**2. Troubleshooting Steps:**
+- **Step 1:** Turn off the optical ONU modem and Wi-Fi Router for 60 seconds.
+- **Step 2:** Inspect patch cords; verify that the blue fiber cable is firmly locked in place.
+- **Step 3:** Access the local router portal (**192.168.10.1** or **192.168.1.1**), navigate to the Wireless Safety/Security tab, select WPA2-PSK, and update SSID name/password.
+
+**3. Roman Urdu Empathetic Customer Template:**
+"Aap ka core router offline show ho raha hai, kindly modem aur router ko 1 minute ke liye power strip se unplug karke dobara on kijiye. Is se dynamic IP refresh ho kar internet normal connect ho jayega!"`;
+    } else if (query.includes("complain") || query.includes("ticket") || query.includes("client")) {
+      answer = `${headerMessage}### Ticket Diagnostics & Support Resolution Pathway:
+
+- **Database Analysis:** Complaints are processed and labeled based on urgency (Critical, High, Medium, Low).
+- **Proactive Verifications:** Always cross-reference the client's live PPPoE session history on the regional RADIUS node before physically dispatching field personnel.
+- **Joint Splice Goal:** Ensure optical joint decay loss remains below **0.05dBm per splice point**.
+
+*Urdu customer message template:*
+"Aap ki shikayat database mein log ho chuki hai. Splicing team spot par fiber link check kar rahi hai. Aglay 30-45 minutes mein link automatic restore ho jayega."`;
+    } else if (query.includes("speed") || query.includes("slow") || query.includes("latency") || query.includes("lag")) {
+      answer = `${headerMessage}### Support Diagnostics for Elevated Attenuation/Slow Speed:
+
+**1. Root Cause Hypothesis:**
+Optical power values are decaying beyond boundaries (typical target: **-18dBm to -25dBm**; loss beyond **-27dBm** causes packet loss).
+
+**2. Diagnostic Guide:**
+- **Check 1:** Check the RX optic value of the GPON ONU. Re-splice at the local terminal if outside bounds.
+- **Check 2:** Move high-traffic applications to the clean **5GHz Wi-Fi band** rather than the crowded 2.4GHz bandwidth.
+- **Check 3:** Guide subscribers to clean current DNS and configure Cloudflare DNS (**1.1.1.1** and **1.0.0.1**).
+
+**3. Urdu/Hindi Empathetic Customer Response:**
+"Aap ke link ki signal strength standard se kam arhi hai jis se browsing speed impact ho rahi hai. Hum local distribution cabinet link refresh kar rhy hain. Kindly apne router ko restart kijiye, speed normal ho jayegi."`;
+    } else if (query.includes("fiber") || query.includes("cut") || query.includes("splice") || query.includes("break")) {
+      answer = `${headerMessage}### Standard physical Break & Fiber Core Splicing Protocol:
+
+**1. Splicing Specifications:**
+- Always perform a core-alignment splice to guarantee joint loss below 0.05dB.
+- Splicing sequence color standards: **Blue, Orange, Green, Brown, Slate, White, Red, Black, Yellow, Violet, Rose, Aqua**.
+
+**2. Roman Urdu Response Template:**
+"Humare primary fiber route area mein road expansion activities ki wajah se optimization work ho rha hai jis se transient attenuation ho sakti hai. Humari repair team spot par fiber core splice kar rhi hai. Pareshani ke liye dil se moazrat."`;
+    } else {
+      answer = `${headerMessage}### ISP AI Mentor Diagnostics Plan for: *"${question}"*
+
+**Technical Steps:**
+1. Check the local GPON OLT optical port indicators.
+2. Verify PPPoE server status for authentications and billing locks.
+3. Clean the patch cord interface and measure incoming line light level with an optical power meter (standard values -18 to -25dBm).
+
+**Roman Urdu Helpful Response:**
+"Aap ke issue ki technical details humari customer support desk check kar rahi hai. Hum back-end portal se link parameters align kar rhy hain, jald hi update karke problem resolve kar di jaye gi."`;
+    }
+
+    return { answer, sources, isSimulated: true };
+  }
+
   async function fetchComplaintsOnServer() {
     try {
       const db = await getFirestoreOnServer();
@@ -334,47 +511,18 @@ async function startServer() {
   }
 
   app.get("/api/gemini/analyze-trends", async (req, res) => {
+    let complaints: any[] = [];
     try {
-      const complaints = await fetchComplaintsOnServer();
+      complaints = await fetchComplaintsOnServer();
+    } catch (dbErr) {
+      console.warn("DB fetch failed in trend analysis, using empty complaints array:", dbErr);
+    }
+
+    try {
       const gemini = getGeminiClient();
 
       if (!gemini) {
-        // Return highly descriptive mock trends as high-quality fallback simulation when API Key is missing
-        return res.json({
-          overallStatus: "alert",
-          recentTrendSummary: "Continuous road maintenance near Sector G-11 has damaged underground fiber cables. Multiple reports indicate high signal loss in Northern Zone. Most client issues resolves in under 45 minutes.",
-          topIssues: [
-            { category: "Fiber Cut", count: Math.max(3, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('fiber') || String(c.description || '').toLowerCase().includes('cut')).length), severity: "high", areaSuggested: "Sector G-11" },
-            { category: "Slow Speed / Latency", count: Math.max(2, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('speed') || String(c.description || '').toLowerCase().includes('slow')).length), severity: "medium", areaSuggested: "Northern Zone" },
-            { category: "No Internet", count: Math.max(4, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('no internet')).length), severity: "high", areaSuggested: "Main Block" }
-          ],
-          actionableSuggestions: [
-            {
-              title: "Physical Fiber Duct Damage in Sector G-11",
-              category: "Fiber Cut",
-              description: "Civic roadworks have sliced the optical feed. splicing crew is active on site.",
-              troubleshootingSteps: [
-                "Verify Optical Line Terminal (OLT) port status",
-                "Measure loss using OTDR distance tracking",
-                "Notify subscribers in Sector G-11 about physical repairs"
-              ],
-              templateResponse: "G-11 area mein roadworks activity ki wajah se fiber cable cut ho gayi hai. Humari splicing team mauqe par jor laga rahi hai. Agle 30-45 minutes mein speed aur connection automatic fully active ho jayenge. Pareshani ke liye moazrat."
-            },
-            {
-              title: "IP Lease Attenuation or Gateway Congestion",
-              category: "Slow Speed / Latency",
-              description: "Upstream route peering link saturated during hot hours. Instruct customer to flush local DNS cache.",
-              troubleshootingSteps: [
-                "Suggest user configuration set to Google DNS: 8.8.8.8",
-                "Instruct user to turn off router for 5 minutes",
-                "Flush regional MAC address leases on gateway Core Node 2"
-              ],
-              templateResponse: "Aap apna router power strip se nikal kar 5 min ke liye off rakhein phir lagayein. Is se dynamic IP change ho kar optimized static route per connect ho jayega aur latency auto drop ho jayegi."
-            }
-          ],
-          generatedAt: Date.now(),
-          isSimulated: true
-        });
+        return res.json(getSimulatedTrendsResponse(complaints));
       }
 
       // Format complaints list to feed to Gemini
@@ -418,17 +566,37 @@ The JSON MUST follow this exact schema:
 
 Only return a valid, parsable JSON block. Absolutely no other text or explanation.`;
 
-      const response = await gemini.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          systemInstruction: "You are an expert ISP Network AI Analyst. Output only a single JSON object fitting the requested structure exactly without markdown backticks."
+      let responseText = "";
+      try {
+        console.log("Attempting trend analysis with gemini-3.5-flash...");
+        const responseList = await gemini.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            systemInstruction: "You are an expert ISP Network AI Analyst. Output only a single JSON object fitting the requested structure exactly without markdown backticks."
+          }
+        });
+        responseText = responseList.text || "{}";
+      } catch (primaryErr: any) {
+        console.warn(`Primary model gemini-3.5-flash unavailable (${primaryErr.message || primaryErr}), retrying with backup gemini-3.1-flash-lite...`);
+        try {
+          const responseListBackup = await gemini.models.generateContent({
+            model: "gemini-3.1-flash-lite",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              systemInstruction: "You are an expert ISP Network AI Analyst. Output only a single JSON object fitting the requested structure exactly without markdown backticks."
+            }
+          });
+          responseText = responseListBackup.text || "{}";
+        } catch (backupErr: any) {
+          console.error(`Backup model also failed: ${backupErr.message || backupErr}. Falling back to high-fidelity dynamic simulation.`);
+          return res.json(getSimulatedTrendsResponse(complaints));
         }
-      });
+      }
 
-      const jsonText = response.text || "{}";
-      const cleaned = jsonText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const cleaned = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
       res.json({
@@ -437,106 +605,18 @@ Only return a valid, parsable JSON block. Absolutely no other text or explanatio
         isSimulated: false
       });
     } catch (error: any) {
-      console.error("AI help trend analysis failed:", error);
-      res.status(500).json({ error: error.message || String(error) });
+      console.warn("AI help trend analysis failed, reverting to safe simulated response:", error);
+      res.json(getSimulatedTrendsResponse(complaints));
     }
   });
 
   app.post("/api/gemini/ask", async (req, res) => {
+    const { question, history, searchGrounding } = req.body;
     try {
-      const { question, history, searchGrounding } = req.body;
       const gemini = getGeminiClient();
 
       if (!gemini) {
-        // High quality dynamic simulated expert replies matching any question context
-        const query = (question || '').toLowerCase();
-        let answer = "";
-        let sources: any[] = [];
-
-        if (searchGrounding) {
-          sources = [
-            { title: "GTS ISP Network Status Feed", uri: "https://gts-noc.net/status" },
-            { title: "Regional Fiber Core Routing Map", uri: "https://gts-noc.net/fiber-routing" }
-          ];
-        }
-
-        const headerMessage = searchGrounding 
-          ? `**[Search Grounding Active — Grounded against Real-time Network Ports]**\n\n`
-          : `**[ISP AI Mentor Active Standby]**\n\n`;
-
-        if (query.includes("hello") || query.includes("hi ") || query.startsWith("hi") || query.includes("assalam") || query.includes("aoa") || query.includes("hey") || query.includes("help") || query.includes("madad")) {
-          answer = `${headerMessage}Assalam-o-Alaikum! I am your GTS ISP AI Mentor. Online control channel completely active.
-          
-Kaise madad karoon aapki? Aap mujh se koi bhi technical sawal ya customer ticket log pooch sakte hain:
-- **Fiber Splicing** guidelines aur OTDR loss levels.
-- **Router resetting** aur ONU configuration step-by-step.
-- **Slow speed** ya wifi latency troubleshooting.
-- **Support Templates** sub-dealers ya subscribers ke liye.`;
-        } else if (query.includes("offline") || query.includes("online")) {
-          answer = `${headerMessage}**AI Resolver Engine Analysis:**
-- **Status:** 100% ONLINE AND OPERATIONAL.
-- **Diagnostic Gateway:** All channels active, fiber links synced in real-time.
-- **Sync Protocol:** Firestore & local cache state fully connected.
-
-*Urdu Support Template:*
-"Humara automatic billing aur complaint control pool active/online hai. Kisi bhi break optical link ki link update database main real-time sync ho rahi hai."`;
-        } else if (query.includes("password") || query.includes("reset") || query.includes("router") || query.includes("wifi")) {
-          answer = `${headerMessage}### Router and ONU Configuration & Password Reset Protocol:
-
-**1. Root Cause Analysis:**
-Subscribers often experience offline state due to IP lease expiration or incorrect PPPoE authentication.
-
-**2. Troubleshooting Steps:**
-- **Step 1:** Turn off the optical ONU modem and Wi-Fi Router for 60 seconds.
-- **Step 2:** Inspect patch cords; verify that the blue fiber cable is firmly locked in place.
-- **Step 3:** Access the local router portal (**192.168.10.1** or **192.168.1.1**), navigate to the Wireless Safety/Security tab, select WPA2-PSK, and update SSID name/password.
-
-**3. Roman Urdu Empathetic Customer Template:**
-"Aap ka core router offline show ho raha hai, kindly modem aur router ko 1 minute ke liye power strip se unplug karke dobara on kijiye. Is se dynamic IP refresh ho kar internet normal connect ho jayega!"`;
-        } else if (query.includes("complain") || query.includes("ticket") || query.includes("client")) {
-          answer = `${headerMessage}### Ticket Diagnostics & Support Resolution Pathway:
-
-- **Database Analysis:** Complaints are processed and labeled based on urgency (Critical, High, Medium, Low).
-- **Proactive Verifications:** Always cross-reference the client's live PPPoE session history on the regional RADIUS node before physically dispatching field personnel.
-- **Joint Splice Goal:** Ensure optical joint decay loss remains below **0.05dBm per splice point**.
-
-*Urdu customer message template:*
-"Aap ki shikayat database mein log ho chuki hai. Splicing team spot par fiber link check kar rahi hai. Aglay 30-45 minutes mein link automatic restore ho jayega."`;
-        } else if (query.includes("speed") || query.includes("slow") || query.includes("latency") || query.includes("lag")) {
-          answer = `${headerMessage}### Support Diagnostics for Elevated Attenuation/Slow Speed:
-
-**1. Root Cause Hypothesis:**
-Optical power values are decaying beyond boundaries (typical target: **-18dBm to -25dBm**; loss beyond **-27dBm** causes packet loss).
-
-**2. Diagnostic Guide:**
-- **Check 1:** Check the RX optic value of the GPON ONU. Re-splice at the local terminal if outside bounds.
-- **Check 2:** Move high-traffic applications to the clean **5GHz Wi-Fi band** rather than the crowded 2.4GHz bandwidth.
-- **Check 3:** Guide subscribers to clean current DNS and configure Cloudflare DNS (**1.1.1.1** and **1.0.0.1**).
-
-**3. Urdu/Hindi Empathetic Customer Response:**
-"Aap ke link ki signal strength standard se kam arhi hai jis se browsing speed impact ho rahi hai. Hum local distribution cabinet link refresh kar rhy hain. Kindly apne router ko restart kijiye, speed normal ho jayegi."`;
-        } else if (query.includes("fiber") || query.includes("cut") || query.includes("splice") || query.includes("break")) {
-          answer = `${headerMessage}### Standard physical Break & Fiber Core Splicing Protocol:
-
-**1. Splicing Specifications:**
-- Always perform a core-alignment splice to guarantee joint loss below 0.05dB.
-- Splicing sequence color standards: **Blue, Orange, Green, Brown, Slate, White, Red, Black, Yellow, Violet, Rose, Aqua**.
-
-**2. Roman Urdu Response Template:**
-"Humare primary fiber route area mein road expansion activities ki wajah se optimization work ho rha hai jis se transient attenuation ho sakti hai. Humari repair team spot par fiber core splice kar rhi hai. Pareshani ke liye dil se moazrat."`;
-        } else {
-          answer = `${headerMessage}### ISP AI Mentor Diagnostics Plan for: *"${question}"*
-
-**Technical Steps:**
-1. Check the local GPON OLT optical port indicators.
-2. Verify PPPoE server status for authentications and billing locks.
-3. Clean the patch cord interface and measure incoming line light level with an optical power meter (standard values -18 to -25dBm).
-
-**Roman Urdu Helpful Response:**
-"Aap ke issue ki technical details humari customer support desk check kar rahi hai. Hum back-end portal se link parameters align kar rhy hain, jald hi update karke problem resolve kar di jaye gi."`;
-        }
-
-        return res.json({ answer, sources, isSimulated: true });
+        return res.json(getSimulatedAskResponse(question, searchGrounding));
       }
 
       const prompt = `You are the Expert ISP AI Resolution Mentor. Help the support agent resolve a customer issue or system question.
@@ -568,29 +648,56 @@ System instructions:
         config.tools = [{ googleSearch: {} }];
       }
 
-      const response = await gemini.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: contents.join('\n\n'),
-        config: config
-      });
-
+      let responseText = "";
       let sources: any[] = [];
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      if (chunks && Array.isArray(chunks)) {
-        sources = chunks.map((chunk: any) => ({
-          title: chunk?.web?.title || chunk?.web?.uri || 'Grounded Web Reference',
-          uri: chunk?.web?.uri || ''
-        })).filter((s: any) => s.uri);
+
+      try {
+        console.log("Attempting AI answer generation with gemini-3.5-flash...");
+        const response = await gemini.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: contents.join('\n\n'),
+          config: config
+        });
+        responseText = response.text || "";
+        
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        if (chunks && Array.isArray(chunks)) {
+          sources = chunks.map((chunk: any) => ({
+            title: chunk?.web?.title || chunk?.web?.uri || 'Grounded Web Reference',
+            uri: chunk?.web?.uri || ''
+          })).filter((s: any) => s.uri);
+        }
+      } catch (primaryErr: any) {
+        console.warn(`Primary model gemini-3.5-flash failed (${primaryErr.message || primaryErr}), retrying with backup gemini-3.1-flash-lite...`);
+        try {
+          const responseBackup = await gemini.models.generateContent({
+            model: "gemini-3.1-flash-lite",
+            contents: contents.join('\n\n'),
+            config: config
+          });
+          responseText = responseBackup.text || "";
+          
+          const chunks = responseBackup.candidates?.[0]?.groundingMetadata?.groundingChunks;
+          if (chunks && Array.isArray(chunks)) {
+            sources = chunks.map((chunk: any) => ({
+              title: chunk?.web?.title || chunk?.web?.uri || 'Grounded Web Reference',
+              uri: chunk?.web?.uri || ''
+            })).filter((s: any) => s.uri);
+          }
+        } catch (backupErr: any) {
+          console.error(`Backup model failed: ${backupErr.message || backupErr}. Falling back to high-fidelity simulated response.`);
+          return res.json(getSimulatedAskResponse(question, searchGrounding));
+        }
       }
 
       res.json({
-        answer: response.text || "Could not generate a solution at this moment.",
+        answer: responseText || "Could not generate a solution at this moment.",
         sources,
         isSimulated: false
       });
     } catch (error: any) {
-      console.error("AI ask advisor failed:", error);
-      res.status(500).json({ error: error.message || String(error) });
+      console.warn("AI ask advisor failed, fallback to safe simulated response:", error);
+      res.json(getSimulatedAskResponse(question, searchGrounding));
     }
   });
   // ----------------------------------------
@@ -694,6 +801,24 @@ System instructions:
 
   async function loadTokensFromFirestore() {
     try {
+      const SUPABASE_URL = 'https://jduamzoyllfspdqucncw.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/branding_config?id=eq.google_sheets&select=dashboard_subtext`, {
+          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+        });
+        const data = await res.json();
+        if (data && data.length > 0 && data[0].dashboard_subtext) {
+          const parsed = JSON.parse(data[0].dashboard_subtext);
+          if (parsed.tokens) {
+            console.log("Server: Token loaded from Supabase fallback cache.");
+            return parsed.tokens;
+          }
+        }
+      } catch (suErr) {
+        console.warn("Server: Supabase fallback check failed:", suErr);
+      }
+
       const db = await getFirestoreOnServer();
       if (!db) return null;
       

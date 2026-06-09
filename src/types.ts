@@ -119,6 +119,7 @@ export interface BrandingConfig {
   dashboardSubtext?: string;
   customNames?: Record<string, string>; // Legacy
   tabNames?: Record<string, string>; // For customizing navigation tabs
+  hiddenTabs?: string[]; // Sidebar tabs that should be hidden for all users
   translations?: Record<string, string>; // For global inline text translation mapping
   dashboardStats?: string[]; // Array of stat labels to show in order
   homeSections?: { id: string; visible: boolean; order: number }[]; // For homepage sections (Stats, Charts, Registry)

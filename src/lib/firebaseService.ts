@@ -159,11 +159,26 @@ function toDb(table: string, obj: any): any {
       result[dbKey] = obj[clientKey];
     }
   }
-  // Copy over other unmapped keys as fallback
-  for (const [key, val] of Object.entries(obj)) {
-    const dbKey = tableMapping[key];
-    if (!dbKey) {
-      result[key] = val;
+
+  // Handle special packaging of unstructured attributes inside mascot_pos for branding_config
+  if (table === 'branding_config') {
+    const rawPos = obj.mascotPos || { x: 0, y: 0 };
+    result['mascot_pos'] = {
+      x: typeof rawPos.x === 'number' ? rawPos.x : 0,
+      y: typeof rawPos.y === 'number' ? rawPos.y : 0,
+      customNames: obj.customNames || {},
+      tabNames: obj.tabNames || {},
+      hiddenTabs: obj.hiddenTabs || [],
+      dashboardStats: obj.dashboardStats || [],
+      homeSections: obj.homeSections || []
+    };
+  } else {
+    // Copy over other unmapped keys as fallback
+    for (const [key, val] of Object.entries(obj)) {
+      const dbKey = tableMapping[key];
+      if (!dbKey) {
+        result[key] = val;
+      }
     }
   }
   return result;
@@ -183,6 +198,20 @@ function fromDb(table: string, obj: any): any {
     if (obj[dbKey] !== undefined && obj[dbKey] !== null) {
       result[clientKey] = obj[dbKey];
     }
+  }
+
+  // Handle unpack of unstructured attributes from mascot_pos for branding_config
+  if (table === 'branding_config') {
+    const rawMascotPos = obj.mascot_pos || {};
+    result['mascotPos'] = {
+      x: typeof rawMascotPos.x === 'number' ? rawMascotPos.x : 4,
+      y: typeof rawMascotPos.y === 'number' ? rawMascotPos.y : 88
+    };
+    result['customNames'] = rawMascotPos.customNames || {};
+    result['tabNames'] = rawMascotPos.tabNames || {};
+    result['hiddenTabs'] = rawMascotPos.hiddenTabs || [];
+    result['dashboardStats'] = rawMascotPos.dashboardStats || [];
+    result['homeSections'] = rawMascotPos.homeSections || [];
   }
   return result;
 }

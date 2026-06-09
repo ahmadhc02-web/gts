@@ -130,10 +130,10 @@
   transition: none !important;
 }
 
-.hide-scrollbar, .scrollbar-hide {
+.hide-scrollbar, .scrollbar-hide, .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
-.hide-scrollbar::-webkit-scrollbar, .scrollbar-hide::-webkit-scrollbar {
+.hide-scrollbar::-webkit-scrollbar, .scrollbar-hide::-webkit-scrollbar, .no-scrollbar::-webkit-scrollbar {
   display: none;
 }

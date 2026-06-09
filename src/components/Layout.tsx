@@ -355,7 +355,6 @@ export default function Layout({
       label: 'System Settings',
       items: [
         { id: 'settings', label: 'Security', icon: Shield },
-        { id: 'gmail', label: 'Gmail Center', icon: Mail, roles: ['super_admin'] },
         { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin'] },
         { id: 'branding', label: 'CUSTOMIZATION', icon: Palette, roles: ['super_admin', 'editor'] },
       ]
@@ -404,73 +403,166 @@ export default function Layout({
         <div className="hidden lg:flex fixed top-0 left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 z-[51] shadow-[1px_0_15px_rgba(0,0,0,0.02)] select-none">
           {/* Menu Trigger Button Container (aligned with Header H-16 perfectly) */}
           <div className="w-full h-16 flex items-center justify-center shrink-0 border-b border-slate-100/50 dark:border-slate-900/40">
-            <button
+            <motion.button
               id="rail-menu-btn"
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all duration-300 cursor-pointer"
               title="Toggle Detailed Menu"
             >
-              <Menu size={20} />
-            </button>
+              <motion.div
+                animate={{ rotate: isSidebarOpen ? 90 : 0 }}
+                transition={{ type: "spring", stiffness: 200, damping: 15 }}
+              >
+                <Menu size={20} />
+              </motion.div>
+            </motion.button>
           </div>
 
           {/* Dynamic Icon groups */}
-          <div className="flex-1 w-full px-3 flex flex-col gap-5 items-center pt-6 overflow-y-auto no-scrollbar">
-            {filteredCategories.flatMap(cat => cat.items).map((item) => {
-              const isItemActive = activeTab === item.id || 
-                                   (item.id === 'complaints' && activeTab === 'ops') ||
-                                   (item.id === 'settings' && activeTab === 'profile');
-              
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleSidebarNav(item.id)}
-                  className={cn(
-                    "w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 hover:scale-[1.05] active:scale-95 relative group cursor-pointer border",
-                    isItemActive
-                      ? "bg-blue-50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 border-blue-100/50 dark:border-blue-900/30"
-                      : "border-transparent text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-900/50 hover:text-slate-800 dark:hover:text-white"
-                  )}
-                  title={item.label}
-                >
-                  <item.icon size={20} />
-                  {isItemActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-600 dark:bg-blue-400 rounded-r-full" />
-                  )}
-                  {/* Tooltip */}
-                  <span className="absolute left-16 scale-0 group-hover:scale-100 transition-all duration-200 z-[100] bg-slate-900 dark:bg-slate-800 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
-                    {item.label}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="flex-1 w-full px-3 flex flex-col gap-5 items-center pt-6 overflow-y-auto overflow-x-hidden no-scrollbar">
+            {(() => {
+              const items = [
+                { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList },
+                { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
+                { id: 'nodes', label: 'Active Nodes', icon: Flame },
+                { id: 'clients', label: branding?.tabNames?.clients || 'User Details', icon: Contact },
+                { id: 'billing', label: 'Billing Mod', icon: CreditCard },
+                { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Settings },
+                { id: 'map', label: 'Network Map', icon: MapIcon },
+                { id: 'monitor', label: 'Service Monitor', icon: Activity },
+                { id: 'settings', label: 'Security', icon: Shield },
+                { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin'] }
+              ];
+
+              const permitted = items.filter(item => {
+                if (!user) return false;
+                if (user.role === 'member') {
+                  return ['complaints', 'submit', 'nodes', 'clients', 'settings', 'monitor', 'map'].includes(item.id);
+                }
+                if (item.roles && !item.roles.includes(user.role)) {
+                  return false;
+                }
+                return true;
+              });
+
+              const visible = permitted.filter(item => !(branding?.hiddenTabs || []).includes(item.id));
+
+              return visible.map((item) => {
+                const isItemActive = (() => {
+                  if (item.id === 'chat') return isChatOpen;
+                  if (item.id === 'monitor') return isMonitorOpen;
+                  if (item.id === 'map') return isMapOpen && !isSidebarOpen;
+                  return activeTab === item.id || 
+                         (item.id === 'complaints' && activeTab === 'ops') ||
+                         (item.id === 'settings' && activeTab === 'profile');
+                })();
+
+                const handleItemClick = () => {
+                  if (item.id === 'chat') {
+                    setIsChatOpen(true);
+                  } else if (item.id === 'monitor') {
+                    setIsMonitorOpen(true);
+                  } else if (item.id === 'map') {
+                    setIsMapOpen(true);
+                  } else if (item.id === 'billing') {
+                    handleSidebarNav('billing');
+                  } else {
+                    handleSidebarNav(item.id);
+                  }
+                };
+
+                return (
+                  <motion.button
+                    key={item.id}
+                    onClick={handleItemClick}
+                    initial="rest"
+                    whileHover="hover"
+                    whileTap="tap"
+                    className={cn(
+                      "w-11 h-11 rounded-2xl flex items-center justify-center relative cursor-pointer border transition-colors duration-300 group",
+                      isItemActive
+                        ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/30 shadow-[0_4px_12px_rgba(59,130,246,0.12)]"
+                        : "border-transparent text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-900/50 hover:text-slate-800 dark:hover:text-white"
+                    )}
+                  >
+                    <motion.div
+                      variants={{
+                        rest: { scale: 1, rotate: 0, y: 0 },
+                        hover: { scale: 1.15, rotate: 8, y: -1 }
+                      }}
+                      transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                    >
+                      <item.icon size={20} />
+                    </motion.div>
+                    
+                    {isItemActive && (
+                      <motion.div
+                        layoutId="activeSideLine"
+                        className="absolute left-0 top-3 bottom-3 w-1 bg-blue-600 dark:bg-blue-400 rounded-r-full"
+                        transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                      />
+                    )}
+                    
+                    {/* Tooltip */}
+                    <span className="absolute left-16 scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 z-[100] bg-slate-900 dark:bg-slate-800 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
+                      {item.label}
+                    </span>
+                  </motion.button>
+                );
+              });
+            })()}
           </div>
 
           {/* Bottom Help Question Icon & Logout */}
           <div className="mt-auto px-3 w-full flex flex-col items-center gap-3">
-            <button
-              onClick={() => setIsChatOpen(true)}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 hover:scale-[1.05] active:scale-95 relative group cursor-pointer text-blue-500 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-900"
-              title="Launch AI Help Portal"
-            >
-              <Sparkles size={20} className="animate-pulse" />
-              <span className="absolute left-16 scale-0 group-hover:scale-100 transition-all duration-200 z-50 bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
-                AI Help
-              </span>
-            </button>
+            {/* Show bottom Sparkles help icon only if 'chat' is hidden from the main custom list to avoid duplication */}
+            {(branding?.hiddenTabs || []).includes('chat') && (
+              <motion.button
+                onClick={() => setIsChatOpen(true)}
+                whileHover="hover"
+                whileTap="tap"
+                className="w-11 h-11 rounded-2xl flex items-center justify-center relative cursor-pointer text-blue-500 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-900 group"
+                title="Launch AI Help Portal"
+              >
+                <motion.div
+                  variants={{
+                    hover: { scale: 1.15, rotate: 12 },
+                    tap: { scale: 0.95 }
+                  }}
+                  transition={{ type: "spring", stiffness: 450, damping: 12 }}
+                >
+                  <Sparkles size={20} className="animate-pulse" />
+                </motion.div>
+                <span className="absolute left-16 scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 z-50 bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
+                  AI Help
+                </span>
+              </motion.button>
+            )}
 
-            <button
+            <motion.button
               onClick={() => {
                 if (onLogout) onLogout();
               }}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 hover:scale-[1.05] active:scale-95 relative group cursor-pointer text-slate-400 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-600 dark:hover:bg-red-500/20 dark:hover:text-red-400"
+              whileHover="hover"
+              whileTap="tap"
+              className="w-11 h-11 rounded-2xl flex items-center justify-center relative cursor-pointer text-slate-400 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-600 dark:hover:bg-red-500/20 dark:hover:text-red-400 group"
               title="Sign Out"
             >
-              <LogOut size={20} />
-              <span className="absolute left-16 scale-0 group-hover:scale-100 transition-all duration-200 z-50 bg-red-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
+              <motion.div
+                variants={{
+                  hover: { scale: 1.15, x: 2 },
+                  tap: { scale: 0.95 }
+                }}
+                transition={{ type: "spring", stiffness: 450, damping: 12 }}
+              >
+                <LogOut size={20} />
+              </motion.div>
+              <span className="absolute left-16 scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 z-50 bg-red-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
                 Logout
               </span>
-            </button>
+            </motion.button>
           </div>
         </div>
       )}
@@ -493,18 +585,18 @@ export default function Layout({
         initial={false}
         animate={{ 
           width: isSidebarOpen ? (window.innerWidth < 640 ? '100%' : '280px') : '0px',
-          x: isSidebarOpen ? 0 : -50,
+          x: isSidebarOpen ? 0 : -30,
           opacity: isSidebarOpen ? 1 : 0
         }}
-        transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+        transition={{ type: 'spring', damping: 28, stiffness: 240 }}
         className={cn(
-          "fixed top-0 bottom-0 left-0 z-[160] overflow-hidden bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col",
+          "fixed top-0 bottom-0 left-0 z-[160] overflow-hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-r border-slate-200/80 dark:border-slate-800/80 shadow-2xl flex flex-col",
           !isSidebarOpen && "pointer-events-none"
         )}
       >
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div className="p-6 border-b border-slate-100 dark:border-slate-800/60 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-             <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center text-white">
+             <div className="w-8 h-8 rounded-lg bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
                 <LayoutDashboard size={18} />
              </div>
              <div>
@@ -512,50 +604,75 @@ export default function Layout({
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">Navigation Panel</p>
              </div>
           </div>
-          <button 
+          <motion.button 
             onClick={() => setIsSidebarOpen(false)}
-            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 transition-colors"
+            whileHover={{ scale: 1.1, rotate: -90 }}
+            whileTap={{ scale: 0.95 }}
+            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 transition-colors cursor-pointer"
           >
             <ChevronLeft size={20} />
-          </button>
+          </motion.button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-          
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar no-scrollbar">
           {filteredCategories.map((cat) => (
             <div key={cat.id} className="space-y-1">
               <button 
                 onClick={() => toggleCat(cat.id)}
-                className="w-full flex items-center justify-between px-4 py-2 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors group"
+                className="w-full flex items-center justify-between px-4 py-2 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors group cursor-pointer"
               >
                 <span className="text-[9px] font-black uppercase tracking-[0.2em]">{cat.label}</span>
                 <ChevronDown 
                   size={14} 
                   className={cn(
-                    "transition-transform duration-300",
+                    "transition-transform duration-350 ease-out",
                     expandedCats.includes(cat.id) ? "rotate-180" : ""
                   )} 
                 />
               </button>
               
-              <AnimatePresence>
+              <AnimatePresence initial={false}>
                 {expandedCats.includes(cat.id) && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.25, ease: "easeInOut" }}
                     className="overflow-hidden space-y-1 pl-2"
                   >
-                    {cat.items.map((item) => (
-                      <button 
-                        key={item.id}
-                        onClick={() => handleSidebarNav(item.id)}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all font-bold group"
-                      >
-                        <item.icon size={16} className="group-hover:scale-110 transition-transform" />
-                        <span className="text-[10px] uppercase tracking-widest">{item.label}</span>
-                      </button>
-                    ))}
+                    {cat.items.map((item, itemIdx) => {
+                      const isItemActive = activeTab === item.id || 
+                                           (item.id === 'complaints' && activeTab === 'ops') ||
+                                           (item.id === 'settings' && activeTab === 'profile');
+                      
+                      return (
+                        <motion.button 
+                          key={item.id}
+                          onClick={() => handleSidebarNav(item.id)}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: itemIdx * 0.03, type: "spring", stiffness: 280, damping: 20 }}
+                          whileHover={{ x: 4 }}
+                          whileTap={{ scale: 0.98 }}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-bold group relative overflow-hidden cursor-pointer",
+                            isItemActive
+                              ? "bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 font-extrabold"
+                              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900/40 hover:text-slate-800 dark:hover:text-white"
+                          )}
+                        >
+                          <item.icon size={16} className={cn("group-hover:scale-110 transition-transform", isItemActive ? "text-blue-600 dark:text-blue-400" : "text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300")} />
+                          <span className="text-[10px] uppercase tracking-widest">{item.label}</span>
+                          {isItemActive && (
+                            <motion.span 
+                              layoutId="activeDot"
+                              className="absolute right-3 w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400"
+                              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                            />
+                          )}
+                        </motion.button>
+                      );
+                    })}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -563,42 +680,17 @@ export default function Layout({
           ))}
         </div>
 
-        <div className="p-4 mt-auto space-y-4">
+        <div className="p-4 mt-auto space-y-4 shrink-0 border-t border-slate-100 dark:border-slate-850">
           {/* Billing Side Button */}
-          <button
+          <motion.button
             onClick={() => handleSidebarNav('billing')}
-            className="w-full flex items-center justify-center gap-3 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all group"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full flex items-center justify-center gap-3 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-500/20 cursor-pointer group"
           >
             <CreditCard size={16} className="group-hover:rotate-12 transition-transform" />
-            Billing Side
-          </button>
-
-          {/* 4 Bottom Quick Action Icons */}
-          <div className="grid grid-cols-4 gap-2 pb-2">
-            {[
-              { id: 'dashboard', icon: LayoutDashboard, label: 'Dash', color: 'text-blue-500 bg-blue-500/10' },
-              { id: 'chat', icon: MessageSquare, label: 'Chat', color: 'text-emerald-500 bg-emerald-500/10' },
-              { id: 'map', icon: MapIcon, label: 'Map', color: 'text-amber-500 bg-amber-500/10' },
-              { id: 'monitor', icon: Activity, label: 'Service Monitor', color: 'text-purple-500 bg-purple-500/10' }
-            ].map((action) => (
-              <button
-                key={action.id}
-                onClick={() => {
-                  if (action.id === 'chat') setIsChatOpen(true);
-                  else if (action.id === 'map') setIsMapOpen(true);
-                  else if (action.id === 'monitor') setIsMonitorOpen(true);
-                  else handleSidebarNav(action.id === 'dashboard' ? 'complaints' : action.id);
-                }}
-                className={cn(
-                  "flex flex-col items-center justify-center p-2 rounded-xl transition-all hover:scale-110 active:scale-95 group",
-                  action.color
-                )}
-              >
-                <action.icon size={18} className="transition-transform group-hover:rotate-12" />
-                <span className="text-[7px] font-black uppercase tracking-tighter mt-1 opacity-60">{action.label}</span>
-              </button>
-            ))}
-          </div>
+            Billing Mod
+          </motion.button>
 
           <div className="bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm group hover:border-emerald-500/30 transition-all">
              <div className="flex items-center gap-3 mb-3">
@@ -610,15 +702,17 @@ export default function Layout({
                  <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mt-1">Active Session</p>
                </div>
              </div>
-             <button 
+             <motion.button 
                 onClick={() => {
                   if (onLogout) onLogout();
                   setIsSidebarOpen(false);
                 }}
-                className="w-full py-2 bg-slate-900 dark:bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-500/20 transition-all"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full py-2 bg-slate-905 dark:bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer"
              >
                 Sign Out
-             </button>
+             </motion.button>
           </div>
         </div>
       </motion.aside>

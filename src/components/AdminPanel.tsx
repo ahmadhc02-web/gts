@@ -19,7 +19,6 @@ import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import EntrySheet from './EntrySheet';
 import BatchPrintModal from './BatchPrintModal';
-import GmailPanel from './GmailPanel';
 import { extractFirebaseCollections, generateSupabaseMigrationSQL, pushCollectionsToSupabase, getSupabaseClient } from '../lib/supabaseService';
 
 interface AdminPanelProps {
@@ -1303,13 +1302,13 @@ export default function AdminPanel({
                     }}
                     className="grid grid-cols-1 lg:grid-cols-3 gap-6 origin-top"
                   >
-                    <div className="h-[280px] sm:h-[300px] transition-all duration-300">
+                    <div className="h-[350px] sm:h-[380px] transition-all duration-300">
                       <DistributionList complaints={complaints} chartType="area" />
                     </div>
-                    <div className="h-[280px] sm:h-[300px] transition-all duration-300">
+                    <div className="h-[350px] sm:h-[380px] transition-all duration-300">
                       <RealTimeMonitor complaints={complaints} />
                     </div>
-                    <div className="h-[280px] sm:h-[300px] transition-all duration-300">
+                    <div className="h-[350px] sm:h-[380px] transition-all duration-300">
                       <DistributionList complaints={complaints} chartType="category" />
                     </div>
                   </motion.div>
@@ -2245,14 +2244,6 @@ export default function AdminPanel({
               </div>
             </div>
           </div>
-        )}
-
-        {activeTab === 'gmail' && (
-          <GmailPanel
-            currentUser={currentUser}
-            appConfig={appConfig}
-            complaints={complaints}
-          />
         )}
 
         {activeTab === 'settings' && (
