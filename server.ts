@@ -19,6 +19,15 @@ try {
   _dirname = process.cwd();
 }
 
+interface MemoryOTP {
+  username: string;
+  code: string;
+  email: string;
+  expiresAt: number;
+  verified: boolean;
+}
+const localOtpStore = new Map<string, MemoryOTP>();
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -52,11 +61,18 @@ async function startServer() {
         return res.status(400).json({ error: "Access ID (Username) is required." });
       }
 
+      // Load keys dynamically with fallbacks
+      const rawUrl = process.env.SUPABASE_URL;
+      const rawKey = process.env.SUPABASE_ANON_KEY;
+      const rawBrevo = process.env.BREVO_API_KEY;
+
+      const SUPABASE_URL = (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, '') : '') || 'https://jduamzoyllfspdqucncw.supabase.co';
+      const SUPABASE_ANON_KEY = (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, '') : '') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+      const BREVO_API_KEY = (rawBrevo ? rawBrevo.trim().replace(/^['"]|['"]$/g, '').replace(/\s+/g, '') : '') || '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';
+
       // 1. Fetch user from Supabase if possible
       let foundUser: any = null;
       try {
-        const SUPABASE_URL = 'https://jduamzoyllfspdqucncw.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM'; // Using the generic anon key that frontend uses
         const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users?select=*`, {
           headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
         });
@@ -69,16 +85,16 @@ async function startServer() {
       }
 
       const db = await getFirestoreOnServer();
-      if (!db) {
-        return res.status(500).json({ error: "Database not initialized on server." });
-      }
-      const { collection: serverCollection, getDocs: serverGetDocs, doc: serverDoc, setDoc: serverSetDoc } = await import('firebase/firestore');
-
-      if (!foundUser) {
-        const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
-        foundUser = usersSnap.docs
-          .map(d => ({ ...(d.data() as any), id: d.id }))
-          .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+      if (!foundUser && db) {
+        try {
+          const { collection: serverCollection, getDocs: serverGetDocs } = await import('firebase/firestore');
+          const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
+          foundUser = usersSnap.docs
+            .map(d => ({ ...(d.data() as any), id: d.id }))
+            .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+        } catch (fbErr) {
+          console.warn("Server: Firestore fallback search failed:", fbErr);
+        }
       }
 
       if (!foundUser) {
@@ -92,22 +108,39 @@ async function startServer() {
       // 2. Generate a secure 6-digit OTP
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-      // 3. Store the OTP in Firestore
-      const otpRef = serverDoc(db, 'reset_otps', username.trim().toLowerCase());
-      await serverSetDoc(otpRef, {
+      // 3. Store the OTP in memory cache
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+      localOtpStore.set(username.trim().toLowerCase(), {
         username: username.trim().toLowerCase(),
         code: otpCode,
         email: foundUser.email,
-        expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes expiry
+        expiresAt,
         verified: false
       });
 
-      // 4. Send Gmail / Fallback Sim
+      // Also store in Firestore if initialized
+      if (db) {
+        try {
+          const { doc: serverDoc, setDoc: serverSetDoc } = await import('firebase/firestore');
+          const otpRef = serverDoc(db, 'reset_otps', username.trim().toLowerCase());
+          await serverSetDoc(otpRef, {
+            username: username.trim().toLowerCase(),
+            code: otpCode,
+            email: foundUser.email,
+            expiresAt,
+            verified: false
+          });
+          console.log("Server: OTP saved in Firestore cache.");
+        } catch (dbErr) {
+          console.warn("Server: Firestore OTP write failed, using memory cache:", dbErr);
+        }
+      }
+
+      // 4. Send email via Brevo API
       let emailStatus = "simulated";
       let errorDetail = null;
 
-      const tokens = await loadTokensFromFirestore();
-      const appUrl = req.headers.origin || process.env.APP_URL || "https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app";
+      const appUrl = req.headers.origin || process.env.APP_URL || "https://mahmad995-my-wifi-app.hf.space";
       const resetUrl = `${appUrl}/?reset_username=${encodeURIComponent(username.trim())}&reset_code=${otpCode}`;
 
       const subject = "GTS ISP Control Panel - Security Registry Verification Passcode";
@@ -143,13 +176,12 @@ async function startServer() {
         </div>
       `;
 
-      // Method 2: Direct Brevo API (Fetch)
       try {
         const response = await fetch('https://api.brevo.com/v3/smtp/email', {
           method: 'POST',
           headers: {
             'accept': 'application/json',
-            'api-key': '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',
+            'api-key': BREVO_API_KEY,
             'content-type': 'application/json'
           },
           body: JSON.stringify({
@@ -214,20 +246,38 @@ async function startServer() {
         return res.status(400).json({ error: "Access ID and 6-digit verification code are required." });
       }
 
+      const key = username.trim().toLowerCase();
+      let otpData = localOtpStore.get(key);
+
+      // Check Firestore as fallback/additional sync
       const db = await getFirestoreOnServer();
-      if (!db) {
-        return res.status(500).json({ error: "Database not initialized on server." });
+      if (db) {
+        try {
+          const { doc: serverDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
+          const otpRef = serverDoc(db, 'reset_otps', key);
+          const otpSnap = await serverGetDoc(otpRef);
+          if (otpSnap.exists()) {
+            const fbOtp = otpSnap.data();
+            if (!otpData || String(fbOtp.code) === String(code)) {
+              otpData = {
+                username: fbOtp.username,
+                code: fbOtp.code,
+                email: fbOtp.email,
+                expiresAt: fbOtp.expiresAt,
+                verified: fbOtp.verified
+              };
+              localOtpStore.set(key, otpData);
+            }
+          }
+        } catch (dbErr) {
+          console.warn("Server: Firestore fallback check failed during OTP verify:", dbErr);
+        }
       }
-      const { doc: serverDoc, getDoc: serverGetDoc, updateDoc: serverUpdateDoc } = await import('firebase/firestore');
 
-      const otpRef = serverDoc(db, 'reset_otps', username.trim().toLowerCase());
-      const otpSnap = await serverGetDoc(otpRef);
-
-      if (!otpSnap.exists()) {
+      if (!otpData) {
         return res.status(400).json({ error: "No reset session matches this User ID. Please request a new code." });
       }
 
-      const otpData = otpSnap.data();
       if (String(otpData.code).trim() !== String(code).trim()) {
         return res.status(400).json({ error: "Incorrect verification passcode. Please test your checks and retry." });
       }
@@ -236,8 +286,20 @@ async function startServer() {
         return res.status(400).json({ error: "The verification passcode has expired. Please request a new code." });
       }
 
-      // Set verified true
-      await serverUpdateDoc(otpRef, { verified: true });
+      // Mark verified in memory cache
+      otpData.verified = true;
+      localOtpStore.set(key, otpData);
+
+      // Mark verified in Firestore if available
+      if (db) {
+        try {
+          const { doc: serverDoc, updateDoc: serverUpdateDoc } = await import('firebase/firestore');
+          const otpRef = serverDoc(db, 'reset_otps', key);
+          await serverUpdateDoc(otpRef, { verified: true });
+        } catch (dbErr) {
+          console.warn("Server: Firestore OTP verify mark failed:", dbErr);
+        }
+      }
 
       res.json({ status: "ok", message: "Passcode successfully verified. Please establish your new security passcode now." });
     } catch (error: any) {
@@ -257,21 +319,38 @@ async function startServer() {
         return res.status(400).json({ error: "The new passcode must be at least 5 characters long." });
       }
 
+      const key = username.trim().toLowerCase();
+      let otpData = localOtpStore.get(key);
+
+      // Check Firestore as fallback/additional sync
       const db = await getFirestoreOnServer();
-      if (!db) {
-        return res.status(500).json({ error: "Database not initialized on server." });
+      if (db) {
+        try {
+          const { doc: serverDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
+          const otpRef = serverDoc(db, 'reset_otps', key);
+          const otpSnap = await serverGetDoc(otpRef);
+          if (otpSnap.exists()) {
+            const fbOtp = otpSnap.data();
+            if (!otpData || String(fbOtp.code) === String(code)) {
+              otpData = {
+                username: fbOtp.username,
+                code: fbOtp.code,
+                email: fbOtp.email,
+                expiresAt: fbOtp.expiresAt,
+                verified: fbOtp.verified
+              };
+              localOtpStore.set(key, otpData);
+            }
+          }
+        } catch (dbErr) {
+          console.warn("Server: Firestore fallback check failed during Reset:", dbErr);
+        }
       }
-      const { collection: serverCollection, getDocs: serverGetDocs, doc: serverDoc, getDoc: serverGetDoc, updateDoc: serverUpdateDoc, deleteDoc: serverDeleteDoc } = await import('firebase/firestore');
 
-      // 1. Check OTP verification
-      const otpRef = serverDoc(db, 'reset_otps', username.trim().toLowerCase());
-      const otpSnap = await serverGetDoc(otpRef);
-
-      if (!otpSnap.exists()) {
+      if (!otpData) {
         return res.status(400).json({ error: "No active password reset session found for this identity." });
       }
 
-      const otpData = otpSnap.data();
       if (!otpData.verified) {
         return res.status(400).json({ error: "The passcode has not been verified yet." });
       }
@@ -283,10 +362,13 @@ async function startServer() {
       // 2. Locate user and Update in Supabase fallback if exists
       let foundUser: any = null;
       let patchedInSupabase = false;
-      const SUPABASE_URL = 'https://jduamzoyllfspdqucncw.supabase.co';
-      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+
+      const rawUrl = process.env.SUPABASE_URL;
+      const rawKey = process.env.SUPABASE_ANON_KEY;
+      const SUPABASE_URL = (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, '') : '') || 'https://jduamzoyllfspdqucncw.supabase.co';
+      const SUPABASE_ANON_KEY = (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, '') : '') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+
       try {
-        // Try patching Supabase matching the username
         const suPatch = await fetch(`${SUPABASE_URL}/rest/v1/users?username=ilike.${encodeURIComponent(username.trim())}`, {
           method: 'PATCH',
           headers: {
@@ -307,38 +389,47 @@ async function startServer() {
         console.warn("Server: Supabase password patch failed:", suErr);
       }
 
-      const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
-      const fbUser: any = usersSnap.docs
-        .map(d => ({ ...(d.data() as any), id: d.id }))
-        .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
-        
+      // Also try to patch in Firestore if available
+      let fbUser: any = null;
+      if (db) {
+        try {
+          const { collection: serverCollection, getDocs: serverGetDocs, doc: serverDoc, updateDoc: serverUpdateDoc, deleteDoc: serverDeleteDoc } = await import('firebase/firestore');
+          const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
+          fbUser = usersSnap.docs
+            .map(d => ({ ...(d.data() as any), id: d.id }))
+            .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+
+          if (fbUser) {
+            const userRef = serverDoc(db, 'users', fbUser.id);
+            await serverUpdateDoc(userRef, { password: newPassword });
+            console.log("Server: Passcode updated in Firestore as well.");
+          }
+
+          // Create Notification for security audit in Firestore
+          const notifRef = serverDoc(serverCollection(db, 'notifications'));
+          const { setDoc: serverSetDoc } = await import('firebase/firestore');
+          await serverSetDoc(notifRef, {
+            type: 'user_updated',
+            message: `Security protocols updated: Passcode reset successfully finalized for user: ${username}`,
+            authorName: 'System Core Dispatcher',
+            dealerId: (fbUser && fbUser.dealerId) || 'main',
+            createdAt: Date.now()
+          });
+
+          // Clean up OTP session in Firestore
+          const otpRef = serverDoc(db, 'reset_otps', key);
+          await serverDeleteDoc(otpRef);
+        } catch (dbErr) {
+          console.warn("Server: Firestore write/update failed during reset:", dbErr);
+        }
+      }
+
       if (!foundUser && !fbUser) {
         return res.status(404).json({ error: "User record matching description no longer exists." });
       }
 
-      if (!foundUser && fbUser) {
-        foundUser = fbUser;
-      }
-
-      // 3. Update password in Firestore as well for sync!
-      if (fbUser) {
-        const userRef = serverDoc(db, 'users', fbUser.id);
-        await serverUpdateDoc(userRef, { password: newPassword });
-      }
-
-      // --- Create Notification for security audit in Firestore ---
-      const notifRef = serverDoc(serverCollection(db, 'notifications'));
-      const { setDoc: serverSetDoc } = await import('firebase/firestore');
-      await serverSetDoc(notifRef, {
-        type: 'user_updated',
-        message: `Security protocols updated: Passcode reset successfully finalized for user: ${foundUser.username}`,
-        authorName: 'System Core Dispatcher',
-        dealerId: foundUser.dealerId || 'main',
-        createdAt: Date.now()
-      });
-
-      // 4. Clean up the OTP session
-      await serverDeleteDoc(otpRef);
+      // Clean memory store
+      localOtpStore.delete(key);
 
       res.json({ status: "ok", message: "Passcode updated successfully! You can now log in." });
     } catch (error: any) {
@@ -802,8 +893,11 @@ System instructions:
 
   async function loadTokensFromFirestore() {
     try {
-      const SUPABASE_URL = 'https://jduamzoyllfspdqucncw.supabase.co';
-      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+      const rawUrl = process.env.SUPABASE_URL;
+      const rawKey = process.env.SUPABASE_ANON_KEY;
+      const SUPABASE_URL = (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, '') : '') || 'https://jduamzoyllfspdqucncw.supabase.co';
+      const SUPABASE_ANON_KEY = (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, '') : '') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+
       try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/branding_config?id=eq.google_sheets&select=dashboard_subtext`, {
           headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
