@@ -4075,8 +4075,15 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Connection Date */}
-                                <td className="py-2.5 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center font-mono text-[10px] text-slate-400 select-none">
-                                  {rowRef.connectionDate}
+                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center font-mono text-[10px]">
+                                  <input
+                                    type="text"
+                                    defaultValue={rowRef.connectionDate}
+                                    disabled={!isBillingUnlocked}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
+                                    className="w-full text-center bg-transparent px-1.5 py-0.5 border-none rounded text-slate-500 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
+                                    placeholder="MM/DD/YY"
+                                  />
                                 </td>
 
                                 {/* Device Price */}
