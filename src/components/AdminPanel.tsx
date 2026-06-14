@@ -406,14 +406,16 @@ export default function AdminPanel({
   const [billingSearchQuery, setBillingSearchQuery] = useState('');
   const [billingStatusFilter, setBillingStatusFilter] = useState<string>('all');
   const [billingAreaFilter, setBillingAreaFilter] = useState<string>('all');
+  const [isAdvanceMode, setIsAdvanceMode] = useState(false);
+  const [billingPage, setBillingPage] = useState(1);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
   const [isBatchPrintOpen, setIsBatchPrintOpen] = useState(false);
 
   // --- Spreadsheet loading optimization states ---
-  const [isSheetLoaded, setIsSheetLoaded] = useState(false);
+  const [isSheetLoaded, setIsSheetLoaded] = useState(true);
   const [isSheetLoading, setIsSheetLoading] = useState(false);
-  const [sheetLoadingProgress, setSheetLoadingProgress] = useState(0);
+  const [sheetLoadingProgress, setSheetLoadingProgress] = useState(100);
 
   const startSheetLoading = () => {
     setIsSheetLoading(true);
@@ -1395,6 +1397,23 @@ export default function AdminPanel({
       return matchesSearch && matchesStatus && matchesArea;
     });
   }, [activeRows, billingSearchQuery, billingStatusFilter, billingAreaFilter]);
+
+  useEffect(() => {
+    setBillingPage(1);
+  }, [billingSearchQuery, billingStatusFilter, billingAreaFilter]);
+
+  const itemsPerPage = 50;
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredRows.length / itemsPerPage) || 1;
+  }, [filteredRows]);
+
+  const currentPage = useMemo(() => {
+    return Math.min(billingPage, totalPages);
+  }, [billingPage, totalPages]);
+
+  const paginatedRows = useMemo(() => {
+    return filteredRows.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  }, [filteredRows, currentPage]);
 
   const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalPending, recoveryRate } = useMemo(() => {
     const expected = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0);
@@ -3727,15 +3746,21 @@ export default function AdminPanel({
                     <h4 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-2 flex-wrap">
                       <Layers size={16} className="text-blue-500" />
                       Recovery Rows ({filteredRows.length} listed)
-                      {isSheetLoaded && (
-                        <button
-                          onClick={() => setIsSheetLoaded(false)}
-                          className="ml-2 text-[8.5px] font-black uppercase tracking-wider text-rose-500 hover:text-rose-600 px-2 py-0.5 rounded-md bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 cursor-pointer transition-all inline-flex items-center gap-1 shrink-0"
-                          title="Click to release sheet and free memory for ultimate speed"
-                        >
-                          🔒 Standby Mode
-                        </button>
-                      )}
+                      
+                      {/* Advance mode toggle */}
+                      <button
+                        onClick={() => setIsAdvanceMode(!isAdvanceMode)}
+                        className={cn(
+                          "ml-2 text-[9px] font-black uppercase tracking-wider px-3 py-1 rounded-xl cursor-pointer transition-all duration-300 inline-flex items-center gap-1.5 shrink-0 border",
+                          isAdvanceMode
+                            ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-blue-500 shadow-md shadow-blue-500/15"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-800"
+                        )}
+                        title="Toggle to show/hide extra columns"
+                      >
+                        <Zap size={11} className={cn(isAdvanceMode ? "text-amber-400 fill-amber-400" : "text-slate-400")} />
+                        <span>{isAdvanceMode ? "★ ADVANCE ON" : "⚡ ADVANCE BUTTON"}</span>
+                      </button>
                     </h4>
 
                     {/* Filters block */}
@@ -3777,69 +3802,11 @@ export default function AdminPanel({
                   </div>
 
                   {/* Absolute Google Sheets Spreadsheet Emulator Layout (Horizontal Scroll single row grid) */}
-                  {!isSheetLoaded ? (
-                    <div className="border border-dashed border-blue-500/30 rounded-2xl bg-slate-50/50 dark:bg-slate-900/10 p-8 text-center flex flex-col items-center justify-center min-h-[220px] relative overflow-hidden shadow-inner w-full">
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-blue-500/5 rounded-full blur-2xl pointer-events-none" />
-                      
-                      {isSheetLoading ? (
-                        <div className="space-y-4 max-w-md w-full relative z-10 p-4">
-                          <div className="flex justify-between items-center text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            <span className="flex items-center gap-1.5 font-sans font-extrabold text-blue-500">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
-                              Initializing Smooth Grid DOM...
-                            </span>
-                            <span className="font-mono text-blue-500">{sheetLoadingProgress}%</span>
-                          </div>
-                          
-                          {/* Progress bar line */}
-                          <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner font-sans">
-                            <div 
-                              className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500 rounded-full transition-all duration-75"
-                              style={{ width: `${sheetLoadingProgress}%` }}
-                            />
-                          </div>
-                          <p className="text-[9px] uppercase font-bold text-slate-400 tracking-widest text-center animate-pulse">
-                            {sheetLoadingProgress < 30 ? "⚡ Locking background processes..." :
-                             sheetLoadingProgress < 65 ? "💾 Compiling memory structures..." :
-                             sheetLoadingProgress < 90 ? "🚀 Mapping reactive user matrices..." :
-                             "✨ Finalizing lag-free render..."}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4 max-w-xl relative z-10">
-                          <div className="flex flex-col items-center gap-2">
-                            <span className="text-[9px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-600 px-2.5 py-1 rounded-full border border-emerald-500/10 animate-pulse">
-                              🚀 High Performance standby active
-                            </span>
-                          </div>
-                          <div className="space-y-1">
-                            <h5 className="text-xs font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center justify-center gap-1.5 font-sans">
-                              <Layers size={14} className="text-blue-500 animate-pulse" />
-                              Recovery Rows Spreadsheet Locked for speed
-                            </h5>
-                            <p className="text-[10px] text-slate-400 leading-relaxed font-bold max-w-sm mx-auto uppercase">
-                              Click below to initialize and render the reactive {filteredRows.length} billing registers instantly with 100% smooth scrolling.
-                            </p>
-                          </div>
-                          
-                          <motion.button
-                            whileHover={{ scale: 1.02, y: -1 }}
-                            whileTap={{ scale: 0.98 }}
-                            onClick={startSheetLoading}
-                            className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-md shadow-blue-500/15 flex items-center gap-2 mx-auto cursor-pointer border border-blue-400/20"
-                          >
-                            <Layers size={12} />
-                            <span>Load Live Recovery spreadsheet ({filteredRows.length} rows)</span>
-                          </motion.button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 overflow-hidden shadow-inner">
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 overflow-hidden shadow-inner">
                     <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-left text-xs text-slate-700 dark:text-slate-300">
+                      <table id="billing-spreadsheet-table" className="w-full border-collapse text-left text-xs text-slate-950 dark:text-slate-100">
                         <thead>
-                          <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 font-black uppercase text-[10px] tracking-wider text-slate-600 dark:text-slate-400 font-sans select-none whitespace-nowrap">
+                          <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px] tracking-wider text-slate-950 dark:text-slate-100 font-sans select-none whitespace-nowrap">
                             <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[50px] text-center">Sr#</th>
                             <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[200px]">NAME (EDIT)</th>
                             <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[140px]">USER ID (PPPoE)</th>
@@ -3852,19 +3819,23 @@ export default function AdminPanel({
                             <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-center">BD</th>
                             <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px] text-right bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600">RECOVERY</th>
                             <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px] text-center">STATUS</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[240px]">COMMENTS</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px]">OCCUPATION</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[140px]">SER NAM</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px]">PKG DETAILS</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px] text-center">DATE</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[100px] text-right">DEVICE</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[100px] text-right">ABL</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px]">NETWORK</th>
-                            <th className="py-3 px-3 text-center min-w-[60px]">ACT</th>
+                            {isAdvanceMode && (
+                              <>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[240px]">COMMENTS</th>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px]">OCCUPATION</th>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[140px]">SER NAM</th>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px]">PKG DETAILS</th>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px] text-center">DATE</th>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[100px] text-right">DEVICE</th>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[100px] text-right">ABL</th>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px]">NETWORK</th>
+                                <th className="py-3 px-3 text-center min-w-[60px]">ACT</th>
+                              </>
+                            )}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono text-[11px] font-bold">
-                          {filteredRows.map((rowRef, localIdx) => {
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[12px] font-black text-slate-950 dark:text-zinc-50">
+                          {paginatedRows.map((rowRef, localIdx) => {
                             // Find corresponding absolute row index in full month rows array
                             const globalRowIdx = activeRows.findIndex((r: any) => r.clientId === rowRef.clientId || r.username === rowRef.username);
                             if (globalRowIdx === -1) return null;
@@ -3884,41 +3855,41 @@ export default function AdminPanel({
                                 )}
                               >
                                 {/* Sr */}
-                                <td className="py-2.5 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center text-slate-400 font-mono text-[10px]">
+                                <td className="py-2.5 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center text-black dark:text-white font-sans text-xs font-black">
                                   {globalRowIdx + 1}
                                 </td>
 
                                 {/* Name */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans text-xs font-bold font-semibold">
+                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans text-xs font-black">
                                   <input
                                     type="text"
                                     defaultValue={rowRef.name}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-xs focus:ring-1 focus:ring-blue-500/30 text-slate-900 dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-xs focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                     placeholder="Enter full name"
                                   />
                                 </td>
 
                                 {/* User ID / Username */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-slate-500">
+                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans text-xs font-black text-black dark:text-white">
                                   <input
                                     type="text"
                                     defaultValue={rowRef.username}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-slate-500 dark:text-slate-400 font-mono hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
                                 {/* Mobile */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-mono">
+                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans text-xs font-black text-black dark:text-white">
                                   <input
                                     type="text"
                                     defaultValue={rowRef.mobileNumber}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-slate-800 dark:text-slate-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
@@ -3929,40 +3900,40 @@ export default function AdminPanel({
                                     defaultValue={rowRef.area}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
-                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-bold uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
                                 {/* RT */}
-                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-center">
+                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans">
                                   <input
                                     type="text"
                                     defaultValue={rowRef.rt}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
-                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-bold uppercase tracking-wider text-blue-500 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-blue-900 dark:disabled:text-blue-300 disabled:opacity-100"
                                   />
                                 </td>
 
                                 {/* Base Amount */}
-                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-right">
-                                  <div className="flex items-center justify-end">
-                                    <span className="text-slate-400 mr-0.5">PKR</span>
+                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
+                                  <div className="flex items-center justify-end font-black text-black">
+                                    <span className="text-black dark:text-zinc-200 mr-0.5 font-black">PKR</span>
                                     <input
                                       type="number"
                                       key={`${rowRef.clientId || rowRef.username}-baseAmount-${rowRef.baseAmount}`}
                                       defaultValue={rowRef.baseAmount}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0)}
-                                      className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-mono text-slate-800 dark:text-slate-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                   </div>
                                 </td>
 
                                 {/* Cr. Arrears */}
-                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-right font-mono">
+                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
                                   <div className="flex items-center justify-end">
-                                    <span className={cn("mr-0.5", outstandingCr > 0 ? "text-rose-500" : "text-slate-400")}>PKR</span>
+                                    <span className={cn("mr-0.5 font-black", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
                                     <input
                                       type="number"
                                       key={`${rowRef.clientId || rowRef.username}-cr-${rowRef.cr}`}
@@ -3970,56 +3941,56 @@ export default function AdminPanel({
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
                                       className={cn(
-                                        "w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-mono hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                                        outstandingCr > 0 && "text-rose-600 dark:text-rose-500 font-bold"
+                                        "w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                        outstandingCr > 0 ? "text-rose-750 dark:text-rose-450 font-black disabled:text-rose-750 dark:disabled:text-rose-450 disabled:opacity-100" : "text-black dark:text-white font-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       )}
                                     />
                                   </div>
                                 </td>
 
                                 {/* Total Amount */}
-                                <td className="py-2.5 px-4 border-r border-slate-200 dark:border-slate-800/80 text-right text-slate-900 dark:text-slate-200 bg-slate-100/30 dark:bg-slate-900/30 select-none">
+                                <td className="py-2.5 px-4 border-r border-slate-200 dark:border-slate-800/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-xs font-sans">
                                   PKR {(rowRef.totalAmount || 0).toLocaleString()}
                                 </td>
 
                                 {/* BD (Billing Day) */}
-                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-center select-all">
+                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-center select-all font-sans">
                                   <input
                                     type="text"
                                     defaultValue={rowRef.billingDay}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
-                                    className="w-10 text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-mono hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
+                                    className="w-10 text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
                                 {/* Monthly Paid Recovery */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800 bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-600 font-bold">
+                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800 bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
                                   <div className="flex items-center justify-end">
-                                    <span className="text-emerald-500/70 mr-0.5">PKR</span>
+                                    <span className="text-emerald-900 dark:text-emerald-400 mr-0.5 font-black">PKR</span>
                                     <input
                                       type="number"
                                       key={`${rowRef.clientId || rowRef.username}-paymentReceived-${rowRef.paymentReceived}`}
                                       defaultValue={rowRef.paymentReceived}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}
-                                      className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-mono font-bold text-emerald-600 dark:text-emerald-400 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans font-black text-emerald-950 dark:text-emerald-100 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-emerald-950 dark:disabled:text-emerald-100 disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                   </div>
                                 </td>
 
                                 {/* Status */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center">
+                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans">
                                   <select
                                     value={rowRef.paymentStatus}
                                     disabled={!isBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value)}
                                     className={cn(
-                                      "px-2.5 py-1 text-[10px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full bg-slate-100 dark:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed",
-                                      isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 border-emerald-200 dark:border-emerald-900/30",
-                                      isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-600 border-amber-200 dark:border-amber-900/30",
-                                      isUnpaid && "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700",
-                                      isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-600 border-rose-200 dark:border-rose-900/50"
+                                      "px-2.5 py-1 text-[10px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full bg-slate-100 dark:bg-slate-900 disabled:opacity-100 disabled:cursor-not-allowed font-sans",
+                                      isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
+                                      isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30 font-black",
+                                      isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600 font-black",
+                                      isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black"
                                     )}
                                   >
                                     <option value="unpaid">UNPAID</option>
@@ -4029,147 +4000,217 @@ export default function AdminPanel({
                                   </select>
                                 </td>
 
-                                {/* Comments */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans font-medium">
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.comments}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-[11px] focus:ring-1 focus:ring-blue-500/30 text-slate-600 dark:text-slate-400 font-bold hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
-                                    placeholder="Add comment..."
-                                  />
-                                </td>
+                                {/* Comments & other advance columns */}
+                                {isAdvanceMode && (
+                                  <>
+                                    {/* Comments */}
+                                    <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans">
+                                      <input
+                                        type="text"
+                                        defaultValue={rowRef.comments}
+                                        disabled={!isBillingUnlocked}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-[11px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        placeholder="Add comment..."
+                                      />
+                                    </td>
 
-                                {/* Occupation */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans">
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.occ}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-slate-500 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
-                                  />
-                                </td>
+                                    {/* Occupation */}
+                                    <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans">
+                                      <input
+                                        type="text"
+                                        defaultValue={rowRef.occ}
+                                        disabled={!isBillingUnlocked}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                      />
+                                    </td>
 
-                                {/* Serial / PPPoE Username */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-slate-500 font-mono text-[10px]">
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.serNam}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-mono hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
-                                  />
-                                </td>
+                                    {/* Serial / PPPoE Username */}
+                                    <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[10px]">
+                                      <input
+                                        type="text"
+                                        defaultValue={rowRef.serNam}
+                                        disabled={!isBillingUnlocked}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value)}
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                      />
+                                    </td>
 
-                                {/* PKG details */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-blue-600 font-black">
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.pkgDetails}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
-                                  />
-                                </td>
+                                    {/* PKG details */}
+                                    <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-blue-900 dark:text-blue-250 font-black font-sans">
+                                      <input
+                                        type="text"
+                                        defaultValue={rowRef.pkgDetails}
+                                        disabled={!isBillingUnlocked}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-250 font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-blue-900 dark:disabled:text-blue-250 disabled:opacity-100"
+                                      />
+                                    </td>
 
-                                {/* Connection Date */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center font-mono text-[10px]">
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.connectionDate}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
-                                    className="w-full text-center bg-transparent px-1.5 py-0.5 border-none rounded text-slate-500 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
-                                    placeholder="MM/DD/YY"
-                                  />
-                                </td>
+                                    {/* Connection Date */}
+                                    <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans text-[10px]">
+                                      <input
+                                        type="text"
+                                        defaultValue={rowRef.connectionDate}
+                                        disabled={!isBillingUnlocked}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
+                                        className="w-full text-center bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        placeholder="MM/DD/YY"
+                                      />
+                                    </td>
 
-                                {/* Device Price */}
-                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-right">
-                                  <input
-                                    type="number"
-                                    defaultValue={rowRef.devicePrice}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0)}
-                                    className="w-14 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-mono hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  />
-                                </td>
+                                    {/* Device Price */}
+                                    <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
+                                      <input
+                                        type="number"
+                                        defaultValue={rowRef.devicePrice}
+                                        disabled={!isBillingUnlocked}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0)}
+                                        className="w-14 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                    </td>
 
-                                {/* ABL charges */}
-                                <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-right">
-                                  <input
-                                    type="number"
-                                    defaultValue={rowRef.abl}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0)}
-                                    className="w-14 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-mono hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  />
-                                </td>
+                                    {/* ABL charges */}
+                                    <td className="py-2 px-2 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
+                                      <input
+                                        type="number"
+                                        defaultValue={rowRef.abl}
+                                        disabled={!isBillingUnlocked}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0)}
+                                        className="w-14 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                    </td>
 
-                                {/* Network name */}
-                                <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[10px]">
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.network}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-slate-400 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-slate-400"
-                                  />
-                                </td>
+                                    {/* Network name */}
+                                    <td className="py-2 px-3 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[10px]">
+                                      <input
+                                        type="text"
+                                        defaultValue={rowRef.network}
+                                        disabled={!isBillingUnlocked}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value)}
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                      />
+                                    </td>
 
-                                {/* Actions */}
-                                <td className="py-2 px-2 text-center">
-                                  <button
-                                    type="button"
-                                    disabled={!isBillingUnlocked}
-                                    onClick={() => handleDeleteBillingRow(globalRowIdx)}
-                                    className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-450 disabled:hover:bg-transparent"
-                                    title={isBillingUnlocked ? "Exclude row from current month's sheet" : "Unlock billing sheet to discard registers"}
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                </td>
+                                    {/* Actions */}
+                                    <td className="py-2 px-2 text-center font-sans">
+                                      <button
+                                        type="button"
+                                        disabled={!isBillingUnlocked}
+                                        onClick={() => handleDeleteBillingRow(globalRowIdx)}
+                                        className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                                        title={isBillingUnlocked ? "Exclude row from current month's sheet" : "Unlock billing sheet to discard registers"}
+                                      >
+                                        <X size={12} />
+                                      </button>
+                                    </td>
+                                  </>
+                                )}
                               </tr>
                             );
                           })}
 
                           {filteredRows.length === 0 && (
                             <tr>
-                              <td colSpan={21} className="py-12 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900">
+                              <td colSpan={isAdvanceMode ? 21 : 12} className="py-12 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900">
                                 No billing records aligned with search filters.
                               </td>
                             </tr>
                           )}
                         </tbody>
                         <tfoot className="sticky bottom-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] border-t-2 border-slate-300 dark:border-slate-700">
-                          <tr className="font-black uppercase text-[11px] tracking-wider text-slate-800 dark:text-slate-200">
-                            <td colSpan={6} className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right">
+                          <tr className="font-sans font-black uppercase text-[11px] tracking-wider text-black dark:text-white">
+                            <td colSpan={6} className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-black dark:text-white">
                               SHEET TOTALS (FILTERED): 
                             </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-mono bg-slate-50 dark:bg-slate-950/30">
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black bg-slate-50 dark:bg-slate-950/30 text-black dark:text-white">
                               {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.baseAmount) || 0), 0)).toLocaleString()}
                             </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-mono text-rose-600 dark:text-rose-400 bg-slate-50 dark:bg-slate-950/30">
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-rose-700 dark:text-rose-400 bg-slate-50 dark:bg-slate-950/30">
                               {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.cr) || 0), 0)).toLocaleString()}
                             </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-mono bg-slate-200/50 dark:bg-slate-800/50">
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
                               PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.totalAmount) || 0), 0)).toLocaleString()}
                             </td>
                             <td className="py-4 px-3 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-950/30"></td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-mono text-lg text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 shadow-inner">
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
                               PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.paymentReceived) || 0), 0)).toLocaleString()}
                             </td>
-                            <td colSpan={10} className="py-4 px-4 border-slate-200/50 dark:border-slate-800/50 text-left font-sans text-[10px] text-slate-500 dark:text-slate-500 uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
+                            <td colSpan={isAdvanceMode ? 10 : 1} className="py-4 px-4 border-slate-200/50 dark:border-slate-800/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
                               (Cumulative total of {filteredRows.length} shown rows)
                             </td>
                           </tr>
                         </tfoot>
                       </table>
                     </div>
+
+                    {/* Premium Pagination controls */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 sm:px-6 select-none flex-wrap gap-3">
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider">
+                          Showing <span className="text-slate-600 dark:text-slate-400 font-sans">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="text-slate-600 dark:text-slate-400 font-sans">{Math.min(currentPage * itemsPerPage, filteredRows.length)}</span> of <span className="text-slate-600 dark:text-slate-400 font-sans">{filteredRows.length}</span> rows
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={currentPage === 1}
+                            onClick={() => {
+                              setBillingPage(1);
+                              const tbl = document.getElementById('billing-spreadsheet-table');
+                              if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }}
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            title="First Page"
+                          >
+                            « First
+                          </button>
+                          <button
+                            type="button"
+                            disabled={currentPage === 1}
+                            onClick={() => {
+                              setBillingPage(prev => Math.max(prev - 1, 1));
+                              const tbl = document.getElementById('billing-spreadsheet-table');
+                              if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }}
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                          >
+                            ◀ Prev
+                          </button>
+                          
+                          <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-900/30 font-mono">
+                            Page {currentPage} of {totalPages}
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={currentPage === totalPages}
+                            onClick={() => {
+                              setBillingPage(prev => Math.min(prev + 1, totalPages));
+                              const tbl = document.getElementById('billing-spreadsheet-table');
+                              if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }}
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                          >
+                            Next ▶
+                          </button>
+                          <button
+                            type="button"
+                            disabled={currentPage === totalPages}
+                            onClick={() => {
+                              setBillingPage(totalPages);
+                              const tbl = document.getElementById('billing-spreadsheet-table');
+                              if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }}
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            title="Last Page"
+                          >
+                            Last »
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  )}
 
                   <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200/60 dark:border-slate-850">
                     <div>

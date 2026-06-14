@@ -887,25 +887,24 @@ export default function Layout({
               className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[150]"
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, x: 100, y: -100, filter: 'blur(20px)', rotate: 5 }}
+              initial={{ opacity: 0, scale: 0.9, x: 100, y: 100, filter: 'blur(20px)', rotate: -5 }}
               animate={{ opacity: 1, scale: 1, x: 0, y: 0, filter: 'blur(0px)', rotate: 0 }}
               exit={{ 
                 opacity: 0, 
-                scale: 0.8, 
-                x: 400, 
-                y: -200, 
-                rotate: 15, 
-                skewX: 40, 
-                filter: 'blur(50px)',
-                transition: { duration: 1, ease: [0.4, 0, 0.2, 1] }
+                scale: 0.82, 
+                x: 300, 
+                y: 150, 
+                rotate: -10, 
+                filter: 'blur(40px)',
+                transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] }
               }}
               transition={{ 
                 type: "spring",
-                damping: 25,
-                stiffness: 200,
+                damping: 26,
+                stiffness: 220,
                 duration: 0.2
               }}
-              className="fixed top-20 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] bg-white dark:bg-slate-950 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-[0_20px_60px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.4)] z-[200] overflow-hidden flex flex-col"
+              className="fixed bottom-20 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-[0_20px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden flex flex-col"
             >
               <div className="p-6 border-b border-slate-100 dark:border-slate-800/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
                 <div className="flex items-center gap-3">
@@ -963,7 +962,14 @@ export default function Layout({
                         setSelectedNotif(notif);
                         setIsNotificationsOpen(false);
                       }}
-                      className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-900/20 hover:bg-white dark:hover:bg-slate-900 transition-all group cursor-pointer"
+                      className={`p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-900/20 hover:bg-white dark:hover:bg-slate-900 transition-all duration-300 group cursor-pointer border-l-4 ${
+                        notif.type === 'complaint_created' ? 'border-l-emerald-500' :
+                        notif.type === 'complaint_updated' ? 'border-l-blue-500' :
+                        notif.type === 'complaint_deleted' ? 'border-l-rose-500' :
+                        notif.type === 'user_created' ? 'border-l-brand-accent' :
+                        notif.type === 'config_updated' ? 'border-l-amber-500' :
+                        'border-l-slate-400'
+                      } shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] dark:hover:shadow-none hover:-translate-y-0.5`}
                     >
                       <div className="flex gap-4 items-start">
                         <div className="mt-1">

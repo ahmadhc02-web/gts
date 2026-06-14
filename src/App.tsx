@@ -94,11 +94,25 @@ export default function App() {
     }
   });
   const [activeTab, setActiveTab] = useState<string>('complaints');
-  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [complaints, setComplaints] = useState<Complaint[]>(() => {
+    try {
+      const cached = localStorage.getItem('gts_cache_v3_complaints');
+      return cached ? JSON.parse(cached) : [];
+    } catch (_) {
+      return [];
+    }
+  });
   const processedComplaints = useMemo(() => {
     return processScheduledComplaints(complaints);
   }, [complaints]);
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>(() => {
+    try {
+      const cached = localStorage.getItem('gts_cache_v3_users');
+      return cached ? JSON.parse(cached) : [];
+    } catch (_) {
+      return [];
+    }
+  });
   const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({
@@ -580,10 +594,10 @@ export default function App() {
         console.error("Initialization error:", err instanceof Error ? err.message : String(err));
         setError("System initialization failed. Some data may be temporarily unavailable.");
       } finally {
-        // Minimum loading time for a "proper" branded experience
+        // High-performance loading optimization
         setTimeout(() => {
           setIsLoading(false);
-        }, 3000);
+        }, 100);
       }
     };
 
@@ -1638,7 +1652,25 @@ export default function App() {
 
   return (
     <>
-      <Toaster position="top-right" richColors />
+      <Toaster 
+        position="bottom-right" 
+        theme="system"
+        expand={true}
+        maxToasts={5}
+        toastOptions={{
+          classNames: {
+            toast: 'group toast !bg-white/95 dark:!bg-slate-900/95 !backdrop-blur-xl !border !border-slate-200/60 dark:!border-slate-800/80 !shadow-2xl dark:!shadow-neutral-950/70 !rounded-2xl !p-4 !font-sans !transition-all !duration-300 hover:!scale-[1.02] active:!scale-[0.98]',
+            title: '!text-xs sm:!text-sm !font-black !tracking-tight !text-slate-900 dark:!text-slate-50',
+            description: '!text-[10px] sm:!text-xs !font-bold !text-slate-500 dark:!text-slate-400 !leading-relaxed !mt-1',
+            actionButton: '!bg-slate-900 dark:!bg-brand-accent !text-white !font-bold !text-[10px] sm:!text-xs !rounded-xl !px-3 !py-1.5 hover:!opacity-95 transition-opacity',
+            cancelButton: '!bg-slate-100 dark:!bg-slate-800 !text-slate-600 dark:!text-slate-300 !font-bold !text-[10px] sm:!text-xs !rounded-xl !px-3 !py-1.5 hover:!bg-slate-200 dark:hover:!bg-slate-700 transition-colors',
+            success: '!border-emerald-500/30 dark:!border-emerald-500/40 !bg-gradient-to-r !from-emerald-500/[0.04] !to-transparent',
+            error: '!border-rose-500/30 dark:!border-rose-500/40 !bg-gradient-to-r !from-rose-500/[0.04] !to-transparent',
+            info: '!border-blue-500/30 dark:!border-blue-500/40 !bg-gradient-to-r !from-blue-500/[0.04] !to-transparent',
+            warning: '!border-amber-500/30 dark:!border-amber-500/40 !bg-gradient-to-r !from-amber-500/[0.04] !to-transparent',
+          }
+        }}
+      />
       <AnimatePresence>
         {showWelcome && user && (
           <WelcomeOverlay 

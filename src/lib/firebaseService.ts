@@ -216,13 +216,28 @@ function fromDb(table: string, obj: any): any {
   return result;
 }
 
-// Global subscription query listener
+// Global subscription query listener with instant cache-first fallback for premium panel speed
 function subscribeTable(
   tableName: string,
   queryBuilder: (query: any) => any,
   callback: (data: any[]) => void,
   mapRow: (row: any) => any = (row) => row
 ) {
+  const cacheKey = `gts_cache_v3_${tableName}`;
+  
+  // Try to deliver cached data immediately & synchronously to avoid loading screens completely
+  try {
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData) {
+      const parsed = JSON.parse(cachedData);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        callback(parsed);
+      }
+    }
+  } catch (e) {
+    console.warn(`[Cache] Synchronous load failed for ${tableName}:`, e);
+  }
+
   const fetchAndCallback = async () => {
     try {
       let q = supabase.from(tableName).select('*');
@@ -232,7 +247,16 @@ function subscribeTable(
         console.error(`Error loading table ${tableName}:`, error);
         return;
       }
-      callback((data || []).map(mapRow));
+      const mapped = (data || []).map(mapRow);
+      
+      // Update our high-speed local cache with fresh data
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(mapped));
+      } catch (e) {
+        console.warn(`[Cache] Failed updating cache for ${tableName}:`, e);
+      }
+
+      callback(mapped);
     } catch (err) {
       console.error(`Exception during query loading on ${tableName}:`, err);
     }

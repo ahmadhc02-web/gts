@@ -271,7 +271,7 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
       }
     };
 
-    const timer = setTimeout(checkUser, 800); 
+    const timer = setTimeout(checkUser, 350); 
     return () => clearTimeout(timer);
   }, [username]);
 

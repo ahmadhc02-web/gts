@@ -34,18 +34,18 @@ export default function WelcomeOverlay({
   }, []);
 
   useEffect(() => {
-    // Sequence the terminal log steps beautifully
-    const stepIntervals = [600, 1300, 2000, 2700];
+    // Sequence the terminal log steps beautifully and quickly
+    const stepIntervals = [200, 400, 600, 800];
     const timers = stepIntervals.map((delay, index) => {
       return setTimeout(() => {
         setCurrentStep(index + 1);
       }, delay);
     });
 
-    // Final callback to exit the welcoming overlay
+    // Final callback to exit the welcoming overlay quickly (total 1 second transition)
     const completeTimer = setTimeout(() => {
       onComplete();
-    }, 3400);
+    }, 1000);
 
     return () => {
       timers.forEach(clearTimeout);

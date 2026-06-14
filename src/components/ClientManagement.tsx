@@ -17,8 +17,24 @@ interface ClientManagementProps {
 }
 
 export default function ClientManagement({ appConfig, isAdmin, currentUser, currentUserName, isBillingUnlocked }: ClientManagementProps) {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [clients, setClients] = useState<Client[]>(() => {
+    try {
+      const cached = localStorage.getItem('gts_cache_v3_clients');
+      return cached ? JSON.parse(cached) : [];
+    } catch (_) {
+      return [];
+    }
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem('gts_cache_v3_clients');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        return !(Array.isArray(parsed) && parsed.length > 0);
+      }
+    } catch (_) {}
+    return true;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArea, setSelectedArea] = useState<string>('all');
   
