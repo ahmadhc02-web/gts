@@ -39,7 +39,7 @@ export const DEFAULT_BRANDING = {
   projectName: "Green Tech Services",
   accentColor: "#3b82f6",
   themeColor: "#0f172a",
-  fontFamily: "Inter, sans-serif",
+  fontFamily: "Lexend, sans-serif",
   mascotPos: { x: 4, y: 88 },
   chatWelcomeMsg: "Welcome to the Tactical Response Hub. How can I assist you today?",
   dashboardSubtext: "GTS Tactical Command & Response Matrix",

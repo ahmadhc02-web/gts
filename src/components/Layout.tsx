@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { UserProfile, Notification, BrandingConfig } from '../types';
@@ -35,6 +35,7 @@ interface LayoutProps {
   onUpdateBranding?: (newBranding: BrandingConfig) => Promise<void>;
   activeTab?: string;
   onNavigate?: (id: string) => void;
+  isPreview?: boolean;
 }
 
 export default function Layout({ 
@@ -56,7 +57,8 @@ export default function Layout({
   branding,
   onUpdateBranding,
   activeTab: activeTabProp,
-  onNavigate: onNavigateProp
+  onNavigate: onNavigateProp,
+  isPreview = false
 }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const [isThemeTransitioning, setIsThemeTransitioning] = useState(false);
@@ -400,7 +402,10 @@ export default function Layout({
     <div className="min-h-screen transition-colors duration-500 overflow-x-hidden">
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
       {user && (
-        <div className="hidden lg:flex fixed top-0 left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 z-[51] shadow-[1px_0_15px_rgba(0,0,0,0.02)] select-none">
+        <div className={cn(
+          "hidden lg:flex top-0 left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 select-none",
+          isPreview ? "absolute h-full z-10" : "fixed z-[51] shadow-[1px_0_15px_rgba(0,0,0,0.02)]"
+        )}>
           {/* Menu Trigger Button Container (aligned with Header H-16 perfectly) */}
           <div className="w-full h-16 flex items-center justify-center shrink-0 border-b border-slate-100/50 dark:border-slate-900/40">
             <motion.button
@@ -428,6 +433,7 @@ export default function Layout({
                 { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
                 { id: 'nodes', label: 'Active Nodes', icon: Flame },
                 { id: 'clients', label: branding?.tabNames?.clients || 'User Details', icon: Contact },
+                { id: 'mypc', label: 'MY PC', icon: Monitor },
                 { id: 'billing', label: 'Billing Mod', icon: CreditCard },
                 { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Settings },
                 { id: 'map', label: 'Network Map', icon: MapIcon },
@@ -575,7 +581,7 @@ export default function Layout({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setIsSidebarOpen(false)}
-            className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[140] lg:hidden"
+            className={cn("inset-0 bg-slate-950/40 backdrop-blur-sm z-[140] lg:hidden", isPreview ? "absolute" : "fixed")}
           />
         )}
       </AnimatePresence>
@@ -590,7 +596,8 @@ export default function Layout({
         }}
         transition={{ type: 'spring', damping: 28, stiffness: 240 }}
         className={cn(
-          "fixed top-0 bottom-0 left-0 z-[160] overflow-hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-r border-slate-200/80 dark:border-slate-800/80 shadow-2xl flex flex-col",
+          "top-0 bottom-0 left-0 z-[160] overflow-hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-r border-slate-200/80 dark:border-slate-800/80 shadow-2xl flex flex-col",
+          isPreview ? "absolute" : "fixed",
           !isSidebarOpen && "pointer-events-none"
         )}
       >
@@ -680,40 +687,42 @@ export default function Layout({
           ))}
         </div>
 
-        <div className="p-4 mt-auto space-y-4 shrink-0 border-t border-slate-100 dark:border-slate-850">
+        <div className="p-4 mt-auto space-y-3 shrink-0 border-t border-slate-100 dark:border-slate-850 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+          {/* MY PC Sidebar Button */}
+          <motion.button
+            onClick={() => handleSidebarNav('mypc')}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full flex items-center justify-center gap-2.5 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:opacity-95 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-teal-500/10 cursor-pointer group shrink-0"
+          >
+            <Monitor size={15} className="group-hover:rotate-6 transition-transform text-teal-100" />
+            <span>MY PC</span>
+          </motion.button>
+
           {/* Billing Side Button */}
           <motion.button
             onClick={() => handleSidebarNav('billing')}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full flex items-center justify-center gap-3 py-3 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-blue-500/20 cursor-pointer group"
+            className="w-full flex items-center justify-center gap-2.5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-indigo-500/10 cursor-pointer group shrink-0"
           >
-            <CreditCard size={16} className="group-hover:rotate-12 transition-transform" />
-            Billing Mod
+            <CreditCard size={15} className="group-hover:rotate-12 transition-transform text-blue-100" />
+            <span>Billing Mod</span>
           </motion.button>
 
-          <div className="bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm group hover:border-emerald-500/30 transition-all">
-             <div className="flex items-center gap-3 mb-3">
-               <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-500 flex items-center justify-center shadow-inner">
-                 <LogOut size={16} />
-               </div>
-               <div className="flex-1">
-                 <p className="text-[10px] font-black uppercase text-slate-900 dark:text-white leading-none">Security Protocol</p>
-                 <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mt-1">Active Session</p>
-               </div>
-             </div>
-             <motion.button 
-                onClick={() => {
-                  if (onLogout) onLogout();
-                  setIsSidebarOpen(false);
-                }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="w-full py-2 bg-slate-905 dark:bg-emerald-600 text-white rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-emerald-700 hover:shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer"
-             >
-                Sign Out
-             </motion.button>
-          </div>
+          {/* Clean, fully responsive Sign Out Action bar */}
+          <motion.button 
+            onClick={() => {
+              if (onLogout) onLogout();
+              setIsSidebarOpen(false);
+            }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full flex items-center justify-center gap-2.5 py-3 bg-rose-50 hover:bg-rose-100/80 dark:bg-rose-950/15 dark:hover:bg-rose-950/25 border border-rose-100/80 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] cursor-pointer group shrink-0 transition-all"
+          >
+            <LogOut size={15} className="group-hover:-translate-x-0.5 transition-transform" />
+            <span>Sign Out</span>
+          </motion.button>
         </div>
       </motion.aside>
 
@@ -1016,8 +1025,9 @@ export default function Layout({
       {/* Relocated Profile dropdown to the header relative toggle container */}
 
       <header className={cn(
-        "sticky top-0 z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
-        user && "lg:pl-[68px]",
+        "z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
+        isPreview ? "absolute top-0 pl-[68px]" : "sticky top-0",
+        user && !isPreview && "lg:pl-[68px]",
         branding?.sidebarTheme === 'dark' ? "bg-slate-950/95 border-slate-900 text-white" :
         branding?.sidebarTheme === 'accent' ? "bg-brand-accent/95 border-white/10 text-white" :
         branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
@@ -1477,7 +1487,14 @@ export default function Layout({
       </header>
 
       {/* Main Content */}
-      <main className={cn("mx-auto py-4 sm:py-8 transition-all duration-500", user ? "max-w-[1850px] w-full px-4 sm:px-6 lg:px-8 lg:pl-[84px]" : "w-full max-w-none px-0 sm:px-0")}>
+      <main className={cn(
+        "mx-auto py-4 sm:py-8 transition-all duration-500",
+        user ? (
+          isPreview 
+            ? "w-full px-4 pt-20 pl-[80px]" 
+            : "max-w-[1850px] w-full px-4 sm:px-6 lg:px-8 lg:pl-[84px]"
+        ) : "w-full max-w-none px-0 sm:px-0"
+      )}>
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1488,7 +1505,10 @@ export default function Layout({
       </main>
 
       {/* Footer */}
-      <footer className={cn("py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950", user && "lg:pl-[68px]")}>
+      <footer className={cn(
+        "py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950",
+        user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
+      )}>
         <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center">
              <div className="relative group mb-3 sm:mb-4">

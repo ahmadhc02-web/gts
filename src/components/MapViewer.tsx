@@ -1396,12 +1396,12 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                               )} />
                               <div>
                                 <h4 className="text-slate-800 dark:text-slate-255 font-extrabold text-xs uppercase tracking-wide leading-none">{target.label || target.domain}</h4>
-                                <span className="text-[8px] font-mono text-slate-400 mt-0.5 block">{target.domain}</span>
+                                <span className="text-[8px] font-lexend text-slate-400 mt-0.5 block">{target.domain}</span>
                               </div>
                             </div>
 
                             <span className={cn(
-                              "text-[9px] font-mono font-black tracking-tighter px-2 py-0.5 rounded-full border shadow-sm shrink-0",
+                              "text-[9px] font-lexend font-black tracking-tighter px-2 py-0.5 rounded-full border shadow-sm shrink-0",
                               status === 'excellent' && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/10",
                               status === 'good' && "bg-green-100 dark:bg-green-950/40 text-green-600 dark:text-green-400 border-green-200 dark:border-green-900/10",
                               status === 'fair' && "bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/10",

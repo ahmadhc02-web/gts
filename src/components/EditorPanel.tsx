@@ -54,7 +54,7 @@ const DEFAULT_BRANDING = {
   projectName: 'Green Tech Services',
   accentColor: '#3b82f6',
   themeColor: '#ffffff',
-  fontFamily: 'Inter, system-ui, sans-serif',
+  fontFamily: 'Lexend, sans-serif',
   borderRadius: 'md',
   cardStyle: 'elevated',
   enableAnimations: true,
@@ -372,6 +372,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                       notifications={MOCK_NOTIFICATIONS}
                       branding={config}
                       isLoading={false}
+                      isPreview={true}
                     >
                       <div className="space-y-8">
                         {/* Summary Tiles */}
@@ -1307,6 +1308,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                     notifications={MOCK_NOTIFICATIONS}
                     branding={config}
                     isLoading={false}
+                    isPreview={true}
                  >
                     <div className="space-y-6">
                        <div className="grid grid-cols-2 gap-4">

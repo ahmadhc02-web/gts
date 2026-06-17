@@ -264,6 +264,12 @@ function subscribeTable(
 
   fetchAndCallback();
 
+  const localEventName = `gts-table-updated-${tableName}`;
+  const handleLocalUpdate = () => {
+    fetchAndCallback();
+  };
+  window.addEventListener(localEventName, handleLocalUpdate);
+
   const channelId = `realtime_${tableName}_${Math.random().toString(36).substr(2, 6)}`;
   const channel = supabase
     .channel(channelId)
@@ -274,6 +280,7 @@ function subscribeTable(
 
   return () => {
     supabase.removeChannel(channel);
+    window.removeEventListener(localEventName, handleLocalUpdate);
   };
 }
 
@@ -1333,12 +1340,141 @@ export const firebaseService = {
 
   deleteClient: async (id: string, clientName: string, authorName: string) => {
     try {
+      // 1. Fetch info about the client before deleting, so we can clean up backups/billings
+      const { data: clientData } = await supabase
+        .from('clients')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      const clientUsername = clientData ? clientData.username : null;
+      const clientRealName = clientData ? clientData.name : clientName;
+
+      // Delete the client row
       const { error } = await supabase.from('clients').delete().eq('id', id);
       if (error) throw error;
       
+      // 2. Remove billing list/rows matching this client from users_data database
+      try {
+        let q = supabase.from('users_data').delete();
+        if (id) {
+          q = q.eq('client_id', id);
+        } else if (clientUsername) {
+          q = q.eq('username', clientUsername);
+        } else {
+          q = q.eq('name', clientRealName);
+        }
+        await q;
+      } catch (usersDataErr) {
+        console.error("Failed to delete matching user rows from users_data table:", usersDataErr);
+      }
+
+      // 3. Keep branding_config (billing monthly sheets stored as lists) in sync
+      try {
+        const { data: billingDocs, error: billingError } = await supabase
+          .from('branding_config')
+          .select('*')
+          .like('id', 'billing_month_%');
+
+        if (!billingError && billingDocs) {
+          for (const doc of billingDocs) {
+            try {
+              let rows = doc.dashboard_subtext;
+              if (typeof rows === 'string') {
+                rows = JSON.parse(rows);
+              }
+              if (Array.isArray(rows)) {
+                const initialLength = rows.length;
+                const filteredRows = rows.filter((r: any) => {
+                  const isMatchById = id && r.clientId === id;
+                  const isMatchByUsername = clientUsername && r.username && String(r.username).toLowerCase() === String(clientUsername).toLowerCase();
+                  const isMatchByName = clientRealName && r.name && String(r.name).toLowerCase() === String(clientRealName).toLowerCase();
+                  return !(isMatchById || isMatchByUsername || isMatchByName);
+                });
+
+                if (filteredRows.length < initialLength) {
+                  await supabase
+                    .from('branding_config')
+                    .update({ 
+                      dashboard_subtext: JSON.stringify(filteredRows),
+                      updated_at: Date.now(),
+                      updated_by: authorName || 'admin'
+                    })
+                    .eq('id', doc.id);
+                }
+              }
+            } catch (jsonErr) {
+              console.error(`Error parsing rows for billing month doc ${doc.id}:`, jsonErr);
+            }
+          }
+        }
+      } catch (billingSyncError) {
+        console.error("Failed to sync branding_config billing months:", billingSyncError);
+      }
+
+      // 4. Update table1_rows and table2_rows inside ledger_sheets to purge references
+      try {
+        const { data: sheets, error: sheetsError } = await supabase
+          .from('ledger_sheets')
+          .select('*');
+
+        if (!sheetsError && sheets) {
+          for (const sh of sheets) {
+            let updated = false;
+            let table1 = sh.table1_rows;
+            let table2 = sh.table2_rows;
+
+            if (typeof table1 === 'string') {
+              try { table1 = JSON.parse(table1); } catch (e) {}
+            }
+            if (typeof table2 === 'string') {
+              try { table2 = JSON.parse(table2); } catch (e) {}
+            }
+
+            if (Array.isArray(table1)) {
+              const initialLen = table1.length;
+              table1 = table1.filter((r: any) => {
+                const isMatchById = id && r.clientId === id;
+                const isMatchByUsername = clientUsername && r.clientUsername && String(r.clientUsername).toLowerCase() === String(clientUsername).toLowerCase();
+                const isMatchByName = clientRealName && r.name && String(r.name).toLowerCase() === String(clientRealName).toLowerCase();
+                return !(isMatchById || isMatchByUsername || isMatchByName);
+              });
+              if (table1.length < initialLen) {
+                updated = true;
+              }
+            }
+
+            if (Array.isArray(table2)) {
+              const initialLen = table2.length;
+              table2 = table2.filter((r: any) => {
+                const isMatchById = id && r.clientId === id;
+                const isMatchByUsername = clientUsername && r.clientUsername && String(r.clientUsername).toLowerCase() === String(clientUsername).toLowerCase();
+                const isMatchByName = clientRealName && r.name && String(r.name).toLowerCase() === String(clientRealName).toLowerCase();
+                return !(isMatchById || isMatchByUsername || isMatchByName);
+              });
+              if (table2.length < initialLen) {
+                updated = true;
+              }
+            }
+
+            if (updated) {
+              await supabase
+                .from('ledger_sheets')
+                .update({
+                  table1_rows: JSON.stringify(table1),
+                  table2_rows: JSON.stringify(table2)
+                })
+                .eq('id', sh.id);
+            }
+          }
+        }
+      } catch (sheetsSyncError) {
+        console.error("Failed to sync structural ledger_sheets rows:", sheetsSyncError);
+      }
+
       await firebaseService.createNotification({
         type: 'client_deleted',
-        message: `Client record removed: "${clientName}" purged from database`,
+        message: `Client record removed: "${clientRealName}" purged from database and billing databases completely`,
         authorName
       });
     } catch (error) {
@@ -1381,6 +1517,7 @@ export const firebaseService = {
       const dbRow = toDb('monitor_targets', newTarget);
       const { error } = await supabase.from('monitor_targets').insert(dbRow);
       if (error) throw error;
+      window.dispatchEvent(new CustomEvent('gts-table-updated-monitor_targets'));
       return newTarget;
     } catch (error) {
       console.error('createMonitorTarget error:', error);
@@ -1391,6 +1528,7 @@ export const firebaseService = {
   deleteMonitorTarget: async (id: string): Promise<void> => {
     try {
       await supabase.from('monitor_targets').delete().eq('id', id);
+      window.dispatchEvent(new CustomEvent('gts-table-updated-monitor_targets'));
     } catch (error) {
       console.error('deleteMonitorTarget error:', error);
     }
@@ -1400,6 +1538,7 @@ export const firebaseService = {
     try {
       const dbRow = toDb('monitor_targets', updates);
       await supabase.from('monitor_targets').update(dbRow).eq('id', id);
+      window.dispatchEvent(new CustomEvent('gts-table-updated-monitor_targets'));
     } catch (error) {
       console.error('updateMonitorTarget error:', error);
     }

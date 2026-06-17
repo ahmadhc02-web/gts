@@ -457,7 +457,12 @@ export default function App() {
       const root = document.documentElement;
       if (branding.accentColor) root.style.setProperty('--brand-accent', branding.accentColor);
       if (branding.secondaryColor) root.style.setProperty('--brand-secondary', branding.secondaryColor);
-      if (branding.fontFamily) root.style.setProperty('--font-sans', branding.fontFamily);
+      
+      let activeFont = branding.fontFamily;
+      if (!activeFont || activeFont.includes('Inter') || activeFont.trim() === 'sans-serif') {
+        activeFont = 'Lexend, sans-serif';
+      }
+      root.style.setProperty('--font-sans', activeFont);
       
       if (branding.borderRadius !== undefined) {
         const radiusMap: Record<string, string> = {

@@ -570,7 +570,7 @@ export default function ComplaintList({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 font-lexend" style={{ fontFamily: '"Lexend", sans-serif' }}>
       {/* Print-only CSS Stylesheet overrides to format complaint list for A4 Portrait paper */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
@@ -1202,7 +1202,7 @@ export default function ComplaintList({
                                 <span>Scheduled At: {new Date(complaint.scheduledAt).toLocaleString()}</span>
                               </div>
                             )}
-                            <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                            <span className="text-[10px] font-lexend font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
                               <Phone size={10} className="text-slate-400 shrink-0" />
                               <span>({complaint.number.slice(0,4)}) {complaint.number.slice(4)}</span>
                             </span>
@@ -1246,11 +1246,11 @@ export default function ComplaintList({
                       <td className="px-6 py-4.5">
                         <div className="flex flex-col gap-1.5 max-w-[280px]">
                           {complaint.panelDetails ? (
-                            <span className="text-[9.5px] font-mono font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200/50 dark:border-slate-800/60 block truncate select-all leading-tight">
+                            <span className="text-[9.5px] font-lexend font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200/50 dark:border-slate-800/60 block truncate select-all leading-tight">
                               {complaint.panelDetails}
                             </span>
                           ) : (
-                            <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-500 italic">No Device Panel specified</span>
+                            <span className="text-[9px] font-lexend font-bold text-slate-400 dark:text-slate-500 italic">No Device Panel specified</span>
                           )}
                           <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed font-semibold italic truncate">
                             "{complaint.description}"
@@ -1321,7 +1321,7 @@ export default function ComplaintList({
                                     className="bg-blue-500 dark:bg-blue-400 h-full rounded-full"
                                   />
                                 </div>
-                                <span className="text-[7.5px] font-mono font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0 animate-pulse">
+                                <span className="text-[7.5px] font-lexend font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0 animate-pulse">
                                   {prog.percentage}% Complete
                                 </span>
                               </div>
@@ -1336,7 +1336,7 @@ export default function ComplaintList({
                           <span className="text-[11px] font-extrabold text-slate-850 dark:text-slate-300 uppercase tracking-tighter">
                             {new Date(complaint.createdAt).toLocaleDateString()}
                           </span>
-                          <span className="text-[9.5px] font-mono text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
+                          <span className="text-[9.5px] font-lexend text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
                             <Clock size={10} className="text-slate-350" />
                             <span>{new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </span>

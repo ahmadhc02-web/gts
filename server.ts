@@ -46,6 +46,228 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.raw({ limit: '50mb', type: 'application/octet-stream' }));
 
+  // --- Secure Iframe Proxy Tunnel Bypass Endpoint ---
+  app.get("/api/proxy-tunnel", async (req, res) => {
+    const targetUrl = req.query.url as string;
+    try {
+      if (!targetUrl) {
+        return res.status(400).send("Proxy Tunnel Error: No URL parameter provided.");
+      }
+
+      // Ensure URL is valid and HTTP/HTTPS
+      if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+        return res.status(400).send("Proxy Tunnel Error: Invalid scheme. Must be http:// or https://");
+      }
+
+      const clientHeaders: Record<string, string> = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      };
+
+      // Perform request with a generous 25-second timeout list to cater for slow routing configs
+      const response = await fetch(targetUrl, {
+        method: "GET",
+        headers: clientHeaders,
+        redirect: "follow",
+        signal: AbortSignal.timeout(25000)
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      
+      // If it is not HTML text, we can either redirect to avoid overhead or serve binary
+      if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+        return res.redirect(targetUrl);
+      }
+
+      let htmlText = await response.text();
+
+      // Parse the primary source origin url to construct absolute URL fallbacks
+      const parsedTarget = new URL(targetUrl);
+      const origin = parsedTarget.origin;
+      const baseUrlStr = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1) || (origin + '/');
+
+      // Helper function to resolve relative paths
+      const makeAbsolute = (urlAttr: string, match: string) => {
+        const val = match.trim();
+        if (val.startsWith("http://") || val.startsWith("https://") || val.startsWith("data:") || val.startsWith("#") || val.startsWith("javascript:")) {
+          return `${urlAttr}="${val}"`;
+        }
+        if (val.startsWith("//")) {
+          return `${urlAttr}="https:${val}"`;
+        }
+        if (val.startsWith("/")) {
+          return `${urlAttr}="${origin}${val}"`;
+        }
+        return `${urlAttr}="${baseUrlStr}${val}"`;
+      };
+
+      // Rewrites
+      htmlText = htmlText.replace(/(href|src|action)\s*=\s*["']([^"']*)["']/gi, (fullMatch, attr, val) => {
+        return makeAbsolute(attr, val);
+      });
+
+      // Inject a base tag is highly helpful
+      if (htmlText.includes("<head>")) {
+        htmlText = htmlText.replace("<head>", `<head><base href="${targetUrl}">`);
+      } else if (htmlText.includes("<HEAD>")) {
+        htmlText = htmlText.replace("<HEAD>", `<HEAD><base href="${targetUrl}">`);
+      }
+
+      // Explicitly relax frame control headers
+      res.setHeader("X-Frame-Options", "ALLOWALL");
+      res.setHeader("Content-Security-Policy", "frame-ancestors *;");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+
+      return res.send(htmlText);
+    } catch (err: any) {
+      const isTimeout = err?.name === "TimeoutError" || err?.message?.includes("timeout") || err?.message?.includes("aborted");
+      
+      if (isTimeout) {
+        console.warn(`[Proxy Tunnel Warning] Connection timeout loading ${targetUrl}.`);
+      } else {
+        console.error(`[Proxy Tunnel Error] loading ${targetUrl}:`, err);
+      }
+
+      // Send a high-end, responsive, beautiful fallback page directly to render inside the iframe
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(200).send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Gateway Connection Timeout</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&family=JetBrains+Mono&display=swap');
+            body {
+              background-color: #020617;
+              color: #e2e8f0;
+              font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              padding: 24px;
+              box-sizing: border-box;
+            }
+            .card {
+              background: linear-gradient(135deg, #0f172a 0%, #020617 100%);
+              border: 1px solid #1e293b;
+              border-radius: 24px;
+              padding: 40px;
+              max-width: 500px;
+              width: 100%;
+              text-align: center;
+              box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+              border-top: 4px solid #0d9488;
+            }
+            .icon-wrapper {
+              width: 64px;
+              height: 64px;
+              background: rgba(13, 148, 136, 0.1);
+              border: 1px solid rgba(13, 148, 136, 0.2);
+              border-radius: 20px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              margin: 0 auto 24px auto;
+              color: #0ea5e9;
+              animation: pulse 2s infinite ease-in-out;
+            }
+            h1 {
+              font-size: 18px;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+              margin: 0 0 12px 0;
+              color: #f1f5f9;
+            }
+            p {
+              font-size: 13px;
+              line-height: 1.6;
+              color: #94a3b8;
+              margin: 0 0 24px 0;
+            }
+            .url-box {
+              background-color: #020617;
+              border: 1px dashed #334155;
+              padding: 12px 16px;
+              border-radius: 12px;
+              font-family: 'JetBrains Mono', monospace;
+              font-size: 11px;
+              color: #38bdf8;
+              word-break: break-all;
+              margin-bottom: 24px;
+              text-align: left;
+            }
+            .btn {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              gap: 8px;
+              background: linear-gradient(90deg, #0d9488 0%, #0ea5e9 100%);
+              color: #ffffff;
+              border: none;
+              padding: 12px 24px;
+              font-size: 11px;
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: 0.1em;
+              border-radius: 12px;
+              cursor: pointer;
+              transition: all 0.2s ease;
+              text-decoration: none;
+            }
+            .btn:hover {
+              transform: translateY(-2px);
+              box-shadow: 0 10px 15px -3px rgba(13, 148, 136, 0.3);
+            }
+            .btn-secondary {
+              background: #1e293b;
+              border: 1px solid #334155;
+              color: #94a3b8;
+              margin-left: 8px;
+            }
+            .btn-secondary:hover {
+              background: #334155;
+              color: #f1f5f9;
+            }
+            @keyframes pulse {
+              0%, 100% { opacity: 1; transform: scale(1); }
+              50% { opacity: 0.6; transform: scale(1.05); }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h1>Gateway Offline or Slow</h1>
+            <p>
+              The destination web server took too long to send data back. Either the network link is offline, or security protocols are limiting traffic. You can try reloading or opening directly to sync session credentials.
+            </p>
+            <div class="url-box">
+              Target: ${targetUrl}
+            </div>
+            <div>
+              <a href="javascript:location.reload()" class="btn">Retry Loading</a>
+              <a href="${targetUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Open Directly ↗</a>
+            </div>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+  });
+
   // --- Speed Test Upload Endpoint ---
   app.post("/api/speedtest/upload", (req, res) => {
     // Just consume the data and return success
@@ -1856,8 +2078,13 @@ System instructions:
         });
 
         console.log(`[Server Auto-Backup] 10-Minute Google Sheets background sync successful on server: ${spreadsheetId}`);
-      } catch (err) {
-        console.error("[Server Auto-Backup] Server-side loop failed:", err);
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        if (errMsg.includes("client is offline") || errMsg.includes("offline") || errMsg.includes("unreachable")) {
+          console.warn("[Server Auto-Backup] Firebase client is offline or database is unreachable. Skipping background sync loop check.");
+        } else {
+          console.error("[Server Auto-Backup] Server-side loop failed:", err);
+        }
       }
     }
 

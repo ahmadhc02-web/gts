@@ -172,22 +172,30 @@ export default function MemberPanel({
     <div className="space-y-12">
       {/* Member Statistics Summary */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-6">
-        {stats.map((stat, idx) => (
-          <motion.div
-            key={idx}
-            initial={{ opacity: 0, scale: 0.95, y: 30 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ delay: idx * 0.06, type: "spring", stiffness: 280, damping: 20 }}
-            whileHover={{ y: -8, scale: 1.03, boxShadow: "0 25px 45px -10px rgba(0, 0, 0, 0.08), 0 10px 20px -8px rgba(0, 0, 0, 0.04)" }}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => handleTileClick(stat.filter)}
-            title={stat.tooltip}
-            className={cn(
-              "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 flex flex-col justify-between transition-all group cursor-pointer active:scale-95",
-              stat.color,
-              (forcedStatus === stat.filter.status && forcedPriority === stat.filter.priority && stat.label !== 'Total Registry') ? "ring-2 ring-brand-accent scale-105" : ""
-            )}
-          >
+        {stats.map((stat, idx) => {
+          const isTileActive = (
+            forcedStatus === stat.filter.status &&
+            forcedPriority === stat.filter.priority &&
+            forcedCategory === stat.filter.category &&
+            stat.label !== 'Total Registry'
+          );
+
+          return (
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, scale: 0.95, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ delay: idx * 0.06, type: "spring", stiffness: 280, damping: 20 }}
+              whileHover={{ y: -8, scale: 1.03 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => handleTileClick(stat.filter)}
+              title={stat.tooltip}
+              className={cn(
+                "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 flex flex-col justify-between transition-all group cursor-pointer relative active:scale-95",
+                stat.color,
+                isTileActive ? "ring-2 ring-brand-accent scale-[1.04] z-10 shadow-2xl shadow-brand-accent/20 dark:shadow-brand-accent/30" : ""
+              )}
+            >
             <div className="flex justify-between items-start mb-2 sm:mb-4">
               <span className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors leading-tight">
                 {stat.label}
@@ -242,8 +250,9 @@ export default function MemberPanel({
                 </div>
               )}
             </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Analytics Dashboards - Below Stat Boxes */}
