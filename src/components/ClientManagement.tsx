@@ -868,30 +868,30 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden"
+              className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 flex flex-col max-h-[90vh]"
             >
-            <div className="h-32 bg-slate-950 dark:bg-brand-accent relative overflow-hidden">
+            <div className="h-24 sm:h-32 bg-slate-950 dark:bg-brand-accent relative overflow-hidden shrink-0 rounded-t-3xl border-b border-white/10">
                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,white_0%,transparent_100%)]" />
                <div className="absolute -bottom-8 -right-8 p-4 text-white opacity-10 rotate-12">
                   <User size={160} />
                </div>
                <button 
                 onClick={() => setViewingClient(null)}
-                className="absolute top-6 right-6 p-2 rounded-full bg-black/20 text-white hover:bg-black/40 transition-all z-10"
+                className="absolute top-4 sm:top-6 right-4 sm:right-6 p-2 rounded-full bg-black/20 text-white hover:bg-black/40 transition-all z-10"
                >
                 <X size={20} />
                </button>
             </div>
 
-            <div className="px-8 pb-8">
-               <div className="relative -mt-12 mb-6 inline-flex">
-                 <div className="w-24 h-24 rounded-3xl bg-white dark:bg-slate-900 border-4 border-white dark:border-slate-950 shadow-xl flex items-center justify-center text-brand-accent">
-                    <User size={40} />
+            <div className="px-4 sm:px-8 pb-4 sm:pb-8 overflow-y-auto overflow-x-hidden flex-1">
+               <div className="relative -mt-8 sm:-mt-12 mb-4 sm:mb-6 inline-flex">
+                 <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border-4 border-white dark:border-slate-950 shadow-xl flex items-center justify-center text-brand-accent">
+                    <User className="w-8 h-8 sm:w-10 sm:h-10" />
                  </div>
-                 <div className="absolute -bottom-1 -right-1 bg-emerald-500 w-6 h-6 rounded-full border-4 border-white dark:border-slate-950" />
+                 <div className="absolute -bottom-1 -right-1 bg-emerald-500 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-4 border-white dark:border-slate-950" />
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
                   {/* section 1: Identity */}
                   <div className="space-y-6">
                     <div>

@@ -403,8 +403,9 @@ export default function Layout({
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
       {user && (
         <div className={cn(
-          "hidden lg:flex top-0 left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 select-none",
-          isPreview ? "absolute h-full z-10" : "fixed z-[51] shadow-[1px_0_15px_rgba(0,0,0,0.02)]"
+          "top-0 left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 select-none",
+          isSidebarOpen ? "flex z-[160]" : "hidden lg:flex z-[51]",
+          isPreview ? "absolute h-full" : "fixed shadow-[1px_0_15px_rgba(0,0,0,0.02)]"
         )}>
           {/* Menu Trigger Button Container (aligned with Header H-16 perfectly) */}
           <div className="w-full h-16 flex items-center justify-center shrink-0 border-b border-slate-100/50 dark:border-slate-900/40">
@@ -596,7 +597,7 @@ export default function Layout({
         }}
         transition={{ type: 'spring', damping: 28, stiffness: 240 }}
         className={cn(
-          "top-0 bottom-0 left-0 z-[160] overflow-hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-r border-slate-200/80 dark:border-slate-800/80 shadow-2xl flex flex-col",
+          "top-0 bottom-0 left-0 z-[150] overflow-hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-r border-slate-200/80 dark:border-slate-800/80 shadow-2xl flex-col hidden lg:flex",
           isPreview ? "absolute" : "fixed",
           !isSidebarOpen && "pointer-events-none"
         )}

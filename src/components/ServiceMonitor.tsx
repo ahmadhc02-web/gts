@@ -664,13 +664,13 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
           >
             <div className="p-4 sm:p-6 border-b border-sky-100 dark:border-sky-950 bg-sky-50/20 dark:bg-sky-950/10 shrink-0">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-inner shrink-0 leading-none">
-                    <Activity size={22} className={cn(isMeasuring && "animate-pulse")} />
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-inner shrink-0 leading-none">
+                    <Activity size={22} className={cn("w-4 h-4 sm:w-[22px] sm:h-[22px]", isMeasuring && "animate-pulse")} />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-wider text-sm sm:text-base truncate" style={{ fontFamily: '"Lexend", sans-serif' }}>Router Nodes & Core Gateways</h3>
-                    <p className="text-[10px] text-sky-600 dark:text-sky-400 font-bold uppercase tracking-widest truncate" style={{ fontFamily: '"Lexend", sans-serif' }}>Live Diagnostic Telemetry & Statistics</p>
+                    <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-wider text-[11px] sm:text-base truncate" style={{ fontFamily: '"Lexend", sans-serif' }}>Router Nodes & Core Gateways</h3>
+                    <p className="text-[8px] sm:text-[10px] text-sky-600 dark:text-sky-400 font-bold uppercase tracking-widest truncate" style={{ fontFamily: '"Lexend", sans-serif' }}>Live Diagnostic Telemetry & Statistics</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1113,8 +1113,9 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                       animate={{ opacity: 1, x: 0, scale: 1 }}
                       exit={{ opacity: 0, x: 50, scale: 0.98 }}
                       transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                      className="max-w-full overflow-hidden"
                     >
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 max-w-full">
                         {targets.map((target) => {
                           const data = results[target.key] || { 
                             domain: target.domain, 
@@ -1149,12 +1150,12 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                 }
                               }}
                               className={cn(
-                                "flex flex-col p-4 rounded-[1.75rem] border transition-all duration-300 group relative bg-white dark:bg-slate-900 border-sky-100 dark:border-sky-900/40 shadow-sm cursor-pointer select-none",
+                                "flex flex-col p-3 sm:p-4 rounded-[1rem] sm:rounded-[1.75rem] border transition-all duration-300 group relative bg-white dark:bg-slate-900 border-sky-100 dark:border-sky-900/40 shadow-sm cursor-pointer select-none",
                                 isDeleteMode 
                                   ? "hover:shadow-md" 
                                   : "hover:border-sky-400 dark:hover:border-sky-500 hover:shadow-md active:scale-[0.98]",
                                 isDeleteMode && isSelected 
-                                  ? "border-rose-500 dark:border-rose-500 ring-4 ring-rose-500/10 bg-rose-50/5 dark:bg-rose-950/5" 
+                                  ? "border-rose-500 dark:border-rose-500 ring-2 sm:ring-4 ring-rose-500/10 bg-rose-50/5 dark:bg-rose-950/5" 
                                   : "",
                                 isDeleteMode && !isSelected 
                                   ? "opacity-60 hover:opacity-100 border-slate-200 dark:border-slate-800" 
@@ -1218,9 +1219,9 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                 </div>
                               ) : (
                                 <>
-                                  <div className="flex items-center justify-between gap-3 mb-3">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                      <div className="w-9 h-9 rounded-xl bg-sky-50/50 dark:bg-slate-800 flex items-center justify-center p-1.5 shadow-sm border border-sky-100/30 dark:border-slate-700 shrink-0">
+                                  <div className="flex items-center justify-between gap-1.5 sm:gap-3 mb-2 sm:mb-3">
+                                    <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+                                      <div className="w-6 h-6 sm:w-9 sm:h-9 rounded-md sm:rounded-xl bg-sky-50/50 dark:bg-slate-800 flex items-center justify-center p-0.5 sm:p-1.5 shadow-sm border border-sky-100/30 dark:border-slate-700 shrink-0">
                                         <img 
                                           src={`https://www.google.com/s2/favicons?domain=${target.key}&sz=64`} 
                                           alt={data.domain}
@@ -1231,19 +1232,19 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                         />
                                       </div>
                                       <div className="min-w-0">
-                                         <div className="flex items-center gap-1.5">
-                                          <h4 className="font-extrabold text-slate-900 dark:text-white text-xs tracking-tight truncate leading-none">{data.domain}</h4>
+                                         <div className="flex items-center gap-1 sm:gap-1.5">
+                                          <h4 className="font-extrabold text-slate-900 dark:text-white text-[10px] sm:text-xs tracking-tight truncate leading-none">{data.domain}</h4>
                                         </div>
-                                        <p className="text-[9px] text-sky-500 uppercase font-black tracking-widest truncate leading-none mt-0.5">{target.key}</p>
+                                        <p className="text-[7px] sm:text-[9px] text-sky-500 uppercase font-black tracking-widest truncate leading-none mt-0.5">{target.key}</p>
                                       </div>
                                     </div>
 
-                                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                      <div className="flex items-end gap-0.5 h-3">
-                                        <span className="w-[3px] h-1.5 rounded-full bg-sky-400 dark:bg-sky-500 animate-pulse delay-75" />
-                                        <span className="w-[3px] h-2.5 rounded-full bg-sky-400 dark:bg-sky-500 animate-pulse delay-150" />
-                                        <span className={`w-[3px] h-3.5 rounded-full ${data.status !== 'poor' ? 'bg-sky-400 dark:bg-sky-500' : 'bg-slate-200 dark:bg-slate-800'} animate-pulse delay-200`} />
-                                        <span className={`w-[3px] h-4.5 rounded-full ${data.status === 'excellent' ? 'bg-sky-400 dark:bg-sky-500' : 'bg-slate-200 dark:bg-slate-800'} animate-pulse`} />
+                                    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                      <div className="flex items-end gap-[1px] sm:gap-0.5 h-2 sm:h-3">
+                                        <span className="w-0.5 sm:w-[3px] h-1 sm:h-1.5 rounded-full bg-sky-400 dark:bg-sky-500 animate-pulse delay-75" />
+                                        <span className="w-0.5 sm:w-[3px] h-1.5 sm:h-2.5 rounded-full bg-sky-400 dark:bg-sky-500 animate-pulse delay-150" />
+                                        <span className={`w-0.5 sm:w-[3px] h-2 sm:h-3.5 rounded-full ${data.status !== 'poor' ? 'bg-sky-400 dark:bg-sky-500' : 'bg-slate-200 dark:bg-slate-800'} animate-pulse delay-200`} />
+                                        <span className={`w-0.5 sm:w-[3px] h-2.5 sm:h-4.5 rounded-full ${data.status === 'excellent' ? 'bg-sky-400 dark:bg-sky-500' : 'bg-slate-200 dark:bg-slate-800'} animate-pulse`} />
                                       </div>
 
                                       {!isDeleteMode && (
@@ -1271,18 +1272,18 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                     </div>
                                   </div>
 
-                                  <div className="mt-2 flex items-center justify-between">
-                                    <div className="flex items-baseline gap-1">
-                                      <span className="text-2xl font-black font-lexend tracking-tighter text-sky-600 dark:text-sky-450 tabular-nums">
+                                  <div className="mt-1 sm:mt-2 flex items-center justify-between">
+                                    <div className="flex items-baseline gap-0.5 sm:gap-1">
+                                      <span className="text-xl sm:text-2xl font-black font-lexend tracking-tighter text-sky-600 dark:text-sky-450 tabular-nums leading-none">
                                         {typeof data.ms === 'number' ? data.ms : '0'}
                                       </span>
-                                      <span className="text-[9px] font-black uppercase text-sky-400 dark:text-sky-500 tracking-wider font-lexend">
-                                        {typeof data.ms === 'number' ? 'ms' : 'Error'}
+                                      <span className="text-[8px] sm:text-[9px] font-black uppercase text-sky-400 dark:text-sky-500 tracking-wider font-lexend">
+                                        {typeof data.ms === 'number' ? 'ms' : 'Err'}
                                       </span>
                                     </div>
 
                                     <span className={cn(
-                                      "text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border",
+                                      "text-[7px] sm:text-[8px] font-black uppercase tracking-widest px-1.5 sm:px-2 py-[1px] sm:py-0.5 rounded sm:rounded-md border",
                                       data.status === 'excellent' ? "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" :
                                       data.status === 'good' ? "text-sky-600 bg-sky-500/10 border-sky-500/20" :
                                       data.status === 'fair' ? "text-amber-600 bg-amber-500/10 border-amber-500/20" :
@@ -1292,10 +1293,10 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                     </span>
                                   </div>
 
-                                  <div className="h-12 w-full mt-2 relative">
+                                  <div className="h-8 sm:h-12 w-full mt-1 sm:mt-2 relative">
                                     {data.history.length === 0 ? (
                                       <div className="absolute inset-0 flex items-center justify-center bg-slate-50/50 dark:bg-slate-900/30 rounded-xl">
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Initializing...</span>
+                                        <span className="text-[7px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Init...</span>
                                       </div>
                                     ) : null}
                                     <ResponsiveContainer width="100%" height="100%">
@@ -1321,31 +1322,31 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                   </div>
 
                                   {/* stats grid */}
-                                  <div className="grid grid-cols-4 gap-1 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1.5 rounded-lg text-center border border-sky-500/5 font-lexend">
-                                      <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">AVG</span>
-                                      <span className="text-[10px] font-black font-lexend text-slate-700 dark:text-sky-300 tabular-nums uppercase block">
+                                  <div className="grid grid-cols-4 gap-0.5 sm:gap-1 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100 dark:border-slate-800">
+                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
+                                      <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">AVG</span>
+                                      <span className="text-[8px] sm:text-[10px] font-black font-lexend text-slate-700 dark:text-sky-300 tabular-nums uppercase block">
                                         {data.avgMs ? `${data.avgMs}ms` : '---'}
                                       </span>
                                     </div>
-                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1.5 rounded-lg text-center border border-sky-500/5 font-lexend">
-                                      <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">JTR</span>
-                                      <span className="text-[10px] font-black font-lexend text-slate-700 dark:text-sky-300 tabular-nums uppercase block">
+                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
+                                      <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">JTR</span>
+                                      <span className="text-[8px] sm:text-[10px] font-black font-lexend text-slate-700 dark:text-sky-300 tabular-nums uppercase block">
                                         {data.jitter ? `${data.jitter}ms` : '0ms'}
                                       </span>
                                     </div>
-                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1.5 rounded-lg text-center border border-sky-500/5 font-lexend">
-                                      <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">LOSS</span>
+                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
+                                      <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">LOSS</span>
                                       <span className={cn(
-                                        "text-[10px] font-black font-lexend tabular-nums block",
+                                        "text-[8px] sm:text-[10px] font-black font-lexend tabular-nums block",
                                         lossPct > 0 ? "text-rose-500 font-extrabold" : "text-sky-500 dark:text-sky-400"
                                       )}>
                                         {lossPct}%
                                       </span>
                                     </div>
-                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1.5 rounded-lg text-center border border-sky-500/5 font-lexend">
-                                      <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">HI/LO</span>
-                                      <span className="text-[9px] font-semibold font-lexend text-slate-500 dark:text-slate-400 tabular-nums uppercase block leading-tight mt-0.5">
+                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
+                                      <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">HI/LO</span>
+                                      <span className="text-[7px] sm:text-[9px] font-semibold font-lexend text-slate-500 dark:text-slate-400 tabular-nums uppercase block leading-tight sm:mt-0.5 truncate">
                                         {data.maxMs ? `${data.maxMs}/${data.minMs}` : '0/0'}
                                       </span>
                                     </div>
