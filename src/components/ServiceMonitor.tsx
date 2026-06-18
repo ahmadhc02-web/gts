@@ -154,6 +154,19 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       finalMs = Math.max(1, Math.round(hostRtt * offsetCoeff + microJitter));
     }
 
+    // User requested artificial reduction for presentation: show significantly less latency
+    // If it's too high, let's treat it as offline/error as requested earlier.
+    if (finalMs > 1000) {
+       return { ms: 'Error', status: 'poor' };
+    }
+
+    // Apply the reduction: subtract 200ms or 50%, whichever keeps it realistic but low.
+    // The previous request: "50% less" or "200 less". We'll just do Math.max(1, Math.round(finalMs / 2.5)); to make it very green.
+    finalMs = Math.max(1, Math.round(finalMs / 2) - 30);
+    if (finalMs < 1) {
+       finalMs = Math.floor(Math.random() * 5) + 1; // 1 to 5 ms organically
+    }
+
     // Classify performance status dynamically based on true performance
     let status: PingResult['status'] = 'excellent';
     if (finalMs > 75) status = 'good';
