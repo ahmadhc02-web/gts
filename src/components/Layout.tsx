@@ -110,6 +110,23 @@ export default function Layout({
   const [isInlineEditingActive, setIsInlineEditingActive] = useState(false);
   
   const [localActiveTab, setLocalActiveTab] = useState<string>('complaints');
+  const [menuUnlocked, setMenuUnlocked] = useState(false);
+  const recentClicks = React.useRef<number[]>([]);
+
+  const handleLogoClick = () => {
+    if (window.innerWidth < 1024) return; // Only apply logic to big screens
+    const now = Date.now();
+    recentClicks.current = recentClicks.current.filter(t => now - t < 2000);
+    recentClicks.current.push(now);
+    if (recentClicks.current.length >= 3) {
+      setMenuUnlocked(prev => {
+        const next = !prev;
+        setIsSidebarOpen(next); // Auto open/close on state change
+        return next;
+      });
+      recentClicks.current = [];
+    }
+  };
   const activeTab = activeTabProp !== undefined ? activeTabProp : localActiveTab;
   const setActiveTab = onNavigateProp !== undefined ? onNavigateProp : setLocalActiveTab;
 
@@ -403,26 +420,21 @@ export default function Layout({
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
       {user && (
         <div className={cn(
-          "top-0 left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 select-none",
-          isSidebarOpen ? "flex z-[160]" : "hidden lg:flex z-[51]",
+          "left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 select-none",
+          isSidebarOpen ? "flex z-[160] top-0" : "hidden lg:flex z-[51] top-16",
           isPreview ? "absolute h-full" : "fixed shadow-[1px_0_15px_rgba(0,0,0,0.02)]"
         )}>
-          {/* Menu Trigger Button Container (aligned with Header H-16 perfectly) */}
-          <div className="w-full h-16 flex items-center justify-center shrink-0 border-b border-slate-100/50 dark:border-slate-900/40">
+          {/* Menu Trigger Button Container (Hidden on Desktop, replaced by Header Logo) */}
+          <div className={cn("w-full h-16 flex items-center justify-center shrink-0 border-b border-slate-100/50 dark:border-slate-900/40", menuUnlocked ? "flex" : (isPreview ? "lg:flex" : "lg:hidden"))}>
             <motion.button
               id="rail-menu-btn"
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              onClick={() => setIsSidebarOpen(false)}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className="p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all duration-300 cursor-pointer"
-              title="Toggle Detailed Menu"
+              title="Close Menu"
             >
-              <motion.div
-                animate={{ rotate: isSidebarOpen ? 90 : 0 }}
-                transition={{ type: "spring", stiffness: 200, damping: 15 }}
-              >
-                <Menu size={20} />
-              </motion.div>
+              <X size={20} />
             </motion.button>
           </div>
 
@@ -587,7 +599,8 @@ export default function Layout({
         )}
       </AnimatePresence>
 
-      {/* Modern Sidebar */}
+
+            {/* Modern Sidebar */}
       <motion.aside
         initial={false}
         animate={{ 
@@ -719,9 +732,9 @@ export default function Layout({
             }}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full flex items-center justify-center gap-2.5 py-3 bg-rose-50 hover:bg-rose-100/80 dark:bg-rose-950/15 dark:hover:bg-rose-950/25 border border-rose-100/80 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] cursor-pointer group shrink-0 transition-all"
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer border border-slate-200/50 dark:border-slate-700/50"
           >
-            <LogOut size={15} className="group-hover:-translate-x-0.5 transition-transform" />
+            <Settings size={14} className="text-slate-400" />
             <span>Sign Out</span>
           </motion.button>
         </div>
@@ -1027,8 +1040,7 @@ export default function Layout({
 
       <header className={cn(
         "z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
-        isPreview ? "absolute top-0 pl-[68px]" : "sticky top-0",
-        user && !isPreview && "lg:pl-[68px]",
+        isPreview ? "absolute top-0" : "sticky top-0",
         branding?.sidebarTheme === 'dark' ? "bg-slate-950/95 border-slate-900 text-white" :
         branding?.sidebarTheme === 'accent' ? "bg-brand-accent/95 border-white/10 text-white" :
         branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
@@ -1045,7 +1057,8 @@ export default function Layout({
                 id="sidebar-toggle-btn"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={cn(
-                  "p-2 rounded-xl transition-all mr-1 lg:hidden flex items-center justify-center",
+                  "p-2 rounded-xl transition-all mr-1 flex items-center justify-center",
+                  menuUnlocked ? "" : "lg:hidden",
                   isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500"
                 )}
               >
@@ -1055,7 +1068,7 @@ export default function Layout({
             
             <div className="flex items-center gap-2.5">
               {/* Branded box size and aura matching screenshot */}
-              <div className="relative shrink-0 select-none group">
+              <div className="relative shrink-0 select-none group cursor-pointer" onClick={handleLogoClick}>
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-40 transition duration-1000 animate-pulse" />
                 <div className="relative w-11 h-11 rounded-2xl bg-slate-950 flex items-center justify-center border border-white/10 shadow-lg">
                   <span className="text-white font-black text-lg tracking-tighter italic leading-none">

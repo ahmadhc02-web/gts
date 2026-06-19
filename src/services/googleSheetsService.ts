@@ -657,7 +657,7 @@ export const googleSheetsService = {
       
       values.push(['Monthly Recoveries (Table 1)']);
       values.push(['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT']);
-      const validT1 = (sheet.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0);
+      const validT1 = (Array.isArray(sheet.table1Rows) ? sheet.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0);
       if (validT1.length > 0) {
         validT1.forEach((r: any) => {
           values.push([r.sr, r.cId || '', r.name || '', r.comments || '', r.amount || 0]);
@@ -669,7 +669,7 @@ export const googleSheetsService = {
 
       values.push(['Extra Adjustments (Table 2)']);
       values.push(['SR', 'NAME', 'AMOUNT']);
-      const validT2 = (sheet.table2Rows || []).filter((r: any) => r.name || r.amount > 0);
+      const validT2 = (Array.isArray(sheet.table2Rows) ? sheet.table2Rows : []).filter((r: any) => r.name || r.amount > 0);
       if (validT2.length > 0) {
         validT2.forEach((r: any) => {
           values.push([r.sr, r.name || '', r.amount || 0]);

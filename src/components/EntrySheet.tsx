@@ -108,7 +108,7 @@ export default function EntrySheet({
 
     const results: any[] = [];
     ledgerHistory.forEach((sheet) => {
-      const matchedRows = (sheet.table1Rows || []).filter((r: any) => {
+      const matchedRows = (Array.isArray(sheet.table1Rows) ? sheet.table1Rows : []).filter((r: any) => {
         const rowCId = String(r.cId || '').trim().toLowerCase();
         const rowName = String(r.name || '').trim().toLowerCase();
         const rowComments = String(r.comments || '').trim().toLowerCase();
@@ -796,8 +796,8 @@ export default function EntrySheet({
       setSheetDate(target.sheetDate);
     }
     setDateLabel(target.dateLabel || 'DATE');
-    setTable1Rows(target.table1Rows || []);
-    setTable2Rows(target.table2Rows || []);
+    setTable1Rows(Array.isArray(target.table1Rows) ? target.table1Rows : []);
+    setTable2Rows(Array.isArray(target.table2Rows) ? target.table2Rows : []);
     setCashReceived(target.cashReceived || '');
     setSign(target.sign || '');
     setSubmitted(target.submitted || '');
@@ -1111,8 +1111,8 @@ export default function EntrySheet({
         const sh = currentSyncSheets[i];
         
         // Skip empty sheets if we have multiple sheets
-        const hasT1Data = (sh.table1Rows || []).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
-        const hasT2Data = (sh.table2Rows || []).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT1Data = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT2Data = (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
         const officerName = sh.recOfficer || '';
         
         if (!officerName.trim()) {
@@ -1140,7 +1140,7 @@ export default function EntrySheet({
           areaLabel: sh.areaLabel || 'AREA',
           sheetDate: sh.sheetDate || sheetDate || '',
           dateLabel: sh.dateLabel || 'DATE',
-          table1Rows: (sh.table1Rows || []).map(r => ({
+          table1Rows: (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).map(r => ({
             sr: r.sr,
             cId: r.cId || '',
             name: r.name || '',
@@ -1151,7 +1151,7 @@ export default function EntrySheet({
             clientId: r.clientId || '',
             clientUsername: r.clientUsername || ''
           })),
-          table2Rows: (sh.table2Rows || []).map(r => ({
+          table2Rows: (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).map(r => ({
             sr: r.sr,
             name: r.name || '',
             amount: Number(r.amount) || 0,
@@ -1314,7 +1314,7 @@ export default function EntrySheet({
     setDateLabel(sheet.dateLabel || 'DATE');
 
     // Restore table 1rows
-    const reT1 = (sheet.table1Rows || []).map((r: any) => ({
+    const reT1 = (Array.isArray(sheet.table1Rows) ? sheet.table1Rows : []).map((r: any) => ({
       sr: r.sr,
       cId: r.cId || '',
       name: r.name || '',
@@ -1340,7 +1340,7 @@ export default function EntrySheet({
     setTable1Rows(reT1);
 
     // Restore table 2rows
-    const reT2 = (sheet.table2Rows || []).map((r: any) => ({
+    const reT2 = (Array.isArray(sheet.table2Rows) ? sheet.table2Rows : []).map((r: any) => ({
       sr: r.sr,
       name: r.name || '',
       amount: Number(r.amount) || 0,
@@ -1773,7 +1773,7 @@ export default function EntrySheet({
         const folderName = folder ? folder.name : 'Uncategorized';
 
         // Check T1
-        (sh.table1Rows || []).forEach((r: any) => {
+        (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).forEach((r: any) => {
           const match = r.cId?.toLowerCase().includes(keyword) || r.name?.toLowerCase().includes(keyword) || r.clientUsername?.toLowerCase().includes(keyword);
           if (match && Number(r.amount) > 0) {
             // Find corresponding client for extra connection info
@@ -1801,7 +1801,7 @@ export default function EntrySheet({
         });
 
         // Check T2
-        (sh.table2Rows || []).forEach((r: any) => {
+        (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).forEach((r: any) => {
           const match = r.name?.toLowerCase().includes(keyword);
           if (match && Number(r.amount) > 0) {
             // Find corresponding client
@@ -2301,7 +2301,7 @@ export default function EntrySheet({
                               {/* Display sum of collections if greater than 0 */}
                               {(() => {
                                 const totalAmount = folderSheets.reduce((sum, sh) => {
-                                  const t1 = (sh.table1Rows || []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
+                                  const t1 = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
                                   return sum + t1;
                                 }, 0);
                                 if (totalAmount > 0) {
@@ -2368,9 +2368,9 @@ export default function EntrySheet({
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {uncategorizedSheets.filter(doesMatchSearch).map((sh) => {
-                    const t1Am = (sh.table1Rows || []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
+                    const t1Am = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
                     const docTotal = t1Am;
-                    const filledLines = (sh.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
+                    const filledLines = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
                     return (
                       <motion.div
                         key={sh.id}
@@ -2492,9 +2492,9 @@ export default function EntrySheet({
                 </div>
               ) : (
                 openedFolderSheets.map((sh) => {
-                  const t1Am = (sh.table1Rows || []).reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
+                  const t1Am = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
                   const sheetTotal = t1Am;
-                  const filledLines = (sh.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
+                  const filledLines = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
 
                   return (
                     <motion.div
@@ -3189,8 +3189,8 @@ export default function EntrySheet({
                       const areaLabel = isActive ? liveState.areaLabel : (sh.areaLabel || 'AREA');
                       const sheetDate = isActive ? liveState.sheetDate : (sh.sheetDate || '');
                       const dateLabel = isActive ? liveState.dateLabel : (sh.dateLabel || 'DATE');
-                      const table1Rows = isActive ? liveState.table1Rows : (sh.table1Rows || []);
-                      const table2Rows = isActive ? liveState.table2Rows : (sh.table2Rows || []);
+                      const table1Rows = isActive ? liveState.table1Rows : (Array.isArray(sh.table1Rows) ? sh.table1Rows : []);
+                      const table2Rows = isActive ? liveState.table2Rows : (Array.isArray(sh.table2Rows) ? sh.table2Rows : []);
                       const cashReceived = isActive ? liveState.cashReceived : (sh.cashReceived || '');
                       const sign = isActive ? liveState.sign : (sh.sign || '');
                       const submitted = isActive ? liveState.submitted : (sh.submitted || '');
@@ -4175,7 +4175,7 @@ export default function EntrySheet({
               ) : (
                 getFilteredHistory().map((sheet) => {
                   const isLoaded = loadedSheetId === sheet.id;
-                  const t1Valid = (sheet.table1Rows || []).filter((r: any) => r.cId || r.name || r.amount > 0);
+                  const t1Valid = (Array.isArray(sheet.table1Rows) ? sheet.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0);
                   const sumT1 = t1Valid.reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
                   
                   return (
