@@ -94,6 +94,7 @@ export default function EntrySheet({
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState('');
   const [openedFolderId, setOpenedFolderId] = useState<string | null>(null);
+  const [folderSortOption, setFolderSortOption] = useState<'a-to-z' | 'amount-high' | 'amount-low' | 'newest'>('newest');
 
   // User search popup state variables
   const [showUserSearchPopup, setShowUserSearchPopup] = useState(false);
@@ -2013,8 +2014,43 @@ export default function EntrySheet({
   };
 
   const renderDashboard = () => {
+    const parseDateValue = (dateStr?: string, fallbackTs?: number) => {
+      if (!dateStr) return fallbackTs || 0;
+      const parts = dateStr.split(/[-/]/).map(p => p.trim());
+      if (parts.length === 3) {
+        const d = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        const y = parseInt(parts[2], 10);
+        if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+          const year = y < 100 ? 2000 + y : y;
+          return new Date(year, m - 1, d).getTime();
+        }
+      }
+      const parsed = Date.parse(dateStr);
+      return isNaN(parsed) ? (fallbackTs || 0) : parsed;
+    };
+
     // Group sheets into folders based on sheetFolderMap
-    const uncategorizedSheets = ledgerHistory.filter(sh => !sheetFolderMap[sh.id]);
+    let uncategorizedSheets = ledgerHistory.filter(sh => !sheetFolderMap[sh.id]);
+
+    uncategorizedSheets.sort((a, b) => {
+      if (folderSortOption === 'a-to-z') {
+        const nameA = (a.recOfficer || '').toLowerCase();
+        const nameB = (b.recOfficer || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      } else if (folderSortOption === 'amount-high' || folderSortOption === 'amount-low') {
+        const t1AmA = (Array.isArray(a.table1Rows) ? a.table1Rows : []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+        const t1AmB = (Array.isArray(b.table1Rows) ? b.table1Rows : []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+        return folderSortOption === 'amount-high' ? t1AmB - t1AmA : t1AmA - t1AmB;
+      }
+      
+      const dateA = parseDateValue(a.sheetDate, a.createdAt);
+      const dateB = parseDateValue(b.sheetDate, b.createdAt);
+      if (dateA !== dateB) {
+        return dateB - dateA;
+      }
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
     
     // Filter search query across sheets
     const filterKeyword = dashboardSearchQuery.toLowerCase().trim();
@@ -2057,9 +2093,29 @@ export default function EntrySheet({
     };
 
     const activeFolder = folders.find(f => f.id === openedFolderId);
-    const openedFolderSheets = activeFolder 
+    let openedFolderSheets = activeFolder 
       ? ledgerHistory.filter(sh => sheetFolderMap[sh.id] === activeFolder.id && doesMatchSearch(sh)) 
       : [];
+
+    openedFolderSheets.sort((a, b) => {
+      if (folderSortOption === 'a-to-z') {
+        const nameA = (a.recOfficer || '').toLowerCase();
+        const nameB = (b.recOfficer || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      } else if (folderSortOption === 'amount-high' || folderSortOption === 'amount-low') {
+        const t1AmA = (Array.isArray(a.table1Rows) ? a.table1Rows : []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+        const t1AmB = (Array.isArray(b.table1Rows) ? b.table1Rows : []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+        return folderSortOption === 'amount-high' ? t1AmB - t1AmA : t1AmA - t1AmB;
+      }
+      
+      // Default: Date (Newest first)
+      const dateA = parseDateValue(a.sheetDate, a.createdAt);
+      const dateB = parseDateValue(b.sheetDate, b.createdAt);
+      if (dateA !== dateB) {
+        return dateB - dateA;
+      }
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
 
     return (
       <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-6 flex flex-col gap-6 select-none scrollbar-thin">
@@ -2082,6 +2138,16 @@ export default function EntrySheet({
             {/* Search filter - displayed only when a folder is selected */}
             {openedFolderId && (
               <div className="flex items-center gap-2 w-full sm:w-auto">
+                <select
+                  value={folderSortOption}
+                  onChange={(e) => setFolderSortOption(e.target.value as any)}
+                  className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-[10px] items-center font-bold uppercase transition-colors hover:border-slate-300 dark:hover:border-slate-700 py-2 px-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
+                >
+                  <option value="newest">Latest Date (Default)</option>
+                  <option value="a-to-z">Alphabetical (A-Z)</option>
+                  <option value="amount-high">Amount (Highest)</option>
+                  <option value="amount-low">Amount (Lowest)</option>
+                </select>
                 <div className="relative w-full sm:w-64">
                   <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
                   <input
@@ -2373,6 +2439,7 @@ export default function EntrySheet({
                     const filledLines = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
                     return (
                       <motion.div
+                        layout
                         key={sh.id}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -2498,6 +2565,7 @@ export default function EntrySheet({
 
                   return (
                     <motion.div
+                      layout
                       key={sh.id}
                       initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}

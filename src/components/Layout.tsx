@@ -420,26 +420,38 @@ export default function Layout({
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
       {user && (
         <div className={cn(
-          "left-0 bottom-0 w-[68px] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-center pb-5 select-none",
-          isSidebarOpen ? "flex z-[160] top-0" : "hidden lg:flex z-[51] top-16",
+          "group/rail left-0 bottom-0 w-[68px] hover:w-[240px] transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-stretch pb-5 select-none overflow-hidden",
+          isSidebarOpen ? "flex z-[160] top-0" : "hidden lg:flex z-[51] top-0",
           isPreview ? "absolute h-full" : "fixed shadow-[1px_0_15px_rgba(0,0,0,0.02)]"
         )}>
           {/* Menu Trigger Button Container (Hidden on Desktop, replaced by Header Logo) */}
-          <div className={cn("w-full h-16 flex items-center justify-center shrink-0 border-b border-slate-100/50 dark:border-slate-900/40", menuUnlocked ? "flex" : (isPreview ? "lg:flex" : "lg:hidden"))}>
-            <motion.button
-              id="rail-menu-btn"
-              onClick={() => setIsSidebarOpen(false)}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="p-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all duration-300 cursor-pointer"
-              title="Close Menu"
-            >
-              <X size={20} />
-            </motion.button>
+          <div className="w-full h-16 flex items-center justify-start shrink-0 border-b border-slate-100/50 dark:border-slate-900/40 relative overflow-hidden">
+            <div className="w-[68px] flex justify-center shrink-0">
+              <div className="relative shrink-0 select-none group cursor-pointer transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]" onClick={handleLogoClick}>
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-40 transition duration-1000 animate-pulse" />
+                <div className="relative w-10 h-10 rounded-2xl bg-slate-950 flex items-center justify-center border border-white/10 shadow-lg">
+                  <span className="text-white font-black text-sm tracking-tighter italic leading-none">
+                    G<span className="text-emerald-500">TS</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="opacity-0 group-hover/rail:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] flex flex-col justify-center select-none whitespace-nowrap">
+              <h1 className="text-xs font-black tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-sans">
+                {brandingText}
+              </h1>
+              <div className="flex items-center gap-1 mt-1">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse relative -top-[0.5px]" />
+                <span className="text-[7.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-none">
+                  POWERED BY GREEN NET
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Dynamic Icon groups */}
-          <div className="flex-1 w-full px-3 flex flex-col gap-5 items-center pt-6 overflow-y-auto overflow-x-hidden no-scrollbar">
+          <div className="flex-1 w-full px-3 flex flex-col gap-5 items-start pt-6 overflow-y-auto overflow-x-hidden no-scrollbar">
             {(() => {
               const items = [
                 { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList },
@@ -500,13 +512,14 @@ export default function Layout({
                     whileHover="hover"
                     whileTap="tap"
                     className={cn(
-                      "w-11 h-11 rounded-2xl flex items-center justify-center relative cursor-pointer border transition-colors duration-300 group",
+                      "h-11 w-full rounded-2xl flex items-center justify-start relative cursor-pointer border transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] group",
                       isItemActive
                         ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/30 shadow-[0_4px_12px_rgba(59,130,246,0.12)]"
                         : "border-transparent text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-900/50 hover:text-slate-800 dark:hover:text-white"
                     )}
                   >
-                    <motion.div
+                    <div className="w-11 h-11 flex items-center justify-center shrink-0">
+                      <motion.div
                       variants={{
                         rest: { scale: 1, rotate: 0, y: 0 },
                         hover: { scale: 1.15, rotate: 8, y: -1 }
@@ -515,6 +528,8 @@ export default function Layout({
                     >
                       <item.icon size={20} />
                     </motion.div>
+                    </div>
+                    <span className="opacity-0 group-hover/rail:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] text-[10px] font-black uppercase tracking-widest whitespace-nowrap ml-3">{item.label}</span>
                     
                     {isItemActive && (
                       <motion.div
@@ -525,7 +540,7 @@ export default function Layout({
                     )}
                     
                     {/* Tooltip */}
-                    <span className="absolute left-16 scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 z-[100] bg-slate-900 dark:bg-slate-800 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
+                    <span className="absolute left-16 scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100 group-hover/rail:hidden transition-all duration-200 z-[100] bg-slate-900 dark:bg-slate-800 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
                       {item.label}
                     </span>
                   </motion.button>
@@ -535,18 +550,19 @@ export default function Layout({
           </div>
 
           {/* Bottom Help Question Icon & Logout */}
-          <div className="mt-auto px-3 w-full flex flex-col items-center gap-3">
+          <div className="mt-auto px-3 w-full flex flex-col items-start gap-3">
             {/* Show bottom Sparkles help icon only if 'chat' is hidden from the main custom list to avoid duplication */}
             {(branding?.hiddenTabs || []).includes('chat') && (
               <motion.button
                 onClick={() => setIsChatOpen(true)}
                 whileHover="hover"
                 whileTap="tap"
-                className="w-11 h-11 rounded-2xl flex items-center justify-center relative cursor-pointer text-blue-500 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-900 group"
+                className="h-11 w-full rounded-2xl flex items-center justify-start relative cursor-pointer text-blue-500 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] group"
                 title="Launch AI Help Portal"
               >
-                <motion.div
-                  variants={{
+                <div className="w-11 h-11 flex items-center justify-center shrink-0">
+                      <motion.div
+                      variants={{
                     hover: { scale: 1.15, rotate: 12 },
                     tap: { scale: 0.95 }
                   }}
@@ -554,9 +570,8 @@ export default function Layout({
                 >
                   <Sparkles size={20} className="animate-pulse" />
                 </motion.div>
-                <span className="absolute left-16 scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 z-50 bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
-                  AI Help
-                </span>
+                </div>
+                <span className="opacity-0 group-hover/rail:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] text-[10px] font-black uppercase tracking-widest whitespace-nowrap ml-3">AI Help</span>
               </motion.button>
             )}
 
@@ -566,11 +581,12 @@ export default function Layout({
               }}
               whileHover="hover"
               whileTap="tap"
-              className="w-11 h-11 rounded-2xl flex items-center justify-center relative cursor-pointer text-slate-400 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-600 dark:hover:bg-red-500/20 dark:hover:text-red-400 group"
+              className="h-11 w-full rounded-2xl flex items-center justify-start relative cursor-pointer text-slate-400 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-600 dark:hover:bg-red-500/20 dark:hover:text-red-400 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] group"
               title="Sign Out"
             >
-              <motion.div
-                variants={{
+              <div className="w-11 h-11 flex items-center justify-center shrink-0">
+                      <motion.div
+                      variants={{
                   hover: { scale: 1.15, x: 2 },
                   tap: { scale: 0.95 }
                 }}
@@ -578,9 +594,8 @@ export default function Layout({
               >
                 <LogOut size={20} />
               </motion.div>
-              <span className="absolute left-16 scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100 transition-all duration-200 z-50 bg-red-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
-                Logout
-              </span>
+              </div>
+              <span className="opacity-0 group-hover/rail:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] text-[10px] font-black uppercase tracking-widest whitespace-nowrap ml-3">Logout</span>
             </motion.button>
           </div>
         </div>
@@ -1041,50 +1056,42 @@ export default function Layout({
       <header className={cn(
         "z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
         isPreview ? "absolute top-0" : "sticky top-0",
+        user && !isPreview && "lg:pl-[68px]",
         branding?.sidebarTheme === 'dark' ? "bg-slate-950/95 border-slate-900 text-white" :
         branding?.sidebarTheme === 'accent' ? "bg-brand-accent/95 border-white/10 text-white" :
         branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
         "bg-white/95 dark:bg-slate-950/95 border-slate-200/80 dark:border-slate-900/80"
       )}>
-        <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:pr-8 lg:pl-[76px] h-16 flex items-center justify-between">
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2 sm:gap-4"
+            className="flex items-center gap-2 sm:gap-4 lg:gap-3 ml-0"
           >
             {user && (
-              <button 
+              <motion.button 
                 id="sidebar-toggle-btn"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={cn(
-                  "p-2 rounded-xl transition-all mr-1 flex items-center justify-center",
-                  menuUnlocked ? "" : "lg:hidden",
+                  "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden",
+                  menuUnlocked ? "opacity-100 w-10 h-10 p-2 scale-100" : "opacity-100 w-10 h-10 p-2 scale-100 lg:hidden",
                   isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500"
                 )}
+                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
               >
-                {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-              </button>
+                <div className="flex items-center justify-center">
+                  {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                </div>
+              </motion.button>
             )}
             
             <div className="flex items-center gap-2.5">
               {/* Branded box size and aura matching screenshot */}
-              <div className="relative shrink-0 select-none group cursor-pointer" onClick={handleLogoClick}>
+              <div className="relative shrink-0 select-none group cursor-pointer lg:hidden" onClick={handleLogoClick}>
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-40 transition duration-1000 animate-pulse" />
                 <div className="relative w-11 h-11 rounded-2xl bg-slate-950 flex items-center justify-center border border-white/10 shadow-lg">
                   <span className="text-white font-black text-lg tracking-tighter italic leading-none">
                     G<span className="text-emerald-500">TS</span>
-                  </span>
-                </div>
-              </div>
-              
-              <div className="hidden xs:flex sm:flex flex-col justify-center select-none h-11 mt-0">
-                <h1 className="text-xs md:text-sm font-black tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-sans">
-                  {brandingText}
-                </h1>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="text-[7.5px] md:text-[8.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1 leading-none">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse mr-0.5" />
-                    POWERED BY GREEN NET
                   </span>
                 </div>
               </div>

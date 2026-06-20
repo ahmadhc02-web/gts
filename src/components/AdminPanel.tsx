@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -566,6 +566,7 @@ export default function AdminPanel({
   });
   const [billingKeyInput, setBillingKeyInput] = useState('');
   const [isEditingSecurityKey, setIsEditingSecurityKey] = useState(false);
+  const [isSecurityWidgetExpanded, setIsSecurityWidgetExpanded] = useState(false);
   const [newSecurityKeyInput, setNewSecurityKeyInput] = useState('');
 
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
@@ -6432,225 +6433,220 @@ export default function AdminPanel({
               )}
             </div>
 
-            {/* CENTRAL SECURITY CLEARANCE CONSOLE */}
-            <div className={cn("p-6 sm:p-8", getCardStyle(branding.cardStyle), isBillingUnlocked ? "border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-950/10" : "border-amber-500/20 bg-amber-500/5 dark:bg-amber-950/15", "space-y-4 rounded-2xl shadow-sm border")}>
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="flex items-center gap-4">
-                  <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center border shadow-sm transition-colors shrink-0", 
-                    isBillingUnlocked 
-                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" 
-                      : "bg-amber-500/10 border-amber-500/20 text-amber-500"
-                  )}>
-                    {isBillingUnlocked ? <Shield size={22} /> : <ShieldAlert size={22} />}
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
-                      Billing Sheet Security Shield
-                      <span className={cn("px-2.5 py-0.5 text-[9px] font-black tracking-widest uppercase rounded-full border shadow-sm",
-                        isBillingUnlocked 
-                          ? "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/30" 
-                          : "bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/30"
-                      )}>
-                        {isBillingUnlocked ? "UNLOCKED & ACTIVE" : "SECURED / VIEW-ONLY"}
-                      </span>
-                    </h4>
-                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mt-1">
-                      {isBillingUnlocked 
-                        ? "You currently have administrative clearance to override recovery, edit amounts, sync tables, or discard rows."
-                        : "Spreadsheet cell modification and administrative actions are disabled. Enter your Security Access Key to unlock write privileges."
-                      }
-                    </p>
-                  </div>
+            {/* FLOATING CORNER SECURITY SHIELD */}
+            <div className="fixed bottom-6 left-4 lg:left-[88px] z-[90] flex items-end">
+              <motion.div 
+                layout
+                initial={{ borderRadius: 9999 }}
+                animate={{ 
+                  width: isSecurityWidgetExpanded ? 'auto' : '48px',
+                  borderRadius: isSecurityWidgetExpanded ? 20 : 9999
+                }}
+                className={cn(
+                  "overflow-hidden shadow-2xl border transition-colors flex items-center h-12",
+                  isBillingUnlocked 
+                    ? "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-500/30 backdrop-blur-md" 
+                    : "bg-amber-50 dark:bg-slate-900 border-amber-500/30 backdrop-blur-md",
+                  !isSecurityWidgetExpanded && "cursor-pointer hover:scale-105"
+                )}
+                onClick={() => {
+                  if (!isSecurityWidgetExpanded) setIsSecurityWidgetExpanded(true);
+                }}
+              >
+                {/* Always visible Icon */}
+                <div 
+                  className={cn("w-12 h-12 shrink-0 flex items-center justify-center cursor-pointer transition-colors")}
+                  onClick={(e) => {
+                    if (isSecurityWidgetExpanded) {
+                      e.stopPropagation();
+                      setIsSecurityWidgetExpanded(false);
+                    }
+                  }}
+                  title={isSecurityWidgetExpanded ? "Collapse Widget" : "Open Security Shield"}
+                >
+                  {isBillingUnlocked ? <Unlock size={20} className="text-emerald-600 dark:text-emerald-400" fill="currentColor" /> : <Lock size={20} className="text-amber-600 dark:text-amber-400" fill="currentColor" />}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  {!isBillingUnlocked ? (
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <input
-                        type="password"
-                        value={billingKeyInput}
-                        onChange={(e) => setBillingKeyInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleUnlockBilling();
-                        }}
-                        placeholder="INPUT PASSKEY (e.g. 786786)..."
-                        className="px-4 py-2.5 text-xs font-mono font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 w-48 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-amber-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleUnlockBilling}
-                        className="px-5 py-3 bg-amber-500 hover:bg-amber-600 dark:bg-brand-accent dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[10px] rounded-xl transition-all shadow-md shrink-0 animate-pulse"
-                      >
-                        Verify Key
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {isEditingSecurityKey ? (
-                        <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800/80">
+                {/* Expanded Content */}
+                <AnimatePresence>
+                  {isSecurityWidgetExpanded && (
+                    <motion.div 
+                      key="content"
+                      initial={{ opacity: 0, x: -10, width: 0 }}
+                      animate={{ opacity: 1, x: 0, width: 'auto' }}
+                      exit={{ opacity: 0, x: -10, width: 0 }}
+                      className="flex items-center gap-3 pr-2 lg:pr-4 whitespace-nowrap overflow-hidden"
+                    >
+                      <div className="flex flex-col border-l border-slate-200 dark:border-slate-700/50 pl-3 mr-1 py-1">
+                        <span className={cn("text-[9px] font-black tracking-widest uppercase leading-none mb-0.5",
+                          isBillingUnlocked ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
+                        )}>
+                          {isBillingUnlocked ? "UNLOCKED & ACTIVE" : "SECURED / VIEW-ONLY"}
+                        </span>
+                        <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">
+                          {isBillingUnlocked ? "Write Privileges Enabled" : "Access Key Required"}
+                        </span>
+                      </div>
+
+                      {!isBillingUnlocked ? (
+                        <div className="flex items-center gap-1.5 ml-1">
                           <input
-                            type="text"
-                            value={newSecurityKeyInput}
-                            onChange={(e) => setNewSecurityKeyInput(e.target.value)}
-                            placeholder="NEW KEY (e.g. 786786)..."
-                            className="px-3 py-1.5 text-xs font-mono font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500/30 w-36 text-slate-900 dark:text-slate-100"
+                            type="password"
+                            value={billingKeyInput}
+                            onChange={(e) => setBillingKeyInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleUnlockBilling();
+                            }}
+                            placeholder="INPUT PASSKEY..."
+                            className="px-3 py-1.5 text-[10px] font-mono font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500/50 w-32 md:w-40 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+                            onClick={(e) => e.stopPropagation()}
                           />
                           <button
                             type="button"
-                            onClick={handleSaveSecurityKey}
-                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-colors border-none"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUnlockBilling();
+                            }}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[9px] rounded-lg transition-colors shadow-sm shrink-0"
                           >
-                            Save
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setIsEditingSecurityKey(false)}
-                            className="px-2.5 py-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-[9px] font-black uppercase tracking-widest transition-colors"
-                          >
-                            Cancel
+                            Verify
                           </button>
                         </div>
                       ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setNewSecurityKeyInput(appConfig.billingSecurityKey || '786786');
-                              setIsEditingSecurityKey(true);
-                            }}
-                            className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-black uppercase tracking-widest text-[10px] rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
-                          >
-                            <Key size={12} className="text-blue-550" />
-                            Edit Security Key
-                          </button>
-                          
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsBillingUnlocked(false);
-                              sessionStorage.removeItem('gts_billing_unlocked');
-                              // Dispatch custom event to notify rest of components in real-time
-                              window.dispatchEvent(new CustomEvent('gts-billing-unlocked-changed', { detail: false }));
-                              setBillingKeyInput('');
-                              toast.success("Billing spreadsheet re-locked successfully.");
-                            }}
-                            className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-450 font-black uppercase tracking-widest text-[10px] rounded-xl transition-colors border border-rose-100 dark:border-rose-900/20 shadow-sm"
-                          >
-                            Relock Console
-                          </button>
-                        </>
+                        <div className="flex flex-wrap items-center gap-1.5 ml-1">
+                          {isEditingSecurityKey ? (
+                            <div className="flex items-center gap-1.5 bg-white/50 dark:bg-slate-950/30 p-1 rounded-lg border border-emerald-500/20">
+                              <input
+                                type="text"
+                                value={newSecurityKeyInput}
+                                onChange={(e) => setNewSecurityKeyInput(e.target.value)}
+                                placeholder="NEW KEY..."
+                                className="px-2 py-1 text-[10px] font-mono font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500/30 w-28 text-slate-900 dark:text-slate-100"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSaveSecurityKey();
+                                }}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-widest rounded-md transition-colors"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsEditingSecurityKey(false);
+                                }}
+                                className="px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-[9px] font-black uppercase tracking-widest transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setNewSecurityKeyInput(appConfig.billingSecurityKey || '786786');
+                                  setIsEditingSecurityKey(true);
+                                }}
+                                className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-black uppercase tracking-widest text-[9px] rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                              >
+                                Edit Key
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsBillingUnlocked(false);
+                                  sessionStorage.removeItem('gts_billing_unlocked');
+                                  window.dispatchEvent(new CustomEvent('gts-billing-unlocked-changed', { detail: false }));
+                                  setBillingKeyInput('');
+                                  toast.success("Billing spreadsheet re-locked successfully.");
+                                }}
+                                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-450 border border-rose-200 dark:border-rose-900/30 font-black uppercase tracking-widest text-[9px] rounded-lg transition-colors shadow-sm"
+                              >
+                                Relock
+                              </button>
+                            </>
+                          )}
+                        </div>
                       )}
-                    </div>
+                    </motion.div>
                   )}
-                </div>
-              </div>
+                </AnimatePresence>
+              </motion.div>
             </div>
 
             {currentMonthId ? (
               <>
                 {/* Advanced Bento-Style Metrics Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   {[
                     {
                       label: "Expected Revenue",
                       val: `PKR ${(totalExpected).toLocaleString()}`,
-                      desc: `Base Amount: PKR ${(totalBase).toLocaleString()}`,
-                      borderColor: "border-l-indigo-500 dark:border-l-indigo-400",
-                      badgeColor: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20",
-                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(99,102,241,0.15)]",
-                      icon: <BarChart3 size={20} className="stroke-[2.5]" />
+                      desc: `Base Amount: PKR ${(totalBase).toLocaleString()}`
                     },
                     {
                       label: "CR Payments",
                       val: `PKR ${(totalCr).toLocaleString()}`,
-                      desc: `Arrears/Credit Recoveries`,
-                      borderColor: "border-l-fuchsia-500 dark:border-l-fuchsia-400",
-                      badgeColor: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 border border-fuchsia-500/20",
-                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(217,70,239,0.15)]",
-                      icon: <Coins size={20} className="stroke-[2.5]" />
+                      desc: `Arrears/Credit Recoveries`
                     },
                     {
                       label: "Fees Recovered",
                       val: `PKR ${(totalRecovered).toLocaleString()}`,
-                      desc: `Actual payments received`,
-                      borderColor: "border-l-emerald-500 dark:border-l-emerald-400",
-                      badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
-                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(16,185,129,0.15)]",
-                      icon: <CheckCircle size={20} className="stroke-[2.5]" />
+                      desc: `Actual payments received`
                     },
                     {
                       label: "Outstanding Balances",
                       val: `PKR ${(totalOutstanding).toLocaleString()}`,
-                      desc: "Pending subscriber fees",
-                      borderColor: "border-l-amber-500 dark:border-l-amber-400",
-                      badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
-                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(245,158,11,0.15)]",
-                      icon: <AlertTriangle size={20} className="stroke-[2.5]" />
+                      desc: "Pending subscriber fees"
                     },
                     {
                       label: "Recovery Rate",
                       val: `${(recoveryRate).toFixed(1)}%`,
-                      desc: "In-cycle performance index",
-                      borderColor: "border-l-purple-500 dark:border-l-purple-400",
-                      badgeColor: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20",
-                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(139,92,246,0.15)]",
-                      icon: <TrendingUp size={20} className="stroke-[2.5]" />
+                      desc: "In-cycle performance index"
                     },
                     {
                       label: "Subscribers Active",
                       val: `${activeRows.length} Nodes`,
-                      desc: `TDC: ${totalTDC} | Unpaid: ${totalPending}`,
-                      borderColor: "border-l-sky-500 dark:border-l-sky-400",
-                      badgeColor: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20",
-                      glowColor: "group-hover:shadow-[0_15px_30px_rgba(14,165,233,0.15)]",
-                      icon: <Users size={20} className="stroke-[2.5]" />
+                      desc: `TDC: ${totalTDC} | Unpaid: ${totalPending}`
                     }
                   ].map((card, i) => (
                     <motion.div
                       key={i}
-                      initial={{ opacity: 0, y: 30 }}
+                      initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      whileHover={{ y: -6, scale: 1.02 }}
+                      whileHover={{ y: -2, scale: 1.01 }}
                       transition={{ 
                         type: "spring",
                         stiffness: 260,
-                        damping: 18,
-                        delay: i * 0.08
+                        damping: 20,
+                        delay: i * 0.05
                       }}
-                      className={cn(
-                        "group relative p-5 sm:p-6 bg-white dark:bg-slate-900/90 rounded-2xl border border-slate-150 dark:border-slate-800 border-l-4",
-                        card.borderColor,
-                        "flex flex-col justify-between overflow-hidden shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 cursor-default",
-                        card.glowColor
-                      )}
+                      className="group relative p-3 sm:p-4 bg-white dark:bg-slate-900/90 rounded-xl border border-slate-200 dark:border-slate-800 border-l-4 border-l-slate-800 dark:border-l-slate-400 flex flex-col justify-between overflow-hidden shadow-sm hover:border-slate-400 dark:hover:border-slate-500 transition-all duration-300 cursor-default"
                     >
-                      {/* Subtle hover background accent glow */}
-                      <div className="absolute inset-0 bg-transparent group-hover:bg-slate-50/25 dark:group-hover:bg-slate-800/20 transition-colors pointer-events-none" />
-
-                      <div className="space-y-4 relative z-10">
-                        {/* Header: Label and Icon */}
+                      <div className="space-y-2 relative z-10">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest text-slate-400 leading-none">
+                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-500 leading-none">
                             {card.label}
                           </span>
-                          <div className={cn("p-1.5 sm:p-2 rounded-xl transition-transform duration-300 group-hover:scale-110 shrink-0", card.badgeColor)}>
-                            {card.icon}
-                          </div>
                         </div>
 
-                        {/* Value and Stat */}
-                        <div className="space-y-1.5">
-                          <div className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight font-sans text-slate-900 dark:text-white leading-none" title={card.val}>
+                        <div className="space-y-1">
+                          <div className="text-lg sm:text-xl md:text-2xl font-extrabold tracking-tight font-sans text-slate-900 dark:text-white leading-none" title={card.val}>
                             {card.val}
                           </div>
-                          <p className="text-[10px] sm:text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-relaxed whitespace-pre-wrap" title={card.desc}>
+                          <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-relaxed whitespace-pre-wrap" title={card.desc}>
                             {card.desc}
                           </p>
                         </div>
                       </div>
-
-                      {/* Glowing particle/indicator decoration inside card */}
-                      <div className="absolute bottom-2 right-2 w-1.5 h-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-slate-400 dark:bg-slate-600" />
                     </motion.div>
                   ))}
                 </div>
