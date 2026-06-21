@@ -113,6 +113,30 @@ export default function App() {
       return [];
     }
   });
+
+  const isSuspended = useMemo(() => {
+    if (!user) return false;
+    
+    // 1. If user is a dealer and blocked
+    if (user.role === 'dealer' && user.status === 'blocked') {
+      return true;
+    }
+    
+    // 2. If user is created by a dealer, and that parent dealer is blocked
+    if (user.dealerId && user.dealerId !== 'main') {
+      const parentDealer = users.find(u => u.uid === user.dealerId && u.role === 'dealer');
+      if (parentDealer && parentDealer.status === 'blocked') {
+        return true;
+      }
+    }
+
+    // 3. Or if user's own status is blocked
+    if (user.status === 'blocked') {
+      return true;
+    }
+    
+    return false;
+  }, [user, users]);
   const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({
@@ -186,6 +210,42 @@ export default function App() {
     notificationAudio.muted = isAudioMuted;
     chatAudio.muted = isAudioMuted;
   }, [notificationAudio, chatAudio, isAudioMuted]);
+
+  // Suspension warning effect: recurring 30-minute notifications + immediate beep alert
+  useEffect(() => {
+    if (!isSuspended) return;
+
+    const showSuspensionAlert = () => {
+      toast.error("⚠️ SYSTEM INSTANCE SUSPENDED / FROZEN", {
+        description: "ATTENTION: This network branch has been deactivated by Super Admin. All administrative actions and ticket registrations are locked.",
+        duration: 10000,
+      });
+      
+      if (!isAudioMuted && typeof AudioContext !== 'undefined') {
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(155, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(85, ctx.currentTime + 0.4);
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.005, ctx.currentTime + 0.4);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.4);
+        } catch (e) {
+          console.warn("Audio feedback blocked:", e);
+        }
+      }
+    };
+
+    showSuspensionAlert();
+    const intervalId = setInterval(showSuspensionAlert, 30 * 60 * 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isSuspended, isAudioMuted]);
 
   useEffect(() => {
     notificationAudio.load();
@@ -1295,6 +1355,13 @@ export default function App() {
 
   const handleRegisterComplaint = async (data: any, silent: boolean = false) => {
     if (!user) return;
+    if (isSuspended) {
+      toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
+        description: "Your dealer network node is currently frozen by the Super Admin. All client-registered operations are suspended.",
+        duration: 8000
+      });
+      return;
+    }
     if (!silent) setIsLoading(true);
     try {
       if (!navigator.onLine) {
@@ -1334,6 +1401,13 @@ export default function App() {
 
   const handleDeleteComplaint = async (id: string) => {
     if (!user) return;
+    if (isSuspended) {
+      toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
+        description: "Your dealer network node is currently frozen by the Super Admin. Deletion is disabled.",
+        duration: 8000
+      });
+      return;
+    }
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
@@ -1365,6 +1439,13 @@ export default function App() {
 
   const handleUpdateComplaintStatus = async (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => {
     if (!user) return;
+    if (isSuspended) {
+      toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
+        description: "Your dealer network node is currently frozen by the Super Admin. Status updates are disabled.",
+        duration: 8000
+      });
+      return;
+    }
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
@@ -1392,6 +1473,13 @@ export default function App() {
 
   const handleUpdateRemarks = async (id: string, remarks: string) => {
     if (!user) return;
+    if (isSuspended) {
+      toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
+        description: "Your dealer network node is currently frozen by the Super Admin. Remarks updates are disabled.",
+        duration: 8000
+      });
+      return;
+    }
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
@@ -1419,6 +1507,13 @@ export default function App() {
 
   const handleUpdateComplaint = async (id: string, data: Partial<Complaint>) => {
     if (!user) return;
+    if (isSuspended) {
+      toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
+        description: "Your dealer network node is currently frozen by the Super Admin. Editing tickets is disabled.",
+        duration: 8000
+      });
+      return;
+    }
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = data.customerName || complaint?.customerName || id;
@@ -1714,6 +1809,7 @@ export default function App() {
           complaints={processedComplaints}
           users={users}
           currentUser={user}
+          isSuspended={isSuspended}
           onDeleteComplaint={handleDeleteComplaint}
           onUpdateComplaintStatus={handleUpdateComplaintStatus}
           onUpdateRemarks={handleUpdateRemarks}
@@ -1745,7 +1841,9 @@ export default function App() {
       ) : (
         <MemberPanel
           complaints={processedComplaints}
+          users={users}
           currentUser={user}
+          isSuspended={isSuspended}
           onRegisterComplaint={handleRegisterComplaint}
           onUpdateComplaintStatus={handleUpdateComplaintStatus}
           onUpdateRemarks={handleUpdateRemarks}

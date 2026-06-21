@@ -47,6 +47,8 @@ interface MemberPanelProps {
   branding: BrandingConfig;
   activeTab?: string;
   onNavigate?: (id: string) => void;
+  isSuspended?: boolean;
+  users?: UserProfile[];
 }
 
 export default function MemberPanel({
@@ -71,7 +73,9 @@ export default function MemberPanel({
   onToggleMic,
   branding,
   activeTab: activeTabProp,
-  onNavigate: onNavigateProp
+  onNavigate: onNavigateProp,
+  isSuspended = false,
+  users = []
 }: MemberPanelProps) {
   const [forcedStatus, setForcedStatus] = useState<ComplaintStatus | 'all'>('all');
   const [forcedPriority, setForcedPriority] = useState<ComplaintPriority | 'all'>('all');
@@ -338,14 +342,29 @@ export default function MemberPanel({
                     }}
                     className="origin-top"
                   >
-                    <div className="max-w-4xl mx-auto pt-2 pb-8">
-                      <ComplaintForm 
-                        onSubmit={onRegisterComplaint} 
-                        isLoading={isLoading} 
-                        appConfig={appConfig} 
-                        currentUser={currentUser}
-                        branding={branding}
-                      />
+                    <div className="max-w-4xl mx-auto pt-2 pb-8 relative">
+                      {isSuspended && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-950/70 backdrop-blur-md rounded-3xl border border-red-500/20 p-6 text-center animate-in fade-in duration-300">
+                          <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 flex items-center justify-center mb-4 border border-red-200/50">
+                            <ShieldAlert size={28} className="animate-bounce" />
+                          </div>
+                          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-red-600 dark:text-red-400">
+                            Identity Suspended
+                          </h3>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold uppercase mt-1 max-w-xs leading-relaxed">
+                            Your dealer network access has been deactivated. Complaint registration is frozen.
+                          </p>
+                        </div>
+                      )}
+                      <div className={cn(isSuspended && "blur-[3px] pointer-events-none select-none opacity-30")}>
+                        <ComplaintForm 
+                          onSubmit={onRegisterComplaint} 
+                          isLoading={isLoading} 
+                          appConfig={appConfig} 
+                          currentUser={currentUser}
+                          branding={branding}
+                        />
+                      </div>
                     </div>
                   </motion.div>
                 )}

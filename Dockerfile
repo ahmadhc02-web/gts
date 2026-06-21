@@ -33,9 +33,9 @@ COPY --from=builder /app/package-lock.json ./
 COPY --from=builder /app/dist ./dist
 
 # Install ONLY production dependencies to keep the image extremely light
-RUN npm ci --omit=dev
+RUN npm ci --only=production
 
-# Expose the communication port
+# Expose the communication port (default: 3000 to match production proxy routing)
 EXPOSE 3000
 
 # Start command running the compiled server bundle

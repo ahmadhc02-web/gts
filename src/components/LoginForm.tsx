@@ -103,6 +103,12 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
   const [isCheckingUser, setIsCheckingUser] = useState(false);
   const [detectedCompanyName, setDetectedCompanyName] = useState<string>("Green Tech Services");
 
+  // Dealer Tied Authentication Challenge
+  const [matchedDealer, setMatchedDealer] = useState<any | null>(null);
+  const [dealerNetworkCode, setDealerNetworkCode] = useState('');
+  const [dealerCodeVerified, setDealerCodeVerified] = useState(false);
+  const [dealerCodeError, setDealerCodeError] = useState<string | null>(null);
+
   // Recovery Flow State
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [recoveryUsername, setRecoveryUsername] = useState('');
@@ -239,6 +245,10 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
       if (username.length < 3) {
         setRequiredLineCode(false);
         setDetectedCompanyName("Green Tech Services");
+        setMatchedDealer(null);
+        setDealerCodeVerified(false);
+        setDealerNetworkCode('');
+        setDealerCodeError(null);
         return;
       }
       
@@ -249,19 +259,36 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
         setRequiredLineCode(!!foundUser?.lineCode);
 
         if (foundUser) {
-          if (foundUser.role === 'dealer' && foundUser.companyName) {
-            setDetectedCompanyName(foundUser.companyName);
-          } else if (foundUser.dealerId && foundUser.dealerId !== 'main') {
+          // If the profile is created from a dealer account
+          const isTied = ['admin', 'liteadmin', 'member', 'editor'].includes(foundUser.role) && 
+                          foundUser.dealerId && 
+                          foundUser.dealerId !== 'main';
+          
+          if (isTied) {
             const dealer = allUsers.find(u => u.uid === foundUser.dealerId && u.role === 'dealer');
-            if (dealer && dealer.companyName) {
-              setDetectedCompanyName(dealer.companyName);
+            if (dealer) {
+              setMatchedDealer(dealer);
+              setDetectedCompanyName(dealer.companyName || "Green Tech Services");
+            } else {
+              setMatchedDealer(null);
+            }
+          } else {
+            setMatchedDealer(null);
+            if (foundUser.role === 'dealer' && foundUser.companyName) {
+              setDetectedCompanyName(foundUser.companyName);
+            } else if (foundUser.dealerId && foundUser.dealerId !== 'main') {
+              const dealer = allUsers.find(u => u.uid === foundUser.dealerId && u.role === 'dealer');
+              if (dealer && dealer.companyName) {
+                setDetectedCompanyName(dealer.companyName);
+              } else {
+                setDetectedCompanyName("Green Tech Services");
+              }
             } else {
               setDetectedCompanyName("Green Tech Services");
             }
-          } else {
-            setDetectedCompanyName("Green Tech Services");
           }
         } else {
+          setMatchedDealer(null);
           setDetectedCompanyName("Green Tech Services");
         }
       } catch (err) {
@@ -278,11 +305,17 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) return;
+
+    if (matchedDealer && !dealerCodeVerified) {
+      setDealerCodeError("Dealer Network Code verification is mandatory.");
+      return;
+    }
+
     if (requiredLineCode && !lineCode) {
       alert("Network Code is mandatory for this account.");
       return;
     }
-    await onLogin(username, password, lineCode || undefined);
+    await onLogin(username, password, lineCode || dealerNetworkCode || undefined);
   };
 
   const inputClasses = "w-full pl-10 pr-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-600 font-medium";
@@ -337,7 +370,7 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-[310px] sm:max-w-sm business-card p-5 sm:p-7 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 dark:border-white/5 rounded-[2.5rem] rounded-tr-[10rem]"
+        className="relative z-10 w-full max-w-[310px] sm:max-w-sm business-card p-5 sm:p-7 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] border border-white/20 dark:border-white/5 rounded-[2.5rem] rounded-tr-[10rem] overflow-hidden"
       >
         <div className="text-center mb-6">
           <div className="relative group w-20 h-20 mx-auto mb-6">
@@ -535,6 +568,106 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
             Powered by Green Net
           </p>
         </div>
+
+        <AnimatePresence>
+          {matchedDealer && !dealerCodeVerified && (
+            <motion.div
+              initial={{ y: "100%", opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 180 }}
+              className="absolute inset-0 z-20 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md rounded-[2.5rem] rounded-tr-[10rem] p-5 sm:p-7 flex flex-col justify-between overflow-hidden"
+            >
+              {/* Top Swipe down container */}
+              <div className="flex-1 flex flex-col justify-center">
+                <div className="text-center mb-4">
+                  <div className="inline-flex p-3 rounded-full bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 mb-2 border border-blue-200/50">
+                    <Globe className="w-6 h-6 animate-spin-slow" />
+                  </div>
+                  <h3 className="text-xs font-black uppercase tracking-widest text-[#2563EB] dark:text-blue-400">
+                    Dealer Link Synced
+                  </h3>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold uppercase mt-1">
+                    Authentication Connection Found
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-150 dark:border-slate-800 space-y-1.5 text-center mb-4">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Created by Dealer Profile</span>
+                  <div className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase font-mono">
+                    {matchedDealer.fullName || matchedDealer.username}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                    Company: <span className="font-extrabold text-blue-600 dark:text-brand-accent">{matchedDealer.companyName || "Green Tech Services"}</span>
+                  </div>
+                </div>
+
+                {/* Swipe down verification section */}
+                <motion.div 
+                  initial={{ y: -30, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.2, type: "spring", damping: 15 }}
+                  className="space-y-2 border-t border-slate-200 dark:border-slate-800/80 pt-4"
+                >
+                  <label className="block text-center text-[10px] font-black text-brand-accent uppercase tracking-widest leading-normal">
+                    Enter Dealer Network Code
+                  </label>
+                  <div className="relative">
+                    <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-accent" size={16} />
+                    <input
+                      type="text"
+                      value={dealerNetworkCode}
+                      onChange={(e) => {
+                        setDealerNetworkCode(e.target.value);
+                        setDealerCodeError(null);
+                      }}
+                      placeholder="e.g. 001"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-brand-accent/20 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 text-center font-mono tracking-widest text-sm font-black placeholder:text-slate-400"
+                    />
+                  </div>
+                  {dealerCodeError && (
+                    <p className="text-[10px] font-bold text-red-650 dark:text-red-400 text-center uppercase tracking-wider mt-1 leading-tight">
+                      ❌ {dealerCodeError}
+                    </p>
+                  )}
+                </motion.div>
+              </div>
+
+              <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-slate-850">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!dealerNetworkCode.trim()) {
+                      setDealerCodeError("Please input the Dealer's Network Code");
+                      return;
+                    }
+                    if (dealerNetworkCode.trim().toLowerCase() === matchedDealer.lineCode?.toLowerCase()) {
+                      setDealerCodeVerified(true);
+                      setLineCode(matchedDealer.lineCode);
+                      setDealerCodeError(null);
+                    } else {
+                      setDealerCodeError("Incorrect network code. Access Denied.");
+                    }
+                  }}
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-500/20"
+                >
+                  <Lock size={12} />
+                  Authorize Gateway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername('');
+                    setMatchedDealer(null);
+                  }}
+                  className="w-full py-2 rounded-xl bg-transparent hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 dark:text-[#64748B] text-[9px] font-bold uppercase tracking-widest transition-all cursor-pointer"
+                >
+                  Use Another Account
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
 
       <AnimatePresence>

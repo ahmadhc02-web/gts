@@ -314,8 +314,11 @@ export const firebaseService = {
   },
   
   getReadTenantId: (user: UserProfile) => {
-    if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'member' || user.role === 'editor' || user.role === 'liteadmin') return undefined;
+    if (user.dealerId && user.dealerId !== 'main') {
+      return user.dealerId;
+    }
     if (user.role === 'dealer') return user.uid;
+    if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'member' || user.role === 'editor' || user.role === 'liteadmin') return undefined;
     return user.dealerId || 'main';
   },
 

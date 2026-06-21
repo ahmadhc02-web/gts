@@ -58,36 +58,43 @@ export default function EntrySheet({
 
   // --- Folders & Dashboard State ---
   const [activeView, setActiveView] = useState<'dashboard' | 'editor'>('dashboard');
-  const [folders, setFolders] = useState<any[]>(() => {
-    const saved = localStorage.getItem('gts_ledger_folders');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // If it already is June Data exclusively, return it
-        if (parsed.length === 1 && parsed[0].name === 'June Data') {
-          return parsed;
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    // Return June Data as the single absolute default folder
-    return [
+  const [folders, setFolders] = useState<any[]>([]);
+  const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>({});
+
+  // Scoped folders loading on user change
+  useEffect(() => {
+    const scopeId = activeDealerId || currentUser?.uid || 'main';
+    const suffix = `_${scopeId}`;
+    const foldersKey = `gts_ledger_folders${suffix}`;
+    const sheetFoldersKey = `gts_ledger_sheet_folders${suffix}`;
+
+    const savedFolders = localStorage.getItem(foldersKey);
+    let parsedFolders = isDealerTied ? [] : [
       { id: 'june_data', name: 'June Data', createdAt: Date.now() }
     ];
-  });
-
-  const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('gts_ledger_sheet_folders');
-    if (saved) {
+    if (savedFolders) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(savedFolders);
+        if (parsed && parsed.length > 0) {
+          parsedFolders = parsed;
+        }
       } catch (e) {
-        console.error(e);
+        console.error("Failed to load user-scoped folders:", e);
       }
     }
-    return {};
-  });
+    setFolders(parsedFolders);
+
+    const savedMap = localStorage.getItem(sheetFoldersKey);
+    let parsedMap = {};
+    if (savedMap) {
+      try {
+        parsedMap = JSON.parse(savedMap);
+      } catch (e) {
+        console.error("Failed to load user-scoped sheet folders map:", e);
+      }
+    }
+    setSheetFolderMap(parsedMap);
+  }, [currentUser?.uid, activeDealerId]);
 
   // Folder UI inputs
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
@@ -147,12 +154,17 @@ export default function EntrySheet({
 
   // Auto save folders
   useEffect(() => {
-    localStorage.setItem('gts_ledger_folders', JSON.stringify(folders));
-  }, [folders]);
+    if (!folders || folders.length === 0) return;
+    const scopeId = activeDealerId || currentUser?.uid || 'main';
+    const suffix = `_${scopeId}`;
+    localStorage.setItem(`gts_ledger_folders${suffix}`, JSON.stringify(folders));
+  }, [folders, currentUser?.uid, activeDealerId]);
 
   useEffect(() => {
-    localStorage.setItem('gts_ledger_sheet_folders', JSON.stringify(sheetFolderMap));
-  }, [sheetFolderMap]);
+    const scopeId = activeDealerId || currentUser?.uid || 'main';
+    const suffix = `_${scopeId}`;
+    localStorage.setItem(`gts_ledger_sheet_folders${suffix}`, JSON.stringify(sheetFolderMap));
+  }, [sheetFolderMap, currentUser?.uid, activeDealerId]);
 
   const handleCreateFolder = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -436,6 +448,9 @@ export default function EntrySheet({
 
   // Auto-migrate and synchronize: put every existing sheet inside 'June Data' and clean other folders
   useEffect(() => {
+    if (isDealerTied) {
+      return;
+    }
     const juneFolder = folders.find(f => f.name.toLowerCase() === 'june data') || { id: 'june_data', name: 'June Data', createdAt: Date.now() };
     
     // Ensure folders contains ONLY June Data
@@ -465,7 +480,7 @@ export default function EntrySheet({
     if (mapChanged) {
       setSheetFolderMap(nextMap);
     }
-  }, [ledgerHistory, folders]);
+  }, [ledgerHistory, folders, currentUser?.role]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showUserLedger, setShowUserLedger] = useState(false);
   const [ledgerSearchUser, setLedgerSearchUser] = useState('');
@@ -2419,6 +2434,17 @@ export default function EntrySheet({
                   );
                 })}
               </div>
+              {folders.length === 0 && (
+                <div className="flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 text-center min-h-[200px] mt-2">
+                  <FolderPlus size={32} className="text-blue-550 dark:text-blue-400 mb-3 animate-bounce" />
+                  <p className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    No directory folders established yet
+                  </p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold max-w-sm mt-1 uppercase tracking-wider leading-relaxed">
+                    Set up your first recovery sheet folder directory below using the "New Volume Folder" input.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Uncategorized loose sheets as high-fidelity interactive file cards */}

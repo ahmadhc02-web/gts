@@ -26,6 +26,7 @@ interface AdminPanelProps {
   complaints: Complaint[];
   users: UserProfile[];
   currentUser: UserProfile;
+  isSuspended?: boolean;
   onDeleteComplaint: (id: string) => Promise<void>;
   onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
@@ -71,6 +72,7 @@ export default function AdminPanel({
   complaints,
   users,
   currentUser,
+  isSuspended = false,
   onDeleteComplaint,
   onUpdateComplaintStatus,
   onUpdateRemarks,
@@ -141,6 +143,10 @@ export default function AdminPanel({
   // --- Google Connect Multi-Browser Helper State ---
   const [showGoogleConnectModal, setShowGoogleConnectModal] = useState(false);
   const [googleConnectUrl, setGoogleConnectUrl] = useState('');
+
+  // Setup Dealer and Tenant scoping helpers early for downstream dependency arrays and memos
+  const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
+  const activeDealerId = isDealerTied ? firebaseService.getTenantId(currentUser) : undefined;
 
   // --- Local Enterprise Backup & Restore state ---
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
@@ -454,7 +460,9 @@ export default function AdminPanel({
   const [routeTraceLogs, setRouteTraceLogs] = useState<Record<string, string[]>>({});
 
   const clientsToShow = useMemo(() => {
-    const baseClients = masterClients && masterClients.length > 0 ? masterClients : [
+    // If we are scoped to a dealer (isDealerTied is true), we MUST NEVER load or display the 5 default mock clients.
+    // They must start as a totally fresh, empty list if the database is blank.
+    const baseClients = (masterClients && masterClients.length > 0) || isDealerTied ? masterClients : [
       { id: 'cli-001', name: 'AHMAD BUTT', username: 'AHMAD_BUTT_5G', number: '03001234567', mobileNumber: '03001234567', seriesNumber: '1001', area: 'MAIN BAZAR', pkgDetails: '15 Mbps Unlimited', userNearby: 'Tower A Sector 1', panelDetails: 'Mikrotik SXT 5s' },
       { id: 'cli-002', name: 'ZAIN KHAN', username: 'ZAIN_KHAN_NODE', number: '03217654321', mobileNumber: '03217654321', seriesNumber: '1002', area: 'MODEL TOWN', pkgDetails: '10 Mbps Fiber', userNearby: 'Core Hub 2', panelDetails: 'Unifi Lite AP' },
       { id: 'cli-003', name: 'CHAUDHARY FARHAN', username: 'FARHAN_CH_NET', number: '03459876543', mobileNumber: '03459876543', seriesNumber: '1003', area: 'GULBERG SECTOR', pkgDetails: '25 Mbps Premium', userNearby: 'Sector 4 Tower', panelDetails: 'Cambium ePMP 3000' },
@@ -473,10 +481,10 @@ export default function AdminPanel({
       const matchesArea = mypcClientArea === 'ALL' || (c.area || '').toUpperCase() === mypcClientArea.toUpperCase();
       return matchesSearch && matchesArea;
     });
-  }, [masterClients, mypcClientSearch, mypcClientArea]);
+  }, [masterClients, mypcClientSearch, mypcClientArea, isDealerTied]);
 
   const mypcUniqueAreas = useMemo(() => {
-    const baseClients = masterClients && masterClients.length > 0 ? masterClients : [
+    const baseClients = (masterClients && masterClients.length > 0) || isDealerTied ? masterClients : [
       { area: 'MAIN BAZAR' }, { area: 'MODEL TOWN' }, { area: 'GULBERG SECTOR' }, { area: 'AIRPORT ROAD' }
     ];
     const areas = new Set<string>();
@@ -484,7 +492,7 @@ export default function AdminPanel({
       if (c.area) areas.add(c.area.toUpperCase());
     });
     return Array.from(areas);
-  }, [masterClients]);
+  }, [masterClients, isDealerTied]);
   
   const [editMypcName, setEditMypcName] = useState('');
   const [editMypcUrl, setEditMypcUrl] = useState('');
@@ -568,9 +576,6 @@ export default function AdminPanel({
   const [isEditingSecurityKey, setIsEditingSecurityKey] = useState(false);
   const [isSecurityWidgetExpanded, setIsSecurityWidgetExpanded] = useState(false);
   const [newSecurityKeyInput, setNewSecurityKeyInput] = useState('');
-
-  const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
-  const activeDealerId = isDealerTied ? firebaseService.getTenantId(currentUser) : undefined;
 
   const handleUnlockBilling = () => {
     const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig.billingSecurityKey || '786786');
@@ -1602,8 +1607,17 @@ export default function AdminPanel({
   }, [billingMonths, currentMonthId]);
 
   const activeRows = useMemo(() => {
-    return activeMonthDoc?.rows || [];
-  }, [activeMonthDoc]);
+    const rawRows = activeMonthDoc?.rows || [];
+    if (currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main')) {
+      const allowedClientIds = new Set(masterClients.map(c => c.id).filter(Boolean));
+      const allowedUsernames = new Set(masterClients.map(c => c.username?.toLowerCase().trim()).filter(Boolean));
+      return rawRows.filter((r: any) => 
+        (r.clientId && allowedClientIds.has(r.clientId)) || 
+        (r.username && allowedUsernames.has(r.username.toLowerCase().trim()))
+      );
+    }
+    return rawRows;
+  }, [activeMonthDoc, masterClients, currentUser]);
 
   const filteredRows = useMemo(() => {
     const query = billingSearchQuery.toLowerCase().trim();
@@ -2180,17 +2194,32 @@ export default function AdminPanel({
                   }}
                   className="origin-top"
                 >
-                  <div className="pt-2 pb-8">
-                    <ComplaintForm 
-                      onSubmit={async (data) => {
-                        await onRegisterComplaint(data);
-                        setActiveTab('complaints');
-                      }} 
-                      isLoading={isLoading || false} 
-                      appConfig={appConfig}
-                      currentUser={currentUser}
-                      branding={branding}
-                    />
+                  <div className="pt-2 pb-8 relative">
+                    {isSuspended && (
+                      <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-950/70 backdrop-blur-md rounded-3xl border border-red-500/20 p-6 text-center animate-in fade-in duration-300">
+                        <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 flex items-center justify-center mb-4 border border-red-200/50">
+                          <ShieldAlert size={28} className="animate-bounce" />
+                        </div>
+                        <h3 className="text-sm font-black uppercase tracking-[0.2em] text-red-600 dark:text-red-400">
+                          Identity Suspended
+                        </h3>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold uppercase mt-1 max-w-xs leading-relaxed">
+                          Your dealer network access has been deactivated. Complaint registration is frozen.
+                        </p>
+                      </div>
+                    )}
+                    <div className={cn(isSuspended && "blur-[3px] pointer-events-none select-none opacity-30")}>
+                      <ComplaintForm 
+                        onSubmit={async (data) => {
+                          await onRegisterComplaint(data);
+                          setActiveTab('complaints');
+                        }} 
+                        isLoading={isLoading || false} 
+                        appConfig={appConfig}
+                        currentUser={currentUser}
+                        branding={branding}
+                      />
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -2871,9 +2900,18 @@ export default function AdminPanel({
                                 />
                               </div>
                             ) : (
-                              <div className="flex flex-col">
-                                <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{dealer.username}</span>
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{dealer.companyName || 'No Company Set'}</span>
+                              <div className="flex flex-col gap-1.5">
+                                <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight text-xs block">
+                                  🏢 Company: {dealer.companyName || 'No Company Set'}
+                                </span>
+                                <div className="flex flex-wrap gap-1.5 items-center">
+                                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-blue-600 dark:text-blue-400 text-[9px] font-black rounded border border-slate-200 dark:border-slate-800 uppercase tracking-widest">
+                                    Login ID: {dealer.username}
+                                  </span>
+                                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 text-[9px] font-black rounded border border-slate-200 dark:border-slate-800 uppercase tracking-widest">
+                                    🔑 Passkey: {dealer.password || '••••••••'}
+                                  </span>
+                                </div>
                               </div>
                             )}
                           </td>
@@ -2893,9 +2931,43 @@ export default function AdminPanel({
                             )}
                           </td>
                           <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              <span className="text-[10px] font-black text-slate-400 uppercase">Operational</span>
+                            <div className="flex flex-col gap-1.5 justify-center">
+                              <div className="flex items-center gap-1.5">
+                                {dealer.status === 'blocked' ? (
+                                  <>
+                                    <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                                    <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">SUSPENDED</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">ACTIVE</span>
+                                  </>
+                                )}
+                              </div>
+                              
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
+                                  try {
+                                    await firebaseService.updateUser(dealer.uid, { status: newStatus }, currentUser.fullName || currentUser.username);
+                                    toast.success(newStatus === 'blocked' ? '🚫 NODE SUSPENDED' : '✅ NODE ACTIVATED', {
+                                      description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'frozen' : 'restored to full service'}.`
+                                    });
+                                  } catch (err: any) {
+                                    toast.error('Failed to change dealer status', { description: err.message });
+                                  }
+                                }}
+                                className={cn(
+                                  "w-20 py-1 rounded text-[9px] font-black uppercase tracking-wider text-center transition-all cursor-pointer border",
+                                  dealer.status === 'blocked'
+                                    ? "bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200/50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 dark:text-rose-400 dark:border-rose-900/30"
+                                    : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-200/50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/30"
+                                )}
+                              >
+                                {dealer.status === 'blocked' ? "Turn ON" : "Turn OFF"}
+                              </button>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right">
@@ -5954,9 +6026,18 @@ export default function AdminPanel({
                                               />
                                             </div>
                                           ) : (
-                                            <div className="flex flex-col">
-                                              <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{dealer.username}</span>
-                                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{dealer.companyName || 'No Company Set'}</span>
+                                            <div className="flex flex-col gap-1.5">
+                                              <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight text-xs block">
+                                                🏢 Company: {dealer.companyName || 'No Company Set'}
+                                              </span>
+                                              <div className="flex flex-wrap gap-1.5 items-center">
+                                                <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-blue-600 dark:text-blue-400 text-[9px] font-black rounded border border-slate-200 dark:border-slate-800 uppercase tracking-widest">
+                                                  Login ID: {dealer.username}
+                                                </span>
+                                                <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 text-[9px] font-black rounded border border-slate-200 dark:border-slate-800 uppercase tracking-widest">
+                                                  🔑 Passkey: {dealer.password || '••••••••'}
+                                                </span>
+                                              </div>
                                             </div>
                                           )}
                                         </td>
@@ -5976,9 +6057,43 @@ export default function AdminPanel({
                                           )}
                                         </td>
                                         <td className="px-6 py-4">
-                                          <div className="flex items-center gap-2">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                            <span className="text-[10px] font-black text-slate-400 uppercase">Operational</span>
+                                          <div className="flex flex-col gap-1.5 justify-center">
+                                            <div className="flex items-center gap-1.5">
+                                              {dealer.status === 'blocked' ? (
+                                                <>
+                                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                                                  <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">SUSPENDED</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                  <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">ACTIVE</span>
+                                                </>
+                                              )}
+                                            </div>
+                                            
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
+                                                try {
+                                                  await firebaseService.updateUser(dealer.uid, { status: newStatus }, currentUser.fullName || currentUser.username);
+                                                  toast.success(newStatus === 'blocked' ? '🚫 NODE SUSPENDED' : '✅ NODE ACTIVATED', {
+                                                    description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'frozen' : 'restored to full service'}.`
+                                                  });
+                                                } catch (err: any) {
+                                                  toast.error('Failed to change dealer status', { description: err.message });
+                                                }
+                                              }}
+                                              className={cn(
+                                                "w-20 py-1 rounded text-[9px] font-black uppercase tracking-wider text-center transition-all cursor-pointer border",
+                                                dealer.status === 'blocked'
+                                                  ? "bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200/50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 dark:text-rose-400 dark:border-rose-900/30"
+                                                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-200/50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/30"
+                                              )}
+                                            >
+                                              {dealer.status === 'blocked' ? "Turn ON" : "Turn OFF"}
+                                            </button>
                                           </div>
                                         </td>
                                         <td className="px-6 py-4 text-right whitespace-normal">
@@ -6178,17 +6293,32 @@ export default function AdminPanel({
                         <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50">Field Operations</h2>
                         <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Capture and process enterprise support requests</p>
                       </div>
-                      <div className="pt-2 pb-8">
-                        <ComplaintForm 
-                          onSubmit={async (data) => {
-                            await onRegisterComplaint(data);
-                            setMypcOpenedFile('complaints_view');
-                          }} 
-                          isLoading={isLoading || false} 
-                          appConfig={appConfig}
-                          currentUser={currentUser}
-                          branding={branding}
-                        />
+                      <div className="pt-2 pb-8 relative">
+                        {isSuspended && (
+                          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-950/70 backdrop-blur-md rounded-3xl border border-red-500/20 p-6 text-center animate-in fade-in duration-300">
+                            <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 flex items-center justify-center mb-4 border border-red-200/50">
+                              <ShieldAlert size={28} className="animate-bounce" />
+                            </div>
+                            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-red-600 dark:text-red-400">
+                              Identity Suspended
+                            </h3>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold uppercase mt-1 max-w-xs leading-relaxed">
+                              Your dealer network access has been deactivated. Complaint registration is frozen.
+                            </p>
+                          </div>
+                        )}
+                        <div className={cn(isSuspended && "blur-[3px] pointer-events-none select-none opacity-30")}>
+                          <ComplaintForm 
+                            onSubmit={async (data) => {
+                              await onRegisterComplaint(data);
+                              setMypcOpenedFile('complaints_view');
+                            }} 
+                            isLoading={isLoading || false} 
+                            appConfig={appConfig}
+                            currentUser={currentUser}
+                            branding={branding}
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
