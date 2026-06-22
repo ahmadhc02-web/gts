@@ -1053,6 +1053,7 @@ export default function Layout({
 
       {/* Relocated Profile dropdown to the header relative toggle container */}
 
+      {user && (
       <header className={cn(
         "z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
         isPreview ? "absolute top-0" : "sticky top-0",
@@ -1506,15 +1507,16 @@ export default function Layout({
           </div>
         </div>
       </header>
+      )}
 
       {/* Main Content */}
       <main className={cn(
-        "mx-auto py-4 sm:py-8 transition-all duration-500",
+        "mx-auto transition-all duration-500",
         user ? (
           isPreview 
-            ? "w-full px-4 pt-20 pl-[80px]" 
-            : "max-w-[1850px] w-full px-4 sm:px-6 lg:px-8 lg:pl-[84px]"
-        ) : "w-full max-w-none px-0 sm:px-0"
+            ? "py-4 sm:py-8 w-full px-4 pt-20 pl-[80px]" 
+            : "py-4 sm:py-8 max-w-[1850px] w-full px-4 sm:px-6 lg:px-8 lg:pl-[84px]"
+        ) : "w-full max-w-none px-0 py-0 sm:px-0 sm:py-0"
       )}>
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -1526,6 +1528,7 @@ export default function Layout({
       </main>
 
       {/* Footer */}
+      {user && (
       <footer className={cn(
         "py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950",
         user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
@@ -1556,6 +1559,7 @@ export default function Layout({
           </div>
         </div>
       </footer>
+      )}
 
       {/* Funny Walking Mascot Removed */}
 

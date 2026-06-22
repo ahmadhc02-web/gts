@@ -2900,17 +2900,19 @@ export default function AdminPanel({
                                 />
                               </div>
                             ) : (
-                              <div className="flex flex-col gap-1.5">
-                                <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight text-xs block">
-                                  🏢 Company: {dealer.companyName || 'No Company Set'}
+                              <div className="flex flex-col gap-2">
+                                <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-wider text-xs block">
+                                  🏢 {dealer.companyName || 'No Company Set'}
                                 </span>
-                                <div className="flex flex-wrap gap-1.5 items-center">
-                                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-blue-600 dark:text-blue-400 text-[9px] font-black rounded border border-slate-200 dark:border-slate-800 uppercase tracking-widest">
-                                    Login ID: {dealer.username}
-                                  </span>
-                                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 text-[9px] font-black rounded border border-slate-200 dark:border-slate-800 uppercase tracking-widest">
-                                    🔑 Passkey: {dealer.password || '••••••••'}
-                                  </span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                                  <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col justify-center min-w-[120px]">
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Login username</span>
+                                    <span className="text-[11px] font-extrabold text-slate-900 dark:text-indigo-400 select-all tracking-wide break-all">{dealer.username}</span>
+                                  </div>
+                                  <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col justify-center min-w-[120px]">
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Authentication Passkey</span>
+                                    <span className="text-[11px] font-extrabold text-[#00E5FF] select-all tracking-wide break-all font-mono">{dealer.password || '••••••••'}</span>
+                                  </div>
                                 </div>
                               </div>
                             )}
@@ -2925,49 +2927,49 @@ export default function AdminPanel({
                                 placeholder="Line Code"
                               />
                             ) : (
-                              <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-black rounded border border-emerald-200 dark:border-emerald-800/50">
-                                {dealer.lineCode}
-                              </span>
+                              <div className="flex items-center gap-3">
+                                <span className="px-3 py-1 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[10px] font-black rounded border border-slate-200 dark:border-slate-800 tracking-wider">
+                                  {dealer.lineCode}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
+                                    try {
+                                      await firebaseService.updateUser(dealer.uid, { status: newStatus }, currentUser.fullName || currentUser.username);
+                                      toast.success(newStatus === 'blocked' ? '🚫 NODE SUSPENDED' : '✅ NODE ACTIVATED', {
+                                        description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'suspended' : 'activated'}.`
+                                      });
+                                    } catch (err: any) {
+                                      toast.error('Failed to change dealer status', { description: err.message });
+                                    }
+                                  }}
+                                  className={cn(
+                                    "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer border",
+                                    dealer.status === 'blocked'
+                                      ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-605 shadow-rose-500/10"
+                                      : "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/10"
+                                  )}
+                                >
+                                  <span className={cn("w-1.5 h-1.5 rounded-full bg-white", dealer.status !== 'blocked' && "animate-pulse")} />
+                                  <span>{dealer.status === 'blocked' ? 'OFF' : 'ON'}</span>
+                                </button>
+                              </div>
                             )}
                           </td>
                           <td className="px-6 py-4">
-                            <div className="flex flex-col gap-1.5 justify-center">
-                              <div className="flex items-center gap-1.5">
-                                {dealer.status === 'blocked' ? (
-                                  <>
-                                    <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                    <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">SUSPENDED</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">ACTIVE</span>
-                                  </>
-                                )}
-                              </div>
-                              
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
-                                  try {
-                                    await firebaseService.updateUser(dealer.uid, { status: newStatus }, currentUser.fullName || currentUser.username);
-                                    toast.success(newStatus === 'blocked' ? '🚫 NODE SUSPENDED' : '✅ NODE ACTIVATED', {
-                                      description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'frozen' : 'restored to full service'}.`
-                                    });
-                                  } catch (err: any) {
-                                    toast.error('Failed to change dealer status', { description: err.message });
-                                  }
-                                }}
-                                className={cn(
-                                  "w-20 py-1 rounded text-[9px] font-black uppercase tracking-wider text-center transition-all cursor-pointer border",
-                                  dealer.status === 'blocked'
-                                    ? "bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200/50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 dark:text-rose-400 dark:border-rose-900/30"
-                                    : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-200/50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/30"
-                                )}
-                              >
-                                {dealer.status === 'blocked' ? "Turn ON" : "Turn OFF"}
-                              </button>
+                            <div className="flex items-center gap-2">
+                              {dealer.status === 'blocked' ? (
+                                <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-wider bg-rose-50 dark:bg-rose-950/25 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-900/30 rounded-lg flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                                  SUSPENDED
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/25 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-900/30 rounded-lg flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  ACTIVE
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right">
@@ -6026,17 +6028,19 @@ export default function AdminPanel({
                                               />
                                             </div>
                                           ) : (
-                                            <div className="flex flex-col gap-1.5">
-                                              <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight text-xs block">
-                                                🏢 Company: {dealer.companyName || 'No Company Set'}
+                                            <div className="flex flex-col gap-2">
+                                              <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-wider text-xs block">
+                                                🏢 {dealer.companyName || 'No Company Set'}
                                               </span>
-                                              <div className="flex flex-wrap gap-1.5 items-center">
-                                                <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-blue-600 dark:text-blue-400 text-[9px] font-black rounded border border-slate-200 dark:border-slate-800 uppercase tracking-widest">
-                                                  Login ID: {dealer.username}
-                                                </span>
-                                                <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 text-[9px] font-black rounded border border-slate-200 dark:border-slate-800 uppercase tracking-widest">
-                                                  🔑 Passkey: {dealer.password || '••••••••'}
-                                                </span>
+                                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                                                <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col justify-center min-w-[120px]">
+                                                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Login username</span>
+                                                  <span className="text-[11px] font-extrabold text-slate-900 dark:text-indigo-400 select-all tracking-wide break-all">{dealer.username}</span>
+                                                </div>
+                                                <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col justify-center min-w-[120px]">
+                                                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Authentication Passkey</span>
+                                                  <span className="text-[11px] font-extrabold text-[#00E5FF] select-all tracking-wide break-all font-mono">{dealer.password || '••••••••'}</span>
+                                                </div>
                                               </div>
                                             </div>
                                           )}
@@ -6051,49 +6055,49 @@ export default function AdminPanel({
                                               placeholder="Line Code"
                                             />
                                           ) : (
-                                            <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-black rounded border border-emerald-200 dark:border-emerald-800/50">
-                                              {dealer.lineCode}
-                                            </span>
+                                            <div className="flex items-center gap-3">
+                                              <span className="px-3 py-1 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[10px] font-black rounded border border-slate-200 dark:border-slate-800 tracking-wider">
+                                                {dealer.lineCode}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
+                                                  try {
+                                                    await firebaseService.updateUser(dealer.uid, { status: newStatus }, currentUser.fullName || currentUser.username);
+                                                    toast.success(newStatus === 'blocked' ? '🚫 NODE SUSPENDED' : '✅ NODE ACTIVATED', {
+                                                      description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'suspended' : 'activated'}.`
+                                                    });
+                                                  } catch (err: any) {
+                                                    toast.error('Failed to change dealer status', { description: err.message });
+                                                  }
+                                                }}
+                                                className={cn(
+                                                  "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer border",
+                                                  dealer.status === 'blocked'
+                                                    ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-605 shadow-rose-500/10"
+                                                    : "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/10"
+                                                )}
+                                              >
+                                                <span className={cn("w-1.5 h-1.5 rounded-full bg-white", dealer.status !== 'blocked' && "animate-pulse")} />
+                                                <span>{dealer.status === 'blocked' ? 'OFF' : 'ON'}</span>
+                                              </button>
+                                            </div>
                                           )}
                                         </td>
                                         <td className="px-6 py-4">
-                                          <div className="flex flex-col gap-1.5 justify-center">
-                                            <div className="flex items-center gap-1.5">
-                                              {dealer.status === 'blocked' ? (
-                                                <>
-                                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                                  <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">SUSPENDED</span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                                  <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">ACTIVE</span>
-                                                </>
-                                              )}
-                                            </div>
-                                            
-                                            <button
-                                              type="button"
-                                              onClick={async () => {
-                                                const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
-                                                try {
-                                                  await firebaseService.updateUser(dealer.uid, { status: newStatus }, currentUser.fullName || currentUser.username);
-                                                  toast.success(newStatus === 'blocked' ? '🚫 NODE SUSPENDED' : '✅ NODE ACTIVATED', {
-                                                    description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'frozen' : 'restored to full service'}.`
-                                                  });
-                                                } catch (err: any) {
-                                                  toast.error('Failed to change dealer status', { description: err.message });
-                                                }
-                                              }}
-                                              className={cn(
-                                                "w-20 py-1 rounded text-[9px] font-black uppercase tracking-wider text-center transition-all cursor-pointer border",
-                                                dealer.status === 'blocked'
-                                                  ? "bg-rose-50 hover:bg-rose-100 text-rose-600 border-rose-200/50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 dark:text-rose-400 dark:border-rose-900/30"
-                                                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border-emerald-200/50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/30"
-                                              )}
-                                            >
-                                              {dealer.status === 'blocked' ? "Turn ON" : "Turn OFF"}
-                                            </button>
+                                          <div className="flex items-center gap-2">
+                                            {dealer.status === 'blocked' ? (
+                                              <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-wider bg-rose-50 dark:bg-rose-950/25 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-900/30 rounded-lg flex items-center gap-1.5">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                                                SUSPENDED
+                                              </span>
+                                            ) : (
+                                              <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/25 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-900/30 rounded-lg flex items-center gap-1.5">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                ACTIVE
+                                              </span>
+                                            )}
                                           </div>
                                         </td>
                                         <td className="px-6 py-4 text-right whitespace-normal">
