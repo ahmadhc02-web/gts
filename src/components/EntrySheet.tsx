@@ -107,6 +107,12 @@ export default function EntrySheet({
   const [showUserSearchPopup, setShowUserSearchPopup] = useState(false);
   const [userSearchResults, setUserSearchResults] = useState<any[]>([]);
 
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    index: number;
+    client: any;
+    message: string;
+  } | null>(null);
+
   const handleSearchUserClick = () => {
     const q = (dashboardSearchQuery || '').trim().toLowerCase();
     if (!q) {
@@ -1638,9 +1644,7 @@ export default function EntrySheet({
     setTable2Rows(updated);
   };
 
-  const handleSelectSuggestion = (index: number, client: any) => {
-    if (isLocked) return;
-    // Find if there's an outstanding month payment entry for them
+  const proceedSelectSuggestion = (index: number, client: any) => {
     const matchingActiveRow = activeRows?.find(r => 
       (r.username && r.username.toLowerCase() === client.username?.toLowerCase()) || 
       (r.clientId && r.clientId.toLowerCase() === client.id?.toLowerCase())
@@ -1655,7 +1659,6 @@ export default function EntrySheet({
       const outstanding = totalAmt - rcvAmt;
       amount = outstanding > 0 ? outstanding : totalAmt;
     } else {
-      // parse from package details if available
       if (client.pkgDetails) {
         const match = client.pkgDetails.match(/\b(1000|1200|1500|2000|2500|3000|3500|4000|5000|150|200|250|300|350|400|450|500|600|700|800|900)\b/) || client.pkgDetails.match(/\b\d{3,4}\b/);
         amount = match ? parseInt(match[0], 10) : 0;
@@ -1672,11 +1675,59 @@ export default function EntrySheet({
     };
     
     setTable1Rows(updated);
-    
-    // Clear suggestion states
     setFocusedRowIndex(null);
     setFocusedField(null);
     setSearchQuery('');
+  };
+
+  const handleSelectSuggestion = (index: number, client: any) => {
+    if (isLocked) return;
+
+    const currentSheetId = sheets[activeSheetIdx]?.id;
+    const currentFolderId = sheetFolderMap[currentSheetId];
+
+    if (currentFolderId) {
+      const folderSheets = ledgerHistory.filter(sh => sheetFolderMap[sh.id] === currentFolderId);
+      let duplicateFound = false;
+      let dupLocation = "";
+
+      const isDupInCurrent = table1Rows.some((r, i) => i !== index && (
+        (r.clientId && r.clientId === client.id) || 
+        (r.clientUsername && r.clientUsername === client.username) ||
+        (r.name && r.name.toLowerCase() === client.name?.toLowerCase())
+      ));
+
+      if (isDupInCurrent) {
+        duplicateFound = true;
+        dupLocation = "this current sheet";
+      } else {
+        for (const sh of folderSheets) {
+          if (sh.id === currentSheetId) continue;
+          const rows = Array.isArray(sh.table1Rows) ? sh.table1Rows : [];
+          const isDup = rows.some((r: any) => 
+            (r.clientId && r.clientId === client.id) || 
+            (r.clientUsername && r.clientUsername === client.username) ||
+            (r.name && r.name.toLowerCase() === client.name?.toLowerCase())
+          );
+          if (isDup) {
+            duplicateFound = true;
+            dupLocation = `sheet "${sh.recOfficer || 'Unnamed'}"`;
+            break;
+          }
+        }
+      }
+
+      if (duplicateFound) {
+        setDuplicateWarning({
+          index,
+          client,
+          message: `This user (${client.username || client.name}) already exists in ${dupLocation} within this folder. Are you sure you want to add a double entry?`
+        });
+        return;
+      }
+    }
+
+    proceedSelectSuggestion(index, client);
   };
 
   const getFilteredSuggestions = (field: 'cId' | 'name', queryValue: string) => {
@@ -4337,6 +4388,59 @@ export default function EntrySheet({
 
       {/* Beautiful Reset & Purge Confirmation Modal */}
       <AnimatePresence>
+        {/* Duplicate Entry Warning Modal */}
+        {duplicateWarning && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 15, opacity: 0 }}
+              className="bg-white border-2 border-rose-500 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl relative overflow-hidden flex flex-col"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+              
+              <div className="flex items-center gap-4 mb-6 relative z-10">
+                <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center shrink-0 border-2 border-rose-200">
+                  <ShieldAlert size={28} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight leading-tight uppercase">Double Entry Warning</h3>
+                  <p className="text-xs font-bold text-rose-500 tracking-widest uppercase mt-0.5">Potential Duplicate Detected</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-8 relative z-10">
+                <p className="text-sm font-semibold text-slate-700 leading-relaxed text-center">
+                  {duplicateWarning.message}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 mt-auto relative z-10">
+                <button
+                  onClick={() => setDuplicateWarning(null)}
+                  className="px-6 py-3 rounded-xl bg-white border-2 border-slate-200 text-slate-600 font-black text-sm uppercase tracking-wider hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    proceedSelectSuggestion(duplicateWarning.index, duplicateWarning.client);
+                    setDuplicateWarning(null);
+                  }}
+                  className="px-6 py-3 rounded-xl bg-rose-500 text-white font-black text-sm uppercase tracking-wider hover:bg-rose-600 shadow-lg shadow-rose-500/20 transition-all active:scale-95 border-2 border-rose-500"
+                >
+                  Okay, Add Anyway
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {/* User Search Entry Locator Popup Screen */}
         {showUserSearchPopup && (
           <motion.div

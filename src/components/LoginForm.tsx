@@ -117,9 +117,9 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
   };
 
   const SLIDER_IMAGES = [
-    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=1920&h=1080&fit=crop", 
-    "https://images.unsplash.com/photo-1593305841991-05c297ba4575?q=80&w=1920&h=1080&fit=crop", 
-    "https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=1920&h=1080&fit=crop"  
+    "https://images.unsplash.com/photo-1614064641936-38998971f11e?q=80&w=1920&h=1080&fit=crop", // Fiber optics
+    "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?q=80&w=1920&h=1080&fit=crop", // Servers
+    "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?q=80&w=1920&h=1080&fit=crop"  // Network cables
   ];
 
   useEffect(() => {
@@ -509,12 +509,18 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
 
       {/* Main Header */}
       <header className="fixed top-0 left-0 right-0 z-40 w-full px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50 shadow-sm transition-colors duration-300">
-        <div className="flex items-center space-x-3 cursor-pointer">
-          <TypewriterText 
-            text="GTS" 
-            textClassName="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500 font-display tracking-widest drop-shadow-md" 
-            cursorClassName="hidden" 
-          />
+        <div className="flex items-center space-x-3 cursor-pointer group">
+          <div className="relative shrink-0 select-none transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-60 transition duration-1000 animate-pulse" />
+            <div className="relative w-11 h-11 rounded-2xl bg-slate-950 flex items-center justify-center border border-white/10 shadow-lg group-hover:shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all">
+              <span className="text-white font-black text-lg tracking-tighter italic leading-none">
+                G<span className="text-emerald-500">TS</span>
+              </span>
+            </div>
+          </div>
+          <span className="hidden sm:block text-slate-800 dark:text-white font-black tracking-tight text-xl group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+            Green Tech Services
+          </span>
         </div>
         
         <nav className="hidden lg:flex items-center space-x-8">
@@ -551,20 +557,50 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
       </header>
 
       {/* Tagline Content */}
-      <main className="relative z-20 flex-1 flex flex-col items-center justify-center -mt-20 px-4 text-center pointer-events-none">
+      <main className="relative z-20 flex-1 flex flex-col items-center justify-center pt-24 pb-12 px-4 text-center pointer-events-none">
          <AnimatePresence>
            {!showAuthModal && (
-             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -30 }} transition={{ duration: 0.8 }} className="max-w-4xl">
-               <h1 className="text-4xl sm:text-6xl md:text-7xl font-black uppercase tracking-tight text-slate-900 dark:text-white drop-shadow-2xl">
-                 Next Generation <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500 dark:from-emerald-400 dark:to-teal-300">Fiber</span>
+             <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -30 }} transition={{ duration: 0.8 }} className="max-w-5xl mx-auto">
+               <motion.div 
+                 initial={{ opacity: 0, scale: 0.8 }}
+                 animate={{ opacity: 1, scale: 1 }}
+                 transition={{ delay: 0.2, duration: 0.8 }}
+                 className="inline-flex items-center space-x-2 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md px-4 py-2 rounded-full border border-slate-200/50 dark:border-white/10 shadow-sm mb-6"
+               >
+                 <span className="relative flex h-3 w-3">
+                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                   <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                 </span>
+                 <span className="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-emerald-400">99.9% Uptime Guarantee</span>
+               </motion.div>
+               <h1 className="text-5xl sm:text-7xl md:text-8xl font-black uppercase tracking-tight text-slate-900 dark:text-white drop-shadow-2xl leading-[1.1]">
+                 Ultra-Fast <br className="hidden sm:block" />
+                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500 dark:from-emerald-400 dark:to-teal-300">Fiber Internet</span>
                </h1>
-               <p className="mt-6 text-lg sm:text-2xl text-slate-700 dark:text-slate-300 max-w-2xl mx-auto drop-shadow-md font-medium">
-                 Experience zero buffering and 10 Gbps speeds with Green Tech Services. Connection without compromise.
+               <p className="mt-8 text-lg sm:text-2xl text-slate-700 dark:text-slate-300 max-w-3xl mx-auto drop-shadow-md font-medium leading-relaxed">
+                 Experience symmetrical gigabit speeds, ultra-low latency, and seamless streaming. Connect your entire world with Green Tech Services (GTS).
                </p>
+               <motion.div 
+                 initial={{ opacity: 0, y: 20 }}
+                 animate={{ opacity: 1, y: 0 }}
+                 transition={{ delay: 0.4, duration: 0.8 }}
+                 className="mt-12 pointer-events-auto"
+               >
+                 <button 
+                   onClick={() => setShowAuthModal(true)}
+                   className="group relative px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold uppercase tracking-widest text-sm rounded-full overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300"
+                 >
+                   <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                   <span className="relative z-10 flex items-center space-x-2">
+                     <span>Explore Plans & Portal</span>
+                     <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                   </span>
+                 </button>
+               </motion.div>
              </motion.div>
            )}
          </AnimatePresence>
-      </main>
+       </main>
 
       {/* Auth Modal Overlay */}
       <AnimatePresence>
@@ -573,18 +609,18 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
             initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
             animate={{ opacity: 1, backdropFilter: "blur(12px)" }}
             exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 overflow-y-auto"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-100/85 dark:bg-slate-950/85 overflow-y-auto pointer-events-auto"
           >
             <button 
               onClick={() => setShowAuthModal(false)}
-              className="absolute top-4 left-4 sm:top-8 sm:left-8 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-full text-white font-bold text-sm flex items-center space-x-1 transition-colors z-[100]"
+              className="absolute top-4 left-4 sm:top-8 sm:left-8 px-4 py-2 bg-slate-900/10 dark:bg-white/10 hover:bg-slate-900/20 dark:hover:bg-white/20 border border-slate-900/10 dark:border-white/10 rounded-full text-slate-800 dark:text-white font-bold text-sm flex items-center space-x-1 transition-all z-[100] shadow-sm cursor-pointer pointer-events-auto"
             >
               <ChevronLeft size={20} />
               <span>Go Back</span>
             </button>
             <button 
               onClick={() => setShowAuthModal(false)}
-              className="absolute top-4 right-4 sm:top-8 sm:right-8 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-[100]"
+              className="absolute top-4 right-4 sm:top-8 sm:right-8 p-3 bg-slate-900/10 dark:bg-white/10 hover:bg-slate-900/20 dark:hover:bg-white/20 border border-slate-900/10 dark:border-white/10 rounded-full text-slate-800 dark:text-white transition-all z-[100] shadow-sm cursor-pointer pointer-events-auto"
             >
               <X size={28} />
             </button>

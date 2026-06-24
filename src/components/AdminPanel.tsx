@@ -415,6 +415,7 @@ export default function AdminPanel({
   const [billingStatusFilter, setBillingStatusFilter] = useState<string>('all');
   const [billingAreaFilter, setBillingAreaFilter] = useState<string>('all');
   const [isAdvanceMode, setIsAdvanceMode] = useState(false);
+  const [selectedRecoveryRow, setSelectedRecoveryRow] = useState<any | null>(null);
   const [billingPage, setBillingPage] = useState(1);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
@@ -1607,7 +1608,7 @@ export default function AdminPanel({
   }, [billingMonths, currentMonthId]);
 
   const activeRows = useMemo(() => {
-    const rawRows = activeMonthDoc?.rows || [];
+    const rawRows = (activeMonthDoc?.rows || []).map((r: any, idx: number) => ({ ...r, _originalIndex: idx }));
     if (currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main')) {
       const allowedClientIds = new Set(masterClients.map(c => c.id).filter(Boolean));
       const allowedUsernames = new Set(masterClients.map(c => c.username?.toLowerCase().trim()).filter(Boolean));
@@ -6891,11 +6892,14 @@ export default function AdminPanel({
                             <th className="py-3 px-3 text-center min-w-[60px]">ACT</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[12px] font-black text-slate-950 dark:text-zinc-50">
+                        <tbody className={cn(
+                          "divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[12px] font-black text-slate-950 dark:text-zinc-50",
+                          !isBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none"
+                        )}>
                           {paginatedRows.map((rowRef, localIdx) => {
                             // Find corresponding absolute row index in full month rows array
-                            const globalRowIdx = activeRows.findIndex((r: any) => r.clientId === rowRef.clientId || r.username === rowRef.username);
-                            if (globalRowIdx === -1) return null;
+                            const globalRowIdx = rowRef._originalIndex;
+                            if (globalRowIdx === undefined || globalRowIdx === -1) return null;
                             
                             const outstandingCr = parseFloat(rowRef.cr) || 0;
                             const isPaid = rowRef.paymentStatus === 'paid';
@@ -6908,8 +6912,14 @@ export default function AdminPanel({
                                 key={`${rowRef.clientId || rowRef.username || 'row'}-${localIdx}`}
                                 className={cn(
                                   "hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors whitespace-nowrap",
+                                  !isBillingUnlocked && "cursor-pointer",
                                   isTdc && "bg-rose-500/5 text-rose-500"
                                 )}
+                                onClick={(e) => {
+                                  if (!isBillingUnlocked) {
+                                    setSelectedRecoveryRow(rowRef);
+                                  }
+                                }}
                               >
                                 {/* Sr */}
                                 <td className="py-2.5 px-3 border-r border-slate-200 dark:border-slate-800/80 text-center text-black dark:text-white font-sans text-xs font-black">
@@ -7284,8 +7294,8 @@ export default function AdminPanel({
                   {/* Compact ultra-premium responsive Mobile Frames view for Android/mobile screens */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
                     {paginatedRows.map((rowRef, localIdx) => {
-                      const globalRowIdx = activeRows.findIndex((r: any) => r.clientId === rowRef.clientId || r.username === rowRef.username);
-                      if (globalRowIdx === -1) return null;
+                      const globalRowIdx = rowRef._originalIndex;
+                      if (globalRowIdx === undefined || globalRowIdx === -1) return null;
                       
                       const outstandingCr = parseFloat(rowRef.cr) || 0;
                       const isPaid = rowRef.paymentStatus === 'paid';
@@ -7300,8 +7310,14 @@ export default function AdminPanel({
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           whileHover={{ scale: 1.01 }}
                           transition={{ duration: 0.25, delay: Math.min(localIdx * 0.05, 0.4) }}
+                          onClick={(e) => {
+                            if (!isBillingUnlocked) {
+                              setSelectedRecoveryRow(rowRef);
+                            }
+                          }}
                           className={cn(
                             "p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between shadow-sm",
+                            !isBillingUnlocked && "cursor-pointer [&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none",
                             isTdc 
                               ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900/60 text-rose-600 dark:text-rose-450" 
                               : isPaid 
@@ -7700,6 +7716,153 @@ export default function AdminPanel({
         onClose={() => setIsBatchPrintOpen(false)}
         billingMonths={billingMonths}
       />
+
+      {/* Recovery Row Details Modal */}
+      <AnimatePresence>
+        {selectedRecoveryRow && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm sm:p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                    <UserPlus size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Recovery Details</h3>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{selectedRecoveryRow.username || 'N/A'}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedRecoveryRow(null)}
+                  className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Basic Details */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Client Information</h4>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Full Name</div>
+                        <div className="text-sm font-black text-slate-800 dark:text-slate-100">{selectedRecoveryRow.name || '—'}</div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">User ID (PPPoE)</div>
+                        <div className="text-sm font-black text-blue-600 dark:text-blue-400">{selectedRecoveryRow.username || '—'}</div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Mobile Number</div>
+                        <div className="text-sm font-black text-slate-800 dark:text-slate-100">{selectedRecoveryRow.mobileNumber || '—'}</div>
+                      </div>
+                      
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Area</div>
+                        <div className="text-sm font-black text-slate-800 dark:text-slate-100">{selectedRecoveryRow.area || '—'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Billing Details */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Financial Status</h4>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Payment Status</div>
+                        <div className={cn(
+                          "inline-block px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border",
+                          selectedRecoveryRow.paymentStatus === 'paid' && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30",
+                          selectedRecoveryRow.paymentStatus === 'partial' && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30",
+                          selectedRecoveryRow.paymentStatus === 'unpaid' && "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 dark:border-slate-600",
+                          selectedRecoveryRow.paymentStatus === 'tdc' && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50"
+                        )}>
+                          {selectedRecoveryRow.paymentStatus?.toUpperCase() || 'UNPAID'}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                          <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Base Amount</div>
+                          <div className="text-sm font-black text-slate-800 dark:text-slate-100">PKR {selectedRecoveryRow.baseAmount || 0}</div>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                          <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Arrears (Cr.)</div>
+                          <div className={cn("text-sm font-black", parseFloat(selectedRecoveryRow.cr || 0) > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-800 dark:text-slate-100")}>PKR {selectedRecoveryRow.cr || 0}</div>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-100 dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Total Amount</span>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Recovery</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-base font-black text-slate-900 dark:text-white">PKR {(selectedRecoveryRow.totalAmount || 0).toLocaleString()}</span>
+                          <span className="text-base font-black text-emerald-600 dark:text-emerald-400">PKR {selectedRecoveryRow.paymentReceived || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Advance Details */}
+                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 flex items-center gap-2">
+                    <Zap size={14} /> Advanced Parameters
+                  </h4>
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Comments</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.comments || '—'}</div>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Occupation</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.occ || '—'}</div>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Service Name</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.serviceName || '—'}</div>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Package Details</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.pkgDetails || '—'}</div>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Installation Date</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.date || '—'}</div>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Device/Router</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.device || '—'}</div>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">ABL</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.abl || '—'}</div>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Network / Node</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.network || '—'}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
     </>
   );

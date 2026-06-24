@@ -351,9 +351,13 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
         return;
       }
 
-      // Live High-Frequency Ping Probe using our 100% real-time connection-based engine
-      const pingRes = await measurePing(target.url);
-      const freshMs = typeof pingRes.ms === 'number' ? pingRes.ms : 45;
+      const samples: number[] = [];
+      for(let i = 0; i < 3; i++) {
+        const res = await measurePing(target.url);
+        if (typeof res.ms === 'number') samples.push(res.ms);
+        if (i < 2) await new Promise(r => setTimeout(r, 20));
+      }
+      const freshMs = samples.length > 0 ? Math.min(...samples) : 45;
 
       const nowLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -662,7 +666,8 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
             style={{ fontFamily: '"Lexend", "Inter", sans-serif' }}
             className="relative w-full max-w-7xl h-[90vh] md:h-[82vh] flex flex-col bg-white dark:bg-slate-950 rounded-[2.5rem] border border-sky-100 dark:border-sky-900/60 shadow-[0_24px_70px_-15px_rgba(14,165,233,0.3)] overflow-hidden mt-auto sm:mt-0 font-sans"
           >
-            <div className="p-4 sm:p-6 border-b border-sky-100 dark:border-sky-950 bg-sky-50/20 dark:bg-sky-950/10 shrink-0">
+            {!expandedTargetKey && (
+              <div className="p-4 sm:p-6 border-b border-sky-100 dark:border-sky-950 bg-sky-50/20 dark:bg-sky-950/10 shrink-0">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
                 <div className="flex items-center gap-2 sm:gap-3">
                   <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-inner shrink-0 leading-none">
@@ -742,6 +747,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                 </form>
               </div>
             </div>
+            )}
 
             {/* Content Area */}
             <div className="flex-1 min-h-0 flex flex-col relative bg-slate-50 dark:bg-slate-950">
@@ -820,8 +826,14 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                   {expandedTargetKey}
                                 </span>
                               </div>
-                              <h4 className="font-black text-slate-800 dark:text-white uppercase tracking-tight text-base sm:text-lg leading-none mt-1">
+                              <h4 className="font-black text-slate-800 dark:text-white uppercase tracking-tight text-base sm:text-lg leading-none mt-1 flex items-baseline">
                                 {detailData.domain}
+                                <span className="text-xl sm:text-2xl font-black font-lexend tracking-tighter text-sky-600 dark:text-sky-450 tabular-nums leading-none ml-3">
+                                  {typeof detailData.ms === 'number' ? detailData.ms : '0'}
+                                </span>
+                                <span className="text-[9px] sm:text-[10px] font-black uppercase text-sky-400 dark:text-sky-500 tracking-wider font-lexend ml-1">
+                                  {typeof detailData.ms === 'number' ? 'ms' : 'Err'}
+                                </span>
                               </h4>
                             </div>
                           </div>
@@ -879,6 +891,14 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                               <RefreshCw size={12} className={cn(isMeasuring && "animate-spin")} />
                               <span>Burst Scan</span>
                             </button>
+
+                            <button 
+                              onClick={() => setExpandedTargetKey(null)}
+                              className="h-10 w-10 rounded-xl flex items-center justify-center bg-slate-100/50 dark:bg-slate-900/50 border border-slate-200/50 dark:border-slate-800 text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-500/30 transition-all active:scale-95 shrink-0"
+                              title="Back to List"
+                            >
+                              <X size={16} />
+                            </button>
                           </div>
                         </div>
 
@@ -892,14 +912,24 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                   Real-Time Latency Data Stream
                                 </h5>
                                 <p className="text-[10px] text-sky-500 uppercase font-black tracking-widest leading-none mt-1">
-                                  Continuous 1-second interval checks ({typeof detailData.ms === 'number' ? `${detailData.ms}ms` : '---'})
+                                  Continuous 1-second interval checks
                                 </p>
                               </div>
-                              <div className="text-[10px] font-mono font-medium text-slate-400">
-                                {detailHistory.length > 0 
-                                  ? `Rendering ${detailHistory.length} active samples` 
-                                  : "Gathering samples..."
-                                }
+                              <div className="flex items-center gap-4">
+                                <div className="flex items-baseline gap-1">
+                                  <span className="text-3xl font-black font-lexend tracking-tighter text-sky-500 tabular-nums leading-none">
+                                    {typeof detailData.ms === 'number' ? detailData.ms : '0'}
+                                  </span>
+                                  <span className="text-xs font-black uppercase text-sky-400 tracking-wider font-lexend">
+                                    ms
+                                  </span>
+                                </div>
+                                <div className="text-[10px] font-mono font-medium text-slate-400">
+                                  {detailHistory.length > 0 
+                                    ? `Rendering ${detailHistory.length} active samples` 
+                                    : "Gathering samples..."
+                                  }
+                                </div>
                               </div>
                             </div>
 
@@ -920,7 +950,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                               <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={trendedHistory}>
                                   <defs>
-                                    <linearGradient id={`detail-grad-sky-${expandedTargetKey}`} x1="0" y1="0" x2="0" y2="1">
+                                    <linearGradient id="detail-grad-sky-active" x1="0" y1="0" x2="0" y2="1">
                                       <stop offset="5%" stopColor={detailData.status === 'excellent' ? '#10b981' : '#0ea5e9'} stopOpacity={0.4}/>
                                       <stop offset="95%" stopColor={detailData.status === 'excellent' ? '#10b981' : '#0ea5e9'} stopOpacity={0.01}/>
                                     </linearGradient>
@@ -977,7 +1007,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                     stroke={detailData.status === 'excellent' ? '#10b981' : '#0284c7'} 
                                     strokeWidth={3} 
                                     fillOpacity={1}
-                                    fill={`url(#detail-grad-sky-${expandedTargetKey})`}
+                                    fill="url(#detail-grad-sky-active)"
                                     connectNulls={true}
                                     isAnimationActive={false}
                                   />
