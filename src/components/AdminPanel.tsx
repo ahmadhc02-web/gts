@@ -988,7 +988,7 @@ export default function AdminPanel({
         const received = parseFloat(targetRow.paymentReceived) || 0;
         const total = parseFloat(targetRow.totalAmount) || 0;
         
-        if (targetRow.paymentStatus !== 'tdc') {
+        if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
           if (received === 0) {
             targetRow.paymentStatus = 'unpaid';
           } else if (received >= total) {
@@ -1654,7 +1654,7 @@ export default function AdminPanel({
     return filteredRows.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   }, [filteredRows, currentPage]);
 
-  const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalPending, recoveryRate } = useMemo(() => {
+  const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalDC, totalPending, recoveryRate } = useMemo(() => {
     const expected = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0);
     const base = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.baseAmount) || 0), 0);
     const arrears = activeRows.reduce((acc: number, r: any) => {
@@ -1666,6 +1666,7 @@ export default function AdminPanel({
     const recovered = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.paymentReceived) || 0), 0);
     const outstanding = expected - recovered;
     const tdc = activeRows.filter((r: any) => r.paymentStatus === 'tdc').length;
+    const dc = activeRows.filter((r: any) => r.paymentStatus === 'dc').length;
     const pending = activeRows.filter((r: any) => r.paymentStatus === 'unpaid').length;
     const rate = expected > 0 ? (recovered / expected) * 100 : 0;
 
@@ -1676,6 +1677,7 @@ export default function AdminPanel({
       totalRecovered: recovered,
       totalOutstanding: outstanding,
       totalTDC: tdc,
+      totalDC: dc,
       totalPending: pending,
       recoveryRate: rate
     };
@@ -6456,7 +6458,7 @@ export default function AdminPanel({
                                 handleDownloadCSV();
                                 setIsBillingDropdownOpen(false);
                               }}
-                              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900/60 flex items-center gap-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900/60 flex items-center gap-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-40  cursor-pointer"
                             >
                               <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-500 shrink-0">
                                 <HardDriveDownload size={13} />
@@ -6750,7 +6752,7 @@ export default function AdminPanel({
                     {
                       label: "Subscribers Active",
                       val: `${activeRows.length} Nodes`,
-                      desc: `TDC: ${totalTDC} | Unpaid: ${totalPending}`
+                      desc: `TDC: ${totalTDC} | DC: ${totalDC} | Unpaid: ${totalPending}`
                     }
                   ].map((card, i) => (
                     <motion.div
@@ -6843,6 +6845,7 @@ export default function AdminPanel({
                         <option value="partial">PARTIAL</option>
                         <option value="unpaid">UNPAID</option>
                         <option value="tdc">TDC (SUSPENDED)</option>
+                        <option value="dc">DC (DISCONNECTED)</option>
                       </select>
 
                       {/* Area selector */}
@@ -6906,6 +6909,7 @@ export default function AdminPanel({
                             const isPartial = rowRef.paymentStatus === 'partial';
                             const isUnpaid = rowRef.paymentStatus === 'unpaid';
                             const isTdc = rowRef.paymentStatus === 'tdc';
+                            const isDc = rowRef.paymentStatus === 'dc';
 
                             return (
                               <tr
@@ -6913,7 +6917,8 @@ export default function AdminPanel({
                                 className={cn(
                                   "hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors whitespace-nowrap",
                                   !isBillingUnlocked && "cursor-pointer",
-                                  isTdc && "bg-rose-500/5 text-rose-500"
+                                  isTdc && "bg-rose-500/5 text-rose-500",
+                                  isDc && "bg-neutral-500/10 text-neutral-500"
                                 )}
                                 onClick={(e) => {
                                   if (!isBillingUnlocked) {
@@ -6933,7 +6938,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.name}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-xs focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-xs focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                     placeholder="Enter full name"
                                   />
                                 </td>
@@ -6945,7 +6950,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.username}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
@@ -6956,7 +6961,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.mobileNumber}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
-                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
@@ -6967,7 +6972,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.area}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
-                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
@@ -6978,7 +6983,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.rt}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
-                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-blue-900 dark:disabled:text-blue-300 disabled:opacity-100"
+                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-blue-900 dark:disabled:text-blue-300 disabled:opacity-100"
                                   />
                                 </td>
 
@@ -6992,7 +6997,7 @@ export default function AdminPanel({
                                       defaultValue={rowRef.baseAmount}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0)}
-                                      className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                   </div>
                                 </td>
@@ -7008,7 +7013,7 @@ export default function AdminPanel({
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
                                       className={cn(
-                                        "w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                        "w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                                         outstandingCr > 0 ? "text-rose-750 dark:text-rose-450 font-black disabled:text-rose-750 dark:disabled:text-rose-450 disabled:opacity-100" : "text-black dark:text-white font-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       )}
                                     />
@@ -7027,7 +7032,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.billingDay}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
-                                    className="w-10 text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    className="w-10 text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
@@ -7041,7 +7046,7 @@ export default function AdminPanel({
                                       defaultValue={rowRef.paymentReceived}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}
-                                      className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans font-black text-emerald-950 dark:text-emerald-100 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-emerald-950 dark:disabled:text-emerald-100 disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans font-black text-emerald-950 dark:text-emerald-100 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black  disabled:text-emerald-950 dark:disabled:text-emerald-100 disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                   </div>
                                 </td>
@@ -7053,17 +7058,19 @@ export default function AdminPanel({
                                     disabled={!isBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value)}
                                     className={cn(
-                                      "px-2.5 py-1 text-[10px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full bg-slate-100 dark:bg-slate-900 disabled:opacity-100 disabled:cursor-not-allowed font-sans",
+                                      "px-2.5 py-1 text-[10px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full bg-slate-100 dark:bg-slate-900 disabled:opacity-100  font-sans",
                                       isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
                                       isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30 font-black",
                                       isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600 font-black",
-                                      isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black"
+                                      isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black",
+                                      isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black"
                                     )}
                                   >
                                     <option value="unpaid">UNPAID</option>
                                     <option value="paid">PAID</option>
                                     <option value="partial">PARTIAL</option>
                                     <option value="tdc">TDC</option>
+                                    <option value="dc">DC</option>
                                   </select>
                                 </td>
 
@@ -7077,7 +7084,7 @@ export default function AdminPanel({
                                         defaultValue={rowRef.comments}
                                         disabled={!isBillingUnlocked}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
-                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-[11px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-[11px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                         placeholder="Add comment..."
                                       />
                                     </td>
@@ -7089,7 +7096,7 @@ export default function AdminPanel({
                                         defaultValue={rowRef.occ}
                                         disabled={!isBillingUnlocked}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       />
                                     </td>
 
@@ -7100,7 +7107,7 @@ export default function AdminPanel({
                                         defaultValue={rowRef.serNam}
                                         disabled={!isBillingUnlocked}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value)}
-                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       />
                                     </td>
 
@@ -7111,7 +7118,7 @@ export default function AdminPanel({
                                         defaultValue={rowRef.pkgDetails}
                                         disabled={!isBillingUnlocked}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
-                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-250 font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-blue-900 dark:disabled:text-blue-250 disabled:opacity-100"
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-250 font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-blue-900 dark:disabled:text-blue-250 disabled:opacity-100"
                                       />
                                     </td>
 
@@ -7122,7 +7129,7 @@ export default function AdminPanel({
                                         defaultValue={rowRef.connectionDate}
                                         disabled={!isBillingUnlocked}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
-                                        className="w-full text-center bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        className="w-full text-center bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                         placeholder="MM/DD/YY"
                                       />
                                     </td>
@@ -7134,7 +7141,7 @@ export default function AdminPanel({
                                         defaultValue={rowRef.devicePrice}
                                         disabled={!isBillingUnlocked}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0)}
-                                        className="w-14 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        className="w-14 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                       />
                                     </td>
 
@@ -7145,7 +7152,7 @@ export default function AdminPanel({
                                         defaultValue={rowRef.abl}
                                         disabled={!isBillingUnlocked}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0)}
-                                        className="w-14 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        className="w-14 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                       />
                                     </td>
 
@@ -7156,7 +7163,7 @@ export default function AdminPanel({
                                         defaultValue={rowRef.network}
                                         disabled={!isBillingUnlocked}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value)}
-                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:cursor-not-allowed disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       />
                                     </td>
                                   </>
@@ -7169,7 +7176,7 @@ export default function AdminPanel({
                                       type="button"
                                       disabled={!isBillingUnlocked}
                                       onClick={() => handleDeleteBillingRow(globalRowIdx)}
-                                      className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                                      className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded transition-colors disabled:opacity-45 "
                                       title={isBillingUnlocked ? "Exclude row from current month's sheet" : "Unlock billing sheet to discard registers"}
                                     >
                                       <X size={12} />
@@ -7179,7 +7186,7 @@ export default function AdminPanel({
                                       type="button"
                                       disabled={!isBillingUnlocked}
                                       onClick={() => handlePermanentDeleteSubscriber(rowRef, globalRowIdx)}
-                                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded transition-colors disabled:opacity-45 "
                                       title={isBillingUnlocked ? "Permanently delete subscriber from whole system" : "Unlock billing sheet to permanently delete"}
                                     >
                                       <Trash2 size={12} />
@@ -7239,7 +7246,7 @@ export default function AdminPanel({
                               const tbl = document.getElementById('billing-spreadsheet-table');
                               if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
                             title="First Page"
                           >
                             « First
@@ -7252,7 +7259,7 @@ export default function AdminPanel({
                               const tbl = document.getElementById('billing-spreadsheet-table');
                               if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
                           >
                             ◀ Prev
                           </button>
@@ -7269,7 +7276,7 @@ export default function AdminPanel({
                               const tbl = document.getElementById('billing-spreadsheet-table');
                               if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
                           >
                             Next ▶
                           </button>
@@ -7281,7 +7288,7 @@ export default function AdminPanel({
                               const tbl = document.getElementById('billing-spreadsheet-table');
                               if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
                             title="Last Page"
                           >
                             Last »
@@ -7302,6 +7309,7 @@ export default function AdminPanel({
                       const isPartial = rowRef.paymentStatus === 'partial';
                       const isUnpaid = rowRef.paymentStatus === 'unpaid';
                       const isTdc = rowRef.paymentStatus === 'tdc';
+                      const isDc = rowRef.paymentStatus === 'dc';
 
                       return (
                         <motion.div 
@@ -7320,6 +7328,8 @@ export default function AdminPanel({
                             !isBillingUnlocked && "cursor-pointer [&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none",
                             isTdc 
                               ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900/60 text-rose-600 dark:text-rose-450" 
+                              : isDc
+                              ? "bg-neutral-500/5 dark:bg-neutral-900/40 border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400"
                               : isPaid 
                               ? "bg-emerald-500/5 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-100" 
                               : isPartial 
@@ -7366,13 +7376,15 @@ export default function AdminPanel({
                                   isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
                                   isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-600 border-amber-200 dark:border-amber-900/30 font-black",
                                   isUnpaid && "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 font-black",
-                                  isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-250 dark:border-rose-900/50 font-black"
+                                  isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-250 dark:border-rose-900/50 font-black",
+                                  isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black"
                                 )}
                               >
                                 <option value="unpaid">UNPAID</option>
                                 <option value="paid">PAID</option>
                                 <option value="partial">PARTIAL</option>
                                 <option value="tdc">TDC</option>
+                                <option value="dc">DC</option>
                               </select>
                             </div>
                           </div>
@@ -7631,7 +7643,7 @@ export default function AdminPanel({
                             onClick={() => {
                               setBillingPage(1);
                             }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
+                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
                           >
                             « First
                           </button>
@@ -7641,7 +7653,7 @@ export default function AdminPanel({
                             onClick={() => {
                               setBillingPage(prev => Math.max(prev - 1, 1));
                             }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
+                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
                           >
                             ◀ Prev
                           </button>
@@ -7651,7 +7663,7 @@ export default function AdminPanel({
                             onClick={() => {
                               setBillingPage(prev => Math.min(prev + 1, totalPages));
                             }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
+                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
                           >
                             Next ▶
                           </button>
@@ -7786,7 +7798,8 @@ export default function AdminPanel({
                           selectedRecoveryRow.paymentStatus === 'paid' && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30",
                           selectedRecoveryRow.paymentStatus === 'partial' && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30",
                           selectedRecoveryRow.paymentStatus === 'unpaid' && "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 dark:border-slate-600",
-                          selectedRecoveryRow.paymentStatus === 'tdc' && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50"
+                          selectedRecoveryRow.paymentStatus === 'tdc' && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50",
+                          selectedRecoveryRow.paymentStatus === 'dc' && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700"
                         )}>
                           {selectedRecoveryRow.paymentStatus?.toUpperCase() || 'UNPAID'}
                         </div>

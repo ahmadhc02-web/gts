@@ -18,12 +18,17 @@ const DefaultIcon = L.icon({
   iconAnchor: [12, 41],
 });
 
-const ClientIcon = () => L.divIcon({
-  className: 'custom-div-icon',
-  html: `<div style="background-color: #10b981; width: 22px; height: 22px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 15px rgba(16,185,129,0.6);"></div>`,
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
-});
+const ClientIcon = (client, zoomLevel) => {
+  const displayId = client.username || client.id.slice(0,6);
+  const showLabel = zoomLevel > 14;
+  const labelHtml = showLabel ? '<div style="position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: white; padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.2); white-space: nowrap; display: flex; flex-direction: column; align-items: center; pointer-events: none;"><span style="font-size: 10px; font-weight: 900; color: #0f172a; line-height: 1.2;">' + client.name + '</span><span style="font-size: 8px; font-family: monospace; font-weight: bold; color: #475569; line-height: 1;">' + displayId + '</span></div>' : '';
+  return L.divIcon({
+    className: 'custom-client-marker',
+    html: '<div style="position: relative; width: 12px; height: 12px;"><div style="background-color: #10b981; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>' + labelHtml + '</div>',
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  });
+};
 
 const TargetIcon = L.divIcon({
   className: 'custom-div-icon',
@@ -87,6 +92,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(INITIAL_ZOOM);
   const [purgeTarget, setPurgeTarget] = useState<Client | null>(null);
+  const [selectedPopupClient, setSelectedPopupClient] = useState<Client | null>(null);
   
   // Custom Web Domain Monitoring Targets States
   const [isTargetsPanelOpen, setIsTargetsPanelOpen] = useState(false);
@@ -404,6 +410,10 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
   const MapClickHandler = () => {
     useMapEvents({
       click(e) {
+        if (selectedPopupClient) {
+          setSelectedPopupClient(null); // Close popup when clicking on the map
+          return; // Don't do other click actions if we were just closing the popup
+        }
         if (positioningTargetId) {
           handleSetTargetPosition(positioningTargetId, e.latlng.lat, e.latlng.lng);
         } else if (isMeasuring) {
@@ -834,6 +844,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     key={`marker-${client.id || markerIdx}-${markerIdx}`} 
                     position={[client.lat, client.lng]}
                     icon={ClientIcon()}
+                    eventHandlers={{ click: () => setSelectedPopupClient(client) }}
                   >
                     {zoomLevel >= 18 && (
                       <Tooltip direction="bottom" offset={[0, 10]} permanent className="user-label-tooltip">
@@ -843,66 +854,77 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                         </div>
                       </Tooltip>
                     )}
-                    <Popup className="custom-popup">
-                      <div className="p-2 min-w-[180px]">
-                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-sm bg-emerald-500">
-                            {client.name.charAt(0)}
-                          </div>
-                          <div>
-                            <div className="font-black text-slate-900 text-sm leading-tight">{client.name}</div>
-                            <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{displayId}</div>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <div className="flex items-start gap-2 text-[10px] text-slate-600">
-                            <MapPin size={12} className="text-slate-400 mt-0.5 flex-shrink-0" /> 
-                            <span className="font-medium">{client.area}</span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                              <span className="block text-[7px] font-black text-slate-400 uppercase tracking-tighter">Package</span>
-                              <span className="block text-[9px] font-bold text-slate-700 truncate">{client.pkgDetails || 'N/A'}</span>
-                            </div>
-                            <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                              <span className="block text-[7px] font-black text-slate-400 uppercase tracking-tighter">Panel Info</span>
-                              <span className="block text-[9px] font-bold text-slate-700 truncate">{client.panelDetails || 'N/A'}</span>
-                            </div>
-                          </div>
-
-                          <div className="bg-emerald-50/50 p-1.5 rounded-lg border border-emerald-100/50 flex items-center justify-between">
-                             <div className="flex items-center gap-1.5">
-                               <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                               <span className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter">Contact</span>
-                             </div>
-                             <span className="text-[9px] font-mono font-bold text-emerald-700">{client.mobileNumber || client.number || 'No Contact'}</span>
-                          </div>
-
-                          <div className="pt-1 flex items-center justify-between text-[8px] text-slate-400 font-bold uppercase">
-                            <span>Status</span>
-                            <span className="text-emerald-500">Node Active</span>
-                          </div>
-
-                          {(user?.role === 'admin' || user?.role === 'super_admin') && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPurgeTarget(client);
-                              }}
-                              className="w-full mt-2 flex items-center justify-center gap-1.5 py-2.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors text-[9px] font-black uppercase tracking-widest border border-red-100/50"
-                            >
-                              <Trash2 size={10} />
-                              Purge Location
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </Popup>
                   </Marker>
                 );
               })}
+
+              {/* Centralized Popup for selected client */}
+              {selectedPopupClient && selectedPopupClient.lat && selectedPopupClient.lng && (
+                <Popup 
+                  position={[selectedPopupClient.lat, selectedPopupClient.lng]} 
+                  className="custom-popup"
+                  onClose={() => setSelectedPopupClient(null)}
+                  eventHandlers={{ 
+                    remove: () => setSelectedPopupClient(null)
+                  }}
+                >
+                  <div className="p-2 min-w-[180px]">
+                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-sm bg-emerald-500">
+                        {selectedPopupClient.name.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="font-black text-slate-900 text-sm leading-tight">{selectedPopupClient.name}</div>
+                        <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{selectedPopupClient.username || selectedPopupClient.id.slice(0,6)}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2 text-[10px] text-slate-600">
+                        <MapPin size={12} className="text-slate-400 mt-0.5 flex-shrink-0" /> 
+                        <span className="font-medium">{selectedPopupClient.area}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                          <span className="block text-[7px] font-black text-slate-400 uppercase tracking-tighter">Package</span>
+                          <span className="block text-[9px] font-bold text-slate-700 truncate">{selectedPopupClient.pkgDetails || 'N/A'}</span>
+                        </div>
+                        <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                          <span className="block text-[7px] font-black text-slate-400 uppercase tracking-tighter">Panel Info</span>
+                          <span className="block text-[9px] font-bold text-slate-700 truncate">{selectedPopupClient.panelDetails || 'N/A'}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-emerald-50/50 p-1.5 rounded-lg border border-emerald-100/50 flex items-center justify-between">
+                         <div className="flex items-center gap-1.5">
+                           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                           <span className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter">Contact</span>
+                         </div>
+                         <span className="text-[9px] font-mono font-bold text-emerald-700">{selectedPopupClient.mobileNumber || selectedPopupClient.number || 'No Contact'}</span>
+                      </div>
+
+                      <div className="pt-1 flex items-center justify-between text-[8px] text-slate-400 font-bold uppercase">
+                        <span>Status</span>
+                        <span className="text-emerald-500">Node Active</span>
+                      </div>
+
+                      {(user?.role === 'admin' || user?.role === 'super_admin') && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPurgeTarget(selectedPopupClient);
+                          }}
+                          className="w-full mt-2 flex items-center justify-center gap-1.5 py-2.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors text-[9px] font-black uppercase tracking-widest border border-red-100/50"
+                        >
+                          <Trash2 size={10} />
+                          Purge Location
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </Popup>
+              )}
 
               {/* Selected Coordinate Marker */}
               {selectedCoord && (

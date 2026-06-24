@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Lock, User, Eye, EyeOff, Loader2, Key, Terminal, Globe, AlertTriangle, ShieldCheck, Mail, MapPin, UserPlus, X, Menu, ChevronRight, ChevronLeft, Sun, Moon } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, Loader2, Key, Terminal, Globe, AlertTriangle, ShieldCheck, Mail, MapPin, UserPlus, X, Menu, ChevronRight, ChevronLeft, Sun, Moon, Wifi, Zap, Rocket } from 'lucide-react';
 import { cn } from '../lib/utils';
 import NetworkBackground from './NetworkBackground';
 import { firebaseService } from '../lib/firebaseService';
@@ -587,8 +587,8 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
                  className="mt-12 pointer-events-auto"
                >
                  <button 
-                   onClick={() => setShowAuthModal(true)}
-                   className="group relative px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold uppercase tracking-widest text-sm rounded-full overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300"
+                    onClick={() => { document.getElementById('plans')?.scrollIntoView({ behavior: 'smooth' }); }}
+                    className="group relative px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold uppercase tracking-widest text-sm rounded-full overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 pointer-events-auto cursor-pointer"
                  >
                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                    <span className="relative z-10 flex items-center space-x-2">
@@ -601,6 +601,173 @@ export default function LoginForm({ onLogin, onGoogleLogin, isLoading, error }: 
            )}
          </AnimatePresence>
        </main>
+
+        {/* Plans Section */}
+        <AnimatePresence>
+          {!showAuthModal && (
+            <motion.section
+              id="plans"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="relative z-20 w-full py-24 px-4 bg-slate-50 dark:bg-[#0b0f19] pointer-events-auto"
+            >
+              <div className="max-w-7xl mx-auto">
+                <div className="text-center mb-16">
+                  <h2 className="text-4xl md:text-5xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-4">
+                    Internet <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500">Packages</span>
+                  </h2>
+                  <p className="text-slate-600 dark:text-slate-400 text-lg font-medium max-w-2xl mx-auto">
+                    Choose the perfect fiber internet plan for your home or business. Experience unmatched speed and reliability.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                  {/* Plan A */}
+                  <motion.div 
+                    whileHover={{ y: -10 }}
+                    className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl relative overflow-hidden group"
+                  >
+                    <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <Wifi size={64} className="text-emerald-500" />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="inline-block px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-widest mb-4">Plan A</div>
+                      <div className="flex items-end gap-2 mb-2">
+                        <span className="text-5xl font-black text-slate-900 dark:text-white leading-none">6</span>
+                        <span className="text-xl font-bold text-slate-500 mb-1">MB Pure</span>
+                      </div>
+                      <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mb-6">1300<span className="text-sm text-slate-500 dark:text-slate-400 uppercase"> pkr/mo</span></div>
+                      
+                      <ul className="space-y-3 mb-8">
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Seamless Streaming
+                        </li>
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Basic Gaming
+                        </li>
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Unlimited Data
+                        </li>
+                      </ul>
+
+                      <button onClick={() => setShowAuthModal(true)} className="w-full py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold uppercase text-xs tracking-widest hover:bg-emerald-500 hover:text-white transition-colors shadow-sm cursor-pointer">
+                        Subscribe Now
+                      </button>
+                    </div>
+                  </motion.div>
+
+                  {/* Plan B */}
+                  <motion.div 
+                    whileHover={{ y: -10 }}
+                    className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-emerald-500 shadow-2xl relative overflow-hidden group lg:-mt-4 lg:mb-4"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-teal-500/5" />
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest py-1 px-4 rounded-b-lg shadow-sm">
+                      Most Popular
+                    </div>
+                    <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <Zap size={64} className="text-emerald-500" />
+                    </div>
+                    <div className="relative z-10 mt-2">
+                      <div className="inline-block px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold uppercase tracking-widest mb-4">Plan B</div>
+                      <div className="flex items-end gap-2 mb-2">
+                        <span className="text-5xl font-black text-slate-900 dark:text-white leading-none">8</span>
+                        <span className="text-xl font-bold text-slate-500 mb-1">MB Pure</span>
+                      </div>
+                      <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mb-6">1500<span className="text-sm text-slate-500 dark:text-slate-400 uppercase"> pkr/mo</span></div>
+                      
+                      <ul className="space-y-3 mb-8">
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> HD Streaming
+                        </li>
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Smooth Online Gaming
+                        </li>
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Unlimited Data
+                        </li>
+                      </ul>
+
+                      <button onClick={() => setShowAuthModal(true)} className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold uppercase text-xs tracking-widest shadow-lg hover:shadow-emerald-500/30 transition-all active:scale-95 cursor-pointer">
+                        Subscribe Now
+                      </button>
+                    </div>
+                  </motion.div>
+
+                  {/* Plan C */}
+                  <motion.div 
+                    whileHover={{ y: -10 }}
+                    className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl relative overflow-hidden group"
+                  >
+                    <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <Rocket size={64} className="text-emerald-500" />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="inline-block px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-widest mb-4">Plan C</div>
+                      <div className="flex items-end gap-2 mb-2">
+                        <span className="text-5xl font-black text-slate-900 dark:text-white leading-none">10</span>
+                        <span className="text-xl font-bold text-slate-500 mb-1">MB Pure</span>
+                      </div>
+                      <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mb-6">1800<span className="text-sm text-slate-500 dark:text-slate-400 uppercase"> pkr/mo</span></div>
+                      
+                      <ul className="space-y-3 mb-8">
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> 4K Video Streaming
+                        </li>
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Pro Gaming
+                        </li>
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Unlimited Data
+                        </li>
+                      </ul>
+
+                      <button onClick={() => setShowAuthModal(true)} className="w-full py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold uppercase text-xs tracking-widest hover:bg-emerald-500 hover:text-white transition-colors shadow-sm cursor-pointer">
+                        Subscribe Now
+                      </button>
+                    </div>
+                  </motion.div>
+
+                  {/* Plan D */}
+                  <motion.div 
+                    whileHover={{ y: -10 }}
+                    className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl relative overflow-hidden group"
+                  >
+                    <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <Globe size={64} className="text-emerald-500" />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="inline-block px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-widest mb-4">Plan D</div>
+                      <div className="flex items-end gap-2 mb-2">
+                        <span className="text-5xl font-black text-slate-900 dark:text-white leading-none">12</span>
+                        <span className="text-xl font-bold text-slate-500 mb-1">MB Pure</span>
+                      </div>
+                      <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mb-6">2000<span className="text-sm text-slate-500 dark:text-slate-400 uppercase"> pkr/mo</span></div>
+                      
+                      <ul className="space-y-3 mb-8">
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Multiple 4K Streams
+                        </li>
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Heavy Downloading
+                        </li>
+                        <li className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Unlimited Data
+                        </li>
+                      </ul>
+
+                      <button onClick={() => setShowAuthModal(true)} className="w-full py-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold uppercase text-xs tracking-widest hover:bg-emerald-500 hover:text-white transition-colors shadow-sm cursor-pointer">
+                        Subscribe Now
+                      </button>
+                    </div>
+                  </motion.div>
+
+                </div>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
 
       {/* Auth Modal Overlay */}
       <AnimatePresence>
