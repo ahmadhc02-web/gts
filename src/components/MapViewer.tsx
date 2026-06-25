@@ -18,16 +18,30 @@ const DefaultIcon = L.icon({
   iconAnchor: [12, 41],
 });
 
-const ClientIcon = (client, zoomLevel) => {
+// Cache to avoid creating thousands of identical Leaflet divIcon objects
+const iconCache = new Map<string, L.DivIcon>();
+
+const ClientIcon = (client: any, zoomLevel: number) => {
   const displayId = client.username || (client.id || '').slice(0,6);
-  const showLabel = zoomLevel > 14;
-  const labelHtml = showLabel ? '<div style="position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: white; padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.2); white-space: nowrap; display: flex; flex-direction: column; align-items: center; pointer-events: none;"><span style="font-size: 10px; font-weight: 900; color: #0f172a; line-height: 1.2;">' + (client.name || 'Unknown') + '</span><span style="font-size: 8px; font-family: monospace; font-weight: bold; color: #475569; line-height: 1;">' + displayId + '</span></div>' : '';
-  return L.divIcon({
+  const showLabel = zoomLevel >= 18;
+  const cacheKey = `${displayId}-${showLabel}`;
+  
+  if (iconCache.has(cacheKey)) {
+    return iconCache.get(cacheKey)!;
+  }
+
+  const labelHtml = showLabel ? `<div style="position: absolute; top: 30px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.95); padding: 3px 6px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); white-space: nowrap; display: flex; flex-direction: column; align-items: center; pointer-events: none; border: 1px solid #e2e8f0; z-index: 100;"><span style="font-size: 11px; font-weight: 900; color: #0f172a; line-height: 1.2;">${client.name || 'Unknown'}</span><span style="font-size: 9px; font-family: monospace; font-weight: bold; color: #64748b; line-height: 1; margin-top: 2px;">${displayId}</span></div>` : '';
+  const pinSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="30" height="30" style="filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.4));"><path fill="#10b981" stroke="#ffffff" stroke-width="1.5" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>';
+  
+  const newIcon = L.divIcon({
     className: 'custom-client-marker',
-    html: '<div style="position: relative; width: 12px; height: 12px;"><div style="background-color: #10b981; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>' + labelHtml + '</div>',
-    iconSize: [12, 12],
-    iconAnchor: [6, 6],
+    html: '<div style="position: relative; width: 30px; height: 30px; display: flex; justify-content: center; align-items: flex-end;">' + pinSvg + labelHtml + '</div>',
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
   });
+  
+  iconCache.set(cacheKey, newIcon);
+  return newIcon;
 };
 
 const TargetIcon = L.divIcon({
@@ -407,8 +421,10 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     }
   };
 
+  const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
+
   const MapClickHandler = () => {
-    useMapEvents({
+    const map = useMapEvents({
       click(e) {
         if (selectedPopupClient) {
           setSelectedPopupClient(null); // Close popup when clicking on the map
@@ -424,6 +440,10 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
       },
       zoomend(e) {
         setZoomLevel(e.target.getZoom());
+        setMapBounds(e.target.getBounds());
+      },
+      moveend(e) {
+        setMapBounds(e.target.getBounds());
       },
       popupclose() {
         if (!isMeasuring) {
@@ -432,6 +452,14 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
         }
       }
     });
+
+    // Initialize bounds on first load
+    useEffect(() => {
+      if (!mapBounds) {
+        setMapBounds(map.getBounds());
+      }
+    }, [map, mapBounds]);
+
     return null;
   };
 
@@ -838,7 +866,16 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
               {/* Client Markers */}
               {filteredClients.map((client, markerIdx) => {
                 if (!client.lat || !client.lng) return null;
-                const displayId = client.username || client.id.slice(0,6);
+                
+                // Viewport culling to prevent lag
+                if (mapBounds) {
+                  const latLng = L.latLng(client.lat, client.lng);
+                  // Add a small buffer to avoid popping in/out right at the edge
+                  if (!mapBounds.pad(0.2).contains(latLng)) {
+                    return null;
+                  }
+                }
+                
                 return (
                   <Marker 
                     key={`marker-${client.id || markerIdx}-${markerIdx}`} 
@@ -846,14 +883,6 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     icon={ClientIcon(client, zoomLevel)}
                     eventHandlers={{ click: () => setSelectedPopupClient(client) }}
                   >
-                    {zoomLevel >= 18 && (
-                      <Tooltip direction="bottom" offset={[0, 10]} permanent className="user-label-tooltip">
-                        <div className="flex flex-col items-center leading-none py-0.5">
-                          <span className="text-[11px] font-black tracking-tight text-slate-900 drop-shadow-sm">{client.name}</span>
-                          <span className="text-[8px] font-mono font-bold tracking-widest text-slate-600 bg-white/60 px-1 rounded mt-0.5">{displayId}</span>
-                        </div>
-                      </Tooltip>
-                    )}
                   </Marker>
                 );
               })}
