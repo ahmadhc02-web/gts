@@ -554,7 +554,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
     const unsubscribe = firebaseService.subscribeMonitorTargets(async (data) => {
       // 1. Purge legacy targets (cloudflare, youtube, etc.) to clean up old defaults
       const legacyKeys = ['cloudflare.com', 'youtube.com', 'github.com', 'aws.amazon.com', 'whatsapp.com', 'wikipedia.org'];
-      const legacyToPurge = data.filter(t => legacyKeys.includes(t.domain.toLowerCase().trim()));
+      const legacyToPurge = data.filter(t => legacyKeys.includes((t.domain || '').toLowerCase().trim()));
       
       if (legacyToPurge.length > 0) {
         for (const lt of legacyToPurge) {
@@ -568,7 +568,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       }
 
       // 2. See if we are missing any of our new 4 default targets and seed them sequentially
-      const currentKeys = data.map(t => t.domain.toLowerCase().trim());
+      const currentKeys = data.map(t => (t.domain || '').toLowerCase().trim());
       const missingDefaults = DEFAULT_TARGETS.filter(dt => !currentKeys.includes(dt.key.toLowerCase().trim()));
       
       if (missingDefaults.length > 0) {
@@ -606,7 +606,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
 
       const mappedTargets: Target[] = data.map(t => ({
         id: t.id,
-        key: t.domain.toLowerCase(),
+        key: (t.domain || '').toLowerCase(),
         url: t.domain,
         domain: t.label || t.domain
       }));

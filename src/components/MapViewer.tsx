@@ -19,9 +19,9 @@ const DefaultIcon = L.icon({
 });
 
 const ClientIcon = (client, zoomLevel) => {
-  const displayId = client.username || client.id.slice(0,6);
+  const displayId = client.username || (client.id || '').slice(0,6);
   const showLabel = zoomLevel > 14;
-  const labelHtml = showLabel ? '<div style="position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: white; padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.2); white-space: nowrap; display: flex; flex-direction: column; align-items: center; pointer-events: none;"><span style="font-size: 10px; font-weight: 900; color: #0f172a; line-height: 1.2;">' + client.name + '</span><span style="font-size: 8px; font-family: monospace; font-weight: bold; color: #475569; line-height: 1;">' + displayId + '</span></div>' : '';
+  const labelHtml = showLabel ? '<div style="position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: white; padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.2); white-space: nowrap; display: flex; flex-direction: column; align-items: center; pointer-events: none;"><span style="font-size: 10px; font-weight: 900; color: #0f172a; line-height: 1.2;">' + (client.name || 'Unknown') + '</span><span style="font-size: 8px; font-family: monospace; font-weight: bold; color: #475569; line-height: 1;">' + displayId + '</span></div>' : '';
   return L.divIcon({
     className: 'custom-client-marker',
     html: '<div style="position: relative; width: 12px; height: 12px;"><div style="background-color: #10b981; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>' + labelHtml + '</div>',
@@ -348,8 +348,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     setMapSearchText(val);
     const client = clients.find(c => 
       c.id === val || 
-      c.username.toLowerCase() === val.toLowerCase() ||
-      c.name.toLowerCase() === val.toLowerCase()
+      (c.username || '').toLowerCase() === val.toLowerCase() ||
+      (c.name || '').toLowerCase() === val.toLowerCase()
     );
     if (client && client.lat && client.lng && mapRef.current) {
       mapRef.current.flyTo([client.lat, client.lng], 21, { duration: 1.5 });
@@ -360,13 +360,13 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
 
   const filteredClients = clients.filter(c => 
     !filterText || 
-    c.name.toLowerCase().includes(filterText.toLowerCase()) ||
-    c.username.toLowerCase().includes(filterText.toLowerCase())
+    (c.name || '').toLowerCase().includes(filterText.toLowerCase()) ||
+    (c.username || '').toLowerCase().includes(filterText.toLowerCase())
   );
 
   const handleSaveLocation = async () => {
     if (!selectedCoord || !selectedClientId || !user) return;
-    const client = clients.find(c => c.id === selectedClientId || c.username.toLowerCase() === selectedClientId.toLowerCase());
+    const client = clients.find(c => c.id === selectedClientId || (c.username || '').toLowerCase() === selectedClientId.toLowerCase());
     if (!client) {
       toast.error('User not found. Check the ID or Username.');
       return;
@@ -556,9 +556,9 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                         <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full uppercase">
                           {clients.filter(c => 
                             c.lat && (
-                              c.name.toLowerCase().includes(mapSearchText.toLowerCase()) ||
+                              (c.name || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
                               (c.username || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                              c.id.toLowerCase().includes(mapSearchText.toLowerCase())
+                              (c.id || '').toLowerCase().includes(mapSearchText.toLowerCase())
                             )
                           ).length} Match
                         </span>
@@ -567,9 +567,9 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                       <div className="max-h-[350px] overflow-y-auto custom-scrollbar space-y-1 p-1">
                         {clients
                           .filter(c => c.lat && (
-                            c.name.toLowerCase().includes(mapSearchText.toLowerCase()) ||
+                            (c.name || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
                             (c.username || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                            c.id.toLowerCase().includes(mapSearchText.toLowerCase())
+                            (c.id || '').toLowerCase().includes(mapSearchText.toLowerCase())
                           ))
                           .slice(0, 10)
                           .map((c, i) => (
@@ -585,11 +585,11 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                               className="w-full flex items-center gap-4 p-3 rounded-[1.25rem] bg-slate-50 hover:bg-emerald-600 group transition-all text-left border border-transparent hover:border-emerald-400/50 shadow-sm"
                             >
                               <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-emerald-600 font-black text-sm group-hover:bg-white group-hover:scale-110 transition-all shadow-md">
-                                {c.name.charAt(0)}
+                                {(c.name || 'U').charAt(0)}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-[13px] font-black text-slate-900 group-hover:text-white transition-colors uppercase tracking-tight leading-tight">
-                                  {c.name}
+                                  {c.name || 'Unknown'}
                                 </div>
                                 <div className="flex items-center gap-2 mt-0.5">
                                   <span className="text-[8px] font-black text-slate-400 group-hover:text-emerald-100 uppercase tracking-widest">USER_ID:</span>
@@ -605,9 +605,9 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                           ))}
                         
                         {clients.filter(c => c.lat && (
-                          c.name.toLowerCase().includes(mapSearchText.toLowerCase()) ||
+                          (c.name || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
                           (c.username || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                          c.id.toLowerCase().includes(mapSearchText.toLowerCase())
+                          (c.id || '').toLowerCase().includes(mapSearchText.toLowerCase())
                         )).length === 0 && (
                           <div className="py-12 flex flex-col items-center justify-center text-center">
                             <div className="w-12 h-12 rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center mb-3 text-slate-300">
@@ -843,7 +843,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   <Marker 
                     key={`marker-${client.id || markerIdx}-${markerIdx}`} 
                     position={[client.lat, client.lng]}
-                    icon={ClientIcon()}
+                    icon={ClientIcon(client, zoomLevel)}
                     eventHandlers={{ click: () => setSelectedPopupClient(client) }}
                   >
                     {zoomLevel >= 18 && (
@@ -946,7 +946,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                         />
                         <datalist id="users-list">
                           {clients.map((c, optIdx) => (
-                            <option key={`opt-${c.id}-${optIdx}`} value={c.username || c.id}>{c.name} ({c.username || c.id.slice(0, 6)})</option>
+                            <option key={`opt-${c.id}-${optIdx}`} value={c.username || c.id}>{c.name || 'Unknown'} ({c.username || c.id.slice(0, 6)})</option>
                           ))}
                         </datalist>
                       </div>
@@ -1155,7 +1155,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar pb-10">
                     {clients
-                      .filter(c => c.lat && (!filterText || c.name.toLowerCase().includes(filterText.toLowerCase()) || c.id.toLowerCase().includes(filterText.toLowerCase())))
+                      .filter(c => c.lat && (!filterText || (c.name || '').toLowerCase().includes(filterText.toLowerCase()) || (c.id || '').toLowerCase().includes(filterText.toLowerCase())))
                       .map((c, i) => {
                         const dist = userLocation && c.lat && c.lng 
                           ? L.latLng(userLocation[0], userLocation[1]).distanceTo(L.latLng(c.lat, c.lng))
@@ -1167,16 +1167,16 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                             onClick={() => {
                               setTargetClient(c);
                               setIsSelectingTarget(false);
-                              toast.success(`Routing to ${c.name} initiated.`);
+                              toast.success(`Routing to ${c.name || 'Unknown'} initiated.`);
                             }}
                             className="w-full flex items-center justify-between p-4 rounded-2xl bg-white hover:bg-blue-50 border border-slate-100 transition-all group"
                           >
                             <div className="flex items-center gap-3">
                                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 font-bold group-hover:bg-blue-500 group-hover:text-white transition-all">
-                                 {c.name.charAt(0)}
+                                 {(c.name || 'U').charAt(0)}
                                </div>
                                <div className="text-left">
-                                 <div className="text-[13px] font-black uppercase text-slate-900">{c.name}</div>
+                                 <div className="text-[13px] font-black uppercase text-slate-900">{c.name || 'Unknown'}</div>
                                  <div className="flex items-center gap-2 mt-0.5">
                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{c.username || c.id}</span>
                                    {dist !== null && (

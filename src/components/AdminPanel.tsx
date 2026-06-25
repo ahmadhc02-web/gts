@@ -1628,6 +1628,7 @@ export default function AdminPanel({
         row.name?.toLowerCase().includes(query) || 
         row.username?.toLowerCase().includes(query) || 
         row.mobileNumber?.includes(query) ||
+        row.paymentStatus?.toLowerCase().includes(query) ||
         row.serNam?.toLowerCase().includes(query);
       
       const matchesStatus = billingStatusFilter === 'all' || row.paymentStatus === billingStatusFilter;
@@ -1655,15 +1656,24 @@ export default function AdminPanel({
   }, [filteredRows, currentPage]);
 
   const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalDC, totalPending, recoveryRate } = useMemo(() => {
-    const expected = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0);
-    const base = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.baseAmount) || 0), 0);
+    const expected = activeRows.reduce((acc: number, r: any) => {
+      if (r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') return acc;
+      return acc + (parseFloat(r.totalAmount) || 0);
+    }, 0);
+    const base = activeRows.reduce((acc: number, r: any) => {
+      if (r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') return acc;
+      return acc + (parseFloat(r.baseAmount) || 0);
+    }, 0);
     const arrears = activeRows.reduce((acc: number, r: any) => {
-      if (r.paymentStatus === 'paid') return acc;
+      if (r.paymentStatus === 'paid' || r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') return acc;
       const overdue = (parseFloat(r.totalAmount) || 0) - (parseFloat(r.paymentReceived) || 0);
       const unpaidCr = Math.min(parseFloat(r.cr) || 0, Math.max(0, overdue));
       return acc + unpaidCr;
     }, 0);
-    const recovered = activeRows.reduce((acc: number, r: any) => acc + (parseFloat(r.paymentReceived) || 0), 0);
+    const recovered = activeRows.reduce((acc: number, r: any) => {
+      if (r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') return acc;
+      return acc + (parseFloat(r.paymentReceived) || 0);
+    }, 0);
     const outstanding = expected - recovered;
     const tdc = activeRows.filter((r: any) => r.paymentStatus === 'tdc').length;
     const dc = activeRows.filter((r: any) => r.paymentStatus === 'dc').length;
@@ -6994,7 +7004,7 @@ export default function AdminPanel({
                                     <input
                                       type="number"
                                       key={`${rowRef.clientId || rowRef.username}-baseAmount-${rowRef.baseAmount}`}
-                                      defaultValue={rowRef.baseAmount}
+                                      defaultValue={isTdc || isDc ? 0 : rowRef.baseAmount}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0)}
                                       className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -7009,7 +7019,7 @@ export default function AdminPanel({
                                     <input
                                       type="number"
                                       key={`${rowRef.clientId || rowRef.username}-cr-${rowRef.cr}`}
-                                      defaultValue={rowRef.cr}
+                                      defaultValue={isTdc || isDc ? 0 : rowRef.cr}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
                                       className={cn(
@@ -7022,7 +7032,7 @@ export default function AdminPanel({
 
                                 {/* Total Amount */}
                                 <td className="py-2.5 px-4 border-r border-slate-200 dark:border-slate-800/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-xs font-sans">
-                                  PKR {(rowRef.totalAmount || 0).toLocaleString()}
+                                  PKR {(isTdc || isDc ? 0 : (rowRef.totalAmount || 0)).toLocaleString()}
                                 </td>
 
                                 {/* BD (Billing Day) */}
@@ -7043,7 +7053,7 @@ export default function AdminPanel({
                                     <input
                                       type="number"
                                       key={`${rowRef.clientId || rowRef.username}-paymentReceived-${rowRef.paymentReceived}`}
-                                      defaultValue={rowRef.paymentReceived}
+                                      defaultValue={isTdc || isDc ? 0 : rowRef.paymentReceived}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}
                                       className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans font-black text-emerald-950 dark:text-emerald-100 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black  disabled:text-emerald-950 dark:disabled:text-emerald-100 disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -7211,17 +7221,17 @@ export default function AdminPanel({
                               SHEET TOTALS (FILTERED): 
                             </td>
                             <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black bg-slate-50 dark:bg-slate-950/30 text-black dark:text-white">
-                              {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.baseAmount) || 0), 0)).toLocaleString()}
+                              {Math.round(filteredRows.reduce((a: number, r: any) => a + ((r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
                             </td>
                             <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-rose-700 dark:text-rose-400 bg-slate-50 dark:bg-slate-950/30">
-                              {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.cr) || 0), 0)).toLocaleString()}
+                              {Math.round(filteredRows.reduce((a: number, r: any) => a + ((r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
                             </td>
                             <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
-                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.totalAmount) || 0), 0)).toLocaleString()}
+                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + ((r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
                             </td>
                             <td className="py-4 px-3 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-950/30"></td>
                             <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
-                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (parseFloat(r.paymentReceived) || 0), 0)).toLocaleString()}
+                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + ((r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
                             </td>
                             <td colSpan={isAdvanceMode ? 10 : 2} className="py-4 px-4 border-slate-200/50 dark:border-slate-800/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
                               (Cumulative total of {filteredRows.length} shown rows)
@@ -7435,7 +7445,7 @@ export default function AdminPanel({
                                 <span className="text-[9px] text-slate-400 dark:text-slate-500 font-black mr-1 shrink-0">PKR</span>
                                 <input
                                   type="number"
-                                  defaultValue={rowRef.baseAmount}
+                                  defaultValue={isTdc || isDc ? 0 : rowRef.baseAmount}
                                   disabled={!isBillingUnlocked}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0)}
                                   className="w-full text-right bg-transparent border-none p-0 text-[11px] font-black focus:ring-0 text-black dark:text-white font-sans"
@@ -7450,7 +7460,7 @@ export default function AdminPanel({
                                 <span className={cn("text-[9px] font-black mr-1 shrink-0", outstandingCr > 0 ? "text-rose-600" : "text-slate-400")}>PKR</span>
                                 <input
                                   type="number"
-                                  defaultValue={rowRef.cr}
+                                  defaultValue={isTdc || isDc ? 0 : rowRef.cr}
                                   disabled={!isBillingUnlocked}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
                                   className={cn(
@@ -7468,7 +7478,7 @@ export default function AdminPanel({
                                 <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-black mr-1 shrink-0">PKR</span>
                                 <input
                                   type="number"
-                                  defaultValue={rowRef.paymentReceived}
+                                  defaultValue={isTdc || isDc ? 0 : rowRef.paymentReceived}
                                   disabled={!isBillingUnlocked}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}
                                   className="w-full text-right bg-transparent border-none p-0 text-[11px] font-black focus:ring-0 text-emerald-950 dark:text-emerald-100 font-sans"
@@ -7491,7 +7501,7 @@ export default function AdminPanel({
                               <div className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg flex items-center justify-between mt-0.5">
                                 <span className="text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase">PAYABLE</span>
                                 <span className="text-[11px] font-sans font-black text-slate-900 dark:text-zinc-50 shrink-0">
-                                  PKR {rowRef.totalAmount || 0}
+                                  PKR {isTdc || isDc ? 0 : (rowRef.totalAmount || 0)}
                                 </span>
                               </div>
                             </div>

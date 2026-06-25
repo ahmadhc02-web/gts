@@ -1654,8 +1654,9 @@ export default function EntrySheet({
     let amount = 0;
     
     if (matchingActiveRow) {
-      const totalAmt = parseFloat(matchingActiveRow.totalAmount) || 0;
-      const rcvAmt = parseFloat(matchingActiveRow.paymentReceived) || 0;
+      const isDcOrTdc = matchingActiveRow.paymentStatus === 'dc' || matchingActiveRow.paymentStatus === 'tdc';
+      const totalAmt = isDcOrTdc ? 0 : (parseFloat(matchingActiveRow.totalAmount) || 0);
+      const rcvAmt = isDcOrTdc ? 0 : (parseFloat(matchingActiveRow.paymentReceived) || 0);
       const outstanding = totalAmt - rcvAmt;
       amount = outstanding > 0 ? outstanding : totalAmt;
     } else {
@@ -3728,8 +3729,9 @@ export default function EntrySheet({
                                 (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
                                 (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
                               );
+                              const isDcOrTdc = matchingActiveRow && (matchingActiveRow.paymentStatus === 'dc' || matchingActiveRow.paymentStatus === 'tdc');
                               const outstandingStr = matchingActiveRow 
-                                ? `Outstanding: Rs. ${parseFloat(matchingActiveRow.totalAmount || '0') - parseFloat(matchingActiveRow.paymentReceived || '0')}`
+                                ? `Outstanding: Rs. ${isDcOrTdc ? 0 : parseFloat(matchingActiveRow.totalAmount || '0') - parseFloat(matchingActiveRow.paymentReceived || '0')}`
                                 : cObj.pkgDetails || 'Active Master Customer';
 
                               return (
@@ -3809,8 +3811,9 @@ export default function EntrySheet({
                                 (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
                                 (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
                               );
+                              const isDcOrTdc = matchingActiveRow && (matchingActiveRow.paymentStatus === 'dc' || matchingActiveRow.paymentStatus === 'tdc');
                               const outstandingStr = matchingActiveRow 
-                                ? `Outstanding: Rs. ${parseFloat(matchingActiveRow.totalAmount || '0') - parseFloat(matchingActiveRow.paymentReceived || '0')}`
+                                ? `Outstanding: Rs. ${isDcOrTdc ? 0 : parseFloat(matchingActiveRow.totalAmount || '0') - parseFloat(matchingActiveRow.paymentReceived || '0')}`
                                 : cObj.pkgDetails || 'Active Master Customer';
 
                               return (
