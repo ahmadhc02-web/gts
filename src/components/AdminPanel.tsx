@@ -1657,7 +1657,8 @@ export default function AdminPanel({
 
   const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalDC, totalPending, recoveryRate } = useMemo(() => {
     const expected = activeRows.reduce((acc: number, r: any) => {
-      if (r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') return acc;
+      if (r.paymentStatus === 'dc') return acc;
+      if (r.paymentStatus === 'tdc') return acc + (parseFloat(r.cr) || 0);
       return acc + (parseFloat(r.totalAmount) || 0);
     }, 0);
     const base = activeRows.reduce((acc: number, r: any) => {
@@ -1665,13 +1666,17 @@ export default function AdminPanel({
       return acc + (parseFloat(r.baseAmount) || 0);
     }, 0);
     const arrears = activeRows.reduce((acc: number, r: any) => {
-      if (r.paymentStatus === 'paid' || r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') return acc;
+      if (r.paymentStatus === 'paid' || r.paymentStatus === 'dc') return acc;
+      if (r.paymentStatus === 'tdc') {
+        const overdue = (parseFloat(r.cr) || 0) - (parseFloat(r.paymentReceived) || 0);
+        return acc + Math.max(0, overdue);
+      }
       const overdue = (parseFloat(r.totalAmount) || 0) - (parseFloat(r.paymentReceived) || 0);
       const unpaidCr = Math.min(parseFloat(r.cr) || 0, Math.max(0, overdue));
       return acc + unpaidCr;
     }, 0);
     const recovered = activeRows.reduce((acc: number, r: any) => {
-      if (r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') return acc;
+      if (r.paymentStatus === 'dc') return acc;
       return acc + (parseFloat(r.paymentReceived) || 0);
     }, 0);
     const outstanding = expected - recovered;
@@ -3747,244 +3752,43 @@ export default function AdminPanel({
 
         {activeTab === 'mypc' && (
           <div id="mypc-virtual-desktop" className="max-w-[115rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
-            {/* Header */}
-            <div className={cn("p-6 sm:p-8", getCardStyle(branding.cardStyle), "space-y-4")}>
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm">
-                    <Monitor size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-100">My Virtual PC Desktop</h3>
-                    <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mt-0.5">Secure sandbox folder directory & tool systems</p>
-                  </div>
-                </div>
-
-                {/* Breadcrumbs for location awareness */}
-                <div className="flex items-center gap-2 text-xs bg-slate-100 dark:bg-slate-900 px-3.5 py-1.5 rounded-xl border border-slate-200/50 dark:border-slate-800 font-mono text-slate-600 dark:text-slate-400">
-                  <span className="cursor-pointer hover:underline text-blue-500 font-black" onClick={() => { setMypcFolder(null); setMypcOpenedFile(null); }}>My PC</span>
-                  {mypcOpenedFile && (
-                    <>
-                      <span className="text-slate-400">/</span>
-                      <span className="text-slate-950 dark:text-slate-100 font-bold">
-                        {mypcOpenedFile === 'user_details' ? 'User Details' :
-                         mypcOpenedFile === 'top10_complainers' ? 'Top 10 Complainer' :
-                         mypcOpenedFile === 'login_profiles' ? 'Login Profiles' :
-                         mypcOpenedFile === 'system_config' ? 'Workflow Config' :
-                         mypcOpenedFile === 'dealers_view' ? 'Dealer Section' :
-                         mypcOpenedFile === 'branding_panel' ? 'Branding Customizer' : 
-                         mypcOpenedFile === 'settings_info' ? 'Security & Audio Matrix' : 
-                         mypcOpenedFile === 'complaints_view' ? (branding?.tabNames?.complaints || 'Operations') :
-                         mypcOpenedFile === 'nodes_view' ? 'Active Nodes' :
-                         mypcOpenedFile === 'dealers_data_view' ? 'Dealers Data' :
-                         mypcOpenedFile === 'submit_view' ? (branding?.tabNames?.submit || 'Complain Reg') :
-                         mypcOpenedFile === 'map_view' ? 'Network Map' : 'Connection Integrations'}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
             {/* Virtual PC Views */}
-{!mypcOpenedFile && (
-<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-6 max-w-7xl mx-auto py-4 sm:py-8">
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('nodes_view')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <Flame size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Active Nodes</h4>
-                        <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Monitor dynamic hotspots</p>
-                      </div>
-                    </motion.div>
-  {currentUser?.role === 'super_admin' && (
-    <motion.div
-                          whileHover={{ y: -6, scale: 1.02 }}
-                          onClick={() => setMypcOpenedFile('dealers_data_view')}
-                          className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                        >
-                          <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                          
-                          {/* Modern Light Blue Icon Vault */}
-                          <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                            <BarChart3 size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                          </div>
-                          <div className="z-10">
-                            <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Dealers Data</h4>
-                            <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Audit dealer network metrics</p>
-                          </div>
-                        </motion.div>
-  )}
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('submit_view')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <PlusSquare size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">{branding?.tabNames?.submit || 'Complain Reg'}</h4>
-                        <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">File fresh customer logs</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('map_view')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <MapPinned size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Network Map</h4>
-                        <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Diagnostic geographic connection grid</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('user_details')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <Users size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">User Details</h4>
-                        <p className="text-[9px] font-extrabold uppercase tracking-widest text-slate-505 group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Manage logins & clearance level</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('top10_complainers')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <BarChart2 size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Top 10 Complainer</h4>
-                        <p className="text-[9px] font-extrabold uppercase tracking-widest text-slate-550 group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">High frequency support identifiers</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('login_profiles')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <ShieldCheck size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Login Profiles</h4>
-                        <p className="text-[9px] font-extrabold uppercase tracking-widest text-slate-550 group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Active Credentials & Roles Overview</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('dealers_view')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <ShieldAlert size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Dealer Section</h4>
-                        <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Authorized Dealers Registry Setup</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('system_config')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <Settings size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Workflow Config</h4>
-                        <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Edit Categories & Active Zones</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('settings_info')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <Shield size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Security</h4>
-                        <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Audio Matrix & Voice Protocols</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('integrations')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <CloudUpload size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">Google Sheet Link</h4>
-                        <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">One-Time Enterprise Sync</p>
-                      </div>
-                    </motion.div>
-  <motion.div
-                      whileHover={{ y: -6, scale: 1.02 }}
-                      onClick={() => setMypcOpenedFile('branding_panel')}
-                      className="group cursor-pointer p-3 sm:p-8 bg-sky-50/30 dark:bg-sky-950/15 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 rounded-[2rem] shadow-md hover:shadow-2xl hover:border-sky-400 dark:hover:border-sky-500 flex flex-col items-center text-center space-y-5 transition-all duration-300 relative overflow-hidden"
-                    >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-sky-400/5 rounded-full blur-xl group-hover:bg-sky-400/15 transition-all duration-300 -mr-6 -mt-6" />
-                      
-                      {/* Modern Light Blue Icon Vault */}
-                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-sky-100/80 dark:bg-sky-950/50 border border-sky-300/50 dark:border-sky-800/50 text-sky-600 dark:text-sky-400 flex items-center justify-center shadow-[inset_0_1.5px_3px_rgba(255,255,255,0.05),0_8px_16px_rgba(56,189,248,0.1)] group-hover:scale-110 group-hover:bg-sky-500 group-hover:text-white dark:group-hover:bg-sky-500 dark:group-hover:text-white transition-all duration-300">
-                        <Palette size={28} className="stroke-[1.5] w-5 h-5 sm:w-7 sm:h-7" />
-                      </div>
-                      <div className="z-10">
-                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-800 dark:text-zinc-100 text-center leading-tight group-hover:text-sky-500 transition-colors mt-2">CUSTOMIZATION</h4>
-                        <p className="text-[8px] sm:text-[9px] font-extrabold uppercase tracking-widest text-slate-500 line-clamp-2 text-center leading-tight group-hover:text-slate-400 dark:text-zinc-400 transition-colors mt-2">Design aesthetics & app layouts</p>
-                      </div>
-                    </motion.div>
-</div>
-)}
+            {!mypcOpenedFile && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 max-w-7xl mx-auto pt-2 pb-8">
+                {[
+                  { id: 'nodes_view', icon: Flame, title: 'Active Nodes', desc: 'Monitor dynamic hotspots' },
+                  ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_data_view', icon: BarChart3, title: 'Dealers Data', desc: 'Audit dealer network metrics' }] : []),
+                  { id: 'submit_view', icon: PlusSquare, title: branding?.tabNames?.submit || 'Complain Reg', desc: 'File fresh customer logs' },
+                  { id: 'map_view', icon: MapPinned, title: 'Network Map', desc: 'Diagnostic geographic connection grid' },
+                  { id: 'user_details', icon: Users, title: 'User Details', desc: 'Manage logins & clearance level' },
+                  { id: 'top10_complainers', icon: BarChart2, title: 'Top 10 Complainer', desc: 'High frequency support identifiers' },
+                  { id: 'login_profiles', icon: ShieldCheck, title: 'Login Profiles', desc: 'Active Credentials & Roles Overview' },
+                  { id: 'dealers_view', icon: ShieldAlert, title: 'Dealer Section', desc: 'Authorized Dealers Registry Setup' },
+                  { id: 'system_config', icon: Settings, title: 'Workflow Config', desc: 'Edit Categories & Active Zones' },
+                  { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
+                  { id: 'integrations', icon: CloudUpload, title: 'Google Sheet Link', desc: 'One-Time Enterprise Sync' },
+                  { id: 'branding_panel', icon: Palette, title: 'CUSTOMIZATION', desc: 'Design aesthetics & app layouts' }
+                ].map((item) => (
+                  <motion.div
+                    key={item.id}
+                    whileHover={{ y: -4, scale: 1.01 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setMypcOpenedFile(item.id as any)}
+                    className="group cursor-pointer p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-[2rem] shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.3)] hover:border-blue-500/30 dark:hover:border-blue-500/30 flex flex-col items-center sm:items-start text-center sm:text-left space-y-4 transition-all duration-300 relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all duration-300 -mr-12 -mt-12 pointer-events-none" />
+                    
+                    <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 text-slate-600 dark:text-slate-400 flex items-center justify-center group-hover:bg-blue-500 group-hover:border-blue-500 group-hover:text-white dark:group-hover:text-white transition-all duration-300 shadow-sm z-10">
+                      <item.icon size={22} strokeWidth={2} />
+                    </div>
+                    <div className="z-10 w-full flex flex-col items-center sm:items-start">
+                      <h4 className="text-[11px] sm:text-[13px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors leading-tight mb-2">{item.title}</h4>
+                      <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 line-clamp-2 leading-relaxed group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">{item.desc}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
             {mypcOpenedFile && (
               <div className="space-y-6 animate-fade-in text-left">
                 <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-900 px-5 py-4 rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -6683,7 +6487,7 @@ export default function AdminPanel({
                                     <input
                                       type="number"
                                       key={`${rowRef.clientId || rowRef.username}-cr-${rowRef.cr}`}
-                                      defaultValue={isTdc || isDc ? 0 : rowRef.cr}
+                                      defaultValue={isDc ? 0 : rowRef.cr}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
                                       className={cn(
@@ -6696,7 +6500,7 @@ export default function AdminPanel({
 
                                 {/* Total Amount */}
                                 <td className="py-2.5 px-4 border-r border-slate-200 dark:border-slate-800/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-xs font-sans">
-                                  PKR {(isTdc || isDc ? 0 : (rowRef.totalAmount || 0)).toLocaleString()}
+                                  PKR {isDc ? 0 : (isTdc ? (rowRef.cr || 0) : (rowRef.totalAmount || 0)).toLocaleString()}
                                 </td>
 
                                 {/* BD (Billing Day) */}
@@ -6717,7 +6521,7 @@ export default function AdminPanel({
                                     <input
                                       type="number"
                                       key={`${rowRef.clientId || rowRef.username}-paymentReceived-${rowRef.paymentReceived}`}
-                                      defaultValue={isTdc || isDc ? 0 : rowRef.paymentReceived}
+                                      defaultValue={isDc ? 0 : rowRef.paymentReceived}
                                       disabled={!isBillingUnlocked}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}
                                       className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans font-black text-emerald-950 dark:text-emerald-100 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black  disabled:text-emerald-950 dark:disabled:text-emerald-100 disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -6885,17 +6689,17 @@ export default function AdminPanel({
                               SHEET TOTALS (FILTERED): 
                             </td>
                             <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black bg-slate-50 dark:bg-slate-950/30 text-black dark:text-white">
-                              {Math.round(filteredRows.reduce((a: number, r: any) => a + ((r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
+                              {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
                             </td>
                             <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-rose-700 dark:text-rose-400 bg-slate-50 dark:bg-slate-950/30">
-                              {Math.round(filteredRows.reduce((a: number, r: any) => a + ((r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
+                              {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
                             </td>
                             <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
-                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + ((r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
+                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
                             </td>
                             <td className="py-4 px-3 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-950/30"></td>
                             <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
-                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + ((r.paymentStatus === 'dc' || r.paymentStatus === 'tdc') ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
+                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
                             </td>
                             <td colSpan={isAdvanceMode ? 10 : 2} className="py-4 px-4 border-slate-200/50 dark:border-slate-800/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
                               (Cumulative total of {filteredRows.length} shown rows)
@@ -7124,7 +6928,7 @@ export default function AdminPanel({
                                 <span className={cn("text-[9px] font-black mr-1 shrink-0", outstandingCr > 0 ? "text-rose-600" : "text-slate-400")}>PKR</span>
                                 <input
                                   type="number"
-                                  defaultValue={isTdc || isDc ? 0 : rowRef.cr}
+                                  defaultValue={isDc ? 0 : rowRef.cr}
                                   disabled={!isBillingUnlocked}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
                                   className={cn(
@@ -7142,7 +6946,7 @@ export default function AdminPanel({
                                 <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-black mr-1 shrink-0">PKR</span>
                                 <input
                                   type="number"
-                                  defaultValue={isTdc || isDc ? 0 : rowRef.paymentReceived}
+                                  defaultValue={isDc ? 0 : rowRef.paymentReceived}
                                   disabled={!isBillingUnlocked}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}
                                   className="w-full text-right bg-transparent border-none p-0 text-[11px] font-black focus:ring-0 text-emerald-950 dark:text-emerald-100 font-sans"
@@ -7165,7 +6969,7 @@ export default function AdminPanel({
                               <div className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg flex items-center justify-between mt-0.5">
                                 <span className="text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase">PAYABLE</span>
                                 <span className="text-[11px] font-sans font-black text-slate-900 dark:text-zinc-50 shrink-0">
-                                  PKR {isTdc || isDc ? 0 : (rowRef.totalAmount || 0)}
+                                  PKR {isDc ? 0 : (isTdc ? (rowRef.cr || 0) : (rowRef.totalAmount || 0)).toLocaleString()}
                                 </span>
                               </div>
                             </div>

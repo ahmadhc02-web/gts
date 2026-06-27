@@ -17,6 +17,7 @@ import { safeStringify, processScheduledComplaints } from './lib/utils';
 import FiberLoading from './components/FiberLoading';
 import ServiceMonitor from './components/ServiceMonitor';
 import { supabase } from '../supabaseClient';
+import { Clock } from 'lucide-react';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
@@ -1804,6 +1805,25 @@ export default function App() {
           </div>
         ) : !user ? (
         <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
+      ) : user.status === 'pending' ? (
+        <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
+          <div className="absolute inset-0 bg-amber-500/5 dark:bg-amber-500/10" />
+          <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-amber-200/50 dark:border-amber-800/50 shadow-2xl">
+            <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Clock size={40} className="animate-pulse" />
+            </div>
+            <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Registration Pending</h1>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+              Your network node registration is currently under review by the core administration team. Please wait for clearance.
+            </p>
+            <button 
+              onClick={handleLogout} 
+              className="mt-8 px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform uppercase text-xs tracking-widest shadow-xl cursor-pointer"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
       ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor') ? (
         <AdminPanel
           complaints={processedComplaints}

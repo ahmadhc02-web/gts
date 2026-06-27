@@ -34,6 +34,7 @@ interface Table1Row {
   originalAmount?: number;
   clientId?: string;
   clientUsername?: string;
+  status?: string;
 }
 
 interface Table2Row {
@@ -1171,7 +1172,8 @@ export default function EntrySheet({
             ch: !!r.ch,
             originalAmount: r.originalAmount || 0,
             clientId: r.clientId || '',
-            clientUsername: r.clientUsername || ''
+            clientUsername: r.clientUsername || '',
+            status: r.status || ''
           })),
           table2Rows: (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).map(r => ({
             sr: r.sr,
@@ -1264,7 +1266,9 @@ export default function EntrySheet({
                   // Auto calculate status based on payment vs total
                   const totalAmount = base + newCr;
                   let finalStatus = 'partial';
-                  if (amountVal === 0) {
+                  if (r.status) {
+                    finalStatus = r.status;
+                  } else if (amountVal === 0) {
                     finalStatus = 'unpaid';
                   } else if (amountVal >= totalAmount) {
                     finalStatus = 'paid';
@@ -3863,14 +3867,28 @@ export default function EntrySheet({
                       style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
                       className="px-2 border-r border-black text-right"
                     >
-                      <input
-                        type="number"
-                        value={row.amount === 0 ? '' : row.amount}
-                        placeholder="0"
-                        onChange={(e) => handleT1Change(index, 'amount', parseFloat(e.target.value) || 0)}
-                        style={{ fontSize: `${tableFontSize}px` }}
-                        className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
-                      />
+                      <div className="flex flex-col items-end justify-center">
+                        <input
+                          type="number"
+                          value={row.amount === 0 ? '' : row.amount}
+                          placeholder="0"
+                          onChange={(e) => handleT1Change(index, 'amount', parseFloat(e.target.value) || 0)}
+                          style={{ fontSize: `${tableFontSize}px` }}
+                          className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
+                        />
+                        <select
+                          value={row.status || ''}
+                          onChange={(e) => handleT1Change(index, 'status', e.target.value)}
+                          className="text-[9px] mt-0.5 text-slate-500 bg-transparent border-none outline-none font-bold text-right cursor-pointer"
+                        >
+                          <option value="">- Status -</option>
+                          <option value="paid">PAID</option>
+                          <option value="unpaid">UNPAID</option>
+                          <option value="tdc">TDC</option>
+                          <option value="dc">DC</option>
+                          <option value="partial">PARTIAL</option>
+                        </select>
+                      </div>
                     </td>
  
                     {/* Ch (Tick checkbox) */}

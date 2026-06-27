@@ -14,8 +14,12 @@ dotenv.config();
 let _filename = "";
 let _dirname = "";
 try {
-  _filename = typeof __filename !== "undefined" ? __filename : fileURLToPath(import.meta.url);
-  _dirname = typeof __dirname !== "undefined" ? __dirname : path.dirname(_filename);
+  _filename =
+    typeof __filename !== "undefined"
+      ? __filename
+      : fileURLToPath(import.meta.url);
+  _dirname =
+    typeof __dirname !== "undefined" ? __dirname : path.dirname(_filename);
 } catch (e) {
   _dirname = process.cwd();
 }
@@ -34,35 +38,54 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   // Robust CORS Middleware supporting Hugging Face, Netlify, and other external frontends
-  app.use(cors({
-    origin: (origin, callback) => {
-      // Allow all origins dynamically to support true credentials-based connections
-      callback(null, true);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"]
-  }));
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow all origins dynamically to support true credentials-based connections
+        callback(null, true);
+      },
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: [
+        "Origin",
+        "X-Requested-With",
+        "Content-Type",
+        "Accept",
+        "Authorization",
+      ],
+    }),
+  );
 
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.raw({ limit: '50mb', type: 'application/octet-stream' }));
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
 
   // --- Secure Iframe Proxy Tunnel Bypass Endpoint ---
   app.get("/api/proxy-tunnel", async (req, res) => {
     const targetUrl = req.query.url as string;
     try {
       if (!targetUrl) {
-        return res.status(400).send("Proxy Tunnel Error: No URL parameter provided.");
+        return res
+          .status(400)
+          .send("Proxy Tunnel Error: No URL parameter provided.");
       }
 
       // Ensure URL is valid and HTTP/HTTPS
-      if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-        return res.status(400).send("Proxy Tunnel Error: Invalid scheme. Must be http:// or https://");
+      if (
+        !targetUrl.startsWith("http://") &&
+        !targetUrl.startsWith("https://")
+      ) {
+        return res
+          .status(400)
+          .send(
+            "Proxy Tunnel Error: Invalid scheme. Must be http:// or https://",
+          );
       }
 
       const clientHeaders: Record<string, string> = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
       };
 
@@ -71,13 +94,16 @@ async function startServer() {
         method: "GET",
         headers: clientHeaders,
         redirect: "follow",
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(25000),
       });
 
       const contentType = response.headers.get("content-type") || "";
-      
+
       // If it is not HTML text, we can either redirect to avoid overhead or serve binary
-      if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+      if (
+        !contentType.includes("text/html") &&
+        !contentType.includes("application/xhtml+xml")
+      ) {
         return res.redirect(targetUrl);
       }
 
@@ -86,12 +112,19 @@ async function startServer() {
       // Parse the primary source origin url to construct absolute URL fallbacks
       const parsedTarget = new URL(targetUrl);
       const origin = parsedTarget.origin;
-      const baseUrlStr = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1) || (origin + '/');
+      const baseUrlStr =
+        targetUrl.substring(0, targetUrl.lastIndexOf("/") + 1) || origin + "/";
 
       // Helper function to resolve relative paths
       const makeAbsolute = (urlAttr: string, match: string) => {
         const val = match.trim();
-        if (val.startsWith("http://") || val.startsWith("https://") || val.startsWith("data:") || val.startsWith("#") || val.startsWith("javascript:")) {
+        if (
+          val.startsWith("http://") ||
+          val.startsWith("https://") ||
+          val.startsWith("data:") ||
+          val.startsWith("#") ||
+          val.startsWith("javascript:")
+        ) {
           return `${urlAttr}="${val}"`;
         }
         if (val.startsWith("//")) {
@@ -104,15 +137,24 @@ async function startServer() {
       };
 
       // Rewrites
-      htmlText = htmlText.replace(/(href|src|action)\s*=\s*["']([^"']*)["']/gi, (fullMatch, attr, val) => {
-        return makeAbsolute(attr, val);
-      });
+      htmlText = htmlText.replace(
+        /(href|src|action)\s*=\s*["']([^"']*)["']/gi,
+        (fullMatch, attr, val) => {
+          return makeAbsolute(attr, val);
+        },
+      );
 
       // Inject a base tag is highly helpful
       if (htmlText.includes("<head>")) {
-        htmlText = htmlText.replace("<head>", `<head><base href="${targetUrl}">`);
+        htmlText = htmlText.replace(
+          "<head>",
+          `<head><base href="${targetUrl}">`,
+        );
       } else if (htmlText.includes("<HEAD>")) {
-        htmlText = htmlText.replace("<HEAD>", `<HEAD><base href="${targetUrl}">`);
+        htmlText = htmlText.replace(
+          "<HEAD>",
+          `<HEAD><base href="${targetUrl}">`,
+        );
       }
 
       // Explicitly relax frame control headers
@@ -123,10 +165,15 @@ async function startServer() {
 
       return res.send(htmlText);
     } catch (err: any) {
-      const isTimeout = err?.name === "TimeoutError" || err?.message?.includes("timeout") || err?.message?.includes("aborted");
-      
+      const isTimeout =
+        err?.name === "TimeoutError" ||
+        err?.message?.includes("timeout") ||
+        err?.message?.includes("aborted");
+
       if (isTimeout) {
-        console.warn(`[Proxy Tunnel Warning] Connection timeout loading ${targetUrl}.`);
+        console.warn(
+          `[Proxy Tunnel Warning] Connection timeout loading ${targetUrl}.`,
+        );
       } else {
         console.error(`[Proxy Tunnel Error] loading ${targetUrl}:`, err);
       }
@@ -277,25 +324,29 @@ async function startServer() {
   // -----------------------------------
 
   // --- Real Native Network Ping Proxy Engine (For ServiceMonitor.tsx) ---
-  app.get('/api/network-ping', (req, res) => {
-    let host = (req.query.host as string) || '8.8.8.8';
-    
+  app.get("/api/network-ping", (req, res) => {
+    let host = (req.query.host as string) || "8.8.8.8";
+
     // Clean target url to secure shell arguments against injections
-    host = host.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].trim();
+    host = host
+      .replace(/^https?:\/\//i, "")
+      .split("/")[0]
+      .split(":")[0]
+      .trim();
     if (!host || /[&;|`$]/g.test(host)) {
       return res.status(400).json({ error: "Invalid Host Matrix Protocol" });
     }
 
-    const isWin = process.platform === 'win32';
+    const isWin = process.platform === "win32";
     const execCommand = isWin ? `ping -n 1 ${host}` : `ping -c 1 -W 2 ${host}`;
 
     exec.exec(execCommand, (err, stdout) => {
       if (err) {
-        return res.json({ ms: 'Error', status: 'offline' });
+        return res.json({ ms: "Error", status: "offline" });
       }
 
-      let ms: number | 'Error' = 'Error';
-      
+      let ms: number | "Error" = "Error";
+
       if (isWin) {
         // Attempt to find Average ms on Windows, otherwise fallback to the sequence time
         const avgMatch = stdout.match(/Average\s*=\s*([\d.]+)\s*ms/i);
@@ -307,7 +358,9 @@ async function startServer() {
         }
       } else {
         // Use RTT average for higher precision calculation if available
-        const rttMatch = stdout.match(/rtt\s+min\/avg\/max\/mdev\s*=\s*[\d.]+\/([\d.]+)\//i);
+        const rttMatch = stdout.match(
+          /rtt\s+min\/avg\/max\/mdev\s*=\s*[\d.]+\/([\d.]+)\//i,
+        );
         if (rttMatch) {
           ms = Math.round(parseFloat(rttMatch[1]));
         } else {
@@ -316,24 +369,24 @@ async function startServer() {
         }
       }
 
-      if (typeof ms === 'number' && !isNaN(ms)) {
+      if (typeof ms === "number" && !isNaN(ms)) {
         if (ms > 1000) {
           // If original real ms crosses 1000, treat as offline
-          return res.json({ ms: 'Error', status: 'offline' });
+          return res.json({ ms: "Error", status: "offline" });
         } else {
           ms = ms - 200;
           // Ensure it doesn't show negative or 0. Give it a tiny, realistic value if it goes too low.
           if (ms < 1) ms = Math.floor(Math.random() * 5) + 1;
         }
       } else {
-        ms = 'Error';
+        ms = "Error";
       }
 
-      if (ms === 'Error') {
-        return res.json({ ms: 'Error', status: 'offline' });
+      if (ms === "Error") {
+        return res.json({ ms: "Error", status: "offline" });
       }
 
-      res.json({ ms, status: 'online' });
+      res.json({ ms, status: "online" });
     });
   });
   // --- End Network Ping Proxy Engine ---
@@ -343,7 +396,9 @@ async function startServer() {
     try {
       const { username } = req.body;
       if (!username) {
-        return res.status(400).json({ error: "Access ID (Username) is required." });
+        return res
+          .status(400)
+          .json({ error: "Access ID (Username) is required." });
       }
 
       // Load keys dynamically with fallbacks
@@ -351,43 +406,76 @@ async function startServer() {
       const rawKey = process.env.SUPABASE_ANON_KEY;
       const rawBrevo = process.env.BREVO_API_KEY;
 
-      const SUPABASE_URL = (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, '') : '') || 'https://jduamzoyllfspdqucncw.supabase.co';
-      const SUPABASE_ANON_KEY = (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, '') : '') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
-      const BREVO_API_KEY = (rawBrevo ? rawBrevo.trim().replace(/^['"]|['"]$/g, '').replace(/\s+/g, '') : '') || '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';
+      const SUPABASE_URL =
+        (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "") ||
+        "https://jduamzoyllfspdqucncw.supabase.co";
+      const SUPABASE_ANON_KEY =
+        (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "") ||
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM";
+      const BREVO_API_KEY = (rawBrevo
+        ? rawBrevo
+            .trim()
+            .replace(/^['"]|['"]$/g, "")
+            .replace(/\s+/g, "")
+        : "") || "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";
 
       // 1. Fetch user from Supabase if possible
       let foundUser: any = null;
       try {
         const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users?select=*`, {
-          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          },
         });
         const users = await resUser.json();
         if (users && Array.isArray(users)) {
-          foundUser = users.find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+          foundUser = users.find(
+            (u: any) =>
+              String(u.username || "").toLowerCase() ===
+              username.trim().toLowerCase(),
+          );
         }
       } catch (suErr) {
-        console.warn("Server: Supabase user check failed, falling back to Firestore:", suErr);
+        console.warn(
+          "Server: Supabase user check failed, falling back to Firestore:",
+          suErr,
+        );
       }
 
       const db = await getFirestoreOnServer();
       if (!foundUser && db) {
         try {
-          const { collection: serverCollection, getDocs: serverGetDocs } = await import('firebase/firestore');
-          const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
+          const { collection: serverCollection, getDocs: serverGetDocs } =
+            await import("firebase/firestore");
+          const usersSnap = await serverGetDocs(serverCollection(db, "users"));
           foundUser = usersSnap.docs
-            .map(d => ({ ...(d.data() as any), id: d.id }))
-            .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+            .map((d) => ({ ...(d.data() as any), id: d.id }))
+            .find(
+              (u: any) =>
+                String(u.username || "").toLowerCase() ===
+                username.trim().toLowerCase(),
+            );
         } catch (fbErr) {
           console.warn("Server: Firestore fallback search failed:", fbErr);
         }
       }
 
       if (!foundUser) {
-        return res.status(404).json({ error: "Identity registry does not contain this Access ID." });
+        return res
+          .status(404)
+          .json({
+            error: "Identity registry does not contain this Access ID.",
+          });
       }
 
       if (!foundUser.email) {
-        return res.status(400).json({ error: "No recovery email is registered for this account. Please contact an administrator." });
+        return res
+          .status(400)
+          .json({
+            error:
+              "No recovery email is registered for this account. Please contact an administrator.",
+          });
       }
 
       // 2. Generate a secure 6-digit OTP
@@ -400,24 +488,32 @@ async function startServer() {
         code: otpCode,
         email: foundUser.email,
         expiresAt,
-        verified: false
+        verified: false,
       });
 
       // Also store in Firestore if initialized
       if (db) {
         try {
-          const { doc: serverDoc, setDoc: serverSetDoc } = await import('firebase/firestore');
-          const otpRef = serverDoc(db, 'reset_otps', username.trim().toLowerCase());
+          const { doc: serverDoc, setDoc: serverSetDoc } =
+            await import("firebase/firestore");
+          const otpRef = serverDoc(
+            db,
+            "reset_otps",
+            username.trim().toLowerCase(),
+          );
           await serverSetDoc(otpRef, {
             username: username.trim().toLowerCase(),
             code: otpCode,
             email: foundUser.email,
             expiresAt,
-            verified: false
+            verified: false,
           });
           console.log("Server: OTP saved in Firestore cache.");
         } catch (dbErr) {
-          console.warn("Server: Firestore OTP write failed, using memory cache:", dbErr);
+          console.warn(
+            "Server: Firestore OTP write failed, using memory cache:",
+            dbErr,
+          );
         }
       }
 
@@ -425,10 +521,14 @@ async function startServer() {
       let emailStatus = "simulated";
       let errorDetail = null;
 
-      const appUrl = req.headers.origin || process.env.APP_URL || "https://mahmad995-my-wifi-app.hf.space";
+      const appUrl =
+        req.headers.origin ||
+        process.env.APP_URL ||
+        "https://mahmad995-my-wifi-app.hf.space";
       const resetUrl = `${appUrl}/?reset_username=${encodeURIComponent(username.trim())}&reset_code=${otpCode}`;
 
-      const subject = "GTS ISP Control Panel - Security Registry Verification Passcode";
+      const subject =
+        "GTS ISP Control Panel - Security Registry Verification Passcode";
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 2rem; color: #1e293b; max-width: 600px; margin: 0 auto; border-radius: 1rem; border: 1px solid #e2e8f0; border-top: 4px solid #10b981;">
           <div style="text-align: center; margin-bottom: 2rem;">
@@ -461,39 +561,41 @@ async function startServer() {
         </div>
       `;
 
-      try {
-        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-          method: 'POST',
-          headers: {
-            'accept': 'application/json',
-            'api-key': BREVO_API_KEY,
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify({
-            sender: {
-              name: 'GREEN TECH SERVICES',
-              email: 'greennet757@gmail.com'
+      if (BREVO_API_KEY) {
+        try {
+          const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: {
+              accept: "application/json",
+              "api-key": BREVO_API_KEY,
+              "content-type": "application/json",
             },
-            to: [
-              {
-                email: foundUser.email,
-                name: foundUser.fullName || foundUser.username
-              }
-            ],
-            subject: subject,
-            htmlContent: emailHtml
-          })
-        });
+            body: JSON.stringify({
+              sender: {
+                name: "GREEN TECH SERVICES",
+                email: "greennet757@gmail.com",
+              },
+              to: [
+                {
+                  email: foundUser.email,
+                  name: foundUser.fullName || foundUser.username,
+                },
+              ],
+              subject: subject,
+              htmlContent: emailHtml,
+            }),
+          });
 
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error('Brevo API Error: ' + JSON.stringify(errData));
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error("Brevo API Error: " + JSON.stringify(errData));
+          }
+
+          emailStatus = "sent_brevo_api";
+        } catch (err: any) {
+          console.error("Brevo API sending failed:", err);
+          errorDetail = err.message || String(err);
         }
-
-        emailStatus = "sent_brevo_api";
-      } catch (err: any) {
-        console.error("Brevo API sending failed:", err);
-        errorDetail = err.message || String(err);
       }
 
       // Output the code ONLY to terminal console for local debugging (invisible to the client page)
@@ -505,7 +607,6 @@ async function startServer() {
       console.log(`Access Link: ${resetUrl}`);
       console.log("========================================");
 
-      // Verify that the email was successfully sent via Brevo
       if (emailStatus !== "sent_brevo_api") {
         return res.status(400).json({
           error: `Verification sending failed: ${errorDetail || "Brevo connection error."}. Please try again.`
@@ -516,7 +617,7 @@ async function startServer() {
       res.json({
         status: "ok",
         emailStatus,
-        email: foundUser.email
+        email: foundUser.email,
       });
     } catch (error: any) {
       console.error("send-otp failed:", error);
@@ -528,7 +629,11 @@ async function startServer() {
     try {
       const { username, code } = req.body;
       if (!username || !code) {
-        return res.status(400).json({ error: "Access ID and 6-digit verification code are required." });
+        return res
+          .status(400)
+          .json({
+            error: "Access ID and 6-digit verification code are required.",
+          });
       }
 
       const key = username.trim().toLowerCase();
@@ -538,8 +643,9 @@ async function startServer() {
       const db = await getFirestoreOnServer();
       if (db) {
         try {
-          const { doc: serverDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
-          const otpRef = serverDoc(db, 'reset_otps', key);
+          const { doc: serverDoc, getDoc: serverGetDoc } =
+            await import("firebase/firestore");
+          const otpRef = serverDoc(db, "reset_otps", key);
           const otpSnap = await serverGetDoc(otpRef);
           if (otpSnap.exists()) {
             const fbOtp = otpSnap.data();
@@ -549,26 +655,44 @@ async function startServer() {
                 code: fbOtp.code,
                 email: fbOtp.email,
                 expiresAt: fbOtp.expiresAt,
-                verified: fbOtp.verified
+                verified: fbOtp.verified,
               };
               localOtpStore.set(key, otpData);
             }
           }
         } catch (dbErr) {
-          console.warn("Server: Firestore fallback check failed during OTP verify:", dbErr);
+          console.warn(
+            "Server: Firestore fallback check failed during OTP verify:",
+            dbErr,
+          );
         }
       }
 
       if (!otpData) {
-        return res.status(400).json({ error: "No reset session matches this User ID. Please request a new code." });
+        return res
+          .status(400)
+          .json({
+            error:
+              "No reset session matches this User ID. Please request a new code.",
+          });
       }
 
       if (String(otpData.code).trim() !== String(code).trim()) {
-        return res.status(400).json({ error: "Incorrect verification passcode. Please test your checks and retry." });
+        return res
+          .status(400)
+          .json({
+            error:
+              "Incorrect verification passcode. Please test your checks and retry.",
+          });
       }
 
       if (Date.now() > otpData.expiresAt) {
-        return res.status(400).json({ error: "The verification passcode has expired. Please request a new code." });
+        return res
+          .status(400)
+          .json({
+            error:
+              "The verification passcode has expired. Please request a new code.",
+          });
       }
 
       // Mark verified in memory cache
@@ -578,15 +702,20 @@ async function startServer() {
       // Mark verified in Firestore if available
       if (db) {
         try {
-          const { doc: serverDoc, updateDoc: serverUpdateDoc } = await import('firebase/firestore');
-          const otpRef = serverDoc(db, 'reset_otps', key);
+          const { doc: serverDoc, updateDoc: serverUpdateDoc } =
+            await import("firebase/firestore");
+          const otpRef = serverDoc(db, "reset_otps", key);
           await serverUpdateDoc(otpRef, { verified: true });
         } catch (dbErr) {
           console.warn("Server: Firestore OTP verify mark failed:", dbErr);
         }
       }
 
-      res.json({ status: "ok", message: "Passcode successfully verified. Please establish your new security passcode now." });
+      res.json({
+        status: "ok",
+        message:
+          "Passcode successfully verified. Please establish your new security passcode now.",
+      });
     } catch (error: any) {
       console.error("verify-otp failed:", error);
       res.status(500).json({ error: error.message || String(error) });
@@ -601,7 +730,11 @@ async function startServer() {
       }
 
       if (newPassword.length < 5) {
-        return res.status(400).json({ error: "The new passcode must be at least 5 characters long." });
+        return res
+          .status(400)
+          .json({
+            error: "The new passcode must be at least 5 characters long.",
+          });
       }
 
       const key = username.trim().toLowerCase();
@@ -611,8 +744,9 @@ async function startServer() {
       const db = await getFirestoreOnServer();
       if (db) {
         try {
-          const { doc: serverDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
-          const otpRef = serverDoc(db, 'reset_otps', key);
+          const { doc: serverDoc, getDoc: serverGetDoc } =
+            await import("firebase/firestore");
+          const otpRef = serverDoc(db, "reset_otps", key);
           const otpSnap = await serverGetDoc(otpRef);
           if (otpSnap.exists()) {
             const fbOtp = otpSnap.data();
@@ -622,26 +756,37 @@ async function startServer() {
                 code: fbOtp.code,
                 email: fbOtp.email,
                 expiresAt: fbOtp.expiresAt,
-                verified: fbOtp.verified
+                verified: fbOtp.verified,
               };
               localOtpStore.set(key, otpData);
             }
           }
         } catch (dbErr) {
-          console.warn("Server: Firestore fallback check failed during Reset:", dbErr);
+          console.warn(
+            "Server: Firestore fallback check failed during Reset:",
+            dbErr,
+          );
         }
       }
 
       if (!otpData) {
-        return res.status(400).json({ error: "No active password reset session found for this identity." });
+        return res
+          .status(400)
+          .json({
+            error: "No active password reset session found for this identity.",
+          });
       }
 
       if (!otpData.verified) {
-        return res.status(400).json({ error: "The passcode has not been verified yet." });
+        return res
+          .status(400)
+          .json({ error: "The passcode has not been verified yet." });
       }
 
       if (String(otpData.code).trim() !== String(code).trim()) {
-        return res.status(400).json({ error: "Passcode verification mismatch." });
+        return res
+          .status(400)
+          .json({ error: "Passcode verification mismatch." });
       }
 
       // 2. Locate user and Update in Supabase fallback if exists
@@ -650,25 +795,34 @@ async function startServer() {
 
       const rawUrl = process.env.SUPABASE_URL;
       const rawKey = process.env.SUPABASE_ANON_KEY;
-      const SUPABASE_URL = (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, '') : '') || 'https://jduamzoyllfspdqucncw.supabase.co';
-      const SUPABASE_ANON_KEY = (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, '') : '') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+      const SUPABASE_URL =
+        (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "") ||
+        "https://jduamzoyllfspdqucncw.supabase.co";
+      const SUPABASE_ANON_KEY =
+        (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "") ||
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM";
 
       try {
-        const suPatch = await fetch(`${SUPABASE_URL}/rest/v1/users?username=ilike.${encodeURIComponent(username.trim())}`, {
-          method: 'PATCH',
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
+        const suPatch = await fetch(
+          `${SUPABASE_URL}/rest/v1/users?username=ilike.${encodeURIComponent(username.trim())}`,
+          {
+            method: "PATCH",
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+              "Content-Type": "application/json",
+              Prefer: "return=representation",
+            },
+            body: JSON.stringify({ password: newPassword }),
           },
-          body: JSON.stringify({ password: newPassword })
-        });
+        );
         const suRes = await suPatch.json();
         if (suRes && Array.isArray(suRes) && suRes.length > 0) {
           foundUser = suRes[0];
           patchedInSupabase = true;
-          console.log(`Server: Passcode reset correctly applied to Supabase layer for ${foundUser.username}`);
+          console.log(
+            `Server: Passcode reset correctly applied to Supabase layer for ${foundUser.username}`,
+          );
         }
       } catch (suErr) {
         console.warn("Server: Supabase password patch failed:", suErr);
@@ -678,47 +832,234 @@ async function startServer() {
       let fbUser: any = null;
       if (db) {
         try {
-          const { collection: serverCollection, getDocs: serverGetDocs, doc: serverDoc, updateDoc: serverUpdateDoc, deleteDoc: serverDeleteDoc } = await import('firebase/firestore');
-          const usersSnap = await serverGetDocs(serverCollection(db, 'users'));
+          const {
+            collection: serverCollection,
+            getDocs: serverGetDocs,
+            doc: serverDoc,
+            updateDoc: serverUpdateDoc,
+            deleteDoc: serverDeleteDoc,
+          } = await import("firebase/firestore");
+          const usersSnap = await serverGetDocs(serverCollection(db, "users"));
           fbUser = usersSnap.docs
-            .map(d => ({ ...(d.data() as any), id: d.id }))
-            .find((u: any) => String(u.username || '').toLowerCase() === username.trim().toLowerCase());
+            .map((d) => ({ ...(d.data() as any), id: d.id }))
+            .find(
+              (u: any) =>
+                String(u.username || "").toLowerCase() ===
+                username.trim().toLowerCase(),
+            );
 
           if (fbUser) {
-            const userRef = serverDoc(db, 'users', fbUser.id);
+            const userRef = serverDoc(db, "users", fbUser.id);
             await serverUpdateDoc(userRef, { password: newPassword });
             console.log("Server: Passcode updated in Firestore as well.");
           }
 
           // Create Notification for security audit in Firestore
-          const notifRef = serverDoc(serverCollection(db, 'notifications'));
-          const { setDoc: serverSetDoc } = await import('firebase/firestore');
+          const notifRef = serverDoc(serverCollection(db, "notifications"));
+          const { setDoc: serverSetDoc } = await import("firebase/firestore");
           await serverSetDoc(notifRef, {
-            type: 'user_updated',
+            type: "user_updated",
             message: `Security protocols updated: Passcode reset successfully finalized for user: ${username}`,
-            authorName: 'System Core Dispatcher',
-            dealerId: (fbUser && fbUser.dealerId) || 'main',
-            createdAt: Date.now()
+            authorName: "System Core Dispatcher",
+            dealerId: (fbUser && fbUser.dealerId) || "main",
+            createdAt: Date.now(),
           });
 
           // Clean up OTP session in Firestore
-          const otpRef = serverDoc(db, 'reset_otps', key);
+          const otpRef = serverDoc(db, "reset_otps", key);
           await serverDeleteDoc(otpRef);
         } catch (dbErr) {
-          console.warn("Server: Firestore write/update failed during reset:", dbErr);
+          console.warn(
+            "Server: Firestore write/update failed during reset:",
+            dbErr,
+          );
         }
       }
 
       if (!foundUser && !fbUser) {
-        return res.status(404).json({ error: "User record matching description no longer exists." });
+        return res
+          .status(404)
+          .json({
+            error: "User record matching description no longer exists.",
+          });
       }
 
       // Clean memory store
       localOtpStore.delete(key);
 
-      res.json({ status: "ok", message: "Passcode updated successfully! You can now log in." });
+      res.json({
+        status: "ok",
+        message: "Passcode updated successfully! You can now log in.",
+      });
     } catch (error: any) {
       console.error("reset-password failed:", error);
+      res.status(500).json({ error: error.message || String(error) });
+    }
+  });
+
+  // --- Registration OTP Endpoints ---
+  app.post("/api/auth/send-registration-otp", async (req, res) => {
+    try {
+      const { email, fullName, username } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email is required." });
+      }
+
+      const rawBrevo = process.env.BREVO_API_KEY;
+      const BREVO_API_KEY = (rawBrevo
+        ? rawBrevo
+            .trim()
+            .replace(/^['"]|['"]$/g, "")
+            .replace(/\s+/g, "")
+        : "") || "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";
+
+      // 1. Generate a secure 6-digit OTP
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // 2. Store the OTP in memory cache using email as key
+      const key = email.trim().toLowerCase();
+      const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+      localOtpStore.set(key, {
+        username: username || "Registration",
+        code: otpCode,
+        email: email,
+        expiresAt,
+        verified: false,
+      });
+
+      // 3. Send email via Brevo API
+      let emailStatus = "simulated";
+      let errorDetail = null;
+
+      const subject =
+        "GTS ISP Control Panel - Registration Verification Passcode";
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; background-color: #f8fafc; padding: 2rem; color: #1e293b; max-width: 600px; margin: 0 auto; border-radius: 1rem; border: 1px solid #e2e8f0; border-top: 4px solid #10b981;">
+          <div style="text-align: center; margin-bottom: 2rem;">
+            <h1 style="color: #0f172a; margin: 0; font-size: 1.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">GTS ISP SYSTEM</h1>
+            <p style="color: #64748b; font-size: 0.75rem; font-weight: bold; text-transform: uppercase;">Node Registration Request</p>
+          </div>
+          <p style="font-size: 0.95rem; line-height: 1.6;">
+            Hello ${fullName || username || "User"},
+          </p>
+          <p style="font-size: 0.95rem; line-height: 1.6;">
+            We received a request to register a new node with this email address.
+            Please use the following verification code to confirm your email and submit the registration request to the Super Admin.
+          </p>
+          <div style="background-color: #f1f5f9; border-radius: 0.75rem; padding: 1.5rem; margin: 2rem 0; text-align: center; border: 1px dashed #cbd5e1;">
+            <p style="margin: 0 0 0.5rem 0; font-size: 0.75rem; text-transform: uppercase; font-weight: bold; letter-spacing: 0.05em; color: #64748b;">Verification Code</p>
+            <h2 style="margin: 0; font-size: 2.25rem; font-weight: 950; letter-spacing: 0.2em; color: #10b981;">${otpCode}</h2>
+            <p style="margin: 0.5rem 0 0 0; font-size: 0.7rem; color: #94a3b8;">Code expires in 10 minutes</p>
+          </div>
+          <p style="font-size: 0.75rem; color: #94a3b8; text-align: center; line-height: 1.5; margin: 0;">
+            Green Tech Services Support Registry &bull; Core Diagnostics Gateway<br />
+            This transaction log consists of automated secure communications. Do not directly reply.
+          </p>
+        </div>
+      `;
+
+      if (BREVO_API_KEY) {
+        try {
+          const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: {
+              accept: "application/json",
+              "api-key": BREVO_API_KEY,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              sender: {
+                name: "GREEN TECH SERVICES",
+                email: "greennet757@gmail.com",
+              },
+              to: [
+                {
+                  email: email,
+                  name: fullName || username || "New User",
+                },
+              ],
+              subject: subject,
+              htmlContent: emailHtml,
+            }),
+          });
+
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error("Brevo API Error: " + JSON.stringify(errData));
+          }
+          emailStatus = "sent_brevo_api";
+        } catch (err: any) {
+          console.error("Brevo API sending failed:", err);
+          errorDetail = err.message || String(err);
+        }
+      }
+
+      console.log("========================================");
+      console.log(`[REGISTRATION SECURITY MODULE - SERVER DEBUG ONLY]`);
+      console.log(`User: ${username || "N/A"}`);
+      console.log(`Dest Email: ${email}`);
+      console.log(`Generated OTP Registration Code: ${otpCode}`);
+      console.log("========================================");
+
+      if (emailStatus !== "sent_brevo_api") {
+        return res.status(400).json({
+          error: `Verification sending failed: ${errorDetail || "Brevo connection error."}. Please try again.`
+        });
+      }
+
+      res.json({ status: "ok", emailStatus, email });
+    } catch (error: any) {
+      console.error("send-registration-otp failed:", error);
+      res.status(500).json({ error: error.message || String(error) });
+    }
+  });
+
+  app.post("/api/auth/verify-registration-otp", async (req, res) => {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        return res
+          .status(400)
+          .json({ error: "Email and verification code are required." });
+      }
+
+      const key = email.trim().toLowerCase();
+      let otpData = localOtpStore.get(key);
+
+      if (!otpData) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "No reset session matches this email. Please request a new code.",
+          });
+      }
+
+      if (String(otpData.code).trim() !== String(code).trim()) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "Incorrect verification passcode. Please test your checks and retry.",
+          });
+      }
+
+      if (Date.now() > otpData.expiresAt) {
+        return res
+          .status(400)
+          .json({
+            error:
+              "The verification passcode has expired. Please request a new code.",
+          });
+      }
+
+      // Mark verified in memory cache
+      otpData.verified = true;
+      localOtpStore.set(key, otpData);
+
+      res.json({ status: "ok", message: "Email successfully verified." });
+    } catch (error: any) {
+      console.error("verify-registration-otp failed:", error);
       res.status(500).json({ error: error.message || String(error) });
     }
   });
@@ -729,16 +1070,18 @@ async function startServer() {
     if (!aiClient) {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        console.warn("GEMINI_API_KEY status check: Not found on server. System will generate intelligent analytical suggestions dynamically.");
+        console.warn(
+          "GEMINI_API_KEY status check: Not found on server. System will generate intelligent analytical suggestions dynamically.",
+        );
         return null;
       }
       aiClient = new GoogleGenAI({
         apiKey: apiKey,
         httpOptions: {
           headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
+            "User-Agent": "aistudio-build",
+          },
+        },
       });
     }
     return aiClient;
@@ -748,58 +1091,122 @@ async function startServer() {
   function getSimulatedTrendsResponse(complaints: any[]) {
     return {
       overallStatus: "alert",
-      recentTrendSummary: "Continuous road maintenance near Sector G-11 has damaged underground fiber cables. Multiple reports indicate high signal loss in Northern Zone. Most client issues resolves in under 45 minutes.",
+      recentTrendSummary:
+        "Continuous road maintenance near Sector G-11 has damaged underground fiber cables. Multiple reports indicate high signal loss in Northern Zone. Most client issues resolves in under 45 minutes.",
       topIssues: [
-        { category: "Fiber Cut", count: Math.max(3, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('fiber') || String(c.description || '').toLowerCase().includes('cut')).length), severity: "high", areaSuggested: "Sector G-11" },
-        { category: "Slow Speed / Latency", count: Math.max(2, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('speed') || String(c.description || '').toLowerCase().includes('slow')).length), severity: "medium", areaSuggested: "Northern Zone" },
-        { category: "No Internet", count: Math.max(4, complaints.filter((c: any) => String(c.category || '').toLowerCase().includes('no internet')).length), severity: "high", areaSuggested: "Main Block" }
+        {
+          category: "Fiber Cut",
+          count: Math.max(
+            3,
+            complaints.filter(
+              (c: any) =>
+                String(c.category || "")
+                  .toLowerCase()
+                  .includes("fiber") ||
+                String(c.description || "")
+                  .toLowerCase()
+                  .includes("cut"),
+            ).length,
+          ),
+          severity: "high",
+          areaSuggested: "Sector G-11",
+        },
+        {
+          category: "Slow Speed / Latency",
+          count: Math.max(
+            2,
+            complaints.filter(
+              (c: any) =>
+                String(c.category || "")
+                  .toLowerCase()
+                  .includes("speed") ||
+                String(c.description || "")
+                  .toLowerCase()
+                  .includes("slow"),
+            ).length,
+          ),
+          severity: "medium",
+          areaSuggested: "Northern Zone",
+        },
+        {
+          category: "No Internet",
+          count: Math.max(
+            4,
+            complaints.filter((c: any) =>
+              String(c.category || "")
+                .toLowerCase()
+                .includes("no internet"),
+            ).length,
+          ),
+          severity: "high",
+          areaSuggested: "Main Block",
+        },
       ],
       actionableSuggestions: [
         {
           title: "Physical Fiber Duct Damage in Sector G-11",
           category: "Fiber Cut",
-          description: "Civic roadworks have sliced the optical feed. splicing crew is active on site.",
+          description:
+            "Civic roadworks have sliced the optical feed. splicing crew is active on site.",
           troubleshootingSteps: [
             "Verify Optical Line Terminal (OLT) port status",
             "Measure loss using OTDR distance tracking",
-            "Notify subscribers in Sector G-11 about physical repairs"
+            "Notify subscribers in Sector G-11 about physical repairs",
           ],
-          templateResponse: "G-11 area mein roadworks activity ki wajah se fiber cable cut ho gayi hai. Humari splicing team mauqe par jor laga rahi hai. Agle 30-45 minutes mein speed aur connection automatic fully active ho jayenge. Pareshani ke liye moazrat."
+          templateResponse:
+            "G-11 area mein roadworks activity ki wajah se fiber cable cut ho gayi hai. Humari splicing team mauqe par jor laga rahi hai. Agle 30-45 minutes mein speed aur connection automatic fully active ho jayenge. Pareshani ke liye moazrat.",
         },
         {
           title: "IP Lease Attenuation or Gateway Congestion",
           category: "Slow Speed / Latency",
-          description: "Upstream route peering link saturated during hot hours. Instruct customer to flush local DNS cache.",
+          description:
+            "Upstream route peering link saturated during hot hours. Instruct customer to flush local DNS cache.",
           troubleshootingSteps: [
             "Suggest user configuration set to Google DNS: 8.8.8.8",
             "Instruct user to turn off router for 5 minutes",
-            "Flush regional MAC address leases on gateway Core Node 2"
+            "Flush regional MAC address leases on gateway Core Node 2",
           ],
-          templateResponse: "Aap apna router power strip se nikal kar 5 min ke liye off rakhein phir lagayein. Is se dynamic IP change ho kar optimized static route per connect ho jayega aur latency auto drop ho jayegi."
-        }
+          templateResponse:
+            "Aap apna router power strip se nikal kar 5 min ke liye off rakhein phir lagayein. Is se dynamic IP change ho kar optimized static route per connect ho jayega aur latency auto drop ho jayegi.",
+        },
       ],
       generatedAt: Date.now(),
-      isSimulated: true
+      isSimulated: true,
     };
   }
 
   function getSimulatedAskResponse(question: string, searchGrounding: boolean) {
-    const query = (question || '').toLowerCase();
+    const query = (question || "").toLowerCase();
     let answer = "";
     let sources: any[] = [];
 
     if (searchGrounding) {
       sources = [
-        { title: "GTS ISP Network Status Feed", uri: "https://gts-noc.net/status" },
-        { title: "Regional Fiber Core Routing Map", uri: "https://gts-noc.net/fiber-routing" }
+        {
+          title: "GTS ISP Network Status Feed",
+          uri: "https://gts-noc.net/status",
+        },
+        {
+          title: "Regional Fiber Core Routing Map",
+          uri: "https://gts-noc.net/fiber-routing",
+        },
       ];
     }
 
-    const headerMessage = searchGrounding 
+    const headerMessage = searchGrounding
       ? `**[Search Grounding Active — Grounded against Real-time Network Ports]**\n\n`
       : `**[ISP AI Mentor Active Standby]**\n\n`;
 
-    if (query.includes("hello") || query.includes("hi ") || query.startsWith("hi") || query.includes("assalam") || query.includes("aoa") || query.includes("hey") || query.includes("help") || query.includes("madad")) {
+    if (
+      query.includes("hello") ||
+      query.includes("hi ") ||
+      query.startsWith("hi") ||
+      query.includes("assalam") ||
+      query.includes("aoa") ||
+      query.includes("hey") ||
+      query.includes("help") ||
+      query.includes("madad")
+    ) {
       answer = `${headerMessage}Assalam-o-Alaikum! I am your GTS ISP AI Mentor. Online control channel completely active.
       
 Kaise madad karoon aapki? Aap mujh se koi bhi technical sawal ya customer ticket log pooch sakte hain:
@@ -815,7 +1222,12 @@ Kaise madad karoon aapki? Aap mujh se koi bhi technical sawal ya customer ticket
 
 *Urdu Support Template:*
 "Humara automatic billing aur complaint control pool active/online hai. Kisi bhi break optical link ki link update database main real-time sync ho rahi hai."`;
-    } else if (query.includes("password") || query.includes("reset") || query.includes("router") || query.includes("wifi")) {
+    } else if (
+      query.includes("password") ||
+      query.includes("reset") ||
+      query.includes("router") ||
+      query.includes("wifi")
+    ) {
       answer = `${headerMessage}### Router and ONU Configuration & Password Reset Protocol:
 
 **1. Root Cause Analysis:**
@@ -828,7 +1240,11 @@ Subscribers often experience offline state due to IP lease expiration or incorre
 
 **3. Roman Urdu Empathetic Customer Template:**
 "Aap ka core router offline show ho raha hai, kindly modem aur router ko 1 minute ke liye power strip se unplug karke dobara on kijiye. Is se dynamic IP refresh ho kar internet normal connect ho jayega!"`;
-    } else if (query.includes("complain") || query.includes("ticket") || query.includes("client")) {
+    } else if (
+      query.includes("complain") ||
+      query.includes("ticket") ||
+      query.includes("client")
+    ) {
       answer = `${headerMessage}### Ticket Diagnostics & Support Resolution Pathway:
 
 - **Database Analysis:** Complaints are processed and labeled based on urgency (Critical, High, Medium, Low).
@@ -837,7 +1253,12 @@ Subscribers often experience offline state due to IP lease expiration or incorre
 
 *Urdu customer message template:*
 "Aap ki shikayat database mein log ho chuki hai. Splicing team spot par fiber link check kar rahi hai. Aglay 30-45 minutes mein link automatic restore ho jayega."`;
-    } else if (query.includes("speed") || query.includes("slow") || query.includes("latency") || query.includes("lag")) {
+    } else if (
+      query.includes("speed") ||
+      query.includes("slow") ||
+      query.includes("latency") ||
+      query.includes("lag")
+    ) {
       answer = `${headerMessage}### Support Diagnostics for Elevated Attenuation/Slow Speed:
 
 **1. Root Cause Hypothesis:**
@@ -850,7 +1271,12 @@ Optical power values are decaying beyond boundaries (typical target: **-18dBm to
 
 **3. Urdu/Hindi Empathetic Customer Response:**
 "Aap ke link ki signal strength standard se kam arhi hai jis se browsing speed impact ho rahi hai. Hum local distribution cabinet link refresh kar rhy hain. Kindly apne router ko restart kijiye, speed normal ho jayegi."`;
-    } else if (query.includes("fiber") || query.includes("cut") || query.includes("splice") || query.includes("break")) {
+    } else if (
+      query.includes("fiber") ||
+      query.includes("cut") ||
+      query.includes("splice") ||
+      query.includes("break")
+    ) {
       answer = `${headerMessage}### Standard physical Break & Fiber Core Splicing Protocol:
 
 **1. Splicing Specifications:**
@@ -878,9 +1304,12 @@ Optical power values are decaying beyond boundaries (typical target: **-18dBm to
     try {
       const db = await getFirestoreOnServer();
       if (!db) return [];
-      const { collection: serverCollection, getDocs: serverGetDocs } = await import('firebase/firestore');
-      const complaintsSnap = await serverGetDocs(serverCollection(db, 'complaints'));
-      return complaintsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+      const { collection: serverCollection, getDocs: serverGetDocs } =
+        await import("firebase/firestore");
+      const complaintsSnap = await serverGetDocs(
+        serverCollection(db, "complaints"),
+      );
+      return complaintsSnap.docs.map((d) => ({ ...d.data(), id: d.id }));
     } catch (err) {
       console.error("Error fetching complaints for AI Help:", err);
       return [];
@@ -892,7 +1321,10 @@ Optical power values are decaying beyond boundaries (typical target: **-18dBm to
     try {
       complaints = await fetchComplaintsOnServer();
     } catch (dbErr) {
-      console.warn("DB fetch failed in trend analysis, using empty complaints array:", dbErr);
+      console.warn(
+        "DB fetch failed in trend analysis, using empty complaints array:",
+        dbErr,
+      );
     }
 
     try {
@@ -910,7 +1342,9 @@ Optical power values are decaying beyond boundaries (typical target: **-18dBm to
         status: c.status,
         description: c.description || "",
         area: c.area || "Unknown",
-        createdAt: c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "N/A"
+        createdAt: c.createdAt
+          ? new Date(c.createdAt).toLocaleDateString()
+          : "N/A",
       }));
 
       const prompt = `You are the ultimate expert ISP AI Network Diagnostics Specialist and Chief Support Assistant.
@@ -951,38 +1385,50 @@ Only return a valid, parsable JSON block. Absolutely no other text or explanatio
           contents: prompt,
           config: {
             responseMimeType: "application/json",
-            systemInstruction: "You are an expert ISP Network AI Analyst. Output only a single JSON object fitting the requested structure exactly without markdown backticks."
-          }
+            systemInstruction:
+              "You are an expert ISP Network AI Analyst. Output only a single JSON object fitting the requested structure exactly without markdown backticks.",
+          },
         });
         responseText = responseList.text || "{}";
       } catch (primaryErr: any) {
-        console.warn(`Primary model gemini-3.5-flash unavailable (${primaryErr.message || primaryErr}), retrying with backup gemini-3.1-flash-lite...`);
+        console.warn(
+          `Primary model gemini-3.5-flash unavailable (${primaryErr.message || primaryErr}), retrying with backup gemini-3.1-flash-lite...`,
+        );
         try {
           const responseListBackup = await gemini.models.generateContent({
             model: "gemini-3.1-flash-lite",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
-              systemInstruction: "You are an expert ISP Network AI Analyst. Output only a single JSON object fitting the requested structure exactly without markdown backticks."
-            }
+              systemInstruction:
+                "You are an expert ISP Network AI Analyst. Output only a single JSON object fitting the requested structure exactly without markdown backticks.",
+            },
           });
           responseText = responseListBackup.text || "{}";
         } catch (backupErr: any) {
-          console.error(`Backup model also failed: ${backupErr.message || backupErr}. Falling back to high-fidelity dynamic simulation.`);
+          console.error(
+            `Backup model also failed: ${backupErr.message || backupErr}. Falling back to high-fidelity dynamic simulation.`,
+          );
           return res.json(getSimulatedTrendsResponse(complaints));
         }
       }
 
-      const cleaned = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const cleaned = responseText
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
       const parsed = JSON.parse(cleaned);
 
       res.json({
         ...parsed,
         generatedAt: Date.now(),
-        isSimulated: false
+        isSimulated: false,
       });
     } catch (error: any) {
-      console.warn("AI help trend analysis failed, reverting to safe simulated response:", error);
+      console.warn(
+        "AI help trend analysis failed, reverting to safe simulated response:",
+        error,
+      );
       res.json(getSimulatedTrendsResponse(complaints));
     }
   });
@@ -1008,7 +1454,7 @@ System instructions:
       const contents: any[] = [];
       if (history && Array.isArray(history)) {
         history.forEach((h: any) => {
-          if (h.role === 'user') {
+          if (h.role === "user") {
             contents.push(`User: ${h.text || h.message}`);
           } else {
             contents.push(`AI: ${h.text || h.message || h.answer}`);
@@ -1018,7 +1464,8 @@ System instructions:
       contents.push(prompt);
 
       const config: any = {
-        systemInstruction: "You are an expert ISP Network AI Advisor. Please detect the user's input language and answer directly in natural Urdu, Roman Urdu, Hindi, or English, depending on whichever language they ask the question in. Provide extremely accurate details."
+        systemInstruction:
+          "You are an expert ISP Network AI Advisor. Please detect the user's input language and answer directly in natural Urdu, Roman Urdu, Hindi, or English, depending on whichever language they ask the question in. Provide extremely accurate details.",
       };
 
       if (searchGrounding) {
@@ -1032,37 +1479,53 @@ System instructions:
         console.log("Attempting AI answer generation with gemini-3.5-flash...");
         const response = await gemini.models.generateContent({
           model: "gemini-3.5-flash",
-          contents: contents.join('\n\n'),
-          config: config
+          contents: contents.join("\n\n"),
+          config: config,
         });
         responseText = response.text || "";
-        
-        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+
+        const chunks =
+          response.candidates?.[0]?.groundingMetadata?.groundingChunks;
         if (chunks && Array.isArray(chunks)) {
-          sources = chunks.map((chunk: any) => ({
-            title: chunk?.web?.title || chunk?.web?.uri || 'Grounded Web Reference',
-            uri: chunk?.web?.uri || ''
-          })).filter((s: any) => s.uri);
+          sources = chunks
+            .map((chunk: any) => ({
+              title:
+                chunk?.web?.title ||
+                chunk?.web?.uri ||
+                "Grounded Web Reference",
+              uri: chunk?.web?.uri || "",
+            }))
+            .filter((s: any) => s.uri);
         }
       } catch (primaryErr: any) {
-        console.warn(`Primary model gemini-3.5-flash failed (${primaryErr.message || primaryErr}), retrying with backup gemini-3.1-flash-lite...`);
+        console.warn(
+          `Primary model gemini-3.5-flash failed (${primaryErr.message || primaryErr}), retrying with backup gemini-3.1-flash-lite...`,
+        );
         try {
           const responseBackup = await gemini.models.generateContent({
             model: "gemini-3.1-flash-lite",
-            contents: contents.join('\n\n'),
-            config: config
+            contents: contents.join("\n\n"),
+            config: config,
           });
           responseText = responseBackup.text || "";
-          
-          const chunks = responseBackup.candidates?.[0]?.groundingMetadata?.groundingChunks;
+
+          const chunks =
+            responseBackup.candidates?.[0]?.groundingMetadata?.groundingChunks;
           if (chunks && Array.isArray(chunks)) {
-            sources = chunks.map((chunk: any) => ({
-              title: chunk?.web?.title || chunk?.web?.uri || 'Grounded Web Reference',
-              uri: chunk?.web?.uri || ''
-            })).filter((s: any) => s.uri);
+            sources = chunks
+              .map((chunk: any) => ({
+                title:
+                  chunk?.web?.title ||
+                  chunk?.web?.uri ||
+                  "Grounded Web Reference",
+                uri: chunk?.web?.uri || "",
+              }))
+              .filter((s: any) => s.uri);
           }
         } catch (backupErr: any) {
-          console.error(`Backup model failed: ${backupErr.message || backupErr}. Falling back to high-fidelity simulated response.`);
+          console.error(
+            `Backup model failed: ${backupErr.message || backupErr}. Falling back to high-fidelity simulated response.`,
+          );
           return res.json(getSimulatedAskResponse(question, searchGrounding));
         }
       }
@@ -1070,61 +1533,68 @@ System instructions:
       res.json({
         answer: responseText || "Could not generate a solution at this moment.",
         sources,
-        isSimulated: false
+        isSimulated: false,
       });
     } catch (error: any) {
-      console.warn("AI ask advisor failed, fallback to safe simulated response:", error);
+      console.warn(
+        "AI ask advisor failed, fallback to safe simulated response:",
+        error,
+      );
       res.json(getSimulatedAskResponse(question, searchGrounding));
     }
   });
   // ----------------------------------------
 
   // --- Google Drive & Sheets Integration ---
-  
+
   function getOAuthClient(req: any) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    
+
     // Dynamic redirect URI reconstruction matching current domain, supporting custom overrides
-    let redirectUri = '';
+    let redirectUri = "";
     if (process.env.GOOGLE_REDIRECT_URI) {
       redirectUri = process.env.GOOGLE_REDIRECT_URI;
     } else if (process.env.APP_URL) {
-      const base = process.env.APP_URL.endsWith('/') ? process.env.APP_URL.slice(0, -1) : process.env.APP_URL;
+      const base = process.env.APP_URL.endsWith("/")
+        ? process.env.APP_URL.slice(0, -1)
+        : process.env.APP_URL;
       redirectUri = `${base}/api/auth/google/callback`;
     } else {
       // Respect reverse proxies (like Hugging Face Spaces) which pass protocol and host headers
-      const protocolRaw = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-      let protocol = 'https';
-      if (typeof protocolRaw === 'string') {
-        const parts = protocolRaw.split(',');
+      const protocolRaw =
+        req.headers["x-forwarded-proto"] || req.protocol || "https";
+      let protocol = "https";
+      if (typeof protocolRaw === "string") {
+        const parts = protocolRaw.split(",");
         protocol = parts[0].trim();
       }
-      
-      const rawHost = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+
+      const rawHost =
+        req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000";
       // Ensure host is clean
-      const host = rawHost.split(',')[0].trim();
-      
+      const host = rawHost.split(",")[0].trim();
+
       // Force HTTPS for external cloud hosting / spaces environments to match public URLs exactly
       if (
-        host.includes('hf.space') || 
-        host.includes('huggingface.co') || 
-        host.includes('run.app') || 
-        host.includes('netlify.app') || 
-        host.includes('vercel.app') || 
-        host.includes('render.com') ||
-        host.includes('herokuapp.com')
+        host.includes("hf.space") ||
+        host.includes("huggingface.co") ||
+        host.includes("run.app") ||
+        host.includes("netlify.app") ||
+        host.includes("vercel.app") ||
+        host.includes("render.com") ||
+        host.includes("herokuapp.com")
       ) {
-        protocol = 'https';
+        protocol = "https";
       }
-      
+
       redirectUri = `${protocol}://${host}/api/auth/google/callback`;
     }
 
     return new google.auth.OAuth2(
       clientId || undefined,
       clientSecret || undefined,
-      redirectUri
+      redirectUri,
     );
   }
 
@@ -1133,14 +1603,23 @@ System instructions:
   async function getFirebaseAppOnServer() {
     if (firebaseBackendApp) return firebaseBackendApp;
     try {
-      const { initializeApp: serverInitApp, getApp: serverGetApp } = await import('firebase/app');
-      const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      const { initializeApp: serverInitApp, getApp: serverGetApp } =
+        await import("firebase/app");
+      const firebaseConfigPath = path.join(
+        process.cwd(),
+        "firebase-applet-config.json",
+      );
       if (fs.existsSync(firebaseConfigPath)) {
-        const configJson = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+        const configJson = JSON.parse(
+          fs.readFileSync(firebaseConfigPath, "utf8"),
+        );
         try {
           firebaseBackendApp = serverGetApp("server-oauth-backend");
         } catch (e) {
-          firebaseBackendApp = serverInitApp(configJson, "server-oauth-backend");
+          firebaseBackendApp = serverInitApp(
+            configJson,
+            "server-oauth-backend",
+          );
         }
         return firebaseBackendApp;
       }
@@ -1157,16 +1636,29 @@ System instructions:
     const appObj = await getFirebaseAppOnServer();
     if (!appObj) return null;
     try {
-      const { initializeFirestore, getFirestore } = await import('firebase/firestore');
-      const firebaseConfigPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      const { initializeFirestore, getFirestore } =
+        await import("firebase/firestore");
+      const firebaseConfigPath = path.join(
+        process.cwd(),
+        "firebase-applet-config.json",
+      );
       if (fs.existsSync(firebaseConfigPath)) {
-        const configJson = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+        const configJson = JSON.parse(
+          fs.readFileSync(firebaseConfigPath, "utf8"),
+        );
         try {
-          serverFirestoreDb = initializeFirestore(appObj, {
-            experimentalForceLongPolling: true
-          }, configJson.firestoreDatabaseId);
+          serverFirestoreDb = initializeFirestore(
+            appObj,
+            {
+              experimentalForceLongPolling: true,
+            },
+            configJson.firestoreDatabaseId,
+          );
         } catch (err) {
-          serverFirestoreDb = getFirestore(appObj, configJson.firestoreDatabaseId);
+          serverFirestoreDb = getFirestore(
+            appObj,
+            configJson.firestoreDatabaseId,
+          );
         }
         return serverFirestoreDb;
       }
@@ -1180,13 +1672,23 @@ System instructions:
     try {
       const rawUrl = process.env.SUPABASE_URL;
       const rawKey = process.env.SUPABASE_ANON_KEY;
-      const SUPABASE_URL = (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, '') : '') || 'https://jduamzoyllfspdqucncw.supabase.co';
-      const SUPABASE_ANON_KEY = (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, '') : '') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM';
+      const SUPABASE_URL =
+        (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "") ||
+        "https://jduamzoyllfspdqucncw.supabase.co";
+      const SUPABASE_ANON_KEY =
+        (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "") ||
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM";
 
       try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/branding_config?id=eq.google_sheets&select=dashboard_subtext`, {
-          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-        });
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/branding_config?id=eq.google_sheets&select=dashboard_subtext`,
+          {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+          },
+        );
         const data = await res.json();
         if (data && data.length > 0 && data[0].dashboard_subtext) {
           const parsed = JSON.parse(data[0].dashboard_subtext);
@@ -1201,10 +1703,11 @@ System instructions:
 
       const db = await getFirestoreOnServer();
       if (!db) return null;
-      
-      const { doc: serverDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
-      
-      const gsDocRef = serverDoc(db, 'config', 'google_sheets');
+
+      const { doc: serverDoc, getDoc: serverGetDoc } =
+        await import("firebase/firestore");
+
+      const gsDocRef = serverDoc(db, "config", "google_sheets");
       const gsSnap = await serverGetDoc(gsDocRef);
       if (gsSnap.exists()) {
         const data = gsSnap.data();
@@ -1213,7 +1716,10 @@ System instructions:
         }
       }
     } catch (fbErr) {
-      console.warn("Server: Failed load fallback Google credentials from Firestore:", fbErr);
+      console.warn(
+        "Server: Failed load fallback Google credentials from Firestore:",
+        fbErr,
+      );
     }
     return null;
   }
@@ -1222,41 +1728,59 @@ System instructions:
     try {
       const db = await getFirestoreOnServer();
       if (!db) return;
-      
-      const { doc: serverDoc, setDoc: serverSetDoc, getDoc: serverGetDoc } = await import('firebase/firestore');
-      
-      const gsDocRef = serverDoc(db, 'config', 'google_sheets');
+
+      const {
+        doc: serverDoc,
+        setDoc: serverSetDoc,
+        getDoc: serverGetDoc,
+      } = await import("firebase/firestore");
+
+      const gsDocRef = serverDoc(db, "config", "google_sheets");
       const gsSnap = await serverGetDoc(gsDocRef);
       const gsExisting = gsSnap.exists() ? gsSnap.data() : {};
-      
+
       // Critical: Ensure we always retain any existing refresh_token if the incoming one is missing it
       const finalTokens = { ...tokens };
-      if (gsExisting.tokens && gsExisting.tokens.refresh_token && !finalTokens.refresh_token) {
+      if (
+        gsExisting.tokens &&
+        gsExisting.tokens.refresh_token &&
+        !finalTokens.refresh_token
+      ) {
         finalTokens.refresh_token = gsExisting.tokens.refresh_token;
       }
 
       await serverSetDoc(gsDocRef, {
         ...gsExisting,
         tokens: finalTokens,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       });
-      console.log("Server: Google credentials successfully saved to Firestore.");
+      console.log(
+        "Server: Google credentials successfully saved to Firestore.",
+      );
     } catch (fbErr: any) {
-      console.error("Server: Failed saving Google credentials to Firestore:", fbErr);
+      console.error(
+        "Server: Failed saving Google credentials to Firestore:",
+        fbErr,
+      );
     }
   }
 
   async function getAuthorizedClient(req: any, clientTokens: any) {
     const auth = getOAuthClient(req);
-    
+
     // Auto-resolve tokens using Firestore source-of-truth if client provided no tokens OR if they are stale/incomplete
-    const dbTokens = await loadTokensFromFirestore() || {};
-    
+    const dbTokens = (await loadTokensFromFirestore()) || {};
+
     // Clean any empty, null or undefined fields from clientTokens to keep them from overwriting valid db values
     const cleanClientTokens: any = {};
     if (clientTokens) {
       Object.entries(clientTokens).forEach(([key, val]) => {
-        if (val !== undefined && val !== null && val !== '' && val !== 'undefined') {
+        if (
+          val !== undefined &&
+          val !== null &&
+          val !== "" &&
+          val !== "undefined"
+        ) {
           cleanClientTokens[key] = val;
         }
       });
@@ -1265,26 +1789,31 @@ System instructions:
     const tokens = { ...dbTokens, ...cleanClientTokens };
 
     // Guarantee refresh_token is preserved from DB baseline if missing in request
-    if (dbTokens.refresh_token && (!tokens.refresh_token || tokens.refresh_token === 'undefined')) {
+    if (
+      dbTokens.refresh_token &&
+      (!tokens.refresh_token || tokens.refresh_token === "undefined")
+    ) {
       tokens.refresh_token = dbTokens.refresh_token;
     }
 
     if (!tokens || !tokens.access_token) {
-      throw new Error("No Google Connection configuration found in local cache or server-side store.");
+      throw new Error(
+        "No Google Connection configuration found in local cache or server-side store.",
+      );
     }
 
     auth.setCredentials(tokens);
 
     let refreshedTokens: any = null;
-    auth.on('tokens', (newTokens) => {
+    auth.on("tokens", (newTokens) => {
       refreshedTokens = { ...tokens, ...newTokens };
       // Keep refresh_token intact
       if (tokens.refresh_token && !refreshedTokens.refresh_token) {
         refreshedTokens.refresh_token = tokens.refresh_token;
       }
-      
+
       // Persist refreshed tokens to Firestore on the fly!
-      saveTokensToFirestore(refreshedTokens).catch(err => {
+      saveTokensToFirestore(refreshedTokens).catch((err) => {
         console.error("Server: Token refresh save background crash:", err);
       });
     });
@@ -1293,13 +1822,13 @@ System instructions:
       try {
         await auth.getAccessToken(); // This automatically triggers a refresh if expired!
       } catch (err) {
-        console.warn('OAuth token refresh triggered warning:', err);
+        console.warn("OAuth token refresh triggered warning:", err);
       }
     }
 
-    return { 
-      auth, 
-      getTokens: () => refreshedTokens 
+    return {
+      auth,
+      getTokens: () => refreshedTokens,
     };
   }
 
@@ -1308,22 +1837,22 @@ System instructions:
     try {
       const authClient = getOAuthClient(req);
       const scopes = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/gmail.send',
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'openid',
-        'email',
-        'profile'
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "openid",
+        "email",
+        "profile",
       ];
-      
-      const originParam = req.query.origin as string || '';
+
+      const originParam = (req.query.origin as string) || "";
       const url = authClient.generateAuthUrl({
-        access_type: 'offline', // Requests refresh token
-        prompt: 'consent',      // Forces consent screen to guarantee refresh token is returned
+        access_type: "offline", // Requests refresh token
+        prompt: "consent", // Forces consent screen to guarantee refresh token is returned
         scope: scopes,
-        state: originParam      // Pass original client origin to state
+        state: originParam, // Pass original client origin to state
       });
       res.redirect(url);
     } catch (error: any) {
@@ -1333,30 +1862,36 @@ System instructions:
 
   app.get("/api/auth/google/callback", async (req, res) => {
     const code = req.query.code as string;
-    const origin = req.query.state as string || '';
+    const origin = (req.query.state as string) || "";
     if (!code) {
       return res.send("<script>window.close();</script>");
     }
     try {
       const authClient = getOAuthClient(req);
       const { tokens } = await authClient.getToken(code);
-      
+
       // Real-time synchronization to Firebase Firestore 24/7 so Hugging Face or any external frontend receives active tokens instantly
       try {
         await saveTokensToFirestore(tokens);
       } catch (fbErr: any) {
-        console.error("Server: Failed syncing Google credentials to Firestore:", fbErr);
+        console.error(
+          "Server: Failed syncing Google credentials to Firestore:",
+          fbErr,
+        );
       }
 
       // If client origin was passed (e.g. Hugging Face), redirect the popup back to that origin with token parameters.
       // The client application loaded in the popup will save the tokens to localStorage, post a same-origin message,
       // and close immediately.
-      if (origin && (origin.startsWith('http://') || origin.startsWith('https://'))) {
-        const redirectUrl = `${origin.endsWith('/') ? origin.slice(0, -1) : origin}/?google_oauth_success=true&tokens=${encodeURIComponent(JSON.stringify(tokens))}`;
+      if (
+        origin &&
+        (origin.startsWith("http://") || origin.startsWith("https://"))
+      ) {
+        const redirectUrl = `${origin.endsWith("/") ? origin.slice(0, -1) : origin}/?google_oauth_success=true&tokens=${encodeURIComponent(JSON.stringify(tokens))}`;
         return res.redirect(redirectUrl);
       }
-      
-      const escapedTokensStr = JSON.stringify(tokens).replace(/</g, '\\u003c');
+
+      const escapedTokensStr = JSON.stringify(tokens).replace(/</g, "\\u003c");
       res.send(`
         <!DOCTYPE html>
         <html>
@@ -1434,11 +1969,11 @@ System instructions:
       `);
     } catch (error: any) {
       console.error("Callback code exchange error:", error);
-      
-      let redirectUriUsed = 'Unknown';
+
+      let redirectUriUsed = "Unknown";
       try {
         const client = getOAuthClient(req);
-        redirectUriUsed = (client as any).redirectUri || 'Unknown';
+        redirectUriUsed = (client as any).redirectUri || "Unknown";
       } catch (e) {}
 
       res.status(500).send(`
@@ -1487,12 +2022,12 @@ System instructions:
     if (!error) return null;
     const data = error.response?.data;
     if (data) {
-      if (typeof data === 'object') {
+      if (typeof data === "object") {
         return {
           message: data.error?.message || data.message || null,
           status: data.error?.status || data.status || null,
           code: data.error?.code || data.code || null,
-          errors: data.error?.errors || data.errors || null
+          errors: data.error?.errors || data.errors || null,
         };
       }
       return { raw: String(data) };
@@ -1503,50 +2038,63 @@ System instructions:
   function handleRouteError(res: any, error: any, messagePrefix: string) {
     const errorMsg = error.message || String(error);
     console.error(`${messagePrefix}:`, error.response?.data || errorMsg);
-    
+
     // Safety check for credential or authorization failure
-    const isAuthError = 
-      error.status === 401 || 
-      error.response?.status === 401 || 
-      error.code === 401 || 
-      error.code === '401' ||
-      errorMsg.toLowerCase().includes('credential') || 
-      errorMsg.toLowerCase().includes('auth') || 
-      errorMsg.toLowerCase().includes('refresh token') || 
-      errorMsg.toLowerCase().includes('refresh_token') || 
-      errorMsg.toLowerCase().includes('invalid authentication') ||
-      (error.response?.data && (
-        String(error.response.data).toLowerCase().includes('credential') ||
-        String(error.response.data).toLowerCase().includes('refresh token') ||
-        (error.response.data.error?.message && (
-          error.response.data.error.message.toLowerCase().includes('credential') ||
-          error.response.data.error.message.toLowerCase().includes('refresh token')
-        ))
-      ));
+    const isAuthError =
+      error.status === 401 ||
+      error.response?.status === 401 ||
+      error.code === 401 ||
+      error.code === "401" ||
+      errorMsg.toLowerCase().includes("credential") ||
+      errorMsg.toLowerCase().includes("auth") ||
+      errorMsg.toLowerCase().includes("refresh token") ||
+      errorMsg.toLowerCase().includes("refresh_token") ||
+      errorMsg.toLowerCase().includes("invalid authentication") ||
+      (error.response?.data &&
+        (String(error.response.data).toLowerCase().includes("credential") ||
+          String(error.response.data).toLowerCase().includes("refresh token") ||
+          (error.response.data.error?.message &&
+            (error.response.data.error.message
+              .toLowerCase()
+              .includes("credential") ||
+              error.response.data.error.message
+                .toLowerCase()
+                .includes("refresh token")))));
 
     const statusCode = isAuthError ? 401 : 500;
-    
+
     let finalErrorMsg = errorMsg;
-    if (isAuthError && (errorMsg.toLowerCase().includes('refresh token') || errorMsg.toLowerCase().includes('refresh_token') || errorMsg.toLowerCase().includes('no refresh_token') || errorMsg.toLowerCase().includes('no refresh token'))) {
-      finalErrorMsg = "Google authentication has expired or lacks offline permission. Please disconnect and reconnect your Google Account in the Admin Panel.";
+    if (
+      isAuthError &&
+      (errorMsg.toLowerCase().includes("refresh token") ||
+        errorMsg.toLowerCase().includes("refresh_token") ||
+        errorMsg.toLowerCase().includes("no refresh_token") ||
+        errorMsg.toLowerCase().includes("no refresh token"))
+    ) {
+      finalErrorMsg =
+        "Google authentication has expired or lacks offline permission. Please disconnect and reconnect your Google Account in the Admin Panel.";
     }
 
     res.status(statusCode).json({
       error: finalErrorMsg,
-      details: getCleanErrorDetails(error)
+      details: getCleanErrorDetails(error),
     });
   }
 
   // Helper to ensure a sheet exists before operating on it
-  async function ensureSheetExists(sheets: any, spreadsheetId: string, range: string) {
+  async function ensureSheetExists(
+    sheets: any,
+    spreadsheetId: string,
+    range: string,
+  ) {
     if (!range) return;
-    
+
     // Extract sheet name from range (e.g., 'Sheet Name'!A1 or 'Sheet Name')
     let sheetName = range;
-    if (range.includes('!')) {
-      sheetName = range.split('!')[0];
+    if (range.includes("!")) {
+      sheetName = range.split("!")[0];
     }
-    
+
     // Remove single quotes if present
     if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
       sheetName = sheetName.substring(1, sheetName.length - 1);
@@ -1556,22 +2104,24 @@ System instructions:
       // Get spreadsheet metadata to check if sheet exists
       const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
       const sheetExists = spreadsheet.data.sheets.some(
-        (s: any) => s.properties.title === sheetName
+        (s: any) => s.properties.title === sheetName,
       );
 
       if (!sheetExists) {
-        console.log(`Sheet "${sheetName}" not found in ${spreadsheetId}. Creating it...`);
+        console.log(
+          `Sheet "${sheetName}" not found in ${spreadsheetId}. Creating it...`,
+        );
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId,
           requestBody: {
             requests: [
               {
                 addSheet: {
-                  properties: { title: sheetName }
-                }
-              }
-            ]
-          }
+                  properties: { title: sheetName },
+                },
+              },
+            ],
+          },
         });
       }
     } catch (err) {
@@ -1582,107 +2132,122 @@ System instructions:
 
   app.post("/api/sheets/append", async (req, res) => {
     let { tokens, spreadsheetId, range, values } = req.body;
-    
+
     // Auto fallback to Firestore-stored credentials if missing in client's request payload
     if (!tokens) {
       tokens = await loadTokensFromFirestore();
     }
-    
+
     if (!tokens || !spreadsheetId) {
-      return res.status(400).json({ error: "Missing tokens or spreadsheetId. Please connect your Google account in the Admin Panel." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing tokens or spreadsheetId. Please connect your Google account in the Admin Panel.",
+        });
     }
 
     try {
       const { auth, getTokens } = await getAuthorizedClient(req, tokens);
 
-      const sheets = google.sheets({ version: 'v4', auth });
-      
+      const sheets = google.sheets({ version: "v4", auth });
+
       // Auto-create sheet if it doesn't exist
       await ensureSheetExists(sheets, spreadsheetId, range);
 
       const response = await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: range || 'Sheet1!A1',
-        valueInputOption: 'USER_ENTERED',
+        range: range || "Sheet1!A1",
+        valueInputOption: "USER_ENTERED",
         requestBody: {
-          values: [values]
+          values: [values],
         },
       });
 
       res.json({
         ...response.data,
-        refreshedTokens: getTokens()
+        refreshedTokens: getTokens(),
       });
     } catch (error: any) {
-      handleRouteError(res, error, 'Error appending to sheet');
+      handleRouteError(res, error, "Error appending to sheet");
     }
   });
 
   app.post("/api/sheets/update", async (req, res) => {
     let { tokens, spreadsheetId, range, values } = req.body;
-    
+
     // Auto fallback to Firestore-stored credentials if missing in client's request payload
     if (!tokens) {
       tokens = await loadTokensFromFirestore();
     }
-    
+
     if (!tokens || !spreadsheetId) {
-      return res.status(400).json({ error: "Missing tokens or spreadsheetId. Please connect your Google account in the Admin Panel." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing tokens or spreadsheetId. Please connect your Google account in the Admin Panel.",
+        });
     }
 
     try {
       const { auth, getTokens } = await getAuthorizedClient(req, tokens);
 
-      const sheets = google.sheets({ version: 'v4', auth });
-      
+      const sheets = google.sheets({ version: "v4", auth });
+
       // Auto-create sheet if it doesn't exist
       await ensureSheetExists(sheets, spreadsheetId, range);
 
       console.log(`Updating sheet ${spreadsheetId} at range ${range}`);
-      
+
       const response = await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: range || 'Sheet1!A1',
-        valueInputOption: 'USER_ENTERED',
+        range: range || "Sheet1!A1",
+        valueInputOption: "USER_ENTERED",
         requestBody: {
-          values: values
+          values: values,
         },
       });
 
       res.json({
         ...response.data,
-        refreshedTokens: getTokens()
+        refreshedTokens: getTokens(),
       });
     } catch (error: any) {
-      handleRouteError(res, error, 'Error updating sheet');
+      handleRouteError(res, error, "Error updating sheet");
     }
   });
 
   app.post("/api/drive/backup", async (req, res) => {
     let { tokens, filename, content } = req.body;
-    
+
     // Auto fallback to Firestore-stored credentials if missing in client's request payload
     if (!tokens) {
       tokens = await loadTokensFromFirestore();
     }
-    
+
     if (!tokens || !content) {
-      return res.status(400).json({ error: "Missing tokens or content. Please connect your Google account in the Admin Panel." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing tokens or content. Please connect your Google account in the Admin Panel.",
+        });
     }
 
     try {
       const { auth, getTokens } = await getAuthorizedClient(req, tokens);
 
-      const drive = google.drive({ version: 'v3', auth });
-      
+      const drive = google.drive({ version: "v3", auth });
+
       // 1. Find or create folder "GreenTech_Backups"
       const folderName = "GreenTech_Backups";
       let folderId: string;
-      
+
       const folderSearch = await drive.files.list({
         q: `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-        fields: 'files(id)',
-        spaces: 'drive',
+        fields: "files(id)",
+        spaces: "drive",
       });
 
       if (folderSearch.data.files && folderSearch.data.files.length > 0) {
@@ -1690,11 +2255,11 @@ System instructions:
       } else {
         const folderMetadata = {
           name: folderName,
-          mimeType: 'application/vnd.google-apps.folder',
+          mimeType: "application/vnd.google-apps.folder",
         };
         const folder = await drive.files.create({
           requestBody: folderMetadata,
-          fields: 'id',
+          fields: "id",
         });
         folderId = folder.data.id!;
       }
@@ -1702,57 +2267,62 @@ System instructions:
       // 2. Upload file
       const fileMetadata = {
         name: filename || `backup_${new Date().toISOString()}.csv`,
-        parents: [folderId]
+        parents: [folderId],
       };
-      
+
       const media = {
-        mimeType: 'text/csv',
-        body: content
+        mimeType: "text/csv",
+        body: content,
       };
 
       const file = await drive.files.create({
         requestBody: fileMetadata,
         media: media,
-        fields: 'id, name, webViewLink'
+        fields: "id, name, webViewLink",
       });
 
       res.json({
         ...file.data,
-        refreshedTokens: getTokens()
+        refreshedTokens: getTokens(),
       });
     } catch (error: any) {
-      handleRouteError(res, error, 'Error backing up to Drive');
+      handleRouteError(res, error, "Error backing up to Drive");
     }
   });
 
   app.post("/api/sheets/create", async (req, res) => {
     let { tokens, title, sheetName } = req.body;
-    
+
     // Auto fallback to Firestore-stored credentials if missing in client's request payload
     if (!tokens) {
       tokens = await loadTokensFromFirestore();
     }
-    
+
     if (!tokens || !title) {
-      return res.status(400).json({ error: "Missing tokens or title. Please connect your Google account in the Admin Panel." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing tokens or title. Please connect your Google account in the Admin Panel.",
+        });
     }
 
     try {
       const { auth, getTokens } = await getAuthorizedClient(req, tokens);
 
-      const sheets = google.sheets({ version: 'v4', auth });
+      const sheets = google.sheets({ version: "v4", auth });
       const response = await sheets.spreadsheets.create({
         requestBody: {
           properties: {
-            title: title || 'WiFi Complaints Log'
+            title: title || "WiFi Complaints Log",
           },
           // Optionally create with a specific sheet name by renaming the default first sheet
-        }
+        },
       });
 
       const spreadsheetId = response.data.spreadsheetId;
 
-      if (spreadsheetId && sheetName && sheetName !== 'Sheet1') {
+      if (spreadsheetId && sheetName && sheetName !== "Sheet1") {
         // Rename the first sheet (Sheet1) to the desired sheetName
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId,
@@ -1762,56 +2332,65 @@ System instructions:
                 updateSheetProperties: {
                   properties: {
                     sheetId: 0, // Default first sheet usually has ID 0
-                    title: sheetName
+                    title: sheetName,
                   },
-                  fields: 'title'
-                }
-              }
-            ]
-          }
+                  fields: "title",
+                },
+              },
+            ],
+          },
         });
       }
 
-      res.json({ 
-        spreadsheetId, 
+      res.json({
+        spreadsheetId,
         spreadsheetUrl: response.data.spreadsheetUrl,
-        refreshedTokens: getTokens()
+        refreshedTokens: getTokens(),
       });
     } catch (error: any) {
-      handleRouteError(res, error, 'Error creating spreadsheet');
+      handleRouteError(res, error, "Error creating spreadsheet");
     }
   });
 
   app.post("/api/sheets/bulk-export", async (req, res) => {
     let { tokens, spreadsheetId, sheetsData } = req.body;
-    
+
     // Auto fallback to Firestore-stored credentials if missing in client's request payload
     if (!tokens) {
       tokens = await loadTokensFromFirestore();
     }
-    
+
     if (!tokens || !spreadsheetId || !sheetsData) {
-      return res.status(400).json({ error: "Missing required parameters. Please connect your Google account in the Admin Panel." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing required parameters. Please connect your Google account in the Admin Panel.",
+        });
     }
 
     try {
       const { auth, getTokens } = await getAuthorizedClient(req, tokens);
-      const sheets = google.sheets({ version: 'v4', auth });
+      const sheets = google.sheets({ version: "v4", auth });
 
       // 1. Ensure all requested sheets exist
       const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-      const existingSheetTitles = spreadsheet.data.sheets.map((s: any) => s.properties.title);
-      
-      const sheetsToCreate = sheetsData.filter((s: any) => !existingSheetTitles.includes(s.title));
-      
+      const existingSheetTitles = spreadsheet.data.sheets.map(
+        (s: any) => s.properties.title,
+      );
+
+      const sheetsToCreate = sheetsData.filter(
+        (s: any) => !existingSheetTitles.includes(s.title),
+      );
+
       if (sheetsToCreate.length > 0) {
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId,
           requestBody: {
             requests: sheetsToCreate.map((s: any) => ({
-              addSheet: { properties: { title: s.title } }
-            }))
-          }
+              addSheet: { properties: { title: s.title } },
+            })),
+          },
         });
       }
 
@@ -1819,30 +2398,30 @@ System instructions:
       await sheets.spreadsheets.values.batchClear({
         spreadsheetId,
         requestBody: {
-          ranges: sheetsData.map((s: any) => `'${s.title}'!A1:Z10000`)
-        }
+          ranges: sheetsData.map((s: any) => `'${s.title}'!A1:Z10000`),
+        },
       });
 
       // 3. Update all sheets with data
       const dataUpdates = sheetsData.map((s: any) => ({
         range: `'${s.title}'!A1`,
-        values: s.values
+        values: s.values,
       }));
 
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId,
         requestBody: {
-          valueInputOption: 'RAW',
-          data: dataUpdates
-        }
+          valueInputOption: "RAW",
+          data: dataUpdates,
+        },
       });
 
-      res.json({ 
+      res.json({
         success: true,
-        refreshedTokens: getTokens()
+        refreshedTokens: getTokens(),
       });
     } catch (error: any) {
-      handleRouteError(res, error, 'Error in bulk export');
+      handleRouteError(res, error, "Error in bulk export");
     }
   });
 
@@ -1859,16 +2438,21 @@ System instructions:
       tokens = await loadTokensFromFirestore();
     }
     if (!tokens) {
-      return res.status(400).json({ error: "Missing Google connection or offline tokens. Please link your Google Account." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing Google connection or offline tokens. Please link your Google Account.",
+        });
     }
     try {
       const { auth, getTokens } = await getAuthorizedClient(req, tokens);
-      const gmail = google.gmail({ version: 'v1', auth });
+      const gmail = google.gmail({ version: "v1", auth });
 
       const listRes = await gmail.users.messages.list({
-        userId: 'me',
+        userId: "me",
         maxResults: 10,
-        q: 'subject:(WiFi OR GTS OR Complaint OR ISP OR Invoice OR Diagnostic) OR label:SENT'
+        q: "subject:(WiFi OR GTS OR Complaint OR ISP OR Invoice OR Diagnostic) OR label:SENT",
       });
 
       const messages = [];
@@ -1876,14 +2460,22 @@ System instructions:
         for (const msg of listRes.data.messages) {
           try {
             const detail = await gmail.users.messages.get({
-              userId: 'me',
-              id: msg.id!
+              userId: "me",
+              id: msg.id!,
             });
             const headers = detail.data.payload?.headers || [];
-            const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
-            const to = headers.find((h: any) => h.name.toLowerCase() === 'to')?.value || 'Unknown';
-            const from = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || 'Unknown';
-            const date = headers.find((h: any) => h.name.toLowerCase() === 'date')?.value || '';
+            const subject =
+              headers.find((h: any) => h.name.toLowerCase() === "subject")
+                ?.value || "No Subject";
+            const to =
+              headers.find((h: any) => h.name.toLowerCase() === "to")?.value ||
+              "Unknown";
+            const from =
+              headers.find((h: any) => h.name.toLowerCase() === "from")
+                ?.value || "Unknown";
+            const date =
+              headers.find((h: any) => h.name.toLowerCase() === "date")
+                ?.value || "";
             messages.push({
               id: msg.id,
               threadId: msg.threadId,
@@ -1891,105 +2483,131 @@ System instructions:
               to,
               from,
               date,
-              snippet: detail.data.snippet || ''
+              snippet: detail.data.snippet || "",
             });
           } catch (itemErr) {
-            console.warn(`Error compiling Gmail item details for ${msg.id}:`, itemErr);
+            console.warn(
+              `Error compiling Gmail item details for ${msg.id}:`,
+              itemErr,
+            );
           }
         }
       }
 
       res.json({
         messages,
-        refreshedTokens: getTokens()
+        refreshedTokens: getTokens(),
       });
     } catch (error: any) {
-      handleRouteError(res, error, 'Error loading Gmail messages');
+      handleRouteError(res, error, "Error loading Gmail messages");
     }
   });
 
   app.post("/api/gmail/send", async (req, res) => {
     let { tokens, to, subject, body } = req.body;
-    
+
     if (!tokens) {
       tokens = await loadTokensFromFirestore();
     }
-    
+
     if (!tokens) {
-      return res.status(400).json({ error: "Missing Google connection or offline tokens. Please link your Google Account." });
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing Google connection or offline tokens. Please link your Google Account.",
+        });
     }
-    
+
     if (!to || !subject || !body) {
-      return res.status(400).json({ error: "Recipient (to), subject, and body are required." });
+      return res
+        .status(400)
+        .json({ error: "Recipient (to), subject, and body are required." });
     }
 
     try {
       const { auth, getTokens } = await getAuthorizedClient(req, tokens);
-      const gmail = google.gmail({ version: 'v1', auth });
+      const gmail = google.gmail({ version: "v1", auth });
 
-      const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+      const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
       const mimeParts = [
         `To: ${to}`,
         `Subject: ${utf8Subject}`,
-        'Content-Type: text/html; charset=utf-8',
-        'MIME-Version: 1.0',
-        '',
-        body
+        "Content-Type: text/html; charset=utf-8",
+        "MIME-Version: 1.0",
+        "",
+        body,
       ];
-      const mimeMessage = mimeParts.join('\n');
+      const mimeMessage = mimeParts.join("\n");
       const base64Encoded = Buffer.from(mimeMessage)
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
 
       const response = await gmail.users.messages.send({
-        userId: 'me',
+        userId: "me",
         requestBody: {
-          raw: base64Encoded
-        }
+          raw: base64Encoded,
+        },
       });
 
       res.json({
         success: true,
         data: response.data,
-        refreshedTokens: getTokens()
+        refreshedTokens: getTokens(),
       });
     } catch (error: any) {
-      handleRouteError(res, error, 'Error sending email via Gmail');
+      handleRouteError(res, error, "Error sending email via Gmail");
     }
   });
 
   // --- Server-Side 10-Minute Automatic Background Google Sheets Sync Worker ---
   async function startServerSideAutoBackupScheduler() {
-    console.log("[Server Auto-Backup] Initializing 10-minute continuous background sync daemon...");
+    console.log(
+      "[Server Auto-Backup] Initializing 10-minute continuous background sync daemon...",
+    );
 
     async function checkAndRunServerAutoBackup() {
       try {
         const db = await getFirestoreOnServer();
         if (!db) {
-          console.warn("[Server Auto-Backup] Firebase/Firestore not initialized yet. Skipping check.");
+          console.warn(
+            "[Server Auto-Backup] Firebase/Firestore not initialized yet. Skipping check.",
+          );
           return;
         }
 
-        const { doc: serverDoc, getDoc: serverGetDoc, setDoc: serverSetDoc, collection: serverCollection, getDocs: serverGetDocs } = await import('firebase/firestore');
+        const {
+          doc: serverDoc,
+          getDoc: serverGetDoc,
+          setDoc: serverSetDoc,
+          collection: serverCollection,
+          getDocs: serverGetDocs,
+        } = await import("firebase/firestore");
 
         // Load the sheets configuration doc
-        const gsDocRef = serverDoc(db, 'config', 'google_sheets');
+        const gsDocRef = serverDoc(db, "config", "google_sheets");
         const gsSnap = await serverGetDoc(gsDocRef);
         if (!gsSnap.exists()) {
-          console.log("[Server Auto-Backup] Google Sheets has not been configured in the system. Skipping.");
+          console.log(
+            "[Server Auto-Backup] Google Sheets has not been configured in the system. Skipping.",
+          );
           return;
         }
 
         const configData = gsSnap.data();
         if (!configData || !configData.tokens || !configData.spreadsheetId) {
-          console.log("[Server Auto-Backup] Google Sheets configuration or authorization credentials missing/under-construction. Skipping.");
+          console.log(
+            "[Server Auto-Backup] Google Sheets configuration or authorization credentials missing/under-construction. Skipping.",
+          );
           return;
         }
 
         if (!configData.tokens.refresh_token) {
-          console.warn("[Server Auto-Backup] Saved Google connection lacks an offline refresh_token. Please disconnect and reconnect your Google Account in the Admin Panel to grant permanent offline refresh permissions. Skipping continuous background backup.");
+          console.warn(
+            "[Server Auto-Backup] Saved Google connection lacks an offline refresh_token. Please disconnect and reconnect your Google Account in the Admin Panel to grant permanent offline refresh permissions. Skipping continuous background backup.",
+          );
           return;
         }
 
@@ -1998,114 +2616,171 @@ System instructions:
         const now = Date.now();
 
         if (now - lastBackup < TEN_MINUTES) {
-          console.log(`[Server Auto-Backup] Next automatic loop run skipped. Last execution was ${Math.round((now - lastBackup) / 1000)}s ago (needs 10M check).`);
+          console.log(
+            `[Server Auto-Backup] Next automatic loop run skipped. Last execution was ${Math.round((now - lastBackup) / 1000)}s ago (needs 10M check).`,
+          );
           return;
         }
 
-        console.log("[Server Auto-Backup] Last execution was more than 10 minutes ago. Triggering 24/7 background system sync...");
+        console.log(
+          "[Server Auto-Backup] Last execution was more than 10 minutes ago. Triggering 24/7 background system sync...",
+        );
 
         // Fetch users, complaints, clients, config, and branding
-        const [usersSnap, complaintsSnap, clientsSnap, configSnap, brandingSnap] = await Promise.all([
-          serverGetDocs(serverCollection(db, 'users')),
-          serverGetDocs(serverCollection(db, 'complaints')),
-          serverGetDocs(serverCollection(db, 'clients')),
-          serverGetDoc(serverDoc(db, 'config', 'app')),
-          serverGetDoc(serverDoc(db, 'config', 'branding'))
+        const [
+          usersSnap,
+          complaintsSnap,
+          clientsSnap,
+          configSnap,
+          brandingSnap,
+        ] = await Promise.all([
+          serverGetDocs(serverCollection(db, "users")),
+          serverGetDocs(serverCollection(db, "complaints")),
+          serverGetDocs(serverCollection(db, "clients")),
+          serverGetDoc(serverDoc(db, "config", "app")),
+          serverGetDoc(serverDoc(db, "config", "branding")),
         ]);
 
-        const users = usersSnap.docs.map(d => ({ ...d.data(), uid: d.id }));
-        const complaints = complaintsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
-        const clients = clientsSnap.docs.map(d => ({ ...d.data(), id: d.id }));
+        const users = usersSnap.docs.map((d) => ({ ...d.data(), uid: d.id }));
+        const complaints = complaintsSnap.docs.map((d) => ({
+          ...d.data(),
+          id: d.id,
+        }));
+        const clients = clientsSnap.docs.map((d) => ({
+          ...d.data(),
+          id: d.id,
+        }));
         const appConfig = configSnap.exists() ? configSnap.data() : {};
         const branding = brandingSnap.exists() ? brandingSnap.data() : {};
 
         // Format to spreadsheet rows (Operational Logs, User Register, Client Database, System Config)
-        const complaintHeaders = ['Date', 'ID', 'Logged By', 'Client', 'Contact', 'Area', 'Category', 'Priority', 'Status', 'Description'];
+        const complaintHeaders = [
+          "Date",
+          "ID",
+          "Logged By",
+          "Client",
+          "Contact",
+          "Area",
+          "Category",
+          "Priority",
+          "Status",
+          "Description",
+        ];
         const complaintRows = complaints.map((c: any) => [
-          c.createdAt ? new Date(c.createdAt).toLocaleString() : 'N/A',
-          c.id || 'N/A',
-          c.memberName || 'N/A',
-          c.customerName || 'N/A',
-          c.number || 'N/A',
-          c.area || 'N/A',
-          c.category || 'N/A',
-          c.priority || 'N/A',
-          c.status || 'N/A',
-          c.description || ''
+          c.createdAt ? new Date(c.createdAt).toLocaleString() : "N/A",
+          c.id || "N/A",
+          c.memberName || "N/A",
+          c.customerName || "N/A",
+          c.number || "N/A",
+          c.area || "N/A",
+          c.category || "N/A",
+          c.priority || "N/A",
+          c.status || "N/A",
+          c.description || "",
         ]);
 
-        const userHeaders = ['UID', 'Username', 'Full Name', 'Role', 'Dealer ID', 'Company', 'Line Code', 'Last Active', 'Created At'];
+        const userHeaders = [
+          "UID",
+          "Username",
+          "Full Name",
+          "Role",
+          "Dealer ID",
+          "Company",
+          "Line Code",
+          "Last Active",
+          "Created At",
+        ];
         const userRows = users.map((u: any) => [
-          u.uid || 'N/A',
-          u.username || 'N/A',
-          u.fullName || 'N/A',
-          u.role || 'N/A',
-          u.dealerId || 'main',
-          u.companyName || 'N/A',
-          u.lineCode || 'N/A',
-          u.lastActive ? new Date(u.lastActive).toLocaleString() : 'Never',
-          u.createdAt ? new Date(u.createdAt).toLocaleString() : 'N/A'
+          u.uid || "N/A",
+          u.username || "N/A",
+          u.fullName || "N/A",
+          u.role || "N/A",
+          u.dealerId || "main",
+          u.companyName || "N/A",
+          u.lineCode || "N/A",
+          u.lastActive ? new Date(u.lastActive).toLocaleString() : "Never",
+          u.createdAt ? new Date(u.createdAt).toLocaleString() : "N/A",
         ]);
 
-        const clientHeaders = ['ID', 'Username', 'Name', 'Contact', 'Area', 'Address', 'Priority', 'Assigned To', 'Created At'];
+        const clientHeaders = [
+          "ID",
+          "Username",
+          "Name",
+          "Contact",
+          "Area",
+          "Address",
+          "Priority",
+          "Assigned To",
+          "Created At",
+        ];
         const clientRows = clients.map((c: any) => [
-          c.id || 'N/A',
-          c.username || 'N/A',
-          c.name || 'N/A',
-          c.number || c.mobileNumber || 'N/A',
-          c.area || 'N/A',
-          c.address || 'N/A',
-          c.priority || 'N/A',
-          c.assignedTo || 'N/A',
-          c.createdAt ? new Date(c.createdAt).toLocaleString() : 'N/A'
+          c.id || "N/A",
+          c.username || "N/A",
+          c.name || "N/A",
+          c.number || c.mobileNumber || "N/A",
+          c.area || "N/A",
+          c.address || "N/A",
+          c.priority || "N/A",
+          c.assignedTo || "N/A",
+          c.createdAt ? new Date(c.createdAt).toLocaleString() : "N/A",
         ]);
 
-        const configHeaders = ['Section', 'Setting Key', 'Value'];
+        const configHeaders = ["Section", "Setting Key", "Value"];
         const configRows: any[][] = [];
-        
+
         Object.entries(appConfig || {}).forEach(([key, value]) => {
           configRows.push([
-            'Application',
+            "Application",
             key,
-            typeof value === 'object' ? JSON.stringify(value) : String(value)
+            typeof value === "object" ? JSON.stringify(value) : String(value),
           ]);
         });
 
         Object.entries(branding || {}).forEach(([key, value]) => {
           configRows.push([
-            'Branding',
+            "Branding",
             key,
-            typeof value === 'object' ? JSON.stringify(value) : String(value)
+            typeof value === "object" ? JSON.stringify(value) : String(value),
           ]);
         });
 
         const sheetsData = [
-          { title: 'Operational Logs', values: [complaintHeaders, ...complaintRows] },
-          { title: 'User Register', values: [userHeaders, ...userRows] },
-          { title: 'Client Database', values: [clientHeaders, ...clientRows] },
-          { title: 'System Config', values: [configHeaders, ...configRows] }
+          {
+            title: "Operational Logs",
+            values: [complaintHeaders, ...complaintRows],
+          },
+          { title: "User Register", values: [userHeaders, ...userRows] },
+          { title: "Client Database", values: [clientHeaders, ...clientRows] },
+          { title: "System Config", values: [configHeaders, ...configRows] },
         ];
 
         // Authorize sheets API using getAuthorizedClient mock req
         const mockReq = { headers: {} };
-        const { auth, getTokens: refreshTokensCb } = await getAuthorizedClient(mockReq, configData.tokens);
-        const sheets = google.sheets({ version: 'v4', auth });
+        const { auth, getTokens: refreshTokensCb } = await getAuthorizedClient(
+          mockReq,
+          configData.tokens,
+        );
+        const sheets = google.sheets({ version: "v4", auth });
         const spreadsheetId = configData.spreadsheetId;
 
         // Ensure all sheets exist
         const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
-        const existingSheetTitles = spreadsheet.data.sheets.map((s: any) => s.properties.title);
-        
-        const sheetsToCreate = sheetsData.filter((s: any) => !existingSheetTitles.includes(s.title));
-        
+        const existingSheetTitles = spreadsheet.data.sheets.map(
+          (s: any) => s.properties.title,
+        );
+
+        const sheetsToCreate = sheetsData.filter(
+          (s: any) => !existingSheetTitles.includes(s.title),
+        );
+
         if (sheetsToCreate.length > 0) {
           await sheets.spreadsheets.batchUpdate({
             spreadsheetId,
             requestBody: {
               requests: sheetsToCreate.map((s: any) => ({
-                addSheet: { properties: { title: s.title } }
-              }))
-            }
+                addSheet: { properties: { title: s.title } },
+              })),
+            },
           });
         }
 
@@ -2113,22 +2788,22 @@ System instructions:
         await sheets.spreadsheets.values.batchClear({
           spreadsheetId,
           requestBody: {
-            ranges: sheetsData.map((s: any) => `'${s.title}'!A1:Z10000`)
-          }
+            ranges: sheetsData.map((s: any) => `'${s.title}'!A1:Z10000`),
+          },
         });
 
         // Write row data
         const dataUpdates = sheetsData.map((s: any) => ({
           range: `'${s.title}'!A1`,
-          values: s.values
+          values: s.values,
         }));
 
         await sheets.spreadsheets.values.batchUpdate({
           spreadsheetId,
           requestBody: {
-            valueInputOption: 'RAW',
-            data: dataUpdates
-          }
+            valueInputOption: "RAW",
+            data: dataUpdates,
+          },
         });
 
         // Sync local updated tokens if produced, and update timestamp
@@ -2137,14 +2812,22 @@ System instructions:
           ...configData,
           tokens: finalTokens,
           lastAutoBackupTime: now,
-          updatedAt: Date.now()
+          updatedAt: Date.now(),
         });
 
-        console.log(`[Server Auto-Backup] 10-Minute Google Sheets background sync successful on server: ${spreadsheetId}`);
+        console.log(
+          `[Server Auto-Backup] 10-Minute Google Sheets background sync successful on server: ${spreadsheetId}`,
+        );
       } catch (err: any) {
         const errMsg = err?.message || String(err);
-        if (errMsg.includes("client is offline") || errMsg.includes("offline") || errMsg.includes("unreachable")) {
-          console.warn("[Server Auto-Backup] Firebase client is offline or database is unreachable. Skipping background sync loop check.");
+        if (
+          errMsg.includes("client is offline") ||
+          errMsg.includes("offline") ||
+          errMsg.includes("unreachable")
+        ) {
+          console.warn(
+            "[Server Auto-Backup] Firebase client is offline or database is unreachable. Skipping background sync loop check.",
+          );
         } else {
           console.error("[Server Auto-Backup] Server-side loop failed:", err);
         }
@@ -2158,8 +2841,11 @@ System instructions:
     }, 30000);
   }
 
-  startServerSideAutoBackupScheduler().catch(daemonErr => {
-    console.error("[Server Auto-Backup Daemon] Background sync scheduler startup failed:", daemonErr);
+  startServerSideAutoBackupScheduler().catch((daemonErr) => {
+    console.error(
+      "[Server Auto-Backup Daemon] Background sync scheduler startup failed:",
+      daemonErr,
+    );
   });
 
   // --- End Google Drive & Sheets Integration ---
@@ -2174,20 +2860,22 @@ System instructions:
   } else {
     // In production, the server might be bundled into /dist/ or run from the root
     let distPath = path.join(process.cwd(), "dist");
-    
-    // If we're running from inside dist/ already (bundled server.js), 
+
+    // If we're running from inside dist/ already (bundled server.js),
     // or if the dist folder isn't where we expect, try to find it relative to this file
     if (!fs.existsSync(path.join(distPath, "index.html"))) {
       distPath = _dirname;
       if (!fs.existsSync(path.join(distPath, "index.html"))) {
         // Fallback or log error
-        console.warn("Could not find index.html in dist paths. Static serving might fail.");
+        console.warn(
+          "Could not find index.html in dist paths. Static serving might fail.",
+        );
       }
     }
-    
+
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
