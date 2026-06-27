@@ -1349,6 +1349,13 @@ export default function Layout({
                           </div>
 
                           <div className="flex items-center gap-2 mt-1">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              ref={fileInputRef}
+                              onChange={handleImageUpload}
+                              className="hidden"
+                            />
                             <button
                               type="button"
                               onClick={() => fileInputRef.current?.click()}

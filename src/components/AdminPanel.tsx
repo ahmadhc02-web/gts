@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -414,6 +414,8 @@ export default function AdminPanel({
   const [billingSearchQuery, setBillingSearchQuery] = useState('');
   const [billingStatusFilter, setBillingStatusFilter] = useState<string>('all');
   const [billingAreaFilter, setBillingAreaFilter] = useState<string>('all');
+  const [billingSortField, setBillingSortField] = useState<string>('');
+  const [billingSortDirection, setBillingSortDirection] = useState<'asc' | 'desc'>('asc');
   const [isAdvanceMode, setIsAdvanceMode] = useState(false);
   const [selectedRecoveryRow, setSelectedRecoveryRow] = useState<any | null>(null);
   const [billingPage, setBillingPage] = useState(1);
@@ -800,47 +802,109 @@ export default function AdminPanel({
     }
 
     try {
-      // Build rows for all current master clients
-      const rows = masterClients.map((c, i) => {
-        // Core heuristics to extract numeric fee from package details (e.g., "12Mb @ 2000" -> 2000)
-        let cleanBase = 1000;
-        if (c.pkgDetails) {
-          const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
-          if (digitsMatch && digitsMatch.length > 0) {
-            cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
-          } else {
-            const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
-            if (lowDigits && lowDigits.length >= 3) {
-              cleanBase = parseInt(lowDigits, 10);
+      let rows: any[] = [];
+
+      if (billingMonths && billingMonths.length > 0 && billingMonths[0].rows) {
+        // Copy from latest existing sheet
+        rows = billingMonths[0].rows.map((r: any) => {
+          const prevTotal = parseFloat(r.totalAmount) || 0;
+          const prevReceived = parseFloat(r.paymentReceived) || 0;
+          const unpaid = Math.max(0, prevTotal - prevReceived);
+          return {
+            ...r,
+            cr: unpaid,
+            totalAmount: (parseFloat(r.baseAmount) || 0) + unpaid,
+            paymentReceived: 0,
+            paymentStatus: (r.paymentStatus === 'tdc' || r.paymentStatus === 'dc') ? r.paymentStatus : 'unpaid'
+          };
+        });
+        
+        // Find any masterClients not in the latest sheet and append them
+        const existingClientIds = new Set(rows.map(r => r.clientId).filter(Boolean));
+        const missingClients = masterClients.filter(c => !existingClientIds.has(c.id));
+        
+        const newRows = missingClients.map((c, i) => {
+          let cleanBase = 1000;
+          if (c.pkgDetails) {
+            const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
+            if (digitsMatch && digitsMatch.length > 0) {
+              cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
+            } else {
+              const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
+              if (lowDigits && lowDigits.length >= 3) {
+                cleanBase = parseInt(lowDigits, 10);
+              }
             }
           }
-        }
-        
-        return {
-          clientId: c.id,
-          name: c.name || 'Anonymous client',
-          username: c.username || `client_${i}`,
-          mobileNumber: c.mobileNumber || c.number || '',
-          area: c.area || '',
-          rt: 'BILL', // default Route/Type
-          baseAmount: cleanBase,
-          cr: 0,
-          totalAmount: cleanBase,
-          billingDay: '5', // Default 5th of the month
-          paymentReceived: 0,
-          paymentStatus: 'unpaid',
-          comments: '',
-          occ: 'personal',
-          serNam: c.username || '',
-          pkgDetails: c.pkgDetails || '8Mb',
-          sag: '0',
-          lai: 'GN',
-          connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
-          devicePrice: '0',
-          abl: '0',
-          network: 'GN CITY'
-        };
-      });
+          
+          return {
+            clientId: c.id,
+            name: c.name || 'Anonymous client',
+            username: c.username || `client_${Date.now()}_${i}`,
+            mobileNumber: c.mobileNumber || c.number || '',
+            area: c.area || '',
+            rt: 'BILL',
+            baseAmount: cleanBase,
+            cr: 0,
+            totalAmount: cleanBase,
+            billingDay: '5',
+            paymentReceived: 0,
+            paymentStatus: 'unpaid',
+            comments: '',
+            occ: 'personal',
+            serNam: c.username || '',
+            pkgDetails: c.pkgDetails || '8Mb',
+            sag: '0',
+            lai: 'GN',
+            connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
+            devicePrice: '0',
+            abl: '0',
+            network: 'GN CITY'
+          };
+        });
+        rows = [...rows, ...newRows];
+      } else {
+        // Fallback to building rows from all current master clients if no previous sheets exist
+        rows = masterClients.map((c, i) => {
+          let cleanBase = 1000;
+          if (c.pkgDetails) {
+            const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
+            if (digitsMatch && digitsMatch.length > 0) {
+              cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
+            } else {
+              const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
+              if (lowDigits && lowDigits.length >= 3) {
+                cleanBase = parseInt(lowDigits, 10);
+              }
+            }
+          }
+          
+          return {
+            clientId: c.id,
+            name: c.name || 'Anonymous client',
+            username: c.username || `client_${i}`,
+            mobileNumber: c.mobileNumber || c.number || '',
+            area: c.area || '',
+            rt: 'BILL', // default Route/Type
+            baseAmount: cleanBase,
+            cr: 0,
+            totalAmount: cleanBase,
+            billingDay: '5', // Default 5th of the month
+            paymentReceived: 0,
+            paymentStatus: 'unpaid',
+            comments: '',
+            occ: 'personal',
+            serNam: c.username || '',
+            pkgDetails: c.pkgDetails || '8Mb',
+            sag: '0',
+            lai: 'GN',
+            connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
+            devicePrice: '0',
+            abl: '0',
+            network: 'GN CITY'
+          };
+        });
+      }
 
       await firebaseService.createBillingMonth(monthId, rows, currentUser.username || 'admin', activeDealerId);
       
@@ -1638,22 +1702,57 @@ export default function AdminPanel({
     });
   }, [activeRows, billingSearchQuery, billingStatusFilter, billingAreaFilter]);
 
+  const sortedRows = useMemo(() => {
+    if (!billingSortField) return filteredRows;
+    const sorted = [...filteredRows].sort((a: any, b: any) => {
+      let valA = a[billingSortField];
+      let valB = b[billingSortField];
+
+      if (['baseAmount', 'cr', 'totalAmount', 'paymentReceived', 'billingDay'].includes(billingSortField)) {
+        valA = parseFloat(valA) || 0;
+        valB = parseFloat(valB) || 0;
+      } else {
+        valA = (valA || '').toString().toLowerCase();
+        valB = (valB || '').toString().toLowerCase();
+      }
+
+      if (valA < valB) return billingSortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return billingSortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [filteredRows, billingSortField, billingSortDirection]);
+
   useEffect(() => {
     setBillingPage(1);
-  }, [billingSearchQuery, billingStatusFilter, billingAreaFilter]);
+  }, [billingSearchQuery, billingStatusFilter, billingAreaFilter, billingSortField, billingSortDirection]);
 
   const itemsPerPage = 50;
   const totalPages = useMemo(() => {
-    return Math.ceil(filteredRows.length / itemsPerPage) || 1;
-  }, [filteredRows]);
+    return Math.ceil(sortedRows.length / itemsPerPage) || 1;
+  }, [sortedRows]);
 
   const currentPage = useMemo(() => {
     return Math.min(billingPage, totalPages);
   }, [billingPage, totalPages]);
 
   const paginatedRows = useMemo(() => {
-    return filteredRows.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  }, [filteredRows, currentPage]);
+    return sortedRows.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  }, [sortedRows, currentPage]);
+
+  const handleBillingSort = (field: string) => {
+    if (billingSortField === field) {
+      setBillingSortDirection(billingSortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setBillingSortField(field);
+      setBillingSortDirection('asc');
+    }
+  };
+
+  const getBillingSortIcon = (field: string) => {
+    if (billingSortField !== field) return null;
+    return billingSortDirection === 'asc' ? <ChevronUp className="inline w-3 h-3 ml-1" /> : <ChevronDown className="inline w-3 h-3 ml-1" />;
+  };
 
   const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalDC, totalPending, recoveryRate } = useMemo(() => {
     const expected = activeRows.reduce((acc: number, r: any) => {
@@ -6346,18 +6445,42 @@ export default function AdminPanel({
                       <table id="billing-spreadsheet-table" className="w-full border-collapse text-left text-xs text-slate-950 dark:text-slate-100">
                         <thead>
                           <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px] tracking-wider text-slate-950 dark:text-slate-100 font-sans select-none whitespace-nowrap">
-                            <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[50px] text-center">Sr#</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[200px]">NAME (EDIT)</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[140px]">USER ID (PPPoE)</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[150px]">MOBILE #</th>
-                            <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-center">AREA</th>
-                            <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-center">RT</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px] text-right">B. AMOUNT</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px] text-right">CR. (ARREARS)</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px] text-right bg-slate-100/50 dark:bg-slate-900/50">T. AMOUNT</th>
-                            <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-center">BD</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px] text-right bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600">RECOVERY</th>
-                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px] text-center">STATUS</th>
+                            <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[50px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('sr')}>
+                              Sr#{getBillingSortIcon('sr')}
+                            </th>
+                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[200px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('name')}>
+                              NAME (EDIT){getBillingSortIcon('name')}
+                            </th>
+                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[140px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('username')}>
+                              USER ID (PPPoE){getBillingSortIcon('username')}
+                            </th>
+                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[150px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('mobileNumber')}>
+                              MOBILE #{getBillingSortIcon('mobileNumber')}
+                            </th>
+                            <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('area')}>
+                              AREA{getBillingSortIcon('area')}
+                            </th>
+                            <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('rt')}>
+                              RT{getBillingSortIcon('rt')}
+                            </th>
+                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px] text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('baseAmount')}>
+                              B. AMOUNT{getBillingSortIcon('baseAmount')}
+                            </th>
+                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px] text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('cr')}>
+                              CR. (ARREARS){getBillingSortIcon('cr')}
+                            </th>
+                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px] text-right bg-slate-100/50 dark:bg-slate-900/50 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('totalAmount')}>
+                              T. AMOUNT{getBillingSortIcon('totalAmount')}
+                            </th>
+                            <th className="py-3 px-3 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('billingDay')}>
+                              BD{getBillingSortIcon('billingDay')}
+                            </th>
+                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px] text-right bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600 cursor-pointer hover:bg-emerald-500/20 transition-colors" onClick={() => handleBillingSort('paymentReceived')}>
+                              RECOVERY{getBillingSortIcon('paymentReceived')}
+                            </th>
+                            <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('paymentStatus')}>
+                              STATUS{getBillingSortIcon('paymentStatus')}
+                            </th>
                             {isAdvanceMode && (
                               <>
                                 <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[240px]">COMMENTS</th>
