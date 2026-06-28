@@ -14,6 +14,7 @@ import FiberLoading from './FiberLoading';
 import InlineTextEditor from './InlineTextEditor';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { firebaseService } from '../lib/firebaseService';
+import { getAvatarUrl } from '../utils/avatar';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -198,6 +199,7 @@ export default function Layout({
   const [editPassword, setEditPassword] = useState(user?.password || '');
   const [editProfilePicture, setEditProfilePicture] = useState(user?.profilePicture || '');
   const [editEmail, setEditEmail] = useState(user?.email || '');
+  const [editGender, setEditGender] = useState<'male'|'female'>(user?.profilePicture === 'default:female' ? 'female' : 'male');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -208,6 +210,7 @@ export default function Layout({
       setEditPassword(user.password || '');
       setEditProfilePicture(user.profilePicture || '');
       setEditEmail(user.email || '');
+      setEditGender(user.profilePicture === 'default:female' ? 'female' : 'male');
     }
   }, [user]);
 
@@ -216,7 +219,35 @@ export default function Layout({
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setEditProfilePicture(reader.result as string);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 250;
+          const MAX_HEIGHT = 250;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // Compress to WebP or JPEG with lower quality
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          setEditProfilePicture(dataUrl);
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -846,7 +877,26 @@ export default function Layout({
                       <div className="p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                         <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Author</p>
                         <div className="flex items-center gap-1.5 sm:gap-2">
-                          <User size={10} className="text-brand-accent sm:w-[12px] sm:h-[12px]" />
+                          {(() => {
+                            // Find the user by ID if available, otherwise by name
+                            const authorUser = users.find(u => u.username === selectedNotif.authorName || u.fullName === selectedNotif.authorName);
+                            if (authorUser && authorUser.profilePicture) {
+                              return (
+                                <img 
+                                  src={getAvatarUrl(authorUser.profilePicture)} 
+                                  alt={selectedNotif.authorName} 
+                                  className="h-4 w-4 rounded-full object-cover shrink-0"
+                                />
+                              );
+                            }
+                            return (
+                              <img 
+                                src={getAvatarUrl('default:male')} 
+                                alt={selectedNotif.authorName}
+                                className="h-4 w-4 rounded-full object-cover shrink-0 opacity-80"
+                              />
+                            );
+                          })()}
                           <span className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-slate-100">{selectedNotif.authorName}</span>
                         </div>
                       </div>
@@ -1019,9 +1069,25 @@ export default function Layout({
                           </p>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              <div className="w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
-                                <User size={10} className="text-slate-500" />
-                              </div>
+                              {(() => {
+                                const authorUser = users.find(u => u.username === notif.authorName || u.fullName === notif.authorName);
+                                if (authorUser && authorUser.profilePicture) {
+                                  return (
+                                    <img 
+                                      src={getAvatarUrl(authorUser.profilePicture)} 
+                                      alt={notif.authorName} 
+                                      className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+                                    />
+                                  );
+                                }
+                                return (
+                                  <img 
+                                    src={getAvatarUrl('default:male')} 
+                                    alt={notif.authorName}
+                                    className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 opacity-80"
+                                  />
+                                );
+                              })()}
                               <span className="text-[10px] font-black uppercase tracking-tighter text-brand-accent">
                                 {notif.authorName}
                               </span>
@@ -1264,13 +1330,18 @@ export default function Layout({
                   <div className="w-6.5 h-6.5 rounded-lg overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 border border-slate-200/55 dark:border-slate-750 flex items-center justify-center">
                     {user.profilePicture ? (
                       <img 
-                        src={user.profilePicture} 
+                        src={getAvatarUrl(user.profilePicture)} 
                         alt="User Profile" 
                         className="w-full h-full object-cover" 
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <User size={12} className="text-slate-400 dark:text-slate-500" />
+                      <img 
+                        src={getAvatarUrl('default:male')} 
+                        alt="User Profile" 
+                        className="w-full h-full object-cover" 
+                        referrerPolicy="no-referrer"
+                      />
                     )}
                   </div>
                 </button>
@@ -1324,15 +1395,18 @@ export default function Layout({
                             <div className="relative w-20 h-20 rounded-full border-2 border-white dark:border-slate-950 bg-slate-55 dark:bg-slate-900 overflow-hidden shadow-md flex items-center justify-center transition-transform duration-500 group-hover:scale-105">
                               {editProfilePicture ? (
                                 <img 
-                                  src={editProfilePicture} 
+                                  src={getAvatarUrl(editProfilePicture)} 
                                   alt="Profile Preview" 
                                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
                                   referrerPolicy="no-referrer"
                                 />
                               ) : (
-                                <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 transition-colors">
-                                  <User size={26} className="opacity-70" />
-                                </div>
+                                <img 
+                                  src={getAvatarUrl(`default:${editGender}`)} 
+                                  alt="Profile Preview" 
+                                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                                  referrerPolicy="no-referrer"
+                                />
                               )}
                               
                               {/* Overlay for uploading */}
@@ -1363,15 +1437,49 @@ export default function Layout({
                             >
                               CHOOSE_FILE
                             </button>
-                            {editProfilePicture && (
+                            {editProfilePicture && !editProfilePicture.startsWith('default:') && (
                               <button
                                 type="button"
-                                onClick={() => setEditProfilePicture('')}
+                                onClick={() => setEditProfilePicture(`default:${editGender}`)}
                                 className="px-2 py-0.5 bg-rose-500/10 hover:bg-rose-500/15 text-rose-500 rounded text-[8px] font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer"
                               >
                                 CLEAR_IMG
                               </button>
                             )}
+                          </div>
+                          
+                          <div className="flex items-center gap-2 mt-2 bg-slate-100/50 dark:bg-slate-800/30 p-1.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50">
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Default:</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditGender('male');
+                                if (!editProfilePicture || editProfilePicture.startsWith('default:')) {
+                                  setEditProfilePicture('default:male');
+                                }
+                              }}
+                              className={cn(
+                                "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
+                                editGender === 'male' ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+                              )}
+                            >
+                              Male
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditGender('female');
+                                if (!editProfilePicture || editProfilePicture.startsWith('default:')) {
+                                  setEditProfilePicture('default:female');
+                                }
+                              }}
+                              className={cn(
+                                "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
+                                editGender === 'female' ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+                              )}
+                            >
+                              Female
+                            </button>
                           </div>
                         </div>
 

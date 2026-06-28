@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield } from 'lucide-react';
 import { Client, UserProfile } from '../types';
-import { firebaseService } from '../lib/firebaseService';
+import { firebaseService, fromDb } from '../lib/firebaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
@@ -129,9 +129,27 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         setIsLoading(false);
       }
     };
+    const handleIncrementalUpdate = (e: Event) => {
+      const payload = (e as CustomEvent).detail;
+      if (!payload) return;
+      if (payload.eventType === 'INSERT') {
+        const newClient = fromDb('clients', payload.new);
+        setClients(prev => {
+          if (prev.find(c => c.id === newClient.id)) return prev;
+          return [newClient, ...prev].sort((a, b) => b.createdAt - a.createdAt);
+        });
+      } else if (payload.eventType === 'UPDATE') {
+        const updatedClient = fromDb('clients', payload.new);
+        setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c).sort((a, b) => b.createdAt - a.createdAt));
+      } else if (payload.eventType === 'DELETE') {
+        setClients(prev => prev.filter(c => c.id !== payload.old.id));
+      }
+    };
     window.addEventListener('supabase-clients-updated', handleClientsUpdated);
+    window.addEventListener('supabase-clients-updated-incremental', handleIncrementalUpdate);
     return () => {
       window.removeEventListener('supabase-clients-updated', handleClientsUpdated);
+      window.removeEventListener('supabase-clients-updated-incremental', handleIncrementalUpdate);
     };
   }, []);
 

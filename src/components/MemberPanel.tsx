@@ -377,6 +377,7 @@ export default function MemberPanel({
               </div>
               <ComplaintList 
                 complaints={complaints}
+                users={users}
                 isAdmin={false}
                 currentUser={currentUser}
                 onStatusChange={onUpdateComplaintStatus}

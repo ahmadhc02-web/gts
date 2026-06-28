@@ -1260,11 +1260,10 @@ export default function EntrySheet({
                   const amountVal = Number(r.amount) || 0;
                   const row = updatedBillingRows[matchedIdx];
                   const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
-                  const newCr = Math.max(0, savedOrigCr - amountVal);
                   const base = parseFloat(row.baseAmount || 0);
 
-                  // Auto calculate status based on payment vs total
-                  const totalAmount = base + newCr;
+                  // Keep original CR and totalAmount intact, just record payment
+                  const totalAmount = base + savedOrigCr;
                   let finalStatus = 'partial';
                   if (r.status) {
                     finalStatus = r.status;
@@ -1277,8 +1276,8 @@ export default function EntrySheet({
                   updatedBillingRows[matchedIdx] = {
                     ...row,
                     _originalCr: savedOrigCr,
-                    cr: newCr,
-                    totalAmount: totalAmount,
+                    cr: savedOrigCr, // Do not destructively modify CR
+                    totalAmount: totalAmount, // Do not destructively modify totalAmount
                     paymentReceived: amountVal,
                     paymentStatus: finalStatus
                   };

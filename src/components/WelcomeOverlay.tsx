@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Cpu, Database, Terminal, CheckSquare, Sparkles } from 'lucide-react';
+import { getAvatarUrl } from '../utils/avatar';
 
 interface WelcomeOverlayProps {
   username: string;
@@ -123,15 +124,18 @@ export default function WelcomeOverlay({
           >
             {profilePicture ? (
               <img 
-                src={profilePicture} 
+                src={getAvatarUrl(profilePicture)} 
                 alt={username} 
                 className="w-full h-full object-cover" 
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <span className="text-3xl font-black bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent tracking-wider">
-                {initials}
-              </span>
+              <img 
+                src={getAvatarUrl('default:male')} 
+                alt={username} 
+                className="w-full h-full object-cover" 
+                referrerPolicy="no-referrer"
+              />
             )}
           </motion.div>
 

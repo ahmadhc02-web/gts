@@ -11,7 +11,7 @@ import HighFrequencyNodes from './HighFrequencyNodes';
 import MapViewer from './MapViewer';
 import EditorPanel from './EditorPanel';
 import { googleSheetsService } from '../services/googleSheetsService';
-import { firebaseService } from '../lib/firebaseService';
+import { firebaseService, fromDb } from '../lib/firebaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { AppConfig } from '../constants';
@@ -21,6 +21,7 @@ import FiberLoading from './FiberLoading';
 import EntrySheet from './EntrySheet';
 import BatchPrintModal from './BatchPrintModal';
 import { extractFirebaseCollections, generateSupabaseMigrationSQL, pushCollectionsToSupabase, getSupabaseClient } from '../lib/supabaseService';
+import { getAvatarUrl } from '../utils/avatar';
 
 interface AdminPanelProps {
   complaints: Complaint[];
@@ -630,9 +631,27 @@ export default function AdminPanel({
         setMasterClients(customEvent.detail);
       }
     };
+    const handleIncrementalUpdate = (e: Event) => {
+      const payload = (e as CustomEvent).detail;
+      if (!payload) return;
+      if (payload.eventType === 'INSERT') {
+        const newClient = fromDb('clients', payload.new);
+        setMasterClients(prev => {
+          if (prev.find(c => c.id === newClient.id)) return prev;
+          return [newClient, ...prev].sort((a, b) => b.createdAt - a.createdAt);
+        });
+      } else if (payload.eventType === 'UPDATE') {
+        const updatedClient = fromDb('clients', payload.new);
+        setMasterClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c).sort((a, b) => b.createdAt - a.createdAt));
+      } else if (payload.eventType === 'DELETE') {
+        setMasterClients(prev => prev.filter(c => c.id !== payload.old.id));
+      }
+    };
     window.addEventListener('supabase-clients-updated', handleClientsUpdated);
+    window.addEventListener('supabase-clients-updated-incremental', handleIncrementalUpdate);
     return () => {
       window.removeEventListener('supabase-clients-updated', handleClientsUpdated);
+      window.removeEventListener('supabase-clients-updated-incremental', handleIncrementalUpdate);
     };
   }, []);
 
@@ -1036,15 +1055,9 @@ export default function AdminPanel({
         const crVal = parseFloat(targetRow.cr) || 0;
         targetRow.totalAmount = baseVal + crVal;
       } else if (field === 'paymentReceived') {
+        // Keep original CR and totalAmount intact, just record payment
         const received = parseFloat(val) || 0;
-        if (targetRow._originalCr === undefined) {
-          targetRow._originalCr = parseFloat(targetRow.cr) || 0;
-        }
-        const origCr = parseFloat(targetRow._originalCr) || 0;
-        const base = parseFloat(targetRow.baseAmount) || 0;
-        
-        targetRow.cr = Math.max(0, origCr - received);
-        targetRow.totalAmount = base + targetRow.cr;
+        targetRow.paymentReceived = received;
       }
 
       // Automatically calculate payment status
@@ -1644,6 +1657,7 @@ export default function AdminPanel({
                   )}
                   <ComplaintList
                     complaints={selectedDealerId === 'all' ? complaints : complaints.filter(c => c.dealerId === selectedDealerId)}
+                    users={users}
                     onDelete={onDeleteComplaint}
                     onStatusChange={onUpdateComplaintStatus}
                     onUpdateRemarks={onUpdateRemarks}
@@ -2398,7 +2412,7 @@ export default function AdminPanel({
 
         {activeTab === 'nodes' && (
           <div className="max-w-4xl mx-auto">
-            <HighFrequencyNodes complaints={complaints} />
+            <HighFrequencyNodes complaints={complaints} users={users} />
           </div>
         )}
 
@@ -2585,9 +2599,19 @@ export default function AdminPanel({
                               )}
                             </div>
                           ) : (
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.fullName || user.username}</span>
-                              {user.fullName && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">@{user.username}</span>}
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                <img 
+                                  src={getAvatarUrl(user.profilePicture)} 
+                                  alt={user.username} 
+                                  className="w-full h-full object-cover" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.fullName || user.username}</span>
+                                {user.fullName && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">@{user.username}</span>}
+                              </div>
                             </div>
                           )}
                         </td>
@@ -4307,7 +4331,7 @@ export default function AdminPanel({
                   {/* Subview 2: Top 10 Complainers */}
                   {mypcOpenedFile === 'top10_complainers' && (
                     <div className="max-w-4xl mx-auto">
-                      <HighFrequencyNodes complaints={complaints} />
+                      <HighFrequencyNodes complaints={complaints} users={users} />
                     </div>
                   )}
 
@@ -4327,7 +4351,20 @@ export default function AdminPanel({
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div className="p-5 rounded-xl border border-slate-100 dark:border-slate-900 bg-slate-50/50 dark:bg-slate-900/10 space-y-3">
                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Logged Operator Account</p>
-                            <p className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">{currentUser.fullName || currentUser.username}</p>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                <img 
+                                  src={getAvatarUrl(currentUser.profilePicture)} 
+                                  alt={currentUser.username} 
+                                  className="w-full h-full object-cover" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                              <div className="flex flex-col">
+                                <p className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">{currentUser.fullName || currentUser.username}</p>
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">@{currentUser.username}</span>
+                              </div>
+                            </div>
                             <span className="inline-flex px-3 py-0.5 text-[8px] font-black rounded-full uppercase tracking-widest bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0 select-none">
                               Active Secure Token
                             </span>
@@ -4523,9 +4560,19 @@ export default function AdminPanel({
                                           )}
                                         </div>
                                       ) : (
-                                        <div className="flex flex-col">
-                                          <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.fullName || user.username}</span>
-                                          {user.fullName && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">@{user.username}</span>}
+                                        <div className="flex items-center gap-3">
+                                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                            <img 
+                                              src={getAvatarUrl(user.profilePicture)} 
+                                              alt={user.username} 
+                                              className="w-full h-full object-cover" 
+                                              referrerPolicy="no-referrer"
+                                            />
+                                          </div>
+                                          <div className="flex flex-col">
+                                            <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.fullName || user.username}</span>
+                                            {user.fullName && <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">@{user.username}</span>}
+                                          </div>
                                         </div>
                                       )}
                                     </td>
@@ -5763,7 +5810,7 @@ export default function AdminPanel({
                   {/* Subview 10: Active Nodes nodes_view */}
                   {mypcOpenedFile === 'nodes_view' && (
                     <div className="max-w-4xl mx-auto text-left animate-in fade-in duration-300">
-                      <HighFrequencyNodes complaints={complaints} />
+                      <HighFrequencyNodes complaints={complaints} users={users} />
                     </div>
                   )}
 

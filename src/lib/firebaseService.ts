@@ -184,7 +184,7 @@ function toDb(table: string, obj: any): any {
   return result;
 }
 
-function fromDb(table: string, obj: any): any {
+export function fromDb(table: string, obj: any): any {
   if (!obj) return obj;
   const tableMapping = mappings[table];
   if (!tableMapping) return obj;

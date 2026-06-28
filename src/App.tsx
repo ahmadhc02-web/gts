@@ -8,7 +8,7 @@ import AdminPanel from './components/AdminPanel';
 import MemberPanel from './components/MemberPanel';
 import WelcomeOverlay from './components/WelcomeOverlay';
 import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification, BrandingConfig } from './types';
-import { firebaseService } from './lib/firebaseService';
+import { firebaseService, fromDb } from './lib/firebaseService';
 import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING } from './constants';
@@ -649,10 +649,16 @@ export default function App() {
               setUser(null);
               safeLocalStorage.removeItem('complaint_app_user');
               toast.warning("Access RESTRICTED: Your request is still pending approval.");
-            } else if (safeStringify(freshUser) !== safeStringify(user)) {
-               // Update local state if role or profile changes
-               setUser(freshUser);
-               safeLocalStorage.setItem('complaint_app_user', safeStringify(freshUser));
+            } else {
+               // Prevent overwriting profile picture if freshUser doesn't have it but we do locally
+               const mergedUser = {
+                 ...freshUser,
+                 profilePicture: freshUser.profilePicture || user.profilePicture
+               };
+               if (safeStringify(mergedUser) !== safeStringify(user)) {
+                 setUser(mergedUser);
+                 safeLocalStorage.setItem('complaint_app_user', safeStringify(mergedUser));
+               }
             }
           }
         }
@@ -810,18 +816,28 @@ export default function App() {
       // Listen to complaints table
       .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, (payload) => {
         console.log("[Supabase Realtime Event] complaints table postgres_change received:", payload);
-        // 2. Whenever an INSERT, UPDATE, or DELETE payload is received from Supabase, immediately trigger the corresponding data fetch function to refresh the local state instantly.
-        fetchComplaints();
+        if (payload.eventType === 'INSERT') {
+          const newDoc = fromDb('complaints', payload.new);
+          setComplaints(prev => {
+            if (prev.find(c => c.id === newDoc.id)) return prev;
+            return [newDoc, ...prev].sort((a, b) => b.createdAt - a.createdAt);
+          });
+        } else if (payload.eventType === 'UPDATE') {
+          const updatedDoc = fromDb('complaints', payload.new);
+          setComplaints(prev => prev.map(c => c.id === updatedDoc.id ? updatedDoc : c).sort((a, b) => b.createdAt - a.createdAt));
+        } else if (payload.eventType === 'DELETE') {
+          setComplaints(prev => prev.filter(c => c.id !== payload.old.id));
+        }
       })
       // Listen to clients table
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, (payload) => {
         console.log("[Supabase Realtime Event] clients table postgres_change received:", payload);
-        fetchClients();
+        window.dispatchEvent(new CustomEvent('supabase-clients-updated-incremental', { detail: payload }));
       })
       // Listen to branding_config table
       .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, (payload) => {
         console.log("[Supabase Realtime Event] branding_config table postgres_change received:", payload);
-        fetchBrandingConfig();
+        fetchBrandingConfig(); // Branding config is just one document, so fetching it is fine
       })
       .subscribe();
 
@@ -842,45 +858,8 @@ export default function App() {
     const CHECK_INTERVAL = 60 * 1000; // Check every 1 minute
 
     const runCheck = async () => {
-      try {
-        const tokens = googleSheetsService.getTokens();
-        const spreadsheetId = googleSheetsService.getSpreadsheetId();
-        if (!tokens || !spreadsheetId) {
-          // Silent skip if Google Sheets is not configured or connected yet
-          return;
-        }
-
-        // Fetch Google sheets config to check last backup timestamp
-        const configData = await googleSheetsService.loadConfigFromFirestore();
-        const lastBackup = configData?.lastAutoBackupTime || 0;
-        const now = Date.now();
-
-        if (now - lastBackup >= TEN_MINUTES) {
-          console.log('[Auto-Backup] Last backup was more than 10 minutes ago. Performing bulk background system export...');
-          
-          // Optimistically update timestamp to prevent overlapping executions
-          await googleSheetsService.syncConfigToFirestore({ lastAutoBackupTime: now });
-          
-          // Fetch all clients (async)
-          const clients = await firebaseService.getClients().catch((e) => {
-            console.warn("[Auto-Backup] Fetching clients warning:", e);
-            return [];
-          });
-          
-          const backupData = {
-            complaints: backupStateRef.current.complaints || [],
-            users: backupStateRef.current.users || [],
-            clients: clients,
-            config: backupStateRef.current.appConfig || {},
-            branding: backupStateRef.current.branding || {}
-          };
-
-          await googleSheetsService.performBulkSystemBackup(backupData);
-          console.log('[Auto-Backup] Background Bulk System Export Executed Successfully!');
-        }
-      } catch (err) {
-        console.warn('[Auto-Backup] Error running auto-backup check:', err);
-      }
+      // NOTE: User requested to disable the automatic 10m background backup
+      return;
     };
 
     // Warm-up delay of 15 seconds to let initial loads settle, then run first check
@@ -1596,7 +1575,7 @@ export default function App() {
   const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role'], profilePicture?: string, email?: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode && { lineCode }), ...(companyName && { companyName }), ...(profilePicture && { profilePicture }), ...(email && { email: email.trim() }) }, user.fullName || user.username);
+      await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode !== undefined && { lineCode }), ...(companyName !== undefined && { companyName }), ...(profilePicture !== undefined && { profilePicture }), ...(email !== undefined && { email: email.trim() }) }, user.fullName || user.username);
       
       const targetUser = users.find(u => u.uid === uid);
       const updatedUserObj = {
@@ -1606,10 +1585,10 @@ export default function App() {
         password: pass,
         fullName,
         role: role || targetUser?.role || 'user',
-        ...(lineCode && { lineCode }),
-        ...(companyName && { companyName }),
-        ...(profilePicture && { profilePicture }),
-        ...(email && { email: email.trim() })
+        ...(lineCode !== undefined && { lineCode }),
+        ...(companyName !== undefined && { companyName }),
+        ...(profilePicture !== undefined && { profilePicture }),
+        ...(email !== undefined && { email: email.trim() })
       };
 
       // Ensure a shadow Firebase Auth user exists for sendPasswordResetEmail to work
@@ -1627,7 +1606,7 @@ export default function App() {
 
       // If updating self, update local user state too
       if (user && user.uid === uid) {
-        const updatedUser = { ...user, username, password: pass, fullName, ...(role && { role }), ...(lineCode && { lineCode }), ...(companyName && { companyName }), ...(profilePicture && { profilePicture }), ...(email && { email: email.trim() }) };
+        const updatedUser = { ...user, username, password: pass, fullName, ...(role !== undefined && { role }), ...(lineCode !== undefined && { lineCode }), ...(companyName !== undefined && { companyName }), ...(profilePicture !== undefined && { profilePicture }), ...(email !== undefined && { email: email.trim() }) };
         setUser(updatedUser);
         safeLocalStorage.setItem('complaint_app_user', safeStringify(updatedUser));
       }

@@ -11,9 +11,11 @@ import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
+import { getAvatarUrl } from '../utils/avatar';
 
 interface ComplaintListProps {
   complaints: Complaint[];
+  users?: UserProfile[];
   onDelete?: (id: string) => Promise<void>;
   onStatusChange?: (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => Promise<void>;
   onUpdateRemarks?: (id: string, remarks: string) => Promise<void>;
@@ -39,6 +41,7 @@ const getEffectiveStatus = (c: Complaint, currentTime: number = Date.now()): Com
 
 export default function ComplaintList({ 
   complaints, 
+  users = [],
   onDelete, 
   onStatusChange, 
   onUpdateRemarks,
@@ -1303,9 +1306,27 @@ export default function ComplaintList({
                             </span>
                             
                             {/* Delegate staff avatar */}
-                            <div className="h-6 w-6 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-205 dark:border-slate-700 text-slate-650 dark:text-slate-350 flex items-center justify-center font-black text-[9px] uppercase shadow-sm shrink-0" title={`Logged by: ${complaint.memberName || 'System'}`}>
-                              {complaint.memberName ? complaint.memberName.slice(0,2) : 'SY'}
-                            </div>
+                            {(() => {
+                              const authorUser = users.find(u => u.uid === complaint.memberId);
+                              if (authorUser && authorUser.profilePicture) {
+                                return (
+                                  <img 
+                                    src={getAvatarUrl(authorUser.profilePicture)} 
+                                    alt={complaint.memberName} 
+                                    className="h-6 w-6 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0"
+                                    title={`Logged by: ${complaint.memberName || 'System'}`}
+                                  />
+                                );
+                              }
+                              return (
+                                <img 
+                                  src={getAvatarUrl('default:male')} 
+                                  alt={complaint.memberName || 'System'}
+                                  className="h-6 w-6 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0 opacity-80"
+                                  title={`Logged by: ${complaint.memberName || 'System'}`}
+                                />
+                              );
+                            })()}
                           </div>
                           
                           {getEffectiveStatus(complaint, now) === 'in process' && (() => {
@@ -1835,9 +1856,27 @@ export default function ComplaintList({
                       transition={{ duration: 0.3, delay: 0.15 }}
                       className="flex flex-row items-center justify-between p-2 rounded-xl border border-slate-200/50 dark:border-slate-800/60 bg-slate-50/60 dark:bg-slate-950/40 gap-2"
                     >
-                      <div className="flex items-center gap-1 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
-                        <User size={10} className="shrink-0" />
-                        <span className="whitespace-nowrap">Delegate:</span>
+                      <div className="flex items-center gap-1.5 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
+                        {(() => {
+                          const authorUser = users.find(u => u.uid === selectedComplaint.memberId);
+                          if (authorUser && authorUser.profilePicture) {
+                            return (
+                              <img 
+                                src={getAvatarUrl(authorUser.profilePicture)} 
+                                alt={selectedComplaint.memberName} 
+                                className="h-4 w-4 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0"
+                              />
+                            );
+                          }
+                          return (
+                            <img 
+                              src={getAvatarUrl('default:male')} 
+                              alt={selectedComplaint.memberName || 'System'}
+                              className="h-4 w-4 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0 opacity-80"
+                            />
+                          );
+                        })()}
+                        <span className="whitespace-nowrap hidden sm:inline">Delegate:</span>
                         <span className="text-brand-accent px-1.5 py-0.5 rounded bg-brand-accent/5 border border-brand-accent/10 truncate max-w-[100px]">{selectedComplaint.memberName || 'System'}</span>
                       </div>
                       <div className="flex items-center gap-1 text-slate-400 dark:text-slate-500 font-mono text-[8.5px] font-bold leading-none">

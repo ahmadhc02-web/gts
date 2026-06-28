@@ -1,14 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Flame, Users, Info, X, MapPin, Tag, Calendar, Clock, User } from 'lucide-react';
-import { Complaint } from '../types';
+import { Complaint, UserProfile } from '../types';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
+import { getAvatarUrl } from '../utils/avatar';
 
 interface HighFrequencyNodesProps {
   complaints: Complaint[];
+  users?: UserProfile[];
 }
 
-export default function HighFrequencyNodes({ complaints = [] }: HighFrequencyNodesProps) {
+export default function HighFrequencyNodes({ complaints = [], users = [] }: HighFrequencyNodesProps) {
   const [highFreqRange, setHighFreqRange] = useState<'10days' | '30days' | 'all'>('all');
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
@@ -271,9 +273,30 @@ export default function HighFrequencyNodes({ complaints = [] }: HighFrequencyNod
                       "{selectedComplaint.description}"
                     </p>
                     <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-800/50 flex flex-col gap-1">
-                      <div className="flex justify-between text-[8px] font-bold text-slate-400">
+                      <div className="flex justify-between items-center text-[8px] font-bold text-slate-400">
                         <span>LOG CAPTAIN:</span>
-                        <span className="text-slate-600 dark:text-slate-300">{selectedComplaint.memberName || 'SYSTEM'}</span>
+                        <div className="flex items-center gap-1.5">
+                          {(() => {
+                            const authorUser = users?.find(u => u.uid === selectedComplaint.memberId);
+                            if (authorUser && authorUser.profilePicture) {
+                              return (
+                                <img 
+                                  src={getAvatarUrl(authorUser.profilePicture)} 
+                                  alt={selectedComplaint.memberName} 
+                                  className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0"
+                                />
+                              );
+                            }
+                            return (
+                              <img 
+                                src={getAvatarUrl('default:male')} 
+                                alt={selectedComplaint.memberName || 'System'}
+                                className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0 opacity-80"
+                              />
+                            );
+                          })()}
+                          <span className="text-slate-600 dark:text-slate-300">{selectedComplaint.memberName || 'SYSTEM'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -314,9 +337,30 @@ export default function HighFrequencyNodes({ complaints = [] }: HighFrequencyNod
                       </div>
                     )}
                     <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-800/50 flex flex-col gap-1">
-                      <div className="flex justify-between text-[8px] font-bold text-slate-400">
+                      <div className="flex justify-between items-center text-[8px] font-bold text-slate-400">
                         <span>TEAM AUTHOR:</span>
-                        <span className="text-slate-600 dark:text-slate-300">{selectedComplaint.remarkAuthorName || selectedComplaint.memberName || 'AWAITING DISPATCH'}</span>
+                        <div className="flex items-center gap-1.5">
+                          {(() => {
+                            const authorUser = users?.find(u => u.uid === selectedComplaint.remarkAuthorId || (!selectedComplaint.remarkAuthorId && u.uid === selectedComplaint.memberId));
+                            if (authorUser && authorUser.profilePicture) {
+                              return (
+                                <img 
+                                  src={getAvatarUrl(authorUser.profilePicture)} 
+                                  alt={selectedComplaint.remarkAuthorName || selectedComplaint.memberName || 'AWAITING DISPATCH'} 
+                                  className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0"
+                                />
+                              );
+                            }
+                            return (
+                              <img 
+                                src={getAvatarUrl('default:male')} 
+                                alt={selectedComplaint.remarkAuthorName || selectedComplaint.memberName || 'AWAITING DISPATCH'}
+                                className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0 opacity-80"
+                              />
+                            );
+                          })()}
+                          <span className="text-slate-600 dark:text-slate-300">{selectedComplaint.remarkAuthorName || selectedComplaint.memberName || 'AWAITING DISPATCH'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
