@@ -773,8 +773,10 @@ export default function AdminPanel({
         const cleanRowPkg = (row.pkgDetails || '').trim();
         if (cleanRowPkg !== cleanPkg) {
           row.pkgDetails = cleanPkg;
-          row.baseAmount = targetBase;
-          row.totalAmount = targetBase + (parseFloat(row.cr) || 0);
+          if (row.paymentStatus !== 'tdc' && row.paymentStatus !== 'dc') {
+            row.baseAmount = targetBase;
+            row.totalAmount = targetBase + (parseFloat(row.cr) || 0);
+          }
           rowChanged = true;
         }
 
@@ -829,12 +831,15 @@ export default function AdminPanel({
           const prevTotal = parseFloat(r.totalAmount) || 0;
           const prevReceived = parseFloat(r.paymentReceived) || 0;
           const unpaid = Math.max(0, prevTotal - prevReceived);
+          const isTdcOrDc = r.paymentStatus === 'tdc' || r.paymentStatus === 'dc';
+          const newBase = isTdcOrDc ? 0 : (parseFloat(r.baseAmount) || 0);
           return {
             ...r,
             cr: unpaid,
-            totalAmount: (parseFloat(r.baseAmount) || 0) + unpaid,
+            baseAmount: newBase,
+            totalAmount: newBase + unpaid,
             paymentReceived: 0,
-            paymentStatus: (r.paymentStatus === 'tdc' || r.paymentStatus === 'dc') ? r.paymentStatus : 'unpaid'
+            paymentStatus: isTdcOrDc ? r.paymentStatus : 'unpaid'
           };
         });
         
@@ -1008,8 +1013,10 @@ export default function AdminPanel({
           if (row.area !== c.area) { row.area = c.area; changed = true; }
           if (row.pkgDetails !== c.pkgDetails) { 
             row.pkgDetails = c.pkgDetails; 
-            row.baseAmount = targetBase; 
-            row.totalAmount = targetBase + (parseFloat(row.cr) || 0); 
+            if (row.paymentStatus !== 'tdc' && row.paymentStatus !== 'dc') {
+              row.baseAmount = targetBase; 
+              row.totalAmount = targetBase + (parseFloat(row.cr) || 0); 
+            }
             changed = true; 
           }
           if (changed) {
@@ -1058,6 +1065,12 @@ export default function AdminPanel({
         // Keep original CR and totalAmount intact, just record payment
         const received = parseFloat(val) || 0;
         targetRow.paymentReceived = received;
+      } else if (field === 'paymentStatus') {
+        if (val === 'tdc' || val === 'dc') {
+          targetRow.baseAmount = 0;
+          const crVal = parseFloat(targetRow.cr) || 0;
+          targetRow.totalAmount = crVal;
+        }
       }
 
       // Automatically calculate payment status
@@ -7368,6 +7381,7 @@ export default function AdminPanel({
         currentMonthId={currentMonthId}
         isBillingUnlocked={isBillingUnlocked}
         appConfig={appConfig}
+        billingMonths={billingMonths}
       />
 
       {/* Batch Print Multi-month Dialog Overlay */}

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
   History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
-  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown
+  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -22,6 +22,7 @@ interface EntrySheetProps {
   currentMonthId?: string;
   isBillingUnlocked?: boolean;
   appConfig?: any;
+  billingMonths?: any[];
 }
 
 interface Table1Row {
@@ -29,7 +30,7 @@ interface Table1Row {
   cId: string;
   name: string;
   comments: string;
-  amount: number;
+  amount: number | string;
   ch: boolean;
   originalAmount?: number;
   clientId?: string;
@@ -40,7 +41,7 @@ interface Table1Row {
 interface Table2Row {
   sr: any;
   name: string;
-  amount: number;
+  amount: number | string;
   ch: boolean;
 }
 
@@ -51,7 +52,8 @@ export default function EntrySheet({
   activeRows = [], 
   currentMonthId,
   isBillingUnlocked,
-  appConfig
+  appConfig,
+  billingMonths = []
 }: EntrySheetProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
@@ -61,6 +63,7 @@ export default function EntrySheet({
   const [activeView, setActiveView] = useState<'dashboard' | 'editor'>('dashboard');
   const [folders, setFolders] = useState<any[]>([]);
   const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>({});
+  const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
 
   // Scoped folders loading on user change
   useEffect(() => {
@@ -453,19 +456,26 @@ export default function EntrySheet({
   // Ledger Card Monthly History and Backup States
   const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
 
-  // Auto-migrate and synchronize: put every existing sheet inside 'June Data' and clean other folders
+  // Auto-migrate and synchronize: put every existing sheet inside 'June Data' (One-time migration)
   useEffect(() => {
-    if (isDealerTied) {
+    if (isDealerTied || ledgerHistory.length === 0) {
       return;
     }
-    const juneFolder = folders.find(f => f.name.toLowerCase() === 'june data') || { id: 'june_data', name: 'June Data', createdAt: Date.now() };
     
-    // Ensure folders contains ONLY June Data
-    if (folders.length !== 1 || folders[0].id !== juneFolder.id || folders[0].name !== 'June Data') {
-      setFolders([juneFolder]);
+    // Check if migration already ran
+    const migrationKey = `gts_june_data_migrated_v6_${currentUser?.uid || 'main'}`;
+    if (localStorage.getItem(migrationKey)) {
+      return;
     }
 
-    // Map all current sheets from ledgerHistory into the correct june_data folder
+    const juneFolder = folders.find(f => f.name.toLowerCase() === 'june data' || f.id === 'june_data') || { id: 'june_data', name: 'June Data', createdAt: Date.now() };
+    
+    // Ensure juneFolder is in folders
+    if (!folders.some(f => f.id === juneFolder.id)) {
+      setFolders(prev => [...prev, juneFolder]);
+    }
+
+    // Map all current sheets from ledgerHistory into the june_data folder
     let mapChanged = false;
     const nextMap = { ...sheetFolderMap };
     
@@ -476,18 +486,15 @@ export default function EntrySheet({
       }
     });
 
-    // Remove obsolete sheets not present in current history
-    Object.keys(nextMap).forEach(key => {
-      if (!ledgerHistory.some(sh => sh.id === key)) {
-        delete nextMap[key];
-        mapChanged = true;
-      }
-    });
-
     if (mapChanged) {
       setSheetFolderMap(nextMap);
+      // Immediately save to local storage
+      const scopeId = activeDealerId || currentUser?.uid || 'main';
+      const suffix = `_${scopeId}`;
+      localStorage.setItem(`gts_ledger_sheet_folders${suffix}`, JSON.stringify(nextMap));
     }
-  }, [ledgerHistory, folders, currentUser?.role]);
+    localStorage.setItem(migrationKey, 'true');
+  }, [ledgerHistory, folders, isDealerTied, currentUser?.uid, sheetFolderMap, activeDealerId]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showUserLedger, setShowUserLedger] = useState(false);
   const [ledgerSearchUser, setLedgerSearchUser] = useState('');
@@ -1168,7 +1175,7 @@ export default function EntrySheet({
             cId: r.cId || '',
             name: r.name || '',
             comments: r.comments || '',
-            amount: Number(r.amount) || 0,
+            amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
             ch: !!r.ch,
             originalAmount: r.originalAmount || 0,
             clientId: r.clientId || '',
@@ -1178,7 +1185,7 @@ export default function EntrySheet({
           table2Rows: (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).map(r => ({
             sr: r.sr,
             name: r.name || '',
-            amount: Number(r.amount) || 0,
+            amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
             ch: !!r.ch
           })),
           cashReceived: sh.cashReceived || '',
@@ -1217,85 +1224,105 @@ export default function EntrySheet({
           }
 
           // Auto-update matched master clients inside the currently active/selected billing month
-          if (currentMonthId && activeRows && activeRows.length > 0) {
-            try {
-              const updatedBillingRows = [...activeRows];
-              let updatedCount = 0;
+          const targetFolderId = savedDoc.id ? (sheetFolderMap[savedDoc.id] || loadedSheetId ? sheetFolderMap[loadedSheetId!] : openedFolderId) : openedFolderId;
+          const folderObj = folders.find(f => f.id === targetFolderId);
+          const targetMonthId = folderObj?.connectedMonthId;
 
-              sheetPayload.table1Rows.forEach((r) => {
-                const hasId = r.cId && r.cId.trim();
-                const hasName = r.name && r.name.trim();
-                if (!hasId && !hasName) return; // skip empty rows
+          if (targetMonthId) {
+            const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
+            const targetMonthRows = targetMonthDoc?.rows || [];
+            
+            if (targetMonthRows.length > 0) {
+              try {
+                const updatedBillingRows = [...targetMonthRows];
+                let updatedCount = 0;
 
-                let matchedIdx = -1;
+                sheetPayload.table1Rows.forEach((r) => {
+                  const hasId = r.cId && r.cId.trim();
+                  const hasName = r.name && r.name.trim();
+                  if (!hasId && !hasName) return; // skip empty rows
 
-                // 1. Match using precise metadata from suggestions
-                if (r.clientId || r.clientUsername) {
-                  const searchClientId = (r.clientId || '').trim().toLowerCase();
-                  const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
-                  matchedIdx = updatedBillingRows.findIndex(br => 
-                    (searchClientId && br.clientId && br.clientId.trim().toLowerCase() === searchClientId) ||
-                    (searchClientUsername && br.username && br.username.trim().toLowerCase() === searchClientUsername)
-                  );
-                }
+                  let matchedIdx = -1;
 
-                // 2. Fallback to typed matching by ID or Username
-                if (matchedIdx === -1 && hasId) {
-                  const searchId = r.cId.trim().toLowerCase();
-                  matchedIdx = updatedBillingRows.findIndex(br => 
-                    (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
-                    (br.username && br.username.trim().toLowerCase() === searchId)
-                  );
-                }
-
-                // 3. Last fallback: match by Name
-                if (matchedIdx === -1 && hasName) {
-                  const searchName = r.name.trim().toLowerCase();
-                  matchedIdx = updatedBillingRows.findIndex(br => 
-                    br.name && br.name.trim().toLowerCase() === searchName
-                  );
-                }
-
-                if (matchedIdx !== -1) {
-                  const amountVal = Number(r.amount) || 0;
-                  const row = updatedBillingRows[matchedIdx];
-                  const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
-                  const base = parseFloat(row.baseAmount || 0);
-
-                  // Keep original CR and totalAmount intact, just record payment
-                  const totalAmount = base + savedOrigCr;
-                  let finalStatus = 'partial';
-                  if (r.status) {
-                    finalStatus = r.status;
-                  } else if (amountVal === 0) {
-                    finalStatus = 'unpaid';
-                  } else if (amountVal >= totalAmount) {
-                    finalStatus = 'paid';
+                  // 1. Match using precise metadata from suggestions
+                  if (r.clientId || r.clientUsername) {
+                    const searchClientId = (r.clientId || '').trim().toLowerCase();
+                    const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
+                    matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                      (searchClientId && br.clientId && br.clientId.trim().toLowerCase() === searchClientId) ||
+                      (searchClientUsername && br.username && br.username.trim().toLowerCase() === searchClientUsername)
+                    );
                   }
 
-                  updatedBillingRows[matchedIdx] = {
-                    ...row,
-                    _originalCr: savedOrigCr,
-                    cr: savedOrigCr, // Do not destructively modify CR
-                    totalAmount: totalAmount, // Do not destructively modify totalAmount
-                    paymentReceived: amountVal,
-                    paymentStatus: finalStatus
-                  };
-                  updatedCount++;
-                }
-              });
+                  // 2. Fallback to typed matching by ID or Username
+                  if (matchedIdx === -1 && hasId) {
+                    const searchId = r.cId.trim().toLowerCase();
+                    matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                      (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
+                      (br.username && br.username.trim().toLowerCase() === searchId)
+                    );
+                  }
 
-              if (updatedCount > 0) {
-                totalUpdatedBillingCount += updatedCount;
-                await firebaseService.saveBillingMonth(
-                  currentMonthId, 
-                  updatedBillingRows, 
-                  currentUser.username || 'admin',
-                  activeDealerId
-                );
+                  // 3. Last fallback: match by Name
+                  if (matchedIdx === -1 && hasName) {
+                    const searchName = r.name.trim().toLowerCase();
+                    matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                      br.name && br.name.trim().toLowerCase() === searchName
+                    );
+                  }
+
+                  if (matchedIdx !== -1) {
+                    const amountVal = Number(r.amount) || 0;
+                    const amountStr = String(r.amount).toUpperCase();
+                    const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL'].includes(amountStr);
+                    const row = updatedBillingRows[matchedIdx];
+                    
+                    // Do not automatically add payments to TDC or DC users
+                    if (row.paymentStatus === 'tdc' || row.paymentStatus === 'dc') {
+                      return;
+                    }
+
+                    const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
+                    const base = parseFloat(row.baseAmount || 0);
+
+                    // Keep original CR and totalAmount intact, just record payment
+                    const totalAmount = base + savedOrigCr;
+                    let finalStatus = 'partial';
+                    
+                    if (isStatusString) {
+                      finalStatus = amountStr.toLowerCase();
+                    } else if (r.status) {
+                      finalStatus = r.status;
+                    } else if (amountVal === 0) {
+                      finalStatus = 'unpaid';
+                    } else if (amountVal >= totalAmount) {
+                      finalStatus = 'paid';
+                    }
+
+                    updatedBillingRows[matchedIdx] = {
+                      ...row,
+                      _originalCr: savedOrigCr,
+                      cr: savedOrigCr, // Do not destructively modify CR
+                      totalAmount: totalAmount, // Do not destructively modify totalAmount
+                      paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
+                      paymentStatus: finalStatus
+                    };
+                    updatedCount++;
+                  }
+                });
+
+                if (updatedCount > 0) {
+                  totalUpdatedBillingCount += updatedCount;
+                  await firebaseService.saveBillingMonth(
+                    targetMonthId, 
+                    updatedBillingRows, 
+                    currentUser.username || 'admin',
+                    activeDealerId
+                  );
+                }
+              } catch (billingErr: any) {
+                console.error("Failed to auto-update billing status for sheet index:", i, billingErr);
               }
-            } catch (billingErr: any) {
-              console.error("Failed to auto-update billing status for sheet index:", i, billingErr);
             }
           }
         }
@@ -1344,7 +1371,7 @@ export default function EntrySheet({
       cId: r.cId || '',
       name: r.name || '',
       comments: r.comments || '',
-      amount: Number(r.amount) || 0,
+      amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
       ch: !!r.ch,
       originalAmount: r.originalAmount || r.amount || 0,
       clientId: r.clientId || '',
@@ -1368,7 +1395,7 @@ export default function EntrySheet({
     const reT2 = (Array.isArray(sheet.table2Rows) ? sheet.table2Rows : []).map((r: any) => ({
       sr: r.sr,
       name: r.name || '',
-      amount: Number(r.amount) || 0,
+      amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
       ch: !!r.ch
     }));
     while (reT2.length < 3) {
@@ -2370,19 +2397,27 @@ export default function EntrySheet({
                       onClick={() => setOpenedFolderId(folder.id)}
                       className="group cursor-pointer p-5 bg-gradient-to-b from-white to-slate-50/70 dark:from-slate-900/80 dark:to-slate-950/90 border border-slate-205 dark:border-slate-850/70 hover:border-blue-500/40 dark:hover:border-blue-400/35 hover:shadow-[0_20px_45px_rgba(59,130,246,0.06)] rounded-3xl flex flex-col items-center justify-between text-center gap-4 transition-all duration-300 relative overflow-hidden backdrop-blur-md select-none min-h-[195px]"
                     >
+                      {/* Folder Settings Gear Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSettingsFolderId(folder.id);
+                        }}
+                        className="absolute top-3 right-3 p-1.5 z-40 bg-slate-200/50 hover:bg-white dark:bg-slate-800/50 dark:hover:bg-slate-700 rounded-full text-slate-500 hover:text-blue-600 transition-colors pointer-events-auto"
+                      >
+                        <Settings size={14} />
+                      </button>
+
                       {/* Folder PC-style Visual Representation Shape */}
                       <div className="relative w-24 h-20 flex items-center justify-center shrink-0 mb-1 pointer-events-none perspective-500">
                         {/* Glowing shadow effect behind folder */}
-                        <div className="absolute inset-2 bg-amber-400/10 dark:bg-blue-500/10 blur-xl rounded-full opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all duration-300" />
+                        <div className="absolute inset-2 bg-blue-500/10 blur-xl rounded-full opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all duration-300" />
 
-                        {/* Golden/Blue Manila folder back tab (lifts up) */}
-                        <div className="absolute top-0.5 left-2 w-8 h-4 bg-amber-500 dark:bg-blue-650 rounded-t-lg opacity-90 -translate-y-px group-hover:-translate-y-1.5 transition-transform duration-300 ease-out origin-bottom" style={{ clipPath: 'polygon(0% 100%, 10% 0%, 90% 0%, 100% 100%)' }} />
+                        {/* Blue folder back tab (lifts up) */}
+                        <div className="absolute top-0.5 left-2 w-10 h-4 bg-[#1573d8] rounded-t-lg opacity-90 -translate-y-px group-hover:-translate-y-1.5 transition-transform duration-300 ease-out origin-bottom" style={{ clipPath: 'polygon(0% 100%, 10% 0%, 90% 0%, 100% 100%)' }} />
                         
-                        {/* Back Cover shadow layer */}
-                        <div className="absolute top-2.5 inset-x-2 bottom-0.5 bg-amber-600/10 dark:bg-black/35 rounded-lg filter blur-[1px] translate-y-0.5" />
-                        
-                        {/* Main folder back cover */}
-                        <div className="absolute top-2 inset-x-2 bottom-0 bg-gradient-to-br from-amber-500 to-amber-600 dark:from-blue-650 dark:to-blue-700 rounded-lg group-hover:scale-[1.02] transition-transform duration-300 ease-out shadow-inner border border-amber-400/20 dark:border-blue-550/20" />
+                        {/* Main folder back cover (Blue) */}
+                        <div className="absolute top-2 inset-x-2 bottom-0 bg-[#1573d8] rounded-lg group-hover:scale-[1.02] transition-transform duration-300 ease-out shadow-inner" />
                         
                         {/* Peeking multiple document sheets inside (animated overlapping slides) */}
                         {folderSheets.length > 0 ? (
@@ -2408,18 +2443,24 @@ export default function EntrySheet({
                           </>
                         ) : (
                           /* Empty Folder Placement Glow */
-                          <div className="absolute w-12 h-10 bg-transparent border border-dashed border-amber-500/30 dark:border-blue-550/30 rounded-md -top-1 left-6 opacity-0 group-hover:opacity-100 group-hover:-translate-y-4.5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 flex items-center justify-center">
-                            <Plus size={12} className="text-amber-500 dark:text-blue-400 animate-pulse stroke-[3]" />
+                          <div className="absolute w-12 h-10 bg-transparent border border-dashed border-white/30 rounded-md -top-1 left-6 opacity-0 group-hover:opacity-100 group-hover:-translate-y-4.5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 flex items-center justify-center">
+                            <Plus size={12} className="text-white animate-pulse stroke-[3]" />
                           </div>
                         )}
 
-                        {/* Front cover sleeve of folder (it rotates and translates slightly on hover) */}
-                        <div className="absolute bottom-1 inset-x-2 h-13 bg-gradient-to-br from-amber-400 to-amber-500 dark:from-sky-500 dark:to-blue-650 rounded-b-lg rounded-t-md shadow-[0_4px_12px_rgba(0,0,0,0.1)] border-t border-white/35 dark:border-white/20 group-hover:rotate-x-12 group-hover:scale-y-[1.04] group-hover:translate-y-1 transition-all duration-300 z-20 flex items-center justify-center transform-gpu origin-bottom">
-                          <div className="absolute inset-x-0 top-0.5 h-px bg-white/30 dark:bg-white/25" />
-                          <div className="px-2 py-0.5 bg-black/15 dark:bg-black/25 rounded-md shadow-inner">
-                            <span className="text-[10px] font-black text-white dark:text-sky-100 uppercase tracking-widest leading-none">
-                              {folderSheets.length}
-                            </span>
+                        {/* Front cover sleeve of folder (Yellow with blue drip) */}
+                        <div className="absolute bottom-1 inset-x-2 h-14 bg-[#ffb81c] rounded-b-lg rounded-t-sm shadow-[0_4px_12px_rgba(0,0,0,0.15)] group-hover:rotate-x-12 group-hover:scale-y-[1.04] group-hover:translate-y-1 transition-all duration-300 z-20 overflow-hidden transform-gpu origin-bottom">
+                          {/* Drip SVG Overlay */}
+                          <svg width="100%" height="24" viewBox="0 0 100 24" preserveAspectRatio="none" className="absolute top-0 left-0 text-[#1573d8] fill-current z-30 pointer-events-none">
+                            <path d="M0,0 L100,0 L100,6 Q95,12 92,6 T85,15 T76,8 T68,16 T58,5 T50,18 T42,8 T32,20 T22,6 T12,14 T0,6 Z" />
+                          </svg>
+
+                          <div className="absolute inset-0 flex items-center justify-center z-40 mt-2">
+                            <div className="px-2 py-0.5 bg-black/10 rounded-md shadow-inner backdrop-blur-sm">
+                              <span className="text-[10px] font-black text-[#855d00] uppercase tracking-widest leading-none">
+                                {folderSheets.length}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -3864,30 +3905,47 @@ export default function EntrySheet({
                     {/* Amount */}
                     <td 
                       style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-2 border-r border-black text-right"
+                      className="px-2 border-r border-black text-right relative"
                     >
-                      <div className="flex flex-col items-end justify-center">
-                        <input
-                          type="number"
-                          value={row.amount === 0 ? '' : row.amount}
-                          placeholder="0"
-                          onChange={(e) => handleT1Change(index, 'amount', parseFloat(e.target.value) || 0)}
-                          style={{ fontSize: `${tableFontSize}px` }}
-                          className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
-                        />
-                        <select
-                          value={row.status || ''}
-                          onChange={(e) => handleT1Change(index, 'status', e.target.value)}
-                          className="text-[9px] mt-0.5 text-slate-500 bg-transparent border-none outline-none font-bold text-right cursor-pointer"
-                        >
-                          <option value="">- Status -</option>
-                          <option value="paid">PAID</option>
-                          <option value="unpaid">UNPAID</option>
-                          <option value="tdc">TDC</option>
-                          <option value="dc">DC</option>
-                          <option value="partial">PARTIAL</option>
-                        </select>
-                      </div>
+                      <input
+                        type="text"
+                        value={row.amount === 0 ? '' : row.amount}
+                        placeholder="0"
+                        onChange={(e) => handleT1Change(index, 'amount', e.target.value)}
+                        onFocus={() => {
+                          setFocusedRowIndex(index);
+                          setFocusedField('amount');
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => {
+                            setFocusedRowIndex(null);
+                            setFocusedField(null);
+                          }, 250);
+                        }}
+                        style={{ fontSize: `${tableFontSize}px` }}
+                        className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono uppercase"
+                      />
+                      
+                      {focusedRowIndex === index && focusedField === 'amount' && (
+                        <div className="absolute top-[105%] right-0 w-[120px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-slate-800 shadow-2xl rounded-xl p-1 z-[999] print:hidden font-sans">
+                          <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1 text-left">
+                            Set Status
+                          </div>
+                          {['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL'].map(st => (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => {
+                                handleT1Change(index, 'amount', st);
+                                handleT1Change(index, 'status', st.toLowerCase());
+                              }}
+                              className="w-full text-right px-2 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 transition-colors uppercase tracking-widest"
+                            >
+                              {st}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </td>
  
                     {/* Ch (Tick checkbox) */}
@@ -4679,6 +4737,74 @@ export default function EntrySheet({
                     className="w-full py-1.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-extrabold uppercase tracking-widest transition-all cursor-pointer border border-slate-200 dark:border-slate-700 text-center"
                   >
                     Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+        {/* Folder Settings Popup */}
+        {settingsFolderId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+            onClick={() => setSettingsFolderId(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">Folder Settings</h3>
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Manage Recovery Connection</p>
+                </div>
+                <button
+                  onClick={() => setSettingsFolderId(null)}
+                  className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 rounded-full transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] uppercase font-black tracking-widest text-slate-500 mb-2">
+                    Connected Recovery Sheet (Billing Month)
+                  </label>
+                  <select
+                    value={folders.find(f => f.id === settingsFolderId)?.connectedMonthId || ''}
+                    onChange={(e) => {
+                      const newMonthId = e.target.value;
+                      setFolders(prev => prev.map(f => f.id === settingsFolderId ? { ...f, connectedMonthId: newMonthId } : f));
+                      toast.success(newMonthId ? "Folder connected to Recovery Sheet!" : "Folder disconnected.");
+                    }}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">-- Not Connected --</option>
+                    {billingMonths.map(m => {
+                      const totalTarget = m.rows?.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0) || 0;
+                      return (
+                        <option key={m.id} value={m.id}>{m.id} (Target: {totalTarget.toLocaleString()})</option>
+                      );
+                    })}
+                  </select>
+                  <p className="text-[10px] text-slate-450 dark:text-slate-400 font-bold uppercase mt-2 leading-relaxed">
+                    When connected, any entry activity inside this folder will automatically update the selected Recovery Sheet. If not connected, updates will remain local.
+                  </p>
+                </div>
+
+                <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/60">
+                  <button
+                    onClick={() => setSettingsFolderId(null)}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-colors shadow-md"
+                  >
+                    Save & Close
                   </button>
                 </div>
               </div>
