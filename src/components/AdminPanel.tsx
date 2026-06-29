@@ -5997,37 +5997,43 @@ export default function AdminPanel({
                 </div>
 
                 <div className="flex flex-wrap gap-3 items-center">
-                  <button
-                    type="button"
-                    onClick={() => setIsEntrySheetOpen(true)}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-brand-accent hover:opacity-90 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md shadow-brand-accent/20 cursor-pointer"
-                  >
-                    <ClipboardList size={14} />
-                    Entry Sheet
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsConfiguringNewMonth(true)}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-sm cursor-pointer"
-                  >
-                    <PlusSquare size={14} />
-                    New Month
-                  </button>
-
-                  {currentMonthId && (
+                  {isBillingUnlocked && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setSheetIdToDelete(currentMonthId || (billingMonths[0]?.id || ''));
-                        setIsConfirmingPurge(false);
-                        setIsDeleteSheetModalOpen(true);
-                      }}
-                      className="inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all active:scale-95 border border-rose-100 dark:border-rose-900/20 cursor-pointer"
-                      title="Purge / delete monthly recovery sheets"
+                      onClick={() => setIsEntrySheetOpen(true)}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-brand-accent hover:opacity-90 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md shadow-brand-accent/20 cursor-pointer"
                     >
-                      <Trash2 size={14} />
+                      <ClipboardList size={14} />
+                      Entry Sheet
                     </button>
+                  )}
+
+                  {isBillingUnlocked && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsConfiguringNewMonth(true)}
+                        className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-sm cursor-pointer"
+                      >
+                        <PlusSquare size={14} />
+                        New Month
+                      </button>
+
+                      {currentMonthId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSheetIdToDelete(currentMonthId || (billingMonths[0]?.id || ''));
+                            setIsConfirmingPurge(false);
+                            setIsDeleteSheetModalOpen(true);
+                          }}
+                          className="inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all active:scale-95 border border-rose-100 dark:border-rose-900/20 cursor-pointer"
+                          title="Purge / delete monthly recovery sheets"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </>
                   )}
 
                   {/* High Quality Interactive Actions Dropdown */}
@@ -7356,14 +7362,16 @@ export default function AdminPanel({
                     You do not have any billing months created for your WiFi ISP. Create a monthly sheet (e.g. MAY-26 or JUN-26) to generate recovery spreadsheets.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsConfiguringNewMonth(true)}
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/10 inline-flex items-center gap-2"
-                >
-                  <PlusSquare size={14} />
-                  Deploy First Recovery Sheet
-                </button>
+                {isBillingUnlocked && (
+                  <button
+                    type="button"
+                    onClick={() => setIsConfiguringNewMonth(true)}
+                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/10 inline-flex items-center gap-2"
+                  >
+                    <PlusSquare size={14} />
+                    Deploy First Recovery Sheet
+                  </button>
+                )}
               </div>
             )}
           </div>
