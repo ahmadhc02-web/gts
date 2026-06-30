@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { UserProfile, Notification, BrandingConfig } from '../types';
@@ -109,6 +109,12 @@ export default function Layout({
   const isOnline = useOnlineStatus();
   const [showSyncStatus, setShowSyncStatus] = useState(false);
   const [isInlineEditingActive, setIsInlineEditingActive] = useState(false);
+
+  // Special states for integrated billing header
+  const [billingMonths, setBillingMonths] = useState<any[]>([]);
+  const [currentMonthId, setCurrentMonthId] = useState<string>('');
+  const [isBillingUnlocked, setIsBillingUnlocked] = useState<boolean>(false);
+  const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState<boolean>(false);
   
   const [localActiveTab, setLocalActiveTab] = useState<string>('complaints');
   const [menuUnlocked, setMenuUnlocked] = useState(false);
@@ -148,6 +154,23 @@ export default function Layout({
     };
     window.addEventListener('open-map-for-client', handleOpenMap as EventListener);
     return () => window.removeEventListener('open-map-for-client', handleOpenMap as EventListener);
+  }, []);
+
+  // Listen to billing state updates broadcast from AdminPanel
+  useEffect(() => {
+    const handleBillingStateChanged = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        const { billingMonths: bm, currentMonthId: cm, isBillingUnlocked: bu } = customEvent.detail;
+        if (bm !== undefined) setBillingMonths(bm);
+        if (cm !== undefined) setCurrentMonthId(cm);
+        if (bu !== undefined) setIsBillingUnlocked(bu);
+      }
+    };
+    window.addEventListener('gts-billing-state-changed', handleBillingStateChanged);
+    return () => {
+      window.removeEventListener('gts-billing-state-changed', handleBillingStateChanged);
+    };
   }, []);
 
   // Automatically close sidebar if clicked anywhere outside of the sidebar on the viewport
@@ -405,7 +428,9 @@ export default function Layout({
       label: 'System Settings',
       items: [
         { id: 'settings', label: 'Security', icon: Shield },
-        { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin'] },
+        { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
+        { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
+        { id: 'chat', label: 'AI Help', icon: Sparkles },
         { id: 'branding', label: 'CUSTOMIZATION', icon: Palette, roles: ['super_admin', 'editor'] },
       ]
     }
@@ -495,13 +520,15 @@ export default function Layout({
                 { id: 'map', label: 'Network Map', icon: MapIcon },
                 { id: 'monitor', label: 'Service Monitor', icon: Activity },
                 { id: 'settings', label: 'Security', icon: Shield },
-                { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin'] }
+                { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
+                { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
+                { id: 'chat', label: 'AI Help', icon: Sparkles }
               ];
 
               const permitted = items.filter(item => {
                 if (!user) return false;
                 if (user.role === 'member') {
-                  return ['complaints', 'submit', 'nodes', 'clients', 'settings', 'monitor', 'map'].includes(item.id);
+                  return ['complaints', 'submit', 'nodes', 'clients', 'settings', 'monitor', 'map', 'chat'].includes(item.id);
                 }
                 if (item.roles && !item.roles.includes(user.role)) {
                   return false;
@@ -1130,11 +1157,166 @@ export default function Layout({
         "bg-white/95 dark:bg-slate-950/95 border-slate-200/80 dark:border-slate-900/80"
       )}>
         <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:pr-8 lg:pl-[76px] h-16 flex items-center justify-between">
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2 sm:gap-4 lg:gap-3 ml-0"
-          >
+          {activeTab === 'billing' ? (
+            <div className="flex items-center justify-between w-full h-full">
+              {/* Left Side: Sidebar Toggle + Title/Subtitle */}
+              <div className="flex items-center gap-2 sm:gap-4 lg:gap-3 ml-0">
+                {user && (
+                  <motion.button 
+                    id="sidebar-toggle-btn"
+                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                    className={cn(
+                      "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden w-10 h-10 p-2 shrink-0",
+                      isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500"
+                    )}
+                  >
+                    {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                  </motion.button>
+                )}
+                
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-sm shrink-0">
+                    <FileSpreadsheet size={20} />
+                  </div>
+                  <div className="hidden lg:flex flex-col">
+                    <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-100 leading-none">WiFi Billing & Recovery</h3>
+                    <p className="text-slate-400 font-bold uppercase tracking-widest text-[8px] mt-1 leading-none">Enterprise Recovery Ledger & User Recheck Console</p>
+                  </div>
+                </div>
+
+                {/* Animated Dropdown button for Months selection */}
+                <div className="relative z-50">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => setIsMonthDropdownOpen(!isMonthDropdownOpen)}
+                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800/80 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm cursor-pointer select-none"
+                  >
+                    <FolderOpen size={13} className="text-blue-500" />
+                    <span>{currentMonthId || 'Select Sheet'}</span>
+                    <motion.div
+                      animate={{ rotate: isMonthDropdownOpen ? 180 : 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="inline-flex text-slate-500 dark:text-slate-400"
+                    >
+                      <ChevronDown size={12} />
+                    </motion.div>
+                  </motion.button>
+
+                  <AnimatePresence>
+                    {isMonthDropdownOpen && (
+                      <>
+                        <div className="fixed inset-0 z-30 opacity-0 cursor-default" onClick={() => setIsMonthDropdownOpen(false)} />
+                        <motion.div
+                          initial={{ opacity: 0, y: -10, scaleY: 0.9 }}
+                          animate={{ opacity: 1, y: 0, scaleY: 1 }}
+                          exit={{ opacity: 0, y: -10, scaleY: 0.9 }}
+                          transition={{ type: "spring", stiffness: 450, damping: 25 }}
+                          className="absolute left-0 mt-2 w-60 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl py-2 z-40 overflow-hidden font-sans border-t-4 border-t-blue-500 max-h-72 overflow-y-auto"
+                        >
+                          <div className="px-4 pb-2 mb-1.5 border-b border-slate-100 dark:border-slate-900 text-[8.5px] text-slate-400 font-mono font-black uppercase tracking-widest block">
+                            Billing Recovery Sheets
+                          </div>
+                          {billingMonths.length > 0 ? (
+                            billingMonths.map((m) => {
+                              const isSelected = m.id === currentMonthId;
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => {
+                                    window.dispatchEvent(new CustomEvent('gts-billing-month-selected', { detail: m.id }));
+                                    setIsMonthDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900/40 flex items-center justify-between text-[10px] font-black uppercase tracking-wider transition-colors cursor-pointer",
+                                    isSelected ? "text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/25" : "text-slate-700 dark:text-slate-300"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-blue-500" : "bg-slate-300 dark:bg-slate-700")} />
+                                    <span>{m.id}</span>
+                                  </div>
+                                  {isSelected && <Check size={12} className="text-blue-500" />}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="px-4 py-3 text-[9px] text-slate-400 font-extrabold uppercase tracking-widest text-center">
+                              No Recovery Sheets
+                            </div>
+                          )}
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              {/* Right Side: Primary Actions */}
+              <div className="flex items-center gap-1.5 sm:gap-2.5">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'ledger-vault' }))}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm cursor-pointer select-none"
+                >
+                  <Users size={13} className="text-slate-500 dark:text-slate-400 animate-pulse" />
+                  <span className="hidden sm:inline">User Ledger Vault</span>
+                  <span className="sm:hidden">Vault</span>
+                </motion.button>
+
+                {isBillingUnlocked && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'entry-sheet' }))}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm cursor-pointer select-none"
+                  >
+                    <ClipboardList size={13} className="text-slate-500 dark:text-slate-400" />
+                    <span className="hidden sm:inline">Entry Sheet</span>
+                    <span className="sm:hidden">Entry</span>
+                  </motion.button>
+                )}
+
+                {isBillingUnlocked && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'new-month' }))}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm cursor-pointer select-none"
+                  >
+                    <PlusSquare size={13} className="text-slate-500 dark:text-slate-400" />
+                    <span className="hidden sm:inline">New Month</span>
+                    <span className="sm:hidden">New</span>
+                  </motion.button>
+                )}
+
+                {isBillingUnlocked && currentMonthId && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'purge-sheet' }))}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all border border-rose-100 dark:border-rose-900/20 cursor-pointer"
+                    title="Purge / delete monthly recovery sheets"
+                  >
+                    <Trash2 size={13} />
+                  </motion.button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="flex items-center gap-2 sm:gap-4 lg:gap-3 ml-0"
+              >
             {user && (
               <motion.button 
                 id="sidebar-toggle-btn"
@@ -1620,6 +1802,7 @@ export default function Layout({
               </span>
             </div>
           </div>
+          </>)}
         </div>
       </header>
       )}

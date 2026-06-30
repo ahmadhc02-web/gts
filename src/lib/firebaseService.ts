@@ -460,6 +460,13 @@ export const firebaseService = {
 
   deleteUser: async (uid: string, username: string, authorName: string) => {
     try {
+      // Save user to Recycle Bin first before deleting
+      try {
+        await firebaseService.saveToRecycleBin('users', uid, authorName);
+      } catch (err) {
+        console.error("Error saving user to recycle bin:", err);
+      }
+
       const user = await firebaseService.getUser(uid);
       if (user && user.role === 'dealer') {
         const dealerId = uid;
@@ -775,6 +782,13 @@ export const firebaseService = {
 
   deleteComplaint: async (id: string, customerName: string, authorName: string) => {
     try {
+      // Save to Recycle Bin first
+      try {
+        await firebaseService.saveToRecycleBin('complaints', id, authorName);
+      } catch (err) {
+        console.error("Error saving complaint to recycle bin:", err);
+      }
+
       const { error } = await supabase.from('complaints').delete().eq('id', id);
       if (error) throw error;
       
@@ -1343,6 +1357,35 @@ export const firebaseService = {
 
   deleteClient: async (id: string, clientName: string, authorName: string) => {
     try {
+      // Fetch associated users_data rows before they are deleted, to pass to saveToRecycleBin as extraData
+      let uRows: any[] = [];
+      try {
+        const { data: clientData } = await supabase.from('clients').select('username, name').eq('id', id).maybeSingle();
+        if (clientData) {
+          const clientUsername = clientData.username;
+          const clientRealName = clientData.name;
+          let q = supabase.from('users_data').select('*');
+          if (id) {
+            q = q.eq('client_id', id);
+          } else if (clientUsername) {
+            q = q.eq('username', clientUsername);
+          } else {
+            q = q.eq('name', clientRealName);
+          }
+          const { data: uData } = await q;
+          if (uData) uRows = uData;
+        }
+      } catch (err) {
+        console.error("Error fetching users_data for recycle bin:", err);
+      }
+
+      // Save to Recycle Bin first with uRows as extraData
+      try {
+        await firebaseService.saveToRecycleBin('clients', id, authorName, undefined, uRows);
+      } catch (err) {
+        console.error("Error saving client to recycle bin:", err);
+      }
+
       // 1. Fetch info about the client before deleting, so we can clean up backups/billings
       const { data: clientData } = await supabase
         .from('clients')
@@ -1530,6 +1573,13 @@ export const firebaseService = {
 
   deleteMonitorTarget: async (id: string): Promise<void> => {
     try {
+      // Save monitor target to Recycle Bin first
+      try {
+        await firebaseService.saveToRecycleBin('monitor_targets', id, 'admin');
+      } catch (err) {
+        console.error("Error saving monitor target to recycle bin:", err);
+      }
+
       await supabase.from('monitor_targets').delete().eq('id', id);
       window.dispatchEvent(new CustomEvent('gts-table-updated-monitor_targets'));
     } catch (error) {
@@ -1804,13 +1854,34 @@ export const firebaseService = {
   },
 
   deleteBillingMonth: async (monthId: string, dealerId?: string) => {
-    const docId = dealerId ? `billing_month_${dealerId}_${monthId}` : `billing_month_${monthId}`;
-    await supabase.from('branding_config').delete().eq('id', docId);
-
     try {
+      const docId = dealerId ? `billing_month_${dealerId}_${monthId}` : `billing_month_${monthId}`;
+      
+      // Fetch users_data rows for this month and dealer before they are deleted
+      let uRows: any[] = [];
+      try {
+        const { data: uData } = await supabase
+          .from('users_data')
+          .select('*')
+          .eq('month_id', monthId)
+          .eq('dealer_id', dealerId || 'main');
+        if (uData) uRows = uData;
+      } catch (err) {
+        console.error("Error fetching billing month users_data for recycle bin:", err);
+      }
+
+      // Save billing month config to Recycle Bin first, passing uRows as extraData
+      try {
+        await firebaseService.saveToRecycleBin('branding_config', docId, 'admin', dealerId || 'main', uRows);
+      } catch (err) {
+        console.error("Error saving billing month to recycle bin:", err);
+      }
+
+      await supabase.from('branding_config').delete().eq('id', docId);
+
       await supabase.from('users_data').delete().eq('month_id', monthId).eq('dealer_id', dealerId || 'main');
     } catch (e) {
-      console.error("Failed to delete billing month rows from users_data database table:", e);
+      console.error("deleteBillingMonth error:", e);
     }
   },
 
@@ -2049,6 +2120,13 @@ export const firebaseService = {
 
   deleteLedgerSheet: async (sheetId: string) => {
     try {
+      // Save ledger sheet to Recycle Bin first
+      try {
+        await firebaseService.saveToRecycleBin('ledger_sheets', sheetId, 'admin');
+      } catch (err) {
+        console.error("Error saving ledger sheet to recycle bin:", err);
+      }
+
       await supabase.from('ledger_sheets').delete().eq('id', sheetId);
     } catch (e) {
       console.error("deleteLedgerSheet error:", e);
@@ -2060,6 +2138,213 @@ export const firebaseService = {
       await supabase.from('ledger_sheets').delete().eq('dealer_id', dealerId);
     } catch (e) {
       console.error("terminateAllLedgerSheets error:", e);
+    }
+  },
+
+  // --- Recycle Bin Service Methods ---
+  saveToRecycleBin: async (tableName: string, recordId: string, authorName: string, dealerId?: string, extraData?: any) => {
+    try {
+      // 1. Fetch current row before deleting
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('*')
+        .eq(tableName === 'users' ? 'uid' : 'id', recordId)
+        .maybeSingle();
+
+      if (error || !data) {
+        console.warn(`Could not fetch record from ${tableName} with ID ${recordId} for Recycle Bin`);
+        return;
+      }
+
+      // Convert from DB format to client format using existing fromDb if applicable
+      const recordData = fromDb(tableName, data);
+
+      // 2. Generate a Recycle Bin notification item
+      const id = 'recycle_' + tableName + '_' + recordId + '_' + Date.now();
+      
+      let label = recordId;
+      if (tableName === 'users') {
+        label = recordData.username || recordData.fullName || recordId;
+      } else if (tableName === 'complaints') {
+        label = recordData.customerName || recordId;
+      } else if (tableName === 'clients') {
+        label = recordData.name || recordData.username || recordId;
+      } else if (tableName === 'ledger_sheets') {
+        label = recordData.sheetDate || recordData.recOfficerLabel || recordId;
+      } else if (tableName === 'monitor_targets') {
+        label = recordData.label || recordData.domain || recordId;
+      } else if (tableName === 'branding_config') {
+        // This is used for billing month sheets
+        label = recordData.id.replace('billing_month_', '') || recordId;
+      }
+
+      const dbRow = {
+        id,
+        type: 'recycle_bin',
+        message: `Deleted ${tableName === 'branding_config' ? 'Billing Month' : tableName.toUpperCase().slice(0, -1) || tableName}: ${label}`,
+        author_name: authorName || 'admin',
+        created_at: Date.now(),
+        is_read: false,
+        dealer_id: dealerId || recordData.dealerId || 'main',
+        details: {
+          originalTable: tableName,
+          originalId: recordId,
+          originalData: recordData,
+          extraData: extraData || null,
+          deletedAt: Date.now()
+        }
+      };
+
+      await supabase.from('notifications').insert(dbRow);
+      console.log(`Saved ${tableName} record to Recycle Bin successfully!`);
+      
+      // Dispatch custom events to instantly update UI on current client
+      window.dispatchEvent(new CustomEvent('gts-table-updated-notifications'));
+      window.dispatchEvent(new CustomEvent(`gts-table-updated-${tableName}`));
+    } catch (e) {
+      console.error("saveToRecycleBin error:", e);
+    }
+  },
+
+  restoreFromRecycleBin: async (recycleBinItemId: string) => {
+    try {
+      // 1. Get the recycle bin item from notifications table
+      const { data: item, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('id', recycleBinItemId)
+        .maybeSingle();
+
+      if (error || !item) {
+        throw new Error("Recycle Bin item not found or error fetching");
+      }
+
+      const details = item.details || {};
+      const { originalTable, originalId, originalData, extraData } = details;
+
+      if (!originalTable || !originalId || !originalData) {
+        throw new Error("Invalid Recycle Bin item details");
+      }
+
+      // 2. Restore based on originalTable
+      console.log(`Restoring item of type ${originalTable} with ID ${originalId}...`);
+
+      if (originalTable === 'users') {
+        const dbRow = toDb('users', originalData);
+        await supabase.from('users').upsert(dbRow);
+      } else if (originalTable === 'complaints') {
+        const dbRow = toDb('complaints', originalData);
+        await supabase.from('complaints').upsert(dbRow);
+      } else if (originalTable === 'clients') {
+        const dbRow = toDb('clients', originalData);
+        await supabase.from('clients').upsert(dbRow);
+        
+        // Restore associated users_data if present
+        if (Array.isArray(extraData) && extraData.length > 0) {
+          for (const uRow of extraData) {
+            await supabase.from('users_data').upsert(uRow);
+          }
+        }
+      } else if (originalTable === 'ledger_sheets') {
+        const dbRow = toDb('ledger_sheets', originalData);
+        await supabase.from('ledger_sheets').upsert(dbRow);
+      } else if (originalTable === 'monitor_targets') {
+        const dbRow = toDb('monitor_targets', originalData);
+        await supabase.from('monitor_targets').upsert(dbRow);
+      } else if (originalTable === 'branding_config') {
+        // This is a deleted billing month sheet
+        const dbRow = toDb('branding_config', originalData);
+        await supabase.from('branding_config').upsert(dbRow);
+
+        // Restore associated users_data billing rows if present
+        if (Array.isArray(extraData) && extraData.length > 0) {
+          for (let index = 0; index < extraData.length; index += 50) {
+            const chunk = extraData.slice(index, index + 50);
+            await supabase.from('users_data').upsert(chunk, { onConflict: 'id' });
+          }
+        }
+      }
+
+      // 3. Delete the recycle bin item notification so it is removed from Recycle Bin
+      const { error: deleteError } = await supabase.from('notifications').delete().eq('id', recycleBinItemId);
+      if (deleteError) {
+        console.error("delete error in restore:", deleteError);
+        throw new Error(deleteError.message || "Failed to delete notification item from Recycle Bin");
+      }
+      
+      // Update local cache directly to ensure instant updates in UI
+      try {
+        const cacheKey = 'gts_cache_v3_notifications';
+        const cachedData = localStorage.getItem(cacheKey);
+        if (cachedData) {
+          const parsed = JSON.parse(cachedData);
+          if (Array.isArray(parsed)) {
+            const updated = parsed.filter((n: any) => n.id !== recycleBinItemId);
+            localStorage.setItem(cacheKey, JSON.stringify(updated));
+          }
+        }
+      } catch (cacheErr) {
+        console.warn("Failed to update cache on restore delete:", cacheErr);
+      }
+
+      console.log(`Item successfully restored and removed from Recycle Bin!`);
+      
+      // Dispatch custom events to instantly update UI on current client
+      window.dispatchEvent(new CustomEvent('gts-table-updated-notifications'));
+      if (originalTable) {
+        window.dispatchEvent(new CustomEvent(`gts-table-updated-${originalTable}`));
+      }
+    } catch (e) {
+      console.error("restoreFromRecycleBin error:", e);
+      throw e;
+    }
+  },
+
+  permanentlyDeleteFromRecycleBin: async (recycleBinItemId: string) => {
+    try {
+      if (!recycleBinItemId) {
+        throw new Error("Recycle bin item ID is required for permanent deletion");
+      }
+      const { error } = await supabase.from('notifications').delete().eq('id', recycleBinItemId);
+      if (error) {
+        console.error("permanentlyDeleteFromRecycleBin database error:", error);
+        throw new Error(error.message || "Failed to permanently delete item from Recycle Bin");
+      }
+
+      // Update local cache directly to ensure instant updates in UI
+      try {
+        const cacheKey = 'gts_cache_v3_notifications';
+        const cachedData = localStorage.getItem(cacheKey);
+        if (cachedData) {
+          const parsed = JSON.parse(cachedData);
+          if (Array.isArray(parsed)) {
+            const updated = parsed.filter((n: any) => n.id !== recycleBinItemId);
+            localStorage.setItem(cacheKey, JSON.stringify(updated));
+          }
+        }
+      } catch (cacheErr) {
+        console.warn("Failed to update cache on permanent delete:", cacheErr);
+      }
+
+      // Dispatch custom events to instantly update UI on current client
+      window.dispatchEvent(new CustomEvent('gts-table-updated-notifications'));
+    } catch (e) {
+      console.error("permanentlyDeleteFromRecycleBin error:", e);
+      throw e;
+    }
+  },
+
+  cleanOldRecycleBinItems: async () => {
+    try {
+      const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('type', 'recycle_bin')
+        .lt('created_at', sevenDaysAgo);
+      if (error) console.error("Error during 7-day Recycle Bin cleanup:", error);
+    } catch (e) {
+      console.error("cleanOldRecycleBinItems error:", e);
     }
   }
 };

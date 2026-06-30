@@ -156,6 +156,87 @@ export default function AdminPanel({
   const [uploadedBackupData, setUploadedBackupData] = useState<any | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
+  // --- Recycle Bin state & sync effect ---
+  const [recycleItems, setRecycleItems] = useState<any[]>([]);
+  const [isRecycleLoading, setIsRecycleLoading] = useState(false);
+  const [restoringItemId, setRestoringItemId] = useState<string | null>(null);
+  const [purgingItemId, setPurgingItemId] = useState<string | null>(null);
+  const [expandedRecycleItem, setExpandedRecycleItem] = useState<string | null>(null);
+  const [recycleSearchTerm, setRecycleSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (activeTab === 'recycle_bin') {
+      setIsRecycleLoading(true);
+      // Clean old recycle bin items automatically when opening the recycle bin
+      try {
+        firebaseService.cleanOldRecycleBinItems();
+      } catch (err) {
+        console.error("Cleanup old items error:", err);
+      }
+
+      const unsubscribe = firebaseService.subscribeNotifications((data) => {
+        const items = data.filter(n => n.type === 'recycle_bin');
+        setRecycleItems(items);
+        setIsRecycleLoading(false);
+      }, currentUser.role !== 'super_admin' ? currentUser.dealerId : undefined);
+
+      return () => unsubscribe();
+    }
+  }, [activeTab, currentUser]);
+
+  const handleRestoreItem = async (itemId: string) => {
+    setRestoringItemId(itemId);
+    try {
+      await firebaseService.restoreFromRecycleBin(itemId);
+      toast.success("Item restored successfully!", {
+        description: "The item was safely restored back to its original location.",
+      });
+    } catch (e: any) {
+      toast.error("Failed to restore item", {
+        description: e.message || "An error occurred during restoration.",
+      });
+    } finally {
+      setRestoringItemId(null);
+    }
+  };
+
+  const handlePurgeItem = async (itemId: string) => {
+    if (!window.confirm("Are you absolutely sure you want to permanently delete this item? This action is irreversible and the item will be lost forever!")) {
+      return;
+    }
+    setPurgingItemId(itemId);
+    try {
+      await firebaseService.permanentlyDeleteFromRecycleBin(itemId);
+      toast.success("Item permanently deleted", {
+        description: "The item has been permanently removed from the database.",
+      });
+    } catch (e: any) {
+      toast.error("Failed to permanently delete item", {
+        description: e.message || "An error occurred.",
+      });
+    } finally {
+      setPurgingItemId(null);
+    }
+  };
+
+  const handleEmptyRecycleBin = async () => {
+    if (recycleItems.length === 0) return;
+    if (!window.confirm(`Are you sure you want to permanently delete ALL ${recycleItems.length} items in the Recycle Bin? This action is irreversible!`)) {
+      return;
+    }
+    setIsRecycleLoading(true);
+    try {
+      for (const item of recycleItems) {
+        await firebaseService.permanentlyDeleteFromRecycleBin(item.id);
+      }
+      toast.success("Recycle Bin emptied successfully");
+    } catch (e: any) {
+      toast.error("An error occurred while emptying the Recycle Bin");
+    } finally {
+      setIsRecycleLoading(false);
+    }
+  };
+
   // --- Supabase Client Integration and live Migration Console state ---
   const [supabaseUrl, setSupabaseUrl] = useState(() => localStorage.getItem('gts_supabase_url') || '');
   const [supabaseServiceKey, setSupabaseServiceKey] = useState(() => localStorage.getItem('gts_supabase_service_key') || '');
@@ -687,6 +768,49 @@ export default function AdminPanel({
     }, activeDealerId);
     return () => unsubscribe();
   }, [currentUser, activeDealerId]);
+
+  // Broadcast billing states for header integration in Layout
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('gts-billing-state-changed', {
+      detail: { 
+        billingMonths, 
+        currentMonthId, 
+        isBillingUnlocked 
+      }
+    }));
+  }, [billingMonths, currentMonthId, isBillingUnlocked]);
+
+  // Listen to actions emitted from Layout's custom header
+  useEffect(() => {
+    const handleBillingAction = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const action = customEvent.detail;
+      if (action === 'ledger-vault') {
+        setEntrySheetOpenWithUserLedger(true);
+      } else if (action === 'entry-sheet') {
+        setIsEntrySheetOpen(true);
+      } else if (action === 'new-month') {
+        setIsConfiguringNewMonth(true);
+      } else if (action === 'purge-sheet') {
+        setSheetIdToDelete(currentMonthId || (billingMonths[0]?.id || ''));
+        setIsConfirmingPurge(false);
+        setIsDeleteSheetModalOpen(true);
+      }
+    };
+
+    const handleMonthSelected = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setCurrentMonthId(customEvent.detail);
+    };
+
+    window.addEventListener('gts-billing-action', handleBillingAction);
+    window.addEventListener('gts-billing-month-selected', handleMonthSelected);
+
+    return () => {
+      window.removeEventListener('gts-billing-action', handleBillingAction);
+      window.removeEventListener('gts-billing-month-selected', handleMonthSelected);
+    };
+  }, [currentMonthId, billingMonths]);
 
   // Automatic background synchronization:
   // Detects newly created/updated master clients and automatically incorporates them or updates their details in the active billing sheet
@@ -3393,7 +3517,7 @@ export default function AdminPanel({
         )}
 
         {/* Cloud Sync Tab */}
-        {activeTab === 'integrations' && (currentUser.role === 'super_admin' || currentUser.role === 'admin') && (
+        {activeTab === 'integrations' && (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'dealer' || currentUser.role === 'editor') && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div className={cn("p-8 sm:p-12", getCardStyle(branding.cardStyle))}>
               {window.self !== window.top && !googleTokens && (
@@ -3881,6 +4005,207 @@ export default function AdminPanel({
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'recycle_bin' && (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'dealer' || currentUser.role === 'editor') && (
+          <div className="max-w-6xl mx-auto space-y-6">
+            {/* Header section with Stats & Empty Bin action */}
+            <div className={cn("p-8 sm:p-10 flex flex-col md:flex-row md:items-center justify-between gap-6", getCardStyle(branding.cardStyle))}>
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500">
+                  <Trash2 size={28} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                    GTS Operations Recycle Bin
+                    <span className="px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-500 font-black text-[10px] tracking-wider font-mono">
+                      {recycleItems.length} ITEMS
+                    </span>
+                  </h3>
+                  <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-[9px] mt-1 leading-relaxed">
+                    Auto-purges older than 7 days • Restore back to exact locations seamlessly
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={recycleSearchTerm}
+                    onChange={(e) => setRecycleSearchTerm(e.target.value)}
+                    placeholder="Search deleted items..."
+                    className="pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-rose-500 w-full sm:w-60 font-medium"
+                  />
+                  <span className="absolute left-3 top-3.5 text-slate-400">🔍</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleEmptyRecycleBin}
+                  disabled={recycleItems.length === 0 || isRecycleLoading}
+                  className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:bg-rose-600/30 text-white font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Trash2 size={12} />
+                  Empty Bin
+                </button>
+              </div>
+            </div>
+
+            {/* Main content body */}
+            <div className={cn("p-6 sm:p-8 min-h-[400px]", getCardStyle(branding.cardStyle))}>
+              {isRecycleLoading ? (
+                <div className="flex flex-col items-center justify-center min-h-[300px] gap-3">
+                  <div className="w-10 h-10 border-4 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Syncing Recycle Vault...</span>
+                </div>
+              ) : recycleItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center min-h-[300px] text-center max-w-md mx-auto space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center border border-slate-100 dark:border-slate-800 text-slate-400">
+                    <Trash2 size={24} />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-white">Recycle Vault Empty</h4>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 leading-relaxed">
+                      All purged operational entries, subscriber lines, billing months, and node files are pristine. No pending removals detected.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {recycleItems
+                    .filter(item => {
+                      if (!recycleSearchTerm) return true;
+                      const term = recycleSearchTerm.toLowerCase();
+                      return item.message?.toLowerCase().includes(term) || 
+                             item.author_name?.toLowerCase().includes(term) ||
+                             item.details?.originalTable?.toLowerCase().includes(term);
+                    })
+                    .map((item) => {
+                      const details = item.details || {};
+                      const isExpanded = expandedRecycleItem === item.id;
+                      const deletedAt = details.deletedAt || item.created_at;
+                      const relativeTime = (() => {
+                        const diff = Date.now() - deletedAt;
+                        const mins = Math.floor(diff / 60000);
+                        const hours = Math.floor(mins / 60);
+                        const days = Math.floor(hours / 24);
+                        if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+                        if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+                        if (mins > 0) return `${mins} min${mins > 1 ? 's' : ''} ago`;
+                        return 'just now';
+                      })();
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="border border-slate-100 dark:border-slate-800/80 rounded-2xl overflow-hidden bg-white dark:bg-slate-950/40 hover:border-slate-200 dark:hover:border-slate-800 transition-all shadow-sm"
+                        >
+                          {/* Row Header */}
+                          <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-start gap-4 flex-1">
+                              <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 flex items-center justify-center shrink-0 text-slate-500">
+                                <Trash2 size={18} />
+                              </div>
+                              <div className="space-y-1">
+                                <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest font-mono bg-slate-100 dark:bg-slate-900 text-slate-500">
+                                  {details.originalTable || 'Unknown'}
+                                </span>
+                                <h4 className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight leading-none mt-1">
+                                  {item.message || "Deleted entry"}
+                                </h4>
+                                <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                  <span className="flex items-center gap-1">
+                                    👤 {item.author_name || "admin"}
+                                  </span>
+                                  <span>•</span>
+                                  <span className="flex items-center gap-1">
+                                    📅 {new Date(deletedAt).toLocaleDateString()} {new Date(deletedAt).toLocaleTimeString()}
+                                  </span>
+                                  <span>•</span>
+                                  <span className="text-rose-500 font-black">{relativeTime}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedRecycleItem(isExpanded ? null : item.id)}
+                                className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold text-[10px] uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                              >
+                                {isExpanded ? 'Hide Details' : 'View Details'}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreItem(item.id)}
+                                disabled={restoringItemId !== null}
+                                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-sm cursor-pointer"
+                              >
+                                {restoringItemId === item.id ? 'Restoring...' : 'Restore'}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handlePurgeItem(item.id)}
+                                disabled={purgingItemId !== null}
+                                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-sm cursor-pointer"
+                              >
+                                {purgingItemId === item.id ? 'Purging...' : 'Purge'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Expanded detail box */}
+                          {isExpanded && (
+                            <div className="p-5 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-100 dark:border-slate-800/80 font-mono text-xs text-slate-600 dark:text-slate-300 space-y-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Database Entry Metadata</h5>
+                                  <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 space-y-1 text-[11px]">
+                                    <div><span className="font-bold text-slate-500">ORIGINAL TABLE:</span> {details.originalTable}</div>
+                                    <div><span className="font-bold text-slate-500">ORIGINAL ID:</span> {details.originalId}</div>
+                                    <div><span className="font-bold text-slate-500">DEALER SCOPE:</span> {item.dealer_id}</div>
+                                    <div><span className="font-bold text-slate-500">DELETED AT:</span> {new Date(deletedAt).toLocaleString()}</div>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Purge Schedule</h5>
+                                  <div className="p-3 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-600 dark:text-rose-400 space-y-1 text-[11px] font-semibold">
+                                    <div><span className="font-black">AUTO PURGE DATE:</span> {new Date(deletedAt + (7 * 24 * 60 * 60 * 1000)).toLocaleString()}</div>
+                                    <div className="text-[10px] font-medium leading-relaxed uppercase tracking-wider mt-1.5 text-slate-400">
+                                      This item is securely isolated. To revert all data including billings, click "Restore". To erase completely, click "Purge".
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payload Snapshot</h5>
+                                <pre className="p-4 rounded-xl bg-slate-950 text-emerald-400 text-[10.5px] leading-relaxed border border-slate-900 overflow-x-auto font-mono max-h-64 scrollbar-thin">
+                                  {JSON.stringify(details.originalData, null, 2)}
+                                </pre>
+                              </div>
+
+                              {details.extraData && Array.isArray(details.extraData) && details.extraData.length > 0 && (
+                                <div className="space-y-2">
+                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Associated billing month rows ({details.extraData.length})</h5>
+                                  <pre className="p-4 rounded-xl bg-slate-950 text-amber-400 text-[10.5px] leading-relaxed border border-slate-900 overflow-x-auto font-mono max-h-64 scrollbar-thin">
+                                    {JSON.stringify(details.extraData, null, 2)}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               )}
             </div>
@@ -5998,50 +6323,58 @@ export default function AdminPanel({
                 </div>
 
                 <div className="flex flex-wrap gap-3 items-center">
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => setEntrySheetOpenWithUserLedger(true)}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:opacity-90 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md shadow-indigo-550/20 cursor-pointer"
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all shadow-sm cursor-pointer"
                   >
-                    <Users size={14} />
+                    <Users size={14} className="text-slate-500 dark:text-slate-400" />
                     User Ledger Vault
-                  </button>
+                  </motion.button>
 
                   {isBillingUnlocked && (
-                    <button
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
                       type="button"
                       onClick={() => setIsEntrySheetOpen(true)}
-                      className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-brand-accent hover:opacity-90 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md shadow-brand-accent/20 cursor-pointer"
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all shadow-sm cursor-pointer"
                     >
-                      <ClipboardList size={14} />
+                      <ClipboardList size={14} className="text-slate-500 dark:text-slate-400" />
                       Entry Sheet
-                    </button>
+                    </motion.button>
                   )}
 
                   {isBillingUnlocked && (
                     <>
-                      <button
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                         type="button"
                         onClick={() => setIsConfiguringNewMonth(true)}
-                        className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-sm cursor-pointer"
+                        className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all shadow-sm cursor-pointer"
                       >
-                        <PlusSquare size={14} />
+                        <PlusSquare size={14} className="text-slate-500 dark:text-slate-400" />
                         New Month
-                      </button>
+                      </motion.button>
 
                       {currentMonthId && (
-                        <button
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
                           type="button"
                           onClick={() => {
                             setSheetIdToDelete(currentMonthId || (billingMonths[0]?.id || ''));
                             setIsConfirmingPurge(false);
                             setIsDeleteSheetModalOpen(true);
                           }}
-                          className="inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all active:scale-95 border border-rose-100 dark:border-rose-900/20 cursor-pointer"
+                          className="inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all border border-rose-100 dark:border-rose-900/20 cursor-pointer"
                           title="Purge / delete monthly recovery sheets"
                         >
                           <Trash2 size={14} />
-                        </button>
+                        </motion.button>
                       )}
                     </>
                   )}
@@ -6053,15 +6386,14 @@ export default function AdminPanel({
                       whileTap={{ scale: 0.98 }}
                       type="button"
                       onClick={() => setIsBillingDropdownOpen(!isBillingDropdownOpen)}
-                      className="inline-flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:opacity-95 text-white font-black uppercase tracking-widest text-[10px] transition-all shadow-lg shadow-blue-500/20 cursor-pointer select-none border border-blue-400 relative overflow-hidden"
+                      className="inline-flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all shadow-sm cursor-pointer select-none relative overflow-hidden"
                     >
-                      <span className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-cyan-400 to-blue-400 opacity-70" />
-                      <Layers size={14} className="text-white animate-pulse" />
+                      <Layers size={14} className="text-slate-500 dark:text-slate-400" />
                       <span>Print & CSV Actions</span>
                       <motion.div
                         animate={{ rotate: isBillingDropdownOpen ? 180 : 0 }}
                         transition={{ duration: 0.2, type: "spring", stiffness: 300 }}
-                        className="inline-flex"
+                        className="inline-flex text-slate-500 dark:text-slate-400"
                       >
                         <ChevronDown size={14} />
                       </motion.div>

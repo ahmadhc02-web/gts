@@ -129,7 +129,7 @@ export interface BrandingConfig {
 
 export interface Notification {
   id: string;
-  type: 'complaint_created' | 'complaint_updated' | 'complaint_deleted' | 'client_added' | 'client_updated' | 'client_deleted' | 'config_updated' | 'user_created' | 'user_updated' | 'user_deleted';
+  type: 'complaint_created' | 'complaint_updated' | 'complaint_deleted' | 'client_added' | 'client_updated' | 'client_deleted' | 'config_updated' | 'user_created' | 'user_updated' | 'user_deleted' | 'recycle_bin';
   message: string;
   authorName: string;
   createdAt: number;

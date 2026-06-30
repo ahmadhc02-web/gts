@@ -589,6 +589,13 @@ export default function EntrySheet({
   }, [ledgerHistory, folders, isDealerTied, currentUser?.uid, sheetFolderMap, activeDealerId]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showUserLedger, setShowUserLedger] = useState(initialShowUserLedger);
+
+  useEffect(() => {
+    if (isOpen) {
+      setShowUserLedger(initialShowUserLedger);
+    }
+  }, [isOpen, initialShowUserLedger]);
+
   const [ledgerSearchUser, setLedgerSearchUser] = useState('');
   const [ledgerSelectedFolder, setLedgerSelectedFolder] = useState('all');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
@@ -2048,7 +2055,10 @@ export default function EntrySheet({
         <div className="max-w-5xl mx-auto w-full space-y-6 print:space-y-4">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 print:hidden">
              <div className="flex items-center gap-3">
-               <button onClick={() => setShowUserLedger(false)} className="p-2 bg-slate-200 dark:bg-slate-800 rounded-xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
+               <button onClick={() => {
+                 setShowUserLedger(false);
+                 onClose();
+               }} className="p-2 bg-slate-200 dark:bg-slate-800 rounded-xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
                  <ArrowLeft size={18} />
                </button>
                <h1 className="text-xl font-black uppercase text-slate-900 dark:text-white flex items-center gap-2">
@@ -2310,15 +2320,27 @@ export default function EntrySheet({
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-850 pb-5">
           <div className="text-left">
             <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (openedFolderId) {
+                    setOpenedFolderId(null);
+                  } else {
+                    onClose();
+                  }
+                }}
+                className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors mr-1 flex items-center justify-center cursor-pointer"
+                title="Go Back"
+              >
+                <ArrowLeft size={20} />
+              </button>
               <FolderOpen className="text-blue-500 animate-pulse" size={26} />
               GTS Operational Vault
             </h1>
-            <p className="text-xs text-slate-450 dark:text-slate-400 font-semibold uppercase tracking-wide">
-              {openedFolderId 
-                ? `Exploring database files located in /${activeFolder?.name || 'Volume'}`
-                : "Double-click or tap any directory folder to explore recovery records, build, and organize operation dispatches."
-              }
-            </p>
+            {openedFolderId && (
+              <p className="text-xs text-slate-450 dark:text-slate-400 font-semibold uppercase tracking-wide mt-1">
+                Exploring database files located in /{activeFolder?.name || 'Volume'}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
@@ -2391,14 +2413,6 @@ export default function EntrySheet({
                 </button>
               </form>
             )}
-
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 dark:bg-rose-700 dark:hover:bg-rose-800 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-rose-600/15"
-            >
-              <X size={14} className="stroke-[3]" />
-              Exit Vault
-            </button>
           </div>
         </div>
 
@@ -2426,200 +2440,152 @@ export default function EntrySheet({
 
         {!openedFolderId ? (
           /* ================= ROOT DIRECTORY (PC DESKTOP FOLDERS) ================= */
-          <div className="flex flex-col gap-8 text-left">
-            {/* Enhanced Directory Header resembling a sleek storage utility dashboard */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-200/60 dark:border-slate-800/60">
-              <div>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h2 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-150 flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-550 dark:bg-blue-550 animate-pulse shrink-0" />
-                    Directory System Drive (C:)
-                  </h2>
-                  <span className="text-[9px] bg-blue-550/10 dark:bg-blue-400/10 text-blue-600 dark:text-blue-400 px-2.5 py-0.5 rounded-full font-black uppercase tracking-widest border border-blue-550/20">
-                    STATUS: SECURED
-                  </span>
-                  <button 
-                    onClick={() => setShowUserLedger(true)}
-                    className="ml-auto text-[9px] bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-3 py-1.5 rounded-lg font-black uppercase tracking-widest hover:scale-105 transition-transform flex items-center gap-1.5"
-                  >
-                    <UserPlus size={12} />
-                    User Ledger Vault
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold mt-1.5 uppercase tracking-wider">
-                  GTS ISP LEDGER CONTAINER METRIC SYSTEM • SHIELD COMPLIANT
-                </p>
-              </div>
-
-              {/* Dynamic Storage Space Meter */}
-              <div className="flex flex-col gap-2 min-w-[240px] sm:min-w-[280px] bg-slate-50/55 dark:bg-slate-900/25 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-850/60 shadow-inner backdrop-blur-md">
-                <div className="flex justify-between text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                  <span>Ledger Disk Index</span>
-                  <span className="text-slate-700 dark:text-slate-350">
-                    {folders.length} Volume • {ledgerHistory.length} Sheets
-                  </span>
-                </div>
-                <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden flex">
-                  <div 
-                    className="h-full bg-gradient-to-r from-blue-550 to-indigo-600 rounded-full transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(37,99,235,0.3)]"
-                    style={{ width: `${Math.min(100, Math.max(15, (ledgerHistory.length / 32) * 100))}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-[8px] font-black uppercase text-slate-405 dark:text-slate-500 tracking-widest">
-                  <span>SYSTEM FREELAND COMPLETED</span>
-                  <span>June Vol Lock</span>
-                </div>
-              </div>
-            </div>
-
+          <div className="flex flex-col gap-4 text-left">
             {/* Folders grid styled as real PC drive folder icons */}
-            <div className="flex flex-col gap-3 mt-1">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5 sm:gap-6">
-                {folders.map((folder) => {
-                  const folderSheets = ledgerHistory.filter(sh => sheetFolderMap[sh.id] === folder.id && doesMatchSearch(sh));
-                  return (
-                    <motion.div
-                      key={folder.id}
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      whileHover={{ scale: 1.035, y: -6 }}
-                      transition={{ type: "spring", stiffness: 220, damping: 18 }}
-                      onClick={() => setOpenedFolderId(folder.id)}
-                      className="group cursor-pointer p-5 bg-gradient-to-b from-white to-slate-50/70 dark:from-slate-900/80 dark:to-slate-950/90 border border-slate-205 dark:border-slate-850/70 hover:border-blue-500/40 dark:hover:border-blue-400/35 hover:shadow-[0_20px_45px_rgba(59,130,246,0.06)] rounded-3xl flex flex-col items-center justify-between text-center gap-4 transition-all duration-300 relative overflow-hidden backdrop-blur-md select-none min-h-[195px]"
-                    >
-                      {/* Folder Settings Gear Button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSettingsFolderId(folder.id);
-                        }}
-                        className="absolute top-3 right-3 p-1.5 z-40 bg-slate-200/50 hover:bg-white dark:bg-slate-800/50 dark:hover:bg-slate-700 rounded-full text-slate-500 hover:text-blue-600 transition-colors pointer-events-auto"
-                      >
-                        <Settings size={14} />
-                      </button>
-
-                      {/* Folder PC-style Visual Representation Shape */}
-                      <div className="relative w-24 h-20 flex items-center justify-center shrink-0 mb-1 pointer-events-none perspective-500">
-                        {/* Glowing shadow effect behind folder */}
-                        <div className="absolute inset-2 bg-blue-500/10 blur-xl rounded-full opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all duration-300" />
-
-                        {/* Blue folder back tab (lifts up) */}
-                        <div className="absolute top-0.5 left-2 w-10 h-4 bg-[#1573d8] rounded-t-lg opacity-90 -translate-y-px group-hover:-translate-y-1.5 transition-transform duration-300 ease-out origin-bottom" style={{ clipPath: 'polygon(0% 100%, 10% 0%, 90% 0%, 100% 100%)' }} />
-                        
-                        {/* Main folder back cover (Blue) */}
-                        <div className="absolute top-2 inset-x-2 bottom-0 bg-[#1573d8] rounded-lg group-hover:scale-[1.02] transition-transform duration-300 ease-out shadow-inner" />
-                        
-                        {/* Peeking multiple document sheets inside (animated overlapping slides) */}
-                        {folderSheets.length > 0 ? (
-                          <>
-                            {/* Back document sheet */}
-                            <div className="absolute w-14 h-13 bg-slate-100 dark:bg-slate-800 rounded-md shadow-sm border border-slate-200/50 dark:border-slate-700/60 -top-1.5 left-4.5 rotate-[-8deg] group-hover:-translate-y-5.5 group-hover:rotate-[-16deg] group-hover:scale-105 transition-all duration-300 ease-out flex flex-col gap-1 p-1.5 overflow-hidden">
-                              <div className="w-8 h-1 bg-amber-500/20 dark:bg-blue-500/20 rounded-full" />
-                              <div className="w-10 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
-                              <div className="w-6 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
-                            </div>
-                            {/* Middle document sheet */}
-                            <div className="absolute w-14 h-13 bg-slate-50 dark:bg-slate-850 rounded-md shadow border border-slate-200/60 dark:border-slate-750/60 -top-2 left-6.5 rotate-[4deg] group-hover:-translate-y-7 group-hover:rotate-[14deg] group-hover:scale-105 transition-all duration-310 ease-out flex flex-col gap-1 p-1.5 overflow-hidden z-10">
-                              <div className="w-6 h-1 bg-emerald-500/20 dark:bg-emerald-500/20 rounded-full" />
-                              <div className="w-10 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
-                              <div className="w-8 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
-                            </div>
-                            {/* Frontmost document sheet */}
-                            <div className="absolute w-14 h-13 bg-white dark:bg-slate-900 rounded-md shadow-md border border-slate-250 dark:border-slate-700 -top-2.5 left-5.5 rotate-[-2deg] group-hover:-translate-y-8 group-hover:rotate-[-2deg] group-hover:scale-110 transition-all duration-320 ease-out flex flex-col gap-1.5 p-1.5 overflow-hidden z-15">
-                              <div className="w-9 h-1 bg-blue-500/35 dark:bg-cyan-550/35 rounded-full" />
-                              <div className="w-10 h-0.5 bg-slate-400/25 dark:bg-slate-650/35 rounded-full" />
-                              <div className="w-11 h-0.5 bg-slate-400/25 dark:bg-slate-650/35 rounded-full" />
-                            </div>
-                          </>
-                        ) : (
-                          /* Empty Folder Placement Glow */
-                          <div className="absolute w-12 h-10 bg-transparent border border-dashed border-white/30 rounded-md -top-1 left-6 opacity-0 group-hover:opacity-100 group-hover:-translate-y-4.5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 flex items-center justify-center">
-                            <Plus size={12} className="text-white animate-pulse stroke-[3]" />
-                          </div>
-                        )}
-
-                        {/* Front cover sleeve of folder (Yellow with blue drip) */}
-                        <div className="absolute bottom-1 inset-x-2 h-14 bg-[#ffb81c] rounded-b-lg rounded-t-sm shadow-[0_4px_12px_rgba(0,0,0,0.15)] group-hover:rotate-x-12 group-hover:scale-y-[1.04] group-hover:translate-y-1 transition-all duration-300 z-20 overflow-hidden transform-gpu origin-bottom">
-                          {/* Drip SVG Overlay */}
-                          <svg width="100%" height="24" viewBox="0 0 100 24" preserveAspectRatio="none" className="absolute top-0 left-0 text-[#1573d8] fill-current z-30 pointer-events-none">
-                            <path d="M0,0 L100,0 L100,6 Q95,12 92,6 T85,15 T76,8 T68,16 T58,5 T50,18 T42,8 T32,20 T22,6 T12,14 T0,6 Z" />
-                          </svg>
-
-                          <div className="absolute inset-0 flex items-center justify-center z-40 mt-2">
-                            <div className="px-2 py-0.5 bg-black/10 rounded-md shadow-inner backdrop-blur-sm">
-                              <span className="text-[10px] font-black text-[#855d00] uppercase tracking-widest leading-none">
-                                {folderSheets.length}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Info & Labels */}
-                      <div className="w-full">
-                        <p className="font-extrabold text-slate-800 dark:text-slate-100 truncate text-xs sm:text-[13px] group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-150 leading-tight">
-                          {folder.name}
-                        </p>
-                        
-                        {/* Modern Badge for amount or sheets */}
-                        <div className="mt-3 flex flex-col gap-1 items-center justify-center">
-                          {folderSheets.length > 0 ? (
-                            <>
-                              {/* Display sum of collections if greater than 0 */}
-                              {(() => {
-                                const totalAmount = folderSheets.reduce((sum, sh) => {
-                                  const t1 = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
-                                  return sum + t1;
-                                }, 0);
-                                if (totalAmount > 0) {
-                                  return (
-                                    <span className="text-[9.5px] font-mono font-black text-emerald-600 bg-emerald-500/10 dark:text-emerald-400 dark:bg-emerald-500/5 px-2.5 py-0.5 rounded-full border border-emerald-500/20 shadow-sm select-none">
-                                      Rs. {totalAmount.toLocaleString()}
-                                    </span>
-                                  );
-                                } else {
-                                  return (
-                                    <span className="text-[8px] font-black tracking-widest text-slate-400 dark:text-slate-500 uppercase">
-                                      Empty Folder
-                                    </span>
-                                  );
-                                }
-                              })()}
-                              <span className="text-[8px] font-black text-slate-450 dark:text-slate-500 uppercase tracking-widest mt-1.5 flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                {folderSheets.length} {folderSheets.length === 1 ? 'Sheet' : 'Sheets'} • Active
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-[9px] font-extrabold text-slate-400 bg-slate-100 dark:text-slate-550 dark:bg-slate-905 px-2 py-0.5 rounded-full border border-slate-205 select-none">
-                                No sheets
-                              </span>
-                              <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1.5">
-                                Empty directory
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Quick delete option */}
-                      {folder.id !== 'june_data' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteFolder(folder.id, e);
-                          }}
-                          className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 active:scale-90 shadow-sm border border-transparent hover:border-rose-100 dark:hover:border-rose-900/30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm z-30"
-                          title="Delete Directory"
+            <div className="mt-1">
+              {(() => {
+                const sortedFolders = [...folders].sort((a, b) => {
+                  const timeA = a.createdAt || (a.id.startsWith('folder_') ? parseInt(a.id.split('_')[1]) || 0 : 0);
+                  const timeB = b.createdAt || (b.id.startsWith('folder_') ? parseInt(b.id.split('_')[1]) || 0 : 0);
+                  return timeB - timeA;
+                });
+                return (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
+                    {sortedFolders.map((folder) => {
+                      const folderSheets = ledgerHistory.filter(sh => sheetFolderMap[sh.id] === folder.id && doesMatchSearch(sh));
+                      return (
+                        <motion.div
+                          key={folder.id}
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          whileHover={{ scale: 1.05 }}
+                          transition={{ type: "spring", stiffness: 220, damping: 18 }}
+                          onClick={() => setOpenedFolderId(folder.id)}
+                          className="group cursor-pointer p-3 bg-transparent border-0 shadow-none hover:bg-slate-100/50 dark:hover:bg-slate-850/30 rounded-2xl flex flex-col items-center justify-start text-center gap-1.5 transition-all duration-300 relative select-none min-h-[170px]"
                         >
-                          <Trash2 size={12} className="stroke-[2.5]" />
-                        </button>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
+                          {/* Folder Settings Gear Button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSettingsFolderId(folder.id);
+                            }}
+                            className="absolute top-2 right-2 p-1.5 z-40 bg-white/90 dark:bg-slate-800/90 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full text-slate-500 hover:text-blue-600 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto cursor-pointer border border-slate-200 dark:border-slate-700"
+                          >
+                            <Settings size={12} />
+                          </button>
+
+                          {/* Folder PC-style Visual Representation Shape */}
+                          <div className="relative w-28 h-18 flex items-center justify-center shrink-0 pointer-events-none perspective-500">
+                            {/* Glowing shadow effect behind folder */}
+                            <div className="absolute inset-2 bg-amber-500/10 blur-xl rounded-full opacity-0 group-hover:opacity-100 group-hover:scale-125 transition-all duration-300" />
+
+                            {/* Gold folder back tab (lifts up) */}
+                            <div className="absolute top-0.5 left-2.5 w-11 h-4.5 bg-[#e29302] rounded-t-lg opacity-90 -translate-y-px group-hover:-translate-y-1.5 transition-transform duration-300 ease-out origin-bottom" style={{ clipPath: 'polygon(0% 100%, 10% 0%, 90% 0%, 100% 100%)' }} />
+                            
+                            {/* Main folder back cover (Amber-gold) */}
+                            <div className="absolute top-2 inset-x-2.5 bottom-0 bg-[#e29302] rounded-lg group-hover:scale-[1.02] transition-transform duration-300 ease-out shadow-inner" />
+                            
+                            {/* Peeking multiple document sheets inside (animated overlapping slides) */}
+                            {folderSheets.length > 0 ? (
+                              <>
+                                {/* Back document sheet */}
+                                <div className="absolute w-16 h-14 bg-slate-100 dark:bg-slate-800 rounded-md shadow-sm border border-slate-200/50 dark:border-slate-700/60 -top-1.5 left-5 rotate-[-8deg] group-hover:-translate-y-5.5 group-hover:rotate-[-16deg] group-hover:scale-105 transition-all duration-300 ease-out flex flex-col gap-1 p-1.5 overflow-hidden">
+                                  <div className="w-9 h-1 bg-amber-500/20 dark:bg-blue-500/20 rounded-full" />
+                                  <div className="w-11 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
+                                  <div className="w-7 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
+                                </div>
+                                {/* Middle document sheet */}
+                                <div className="absolute w-16 h-14 bg-slate-50 dark:bg-slate-850 rounded-md shadow border border-slate-200/60 dark:border-slate-750/60 -top-2 left-7 rotate-[4deg] group-hover:-translate-y-7 group-hover:rotate-[14deg] group-hover:scale-105 transition-all duration-310 ease-out flex flex-col gap-1 p-1.5 overflow-hidden z-10">
+                                  <div className="w-7 h-1 bg-emerald-500/20 dark:bg-emerald-500/20 rounded-full" />
+                                  <div className="w-11 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
+                                  <div className="w-9 h-0.5 bg-slate-300/40 dark:bg-slate-700/40 rounded-full" />
+                                </div>
+                                {/* Frontmost document sheet */}
+                                <div className="absolute w-16 h-14 bg-white dark:bg-slate-900 rounded-md shadow-md border border-slate-250 dark:border-slate-700 -top-2.5 left-6 rotate-[-2deg] group-hover:-translate-y-8 group-hover:rotate-[-2deg] group-hover:scale-110 transition-all duration-320 ease-out flex flex-col gap-1.5 p-1.5 overflow-hidden z-15">
+                                  <div className="w-10 h-1 bg-blue-500/35 dark:bg-cyan-550/35 rounded-full" />
+                                  <div className="w-11 h-0.5 bg-slate-400/25 dark:bg-slate-650/35 rounded-full" />
+                                  <div className="w-12 h-0.5 bg-slate-400/25 dark:bg-slate-650/35 rounded-full" />
+                                </div>
+                              </>
+                            ) : (
+                              /* Empty Folder Placement Glow */
+                              <div className="absolute w-14 h-11 bg-transparent border border-dashed border-amber-500/40 rounded-md -top-1 left-7 opacity-0 group-hover:opacity-100 group-hover:-translate-y-4.5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 flex items-center justify-center">
+                                <Plus size={12} className="text-amber-600 animate-pulse stroke-[3]" />
+                              </div>
+                            )}
+
+                            {/* Front cover sleeve of folder (Golden yellow matching the pic) */}
+                            <div className="absolute bottom-1 inset-x-2.5 h-12 bg-gradient-to-b from-[#ffca28] to-[#ffb300] dark:from-[#ffca28] dark:to-[#ffa000] rounded-b-lg rounded-t-sm shadow-[0_4px_12px_rgba(0,0,0,0.15)] group-hover:rotate-x-12 group-hover:scale-y-[1.04] group-hover:translate-y-1 transition-all duration-300 z-20 overflow-hidden transform-gpu origin-bottom">
+                              <div className="absolute inset-0 flex items-center justify-center z-40 mt-1">
+                                <div className="px-1.5 py-0.5 bg-black/10 rounded-md shadow-inner backdrop-blur-sm">
+                                  <span className="text-[9px] font-black text-[#5d4037] dark:text-[#ffecb3] uppercase tracking-widest leading-none">
+                                    {folderSheets.length}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Info & Labels (details folder ke nichy show ho) */}
+                          <div className="w-full text-center mt-1">
+                            <p className="font-extrabold text-slate-800 dark:text-slate-100 truncate text-xs sm:text-[13px] group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-150 leading-tight">
+                              {folder.name}
+                            </p>
+                            
+                            {/* Modern Badge for amount or sheets */}
+                            <div className="mt-1 flex flex-col gap-0.5 items-center justify-center">
+                              {folderSheets.length > 0 ? (
+                                <>
+                                  {(() => {
+                                    const totalAmount = folderSheets.reduce((sum, sh) => {
+                                      const t1 = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
+                                      return sum + t1;
+                                    }, 0);
+                                    if (totalAmount > 0) {
+                                      return (
+                                        <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 select-none">
+                                          Rs. {totalAmount.toLocaleString()}
+                                        </span>
+                                      );
+                                    } else {
+                                      return (
+                                        <span className="text-[8px] font-black tracking-widest text-slate-400 dark:text-slate-550 uppercase">
+                                          Empty Folder
+                                        </span>
+                                      );
+                                    }
+                                  })()}
+                                  <span className="text-[9px] font-semibold text-slate-450 dark:text-slate-500 uppercase tracking-wider">
+                                    {folderSheets.length} {folderSheets.length === 1 ? 'Sheet' : 'Sheets'}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                  No sheets
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Quick delete option */}
+                          {folder.id !== 'june_data' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteFolder(folder.id, e);
+                              }}
+                              className="absolute top-2 left-2 p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 active:scale-90 shadow-sm border border-transparent hover:border-rose-100 dark:hover:border-rose-900/30 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm z-30"
+                              title="Delete Directory"
+                            >
+                              <Trash2 size={12} className="stroke-[2.5]" />
+                            </button>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               {folders.length === 0 && (
                 <div className="flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 text-center min-h-[200px] mt-2">
                   <FolderPlus size={32} className="text-blue-550 dark:text-blue-400 mb-3 animate-bounce" />

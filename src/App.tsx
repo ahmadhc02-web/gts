@@ -887,9 +887,10 @@ export default function App() {
     let lastNotificationId = '';
 
     const unsubscribe = firebaseService.subscribeNotifications((data) => {
-      setNotifications(data);
-      if (data.length > 0) {
-        const latest = data[0]; // notifications are descending
+      const regularNotifications = data.filter(n => n.type !== 'recycle_bin');
+      setNotifications(regularNotifications);
+      if (regularNotifications.length > 0) {
+        const latest = regularNotifications[0]; // notifications are descending
         
         // Only notify if not self and after initial load
         if (!isInitialLoad && latest.id !== lastNotificationId && latest.authorName !== user.username) {
@@ -943,6 +944,8 @@ export default function App() {
         }
         
         lastNotificationId = latest.id;
+        isInitialLoad = false;
+      } else {
         isInitialLoad = false;
       }
     }, tenantId);

@@ -6,7 +6,7 @@ import {
   Layers, Sliders, Settings2, Shield, User as UserIcon, Bell, MessageSquare, Type,
   Contact, ClipboardList, MapPin, Key, Phone, Package, MapPinned, ShieldAlert, Activity, FileSpreadsheet,
   TrendingUp, Users, CheckCircle2, Clock, ExternalLink, RotateCcw, Undo2, Redo2,
-  Flame, BarChart3, PlusSquare, Map as MapIcon, Settings, CloudUpload, CreditCard
+  Flame, BarChart3, PlusSquare, Map as MapIcon, Settings, CloudUpload, CreditCard, Trash2
 } from 'lucide-react';
 import { BrandingConfig, UserProfile, Notification } from '../types';
 import { cn } from '../lib/utils';
@@ -1025,7 +1025,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                     const allOpts = [
                       'complaints', 'nodes', 'dealers_data', 'submit', 'map', 
                       'clients', 'top10', 'users', 'dealers', 'config', 
-                      'settings', 'integrations', 'branding', 'billing', 'chat', 'monitor'
+                      'settings', 'integrations', 'branding', 'billing', 'chat', 'monitor', 'recycle_bin'
                     ];
                     const activeCount = allOpts.filter(id => !(config.hiddenTabs || []).includes(id)).length;
                     const isAtLimit = activeCount >= 12;
@@ -1062,6 +1062,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                     { id: 'settings', label: 'Security & Access Protocol', category: 'System Settings', icon: Shield },
                     { id: 'integrations', label: 'Google Sheets Integration', category: 'System Settings', icon: CloudUpload },
                     { id: 'branding', label: 'Design Customization Desk', category: 'System Settings', icon: Palette },
+                    { id: 'recycle_bin', label: 'Recycle Bin System', category: 'System Settings', icon: Trash2 },
                     { id: 'billing', label: 'Billing Mod / Billing Desk', category: 'Quick Actions & Extras', icon: CreditCard },
                     { id: 'chat', label: 'AI Help Chat Quick Action', category: 'Quick Actions & Extras', icon: MessageSquare },
                     { id: 'monitor', label: 'Monitor Quick Action', category: 'Quick Actions & Extras', icon: Activity },
@@ -1070,7 +1071,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                     const allOpts = [
                       'complaints', 'nodes', 'dealers_data', 'submit', 'map', 
                       'clients', 'top10', 'users', 'dealers', 'config', 
-                      'settings', 'integrations', 'branding', 'billing', 'chat', 'monitor'
+                      'settings', 'integrations', 'branding', 'billing', 'chat', 'monitor', 'recycle_bin'
                     ];
                     const activeCount = allOpts.filter(id => !(config.hiddenTabs || []).includes(id)).length;
 
