@@ -23,6 +23,7 @@ interface EntrySheetProps {
   isBillingUnlocked?: boolean;
   appConfig?: any;
   billingMonths?: any[];
+  initialShowUserLedger?: boolean;
 }
 
 interface Table1Row {
@@ -53,7 +54,8 @@ export default function EntrySheet({
   currentMonthId,
   isBillingUnlocked,
   appConfig,
-  billingMonths = []
+  billingMonths = [],
+  initialShowUserLedger = false
 }: EntrySheetProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
@@ -67,38 +69,120 @@ export default function EntrySheet({
 
   // Scoped folders loading on user change
   useEffect(() => {
-    const scopeId = activeDealerId || currentUser?.uid || 'main';
-    const suffix = `_${scopeId}`;
-    const foldersKey = `gts_ledger_folders${suffix}`;
-    const sheetFoldersKey = `gts_ledger_sheet_folders${suffix}`;
+    // Expose migration to window
+    (window as any).runMigration = async () => {
+      console.log("Running migration...");
+      await firebaseService.runOneTimeJulyMigration();
+      console.log("Migration done");
+      window.location.reload();
+    };
 
-    const savedFolders = localStorage.getItem(foldersKey);
-    let parsedFolders = isDealerTied ? [] : [
-      { id: 'june_data', name: 'June Data', createdAt: Date.now() }
-    ];
-    if (savedFolders) {
-      try {
-        const parsed = JSON.parse(savedFolders);
-        if (parsed && parsed.length > 0) {
-          parsedFolders = parsed;
+    if (!localStorage.getItem('july_migration_done_v3')) {
+      firebaseService.runOneTimeJulyMigration().then(() => {
+        localStorage.setItem('july_migration_done_v3', 'true');
+      });
+    }
+
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    const originalSuffix = `_${originalScopeId}`;
+    const foldersKey = `gts_ledger_folders${originalSuffix}`;
+    const sheetFoldersKey = `gts_ledger_sheet_folders${originalSuffix}`;
+
+    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+    
+    // Subscribe to Folders
+    const unsubFolders = firebaseService.subscribeLedgerFolders((data) => {
+      setFolders(prev => {
+        let mergedFolders = data && data.length > 0 ? [...data] : [];
+        let didMerge = false;
+        
+        // Ensure local folders aren't lost due to realtime race conditions
+        prev.forEach(pf => {
+          if (!mergedFolders.find(mf => mf.id === pf.id)) {
+            mergedFolders.push(pf);
+            didMerge = true;
+          }
+        });
+
+        const migrationFlag = `migrated_local_folders_${scopeId || 'main'}`;
+        if (!localStorage.getItem(migrationFlag)) {
+          const savedFolders = localStorage.getItem(foldersKey);
+          if (savedFolders) {
+            try {
+              const parsed = JSON.parse(savedFolders);
+              if (parsed && Array.isArray(parsed)) {
+                parsed.forEach(pf => {
+                  if (!mergedFolders.find(mf => mf.id === pf.id || mf.name.toLowerCase() === pf.name.toLowerCase())) {
+                    mergedFolders.push(pf);
+                    didMerge = true;
+                  }
+                });
+              }
+            } catch (e) { console.error("Migration parse error", e); }
+          }
+          localStorage.setItem(migrationFlag, 'true');
         }
-      } catch (e) {
-        console.error("Failed to load user-scoped folders:", e);
-      }
-    }
-    setFolders(parsedFolders);
 
-    const savedMap = localStorage.getItem(sheetFoldersKey);
-    let parsedMap = {};
-    if (savedMap) {
-      try {
-        parsedMap = JSON.parse(savedMap);
-      } catch (e) {
-        console.error("Failed to load user-scoped sheet folders map:", e);
-      }
-    }
-    setSheetFolderMap(parsedMap);
-  }, [currentUser?.uid, activeDealerId]);
+        if (mergedFolders.length === 0) {
+          mergedFolders = isDealerTied ? [] : [{ id: 'june_data', name: 'June Data', createdAt: Date.now() }];
+          didMerge = true;
+        }
+        
+        if (didMerge) {
+          firebaseService.updateLedgerFolders(mergedFolders, scopeId).catch(console.error);
+        }
+        return mergedFolders;
+      });
+    }, scopeId);
+
+    // Subscribe to Sheet Folder Map
+    const unsubMap = firebaseService.subscribeLedgerSheetFolderMap((data) => {
+      setSheetFolderMap(prev => {
+        let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
+        let didMerge = false;
+        
+        // Ensure local map changes aren't lost due to realtime race conditions
+        Object.keys(prev).forEach(k => {
+          if (!mergedMap[k] || (mergedMap[k] !== prev[k] && typeof mergedMap[k] !== 'undefined')) {
+            // Keep the local mapping if it was recently modified (we prefer prev[k] if there's a conflict just in case, but let's just keep missing ones for safety)
+            if (!mergedMap[k]) {
+              mergedMap[k] = prev[k];
+              didMerge = true;
+            }
+          }
+        });
+
+        const migrationFlag = `migrated_local_map_${scopeId || 'main'}`;
+        if (!localStorage.getItem(migrationFlag)) {
+          const savedMap = localStorage.getItem(sheetFoldersKey);
+          if (savedMap) {
+            try {
+              const parsed = JSON.parse(savedMap);
+              if (parsed && typeof parsed === 'object') {
+                Object.keys(parsed).forEach(k => {
+                  if (!mergedMap[k]) {
+                    mergedMap[k] = parsed[k];
+                    didMerge = true;
+                  }
+                });
+              }
+            } catch (e) { console.error("Migration map parse error", e); }
+          }
+          localStorage.setItem(migrationFlag, 'true');
+        }
+
+        if (didMerge) {
+          firebaseService.updateLedgerSheetFolderMap(mergedMap, scopeId).catch(console.error);
+        }
+        return mergedMap;
+      });
+    }, scopeId);
+
+    return () => {
+      unsubFolders();
+      unsubMap();
+    };
+  }, [currentUser?.uid, activeDealerId, isDealerTied]);
 
   // Folder UI inputs
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
@@ -162,19 +246,19 @@ export default function EntrySheet({
     }
   }, [isOpen]);
 
-  // Auto save folders
-  useEffect(() => {
-    if (!folders || folders.length === 0) return;
-    const scopeId = activeDealerId || currentUser?.uid || 'main';
-    const suffix = `_${scopeId}`;
-    localStorage.setItem(`gts_ledger_folders${suffix}`, JSON.stringify(folders));
-  }, [folders, currentUser?.uid, activeDealerId]);
+  // --- Auto Save Hooks Removed to Prevent Realtime Sync Loops ---
+  
+  // Use these wrappers for local changes to push immediately to DB
+  const saveFoldersToDb = async (newFolders: any[]) => {
+    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+    await firebaseService.updateLedgerFolders(newFolders, scopeId);
+  };
 
-  useEffect(() => {
-    const scopeId = activeDealerId || currentUser?.uid || 'main';
-    const suffix = `_${scopeId}`;
-    localStorage.setItem(`gts_ledger_sheet_folders${suffix}`, JSON.stringify(sheetFolderMap));
-  }, [sheetFolderMap, currentUser?.uid, activeDealerId]);
+  const saveMapToDb = async (newMap: Record<string, string>) => {
+    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+    await firebaseService.updateLedgerSheetFolderMap(newMap, scopeId);
+  };
+
 
   const handleCreateFolder = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -192,7 +276,9 @@ export default function EntrySheet({
       name: cleanName,
       createdAt: Date.now()
     };
-    setFolders(prev => [...prev, nFolder]);
+    const newFolders = [...folders, nFolder];
+    setFolders(newFolders);
+    saveFoldersToDb(newFolders);
     setNewFolderNameInput('');
     setIsCreatingFolder(false);
     toast.success(`📁 Folder "${cleanName}" created successfully!`);
@@ -207,7 +293,10 @@ export default function EntrySheet({
     const conf = window.confirm("Are you sure you want to delete this folder? Sheets inside will become Uncategorized.");
     if (!conf) return;
 
-    setFolders(prev => prev.filter(f => f.id !== folderId));
+    const newFolders = folders.filter(f => f.id !== folderId);
+    setFolders(newFolders);
+    saveFoldersToDb(newFolders);
+    
     setSheetFolderMap(prev => {
       const next = { ...prev };
       Object.keys(next).forEach(sheetId => {
@@ -215,6 +304,7 @@ export default function EntrySheet({
           delete next[sheetId];
         }
       });
+      saveMapToDb(next);
       return next;
     });
     toast.success("Folder deleted");
@@ -298,10 +388,12 @@ export default function EntrySheet({
     }, 50);
 
     // Map sheet id
-    setSheetFolderMap(prev => ({
-      ...prev,
+    const newMap = {
+      ...sheetFolderMap,
       [newSheetId]: folderId
-    }));
+    };
+    setSheetFolderMap(newMap);
+    saveMapToDb(newMap);
 
     setActiveView('editor');
     toast.success("📄 Created empty sheet inside selected folder! Let's fill it.");
@@ -463,7 +555,7 @@ export default function EntrySheet({
     }
     
     // Check if migration already ran
-    const migrationKey = `gts_june_data_migrated_v6_${currentUser?.uid || 'main'}`;
+    const migrationKey = `gts_june_data_migrated_v8_${currentUser?.uid || 'main'}`;
     if (localStorage.getItem(migrationKey)) {
       return;
     }
@@ -472,15 +564,18 @@ export default function EntrySheet({
     
     // Ensure juneFolder is in folders
     if (!folders.some(f => f.id === juneFolder.id)) {
-      setFolders(prev => [...prev, juneFolder]);
+      const newFolders = [...folders, juneFolder];
+      setFolders(newFolders);
+      saveFoldersToDb(newFolders);
     }
 
-    // Map all current sheets from ledgerHistory into the june_data folder
+    // Map uncategorized sheets from ledgerHistory into the june_data folder
     let mapChanged = false;
     const nextMap = { ...sheetFolderMap };
     
     ledgerHistory.forEach(sh => {
-      if (nextMap[sh.id] !== juneFolder.id) {
+      // Only map it if it's not currently mapped to ANY folder
+      if (!nextMap[sh.id]) {
         nextMap[sh.id] = juneFolder.id;
         mapChanged = true;
       }
@@ -488,15 +583,12 @@ export default function EntrySheet({
 
     if (mapChanged) {
       setSheetFolderMap(nextMap);
-      // Immediately save to local storage
-      const scopeId = activeDealerId || currentUser?.uid || 'main';
-      const suffix = `_${scopeId}`;
-      localStorage.setItem(`gts_ledger_sheet_folders${suffix}`, JSON.stringify(nextMap));
+      saveMapToDb(nextMap).catch(console.error);
     }
     localStorage.setItem(migrationKey, 'true');
   }, [ledgerHistory, folders, isDealerTied, currentUser?.uid, sheetFolderMap, activeDealerId]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
-  const [showUserLedger, setShowUserLedger] = useState(false);
+  const [showUserLedger, setShowUserLedger] = useState(initialShowUserLedger);
   const [ledgerSearchUser, setLedgerSearchUser] = useState('');
   const [ledgerSelectedFolder, setLedgerSelectedFolder] = useState('all');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
@@ -1211,20 +1303,18 @@ export default function EntrySheet({
           }
 
           // Map new generated Firestore ID to sheetFolderMap
-          if (savedDoc.id && !isCurrentlyLoadedSheet && loadedSheetId) {
-            const mappedFolder = sheetFolderMap[loadedSheetId];
-            if (mappedFolder) {
-              setSheetFolderMap(prev => {
-                const updated = { ...prev };
-                updated[savedDoc.id] = mappedFolder;
-                delete updated[loadedSheetId];
-                return updated;
-              });
+          const targetFolderId = savedDoc.id ? (sheetFolderMap[savedDoc.id] || (loadedSheetId ? sheetFolderMap[loadedSheetId] : null) || openedFolderId) : openedFolderId;
+          
+          if (savedDoc.id && targetFolderId) {
+            const updated = { ...sheetFolderMap };
+            updated[savedDoc.id] = targetFolderId;
+            if (!isCurrentlyLoadedSheet && loadedSheetId) {
+              delete updated[loadedSheetId];
             }
+            setSheetFolderMap(updated);
+            saveMapToDb(updated);
           }
 
-          // Auto-update matched master clients inside the currently active/selected billing month
-          const targetFolderId = savedDoc.id ? (sheetFolderMap[savedDoc.id] || loadedSheetId ? sheetFolderMap[loadedSheetId!] : openedFolderId) : openedFolderId;
           const folderObj = folders.find(f => f.id === targetFolderId);
           const targetMonthId = folderObj?.connectedMonthId;
 
@@ -2616,10 +2706,9 @@ export default function EntrySheet({
                               onChange={(e) => {
                                 const destId = e.target.value;
                                 if (destId) {
-                                  setSheetFolderMap(prev => ({
-                                    ...prev,
-                                    [sh.id]: destId
-                                  }));
+                                  const newMap = { ...sheetFolderMap, [sh.id]: destId };
+                                  setSheetFolderMap(newMap);
+                                  saveMapToDb(newMap);
                                   toast.success(`Organized sheet into ${folders.find(f => f.id === destId)?.name}`);
                                 }
                               }}
@@ -2752,10 +2841,9 @@ export default function EntrySheet({
                           value={activeFolder.id}
                           onChange={(e) => {
                             const destId = e.target.value;
-                            setSheetFolderMap(prev => ({
-                              ...prev,
-                              [sh.id]: destId
-                            }));
+                            const newMap = { ...sheetFolderMap, [sh.id]: destId };
+                            setSheetFolderMap(newMap);
+                            saveMapToDb(newMap);
                             toast.success(`Moved sheet to ${folders.find(f => f.id === destId)?.name || 'folder'}`);
                           }}
                           className="py-1 px-2 border border-slate-205 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 text-[9px] font-black uppercase text-slate-500 cursor-pointer outline-none focus:ring-1 focus:ring-blue-500 transition-shadow shrink-0"
@@ -4781,7 +4869,9 @@ export default function EntrySheet({
                     value={folders.find(f => f.id === settingsFolderId)?.connectedMonthId || ''}
                     onChange={(e) => {
                       const newMonthId = e.target.value;
-                      setFolders(prev => prev.map(f => f.id === settingsFolderId ? { ...f, connectedMonthId: newMonthId } : f));
+                      const newFolders = folders.map(f => f.id === settingsFolderId ? { ...f, connectedMonthId: newMonthId } : f);
+                      setFolders(newFolders);
+                      saveFoldersToDb(newFolders);
                       toast.success(newMonthId ? "Folder connected to Recovery Sheet!" : "Folder disconnected.");
                     }}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500"

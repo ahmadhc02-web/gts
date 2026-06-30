@@ -1862,6 +1862,157 @@ export const firebaseService = {
     await supabase.from('branding_config').upsert(payload);
   },
 
+  // --- Ledger Folders Sync ---
+  subscribeLedgerFolders: (callback: (folders: any[]) => void, dealerId?: string) => {
+    const docId = dealerId ? `ledger_folders_${dealerId}` : 'ledger_folders_main';
+    
+    const fetchFolders = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('branding_config')
+          .select('*')
+          .eq('id', docId)
+          .maybeSingle();
+        if (!error && data && data.dashboard_subtext) {
+          callback(JSON.parse(data.dashboard_subtext));
+        } else {
+          callback([]); // Empty array if no folders exist yet
+        }
+      } catch (e) {
+        console.error("Ledger folders fetch failed:", e);
+      }
+    };
+
+    fetchFolders();
+
+    const channelId = `ledger_folders_${docId}_${Math.random().toString(36).substring(2, 11)}`;
+    const channel = supabase
+      .channel(channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: `id=eq.${docId}` }, () => {
+        fetchFolders();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  updateLedgerFolders: async (folders: any[], dealerId?: string) => {
+    const docId = dealerId ? `ledger_folders_${dealerId}` : 'ledger_folders_main';
+    const payload = {
+      id: docId,
+      dashboard_subtext: JSON.stringify(folders),
+      updated_at: Date.now()
+    };
+    await supabase.from('branding_config').upsert(payload);
+  },
+
+  subscribeLedgerSheetFolderMap: (callback: (map: Record<string, string>) => void, dealerId?: string) => {
+    const docId = dealerId ? `ledger_sheet_map_${dealerId}` : 'ledger_sheet_map_main';
+    
+    const fetchMap = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('branding_config')
+          .select('*')
+          .eq('id', docId)
+          .maybeSingle();
+        if (!error && data && data.dashboard_subtext) {
+          callback(JSON.parse(data.dashboard_subtext));
+        } else {
+          callback({});
+        }
+      } catch (e) {
+        console.error("Ledger sheet map fetch failed:", e);
+      }
+    };
+
+    fetchMap();
+
+    const channelId = `ledger_sheet_map_${docId}_${Math.random().toString(36).substring(2, 11)}`;
+    const channel = supabase
+      .channel(channelId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: `id=eq.${docId}` }, () => {
+        fetchMap();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  updateLedgerSheetFolderMap: async (map: Record<string, string>, dealerId?: string) => {
+    const docId = dealerId ? `ledger_sheet_map_${dealerId}` : 'ledger_sheet_map_main';
+    const payload = {
+      id: docId,
+      dashboard_subtext: JSON.stringify(map),
+      updated_at: Date.now()
+    };
+    await supabase.from('branding_config').upsert(payload);
+  },
+
+  runOneTimeJulyMigration: async () => {
+    try {
+      const docIdFolders = 'ledger_folders_main';
+      const docIdMap = 'ledger_sheet_map_main';
+      
+      const { data: sheets } = await supabase.from('ledger_sheets').select('id, data');
+      const { data: mapData } = await supabase.from('branding_config').select('id, dashboard_subtext').eq('id', docIdMap).maybeSingle();
+      const { data: foldersData } = await supabase.from('branding_config').select('id, dashboard_subtext').eq('id', docIdFolders).maybeSingle();
+
+      let map = mapData && mapData.dashboard_subtext ? JSON.parse(mapData.dashboard_subtext) : {};
+      let folders = foldersData && foldersData.dashboard_subtext ? JSON.parse(foldersData.dashboard_subtext) : [];
+      
+      if (!Array.isArray(folders)) folders = [];
+      if (folders.length === 0) {
+          folders = [{ id: 'june_data', name: 'June Data', createdAt: Date.now() }];
+      }
+
+      let julyFolder = folders.find((f: any) => f.name.toLowerCase().includes('july'));
+      if (!julyFolder) {
+          julyFolder = { id: `folder_${Date.now()}_july`, name: '1 July Data', createdAt: Date.now() };
+          folders.push(julyFolder);
+      }
+
+      let juneFolder = folders.find((f: any) => f.name.toLowerCase().includes('june') || f.id === 'june_data');
+      if (!juneFolder) {
+          juneFolder = { id: 'june_data', name: 'June Data', createdAt: Date.now() };
+          folders.push(juneFolder);
+      }
+
+      if (sheets) {
+        sheets.forEach((s: any) => {
+          // Map to June or July ONLY if it is currently unmapped!
+          if (!map[s.id]) {
+            const sheetDate = (s.data?.sheetDate || '').toLowerCase();
+            if (sheetDate.includes('jul') || sheetDate.includes('07 -') || sheetDate.includes('july')) {
+                map[s.id] = julyFolder.id;
+            } else {
+                map[s.id] = juneFolder.id;
+            }
+          }
+        });
+      }
+
+      await supabase.from('branding_config').upsert({
+          id: docIdMap,
+          dashboard_subtext: JSON.stringify(map),
+          updated_at: Date.now()
+      });
+
+      await supabase.from('branding_config').upsert({
+          id: docIdFolders,
+          dashboard_subtext: JSON.stringify(folders),
+          updated_at: Date.now()
+      });
+      console.log("Completed one-time July migration successfully.");
+    } catch (e) {
+      console.error("Migration failed:", e);
+    }
+  },
+
   // --- Recovery Ledger Sheets ---
   saveLedgerSheet: async (sheet: any) => {
     try {

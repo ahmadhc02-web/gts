@@ -422,6 +422,7 @@ export default function AdminPanel({
   const [billingPage, setBillingPage] = useState(1);
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
+  const [entrySheetOpenWithUserLedger, setEntrySheetOpenWithUserLedger] = useState(false);
   const [isBatchPrintOpen, setIsBatchPrintOpen] = useState(false);
   const [isBillingDropdownOpen, setIsBillingDropdownOpen] = useState(false);
   const [showGalaxyPortal, setShowGalaxyPortal] = useState(false);
@@ -5997,6 +5998,15 @@ export default function AdminPanel({
                 </div>
 
                 <div className="flex flex-wrap gap-3 items-center">
+                  <button
+                    type="button"
+                    onClick={() => setEntrySheetOpenWithUserLedger(true)}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:opacity-90 text-white font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-md shadow-indigo-550/20 cursor-pointer"
+                  >
+                    <Users size={14} />
+                    User Ledger Vault
+                  </button>
+
                   {isBillingUnlocked && (
                     <button
                       type="button"
@@ -7382,14 +7392,18 @@ export default function AdminPanel({
 
       {/* Interactive A4 Ledger Entry Sheet Modal overlay */}
       <EntrySheet
-        isOpen={isEntrySheetOpen}
-        onClose={() => setIsEntrySheetOpen(false)}
+        isOpen={isEntrySheetOpen || entrySheetOpenWithUserLedger}
+        onClose={() => {
+          setIsEntrySheetOpen(false);
+          setEntrySheetOpenWithUserLedger(false);
+        }}
         currentUser={currentUser}
         activeRows={activeRows}
         currentMonthId={currentMonthId}
         isBillingUnlocked={isBillingUnlocked}
         appConfig={appConfig}
         billingMonths={billingMonths}
+        initialShowUserLedger={entrySheetOpenWithUserLedger}
       />
 
       {/* Batch Print Multi-month Dialog Overlay */}
