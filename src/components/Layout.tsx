@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { UserProfile, Notification, BrandingConfig } from '../types';
@@ -15,6 +15,8 @@ import InlineTextEditor from './InlineTextEditor';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { firebaseService } from '../lib/firebaseService';
 import { getAvatarUrl } from '../utils/avatar';
+import { toast } from 'sonner';
+import ComplaintForm from './ComplaintForm';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -37,6 +39,8 @@ interface LayoutProps {
   activeTab?: string;
   onNavigate?: (id: string) => void;
   isPreview?: boolean;
+  appConfig?: any;
+  onRegisterComplaint?: (data: any) => Promise<void>;
 }
 
 export default function Layout({ 
@@ -59,7 +63,9 @@ export default function Layout({
   onUpdateBranding,
   activeTab: activeTabProp,
   onNavigate: onNavigateProp,
-  isPreview = false
+  isPreview = false,
+  appConfig,
+  onRegisterComplaint
 }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const [isThemeTransitioning, setIsThemeTransitioning] = useState(false);
@@ -109,12 +115,14 @@ export default function Layout({
   const isOnline = useOnlineStatus();
   const [showSyncStatus, setShowSyncStatus] = useState(false);
   const [isInlineEditingActive, setIsInlineEditingActive] = useState(false);
+  const [isComplaintSwipeDownOpen, setIsComplaintSwipeDownOpen] = useState(false);
 
   // Special states for integrated billing header
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
   const [currentMonthId, setCurrentMonthId] = useState<string>('');
   const [isBillingUnlocked, setIsBillingUnlocked] = useState<boolean>(false);
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState<boolean>(false);
+  const [hasActiveRows, setHasActiveRows] = useState<boolean>(false);
   
   const [localActiveTab, setLocalActiveTab] = useState<string>('complaints');
   const [menuUnlocked, setMenuUnlocked] = useState(false);
@@ -161,10 +169,11 @@ export default function Layout({
     const handleBillingStateChanged = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail) {
-        const { billingMonths: bm, currentMonthId: cm, isBillingUnlocked: bu } = customEvent.detail;
+        const { billingMonths: bm, currentMonthId: cm, isBillingUnlocked: bu, hasActiveRows: har } = customEvent.detail;
         if (bm !== undefined) setBillingMonths(bm);
         if (cm !== undefined) setCurrentMonthId(cm);
         if (bu !== undefined) setIsBillingUnlocked(bu);
+        if (har !== undefined) setHasActiveRows(har);
       }
     };
     window.addEventListener('gts-billing-state-changed', handleBillingStateChanged);
@@ -1156,52 +1165,57 @@ export default function Layout({
         branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
         "bg-white/95 dark:bg-slate-950/95 border-slate-200/80 dark:border-slate-900/80"
       )}>
-        <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:pr-8 lg:pl-[76px] h-16 flex items-center justify-between">
+        <div className={cn(
+          "max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:pr-8 lg:pl-6 flex items-center justify-between transition-all duration-300",
+          activeTab === 'billing' ? "h-auto min-h-16 py-3.5 md:py-0 md:h-16 flex-wrap md:flex-nowrap gap-3" : "h-16"
+        )}>
           {activeTab === 'billing' ? (
-            <div className="flex items-center justify-between w-full h-full">
-              {/* Left Side: Sidebar Toggle + Title/Subtitle */}
-              <div className="flex items-center gap-2 sm:gap-4 lg:gap-3 ml-0">
-                {user && (
-                  <motion.button 
-                    id="sidebar-toggle-btn"
-                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    className={cn(
-                      "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden w-10 h-10 p-2 shrink-0",
-                      isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500"
-                    )}
+            <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-3 md:gap-4">
+              {/* Left Side: Title & Monthly Sheets button */}
+              <div className="flex items-center gap-2 sm:gap-4 ml-0 justify-between md:justify-start w-full md:w-auto">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setActiveTab('complaints')}
+                    className="flex md:hidden items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-750 dark:text-slate-300 border border-slate-200/50 dark:border-slate-800/50 text-[9px] font-black uppercase tracking-wider cursor-pointer"
                   >
-                    {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                    <ChevronLeft size={11} className="text-slate-500 shrink-0" />
+                    <span>Go Back</span>
                   </motion.button>
-                )}
-                
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-sm shrink-0">
-                    <FileSpreadsheet size={20} />
+
+                  <div className="flex w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 items-center justify-center text-blue-500 shadow-sm shrink-0">
+                    <FileSpreadsheet size={16} className="sm:size-[20px]" />
                   </div>
-                  <div className="hidden lg:flex flex-col">
-                    <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-100 leading-none">WiFi Billing & Recovery</h3>
-                    <p className="text-slate-400 font-bold uppercase tracking-widest text-[8px] mt-1 leading-none">Enterprise Recovery Ledger & User Recheck Console</p>
+                  <div className="flex flex-col">
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-100 leading-none">Billing</h3>
+                    <p className="text-[7px] sm:text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider mt-0.5 leading-none">Recovery</p>
                   </div>
                 </div>
 
                 {/* Animated Dropdown button for Months selection */}
-                <div className="relative z-50">
+                <div className="relative z-50 shrink-0">
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => setIsMonthDropdownOpen(!isMonthDropdownOpen)}
-                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800/80 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm cursor-pointer select-none"
+                    className="inline-flex items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800/80 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none w-28 sm:w-56"
                   >
-                    <FolderOpen size={13} className="text-blue-500" />
-                    <span>{currentMonthId || 'Select Sheet'}</span>
-                    <motion.div
-                      animate={{ rotate: isMonthDropdownOpen ? 180 : 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="inline-flex text-slate-500 dark:text-slate-400"
-                    >
-                      <ChevronDown size={12} />
-                    </motion.div>
+                    <div className="flex items-center gap-1 min-w-0">
+                      <FolderOpen size={11} className="text-blue-500 shrink-0 sm:size-[13px]" />
+                      <span className="hidden min-[380px]:inline text-slate-400 dark:text-slate-500 truncate">Sheets</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-blue-600 dark:text-blue-400 truncate max-w-[50px] sm:max-w-[80px]">{currentMonthId || 'Select'}</span>
+                      <motion.div
+                        animate={{ rotate: isMonthDropdownOpen ? 180 : 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="inline-flex text-slate-500 dark:text-slate-400"
+                      >
+                        <ChevronDown size={11} />
+                      </motion.div>
+                    </div>
                   </motion.button>
 
                   <AnimatePresence>
@@ -1213,7 +1227,7 @@ export default function Layout({
                           animate={{ opacity: 1, y: 0, scaleY: 1 }}
                           exit={{ opacity: 0, y: -10, scaleY: 0.9 }}
                           transition={{ type: "spring", stiffness: 450, damping: 25 }}
-                          className="absolute left-0 mt-2 w-60 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl py-2 z-40 overflow-hidden font-sans border-t-4 border-t-blue-500 max-h-72 overflow-y-auto"
+                          className="absolute right-0 sm:left-0 mt-2 w-60 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl py-2 z-40 overflow-hidden font-sans border-t-4 border-t-blue-500 max-h-72 overflow-y-auto"
                         >
                           <div className="px-4 pb-2 mb-1.5 border-b border-slate-100 dark:border-slate-900 text-[8.5px] text-slate-400 font-mono font-black uppercase tracking-widest block">
                             Billing Recovery Sheets
@@ -1255,17 +1269,17 @@ export default function Layout({
               </div>
 
               {/* Right Side: Primary Actions */}
-              <div className="flex items-center gap-1.5 sm:gap-2.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-center sm:justify-end w-full md:w-auto">
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'ledger-vault' }))}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm cursor-pointer select-none"
+                  className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                  title="User Ledger Vault"
                 >
-                  <Users size={13} className="text-slate-500 dark:text-slate-400 animate-pulse" />
-                  <span className="hidden sm:inline">User Ledger Vault</span>
-                  <span className="sm:hidden">Vault</span>
+                  <Users size={13} className="text-slate-500 dark:text-slate-400 animate-pulse shrink-0" />
+                  <span className="hidden md:inline">User Ledger Vault</span>
                 </motion.button>
 
                 {isBillingUnlocked && (
@@ -1274,11 +1288,40 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'entry-sheet' }))}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm cursor-pointer select-none"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    title="Entry Sheet"
                   >
-                    <ClipboardList size={13} className="text-slate-500 dark:text-slate-400" />
-                    <span className="hidden sm:inline">Entry Sheet</span>
-                    <span className="sm:hidden">Entry</span>
+                    <ClipboardList size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
+                    <span className="hidden md:inline">Entry Sheet</span>
+                  </motion.button>
+                )}
+
+                {currentMonthId && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'batch-print' }))}
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800/80 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    title="Batch Print"
+                  >
+                    <Printer size={13} className="text-blue-500 shrink-0" />
+                    <span className="hidden md:inline">Batch Print</span>
+                  </motion.button>
+                )}
+
+                {currentMonthId && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    disabled={!hasActiveRows}
+                    onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'download-csv' }))}
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800/80 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none disabled:opacity-40 shrink-0"
+                    title="Download CSV Sheet"
+                  >
+                    <HardDriveDownload size={13} className="text-emerald-500 shrink-0" />
+                    <span className="hidden md:inline">CSV Sheet</span>
                   </motion.button>
                 )}
 
@@ -1288,11 +1331,11 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'new-month' }))}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[9px] transition-all shadow-sm cursor-pointer select-none"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    title="Create New Month Sheet"
                   >
-                    <PlusSquare size={13} className="text-slate-500 dark:text-slate-400" />
-                    <span className="hidden sm:inline">New Month</span>
-                    <span className="sm:hidden">New</span>
+                    <PlusSquare size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
+                    <span className="hidden md:inline">New Month</span>
                   </motion.button>
                 )}
 
@@ -1302,8 +1345,8 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'purge-sheet' }))}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all border border-rose-100 dark:border-rose-900/20 cursor-pointer"
-                    title="Purge / delete monthly recovery sheets"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all border border-rose-100 dark:border-rose-900/20 cursor-pointer shrink-0"
+                    title="Purge / Delete Monthly Sheet"
                   >
                     <Trash2 size={13} />
                   </motion.button>
@@ -1345,6 +1388,25 @@ export default function Layout({
                 </div>
               </div>
             </div>
+
+            {/* Custom Complaint Trigger Button */}
+            {user && (
+              <motion.button
+                whileHover={{ scale: 1.05, y: -1 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setIsComplaintSwipeDownOpen(!isComplaintSwipeDownOpen)}
+                className="relative overflow-hidden flex items-center gap-2 px-3.5 py-1.5 h-9 rounded-xl font-black uppercase tracking-widest text-[9.5px] transition-all duration-300 shadow-md cursor-pointer select-none border border-emerald-500/20 dark:border-emerald-450 bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-500 text-white shadow-emerald-500/15"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-teal-400 to-emerald-550 opacity-0 hover:opacity-100 transition-opacity duration-300" />
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-200"></span>
+                </span>
+                <PlusSquare size={13.5} className="relative z-10 text-white animate-pulse" />
+                <span className="relative z-10 hidden md:inline">{branding?.tabNames?.submit || 'Register Complaint'}</span>
+                <span className="relative z-10 md:hidden">Complain</span>
+              </motion.button>
+            )}
           </motion.div>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
@@ -1806,6 +1868,71 @@ export default function Layout({
         </div>
       </header>
       )}
+
+      <AnimatePresence>
+        {isComplaintSwipeDownOpen && user && (
+          <div className="fixed inset-0 top-16 z-[100] flex justify-center items-center overflow-hidden bg-slate-950/45 dark:bg-slate-950/65 backdrop-blur-sm p-4 sm:p-6 lg:p-8">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsComplaintSwipeDownOpen(false)}
+              className="absolute inset-0 bg-transparent"
+            />
+            
+            <motion.div
+              initial={{ y: -150, opacity: 0, scaleY: 0.9, originY: 0 }}
+              animate={{ y: 0, opacity: 1, scaleY: 1, originY: 0 }}
+              exit={{ y: -150, opacity: 0, scaleY: 0.9, originY: 0 }}
+              transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+              className="relative w-full max-w-2xl bg-white dark:bg-slate-950 border border-emerald-500/20 dark:border-emerald-500/20 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_30px_70px_rgba(0,0,0,0.5)] overflow-hidden"
+            >
+              {/* Top Accent Gradient Line */}
+              <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
+              
+              <div className="p-5 sm:p-7 space-y-5">
+                {/* Header section with instructions */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 dark:bg-emerald-400/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      <PlusSquare size={20} className="animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">Quick Complaint Desk</h3>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Register subscriber support tickets instantly</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsComplaintSwipeDownOpen(false)}
+                    className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Complaint form wrapper */}
+                <div className="max-h-[75vh] overflow-y-auto pr-1">
+                  <ComplaintForm
+                    onSubmit={async (data) => {
+                      if (onRegisterComplaint) {
+                        await onRegisterComplaint(data);
+                      } else {
+                        toast.error("Complaint registration service unavailable");
+                      }
+                      setIsComplaintSwipeDownOpen(false);
+                    }}
+                    isLoading={isLoading || false}
+                    appConfig={appConfig}
+                    currentUser={user}
+                    branding={branding as any}
+                    compact={true}
+                  />
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Main Content */}
       <main className={cn(

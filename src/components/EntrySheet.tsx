@@ -293,6 +293,8 @@ export default function EntrySheet({
     const conf = window.confirm("Are you sure you want to delete this folder? Sheets inside will become Uncategorized.");
     if (!conf) return;
 
+    const folderToDelete = folders.find(f => f.id === folderId);
+
     const newFolders = folders.filter(f => f.id !== folderId);
     setFolders(newFolders);
     saveFoldersToDb(newFolders);
@@ -307,6 +309,25 @@ export default function EntrySheet({
       saveMapToDb(next);
       return next;
     });
+
+    if (folderToDelete) {
+      try {
+        const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+        firebaseService.saveToRecycleBin(
+          'ledger_folder',
+          folderToDelete.id,
+          currentUser?.username || 'admin',
+          scopeId || 'main',
+          {
+            originalData: folderToDelete,
+            dealerId: scopeId || 'main'
+          }
+        );
+      } catch (binErr) {
+        console.error("Error saving ledger folder to recycle bin:", binErr);
+      }
+    }
+
     toast.success("Folder deleted");
   };
 
@@ -1115,6 +1136,8 @@ export default function EntrySheet({
       return;
     }
     
+    const sheetToDelete = sheets[index];
+
     setSheets(prev => {
       const updated = [...prev];
       updated.splice(index, 1);
@@ -1124,6 +1147,30 @@ export default function EntrySheet({
     const nextIdx = Math.max(0, index - 1);
     isSwappingRef.current = true;
     setActiveSheetIdx(nextIdx);
+
+    if (sheetToDelete) {
+      try {
+        const sheetId = sheetToDelete.id || `sheet_discarded_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+        const sheetDataToSave = {
+          ...sheetToDelete,
+          id: sheetId,
+          createdAt: sheetToDelete.createdAt || Date.now(),
+          dealerId: scopeId || 'main'
+        };
+
+        firebaseService.saveToRecycleBin(
+          'ledger_sheets',
+          sheetId,
+          currentUser?.username || 'admin',
+          scopeId || 'main',
+          sheetDataToSave
+        );
+      } catch (binErr) {
+        console.error("Error saving discarded A4 sheet to recycle bin:", binErr);
+      }
+    }
+
     toast.success("🗑️ SHEET DELETED", { description: `A4 Sheet Page ${index + 1} has been completely discarded.` });
   };
 
@@ -1720,8 +1767,8 @@ export default function EntrySheet({
   if (!isOpen) return null;
 
   // Calculators
-  const totalAmount1 = table1Rows.reduce((sum, r) => sum + (r.amount || 0), 0);
-  const totalAmount2 = table2Rows.reduce((sum, r) => sum + (r.amount || 0), 0);
+  const totalAmount1 = table1Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const totalAmount2 = table2Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
   // Edit helper for Table 1
   const handleT1Change = (index: number, field: keyof Table1Row, value: any) => {
@@ -1733,7 +1780,8 @@ export default function EntrySheet({
       commentsVal = value;
     } else if (field === 'amount') {
       const orig = updated[index].originalAmount;
-      if (typeof orig === 'number') {
+      const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL'].includes(String(value).toUpperCase());
+      if (typeof orig === 'number' && !isStatusString) {
         const newAmt = parseFloat(value) || 0;
         if (newAmt > orig) {
           commentsVal = 'Upgrade';
@@ -1743,6 +1791,10 @@ export default function EntrySheet({
           if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
             commentsVal = '';
           }
+        }
+      } else if (isStatusString) {
+        if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
+          commentsVal = '';
         }
       }
     }
@@ -2317,60 +2369,100 @@ export default function EntrySheet({
     return (
       <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-6 flex flex-col gap-6 select-none scrollbar-thin">
         {/* Upper Header info */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-850 pb-5">
-          <div className="text-left">
-            <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-              <button
-                onClick={() => {
-                  if (openedFolderId) {
-                    setOpenedFolderId(null);
-                  } else {
-                    onClose();
-                  }
-                }}
-                className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors mr-1 flex items-center justify-center cursor-pointer"
-                title="Go Back"
-              >
-                <ArrowLeft size={20} />
-              </button>
-              <FolderOpen className="text-blue-500 animate-pulse" size={26} />
-              GTS Operational Vault
-            </h1>
-            {openedFolderId && (
-              <p className="text-xs text-slate-450 dark:text-slate-400 font-semibold uppercase tracking-wide mt-1">
-                Exploring database files located in /{activeFolder?.name || 'Volume'}
-              </p>
-            )}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-850 pb-5 w-full">
+          <div className="flex items-center justify-between w-full md:w-auto gap-2">
+            <div className="text-left flex-1 min-w-0">
+              <h1 className="text-sm min-[380px]:text-base sm:text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5 sm:gap-2">
+                <button
+                  onClick={() => {
+                    if (openedFolderId) {
+                      setOpenedFolderId(null);
+                    } else {
+                      onClose();
+                    }
+                  }}
+                  className="p-1 sm:p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors mr-0.5 sm:mr-1 flex items-center justify-center cursor-pointer shrink-0"
+                  title="Go Back"
+                >
+                  <ArrowLeft size={16} className="sm:size-[20px]" />
+                </button>
+                <FolderOpen className="text-blue-500 animate-pulse shrink-0 sm:size-[26px]" size={18} />
+                <span className="truncate">Data Folders</span>
+              </h1>
+              {openedFolderId && (
+                <p className="text-[9px] sm:text-xs text-slate-450 dark:text-slate-400 font-semibold uppercase tracking-wide mt-1 truncate">
+                  Exploring database files located in /{activeFolder?.name || 'Volume'}
+                </p>
+              )}
+            </div>
+
+            {/* Mobile-only container for Create Folder button so it always shows next to Data Folders in mobile view */}
+            <div className="flex md:hidden items-center gap-1 shrink-0">
+              {!isCreatingFolder ? (
+                <button
+                  onClick={() => setIsCreatingFolder(true)}
+                  className="px-2.5 py-1.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-[9px] min-[360px]:text-[10px] uppercase tracking-wider flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  <FolderPlus size={12} />
+                  <span className="hidden min-[360px]:inline">New Folder</span>
+                  <span className="min-[360px]:hidden">New</span>
+                </button>
+              ) : (
+                <form onSubmit={handleCreateFolder} className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
+                  <input
+                    type="text"
+                    placeholder="Name..."
+                    value={newFolderNameInput}
+                    onChange={(e) => setNewFolderNameInput(e.target.value)}
+                    className="px-1.5 py-1 text-[10px] bg-transparent border-none outline-none text-slate-950 dark:text-slate-100 w-16 min-[360px]:w-24 font-bold"
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    className="px-1.5 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-all text-[9px] font-bold"
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsCreatingFolder(false); setNewFolderNameInput(''); }}
+                    className="p-0.5 bg-slate-300 dark:bg-slate-800 text-slate-705 dark:text-slate-300 rounded-md text-[9px] font-bold"
+                  >
+                    <X size={10} />
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             {/* Search filter - displayed only when a folder is selected */}
             {openedFolderId && (
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <select
                   value={folderSortOption}
                   onChange={(e) => setFolderSortOption(e.target.value as any)}
-                  className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-[10px] items-center font-bold uppercase transition-colors hover:border-slate-300 dark:hover:border-slate-700 py-2 px-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
+                  className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-705 dark:text-slate-300 text-[10px] items-center font-bold uppercase transition-colors hover:border-slate-300 dark:hover:border-slate-700 py-2 px-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
                 >
                   <option value="newest">Latest Date (Default)</option>
                   <option value="a-to-z">Alphabetical (A-Z)</option>
                   <option value="amount-high">Amount (Highest)</option>
                   <option value="amount-low">Amount (Lowest)</option>
                 </select>
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-3.5 top-2.5 w-4 h-4 text-slate-400" />
+                <div className="relative flex-1 sm:flex-initial sm:w-64">
+                  <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Search Sheets..."
                     value={dashboardSearchQuery}
                     onChange={(e) => setDashboardSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl outline-none focus:ring-1 focus:ring-blue-550 transition-all text-slate-900 dark:text-white font-bold"
+                    className="w-full pl-8 pr-3 py-2 text-[11px] bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl outline-none focus:ring-1 focus:ring-blue-550 transition-all text-slate-900 dark:text-white font-bold"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={handleSearchUserClick}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-650 via-emerald-600 to-teal-600 hover:from-emerald-500 hover:via-emerald-555 hover:to-teal-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-emerald-500/20 active:scale-95 shadow-md shadow-emerald-600/10 shrink-0"
+                  className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-650 via-emerald-600 to-teal-600 hover:from-emerald-500 hover:via-emerald-555 hover:to-teal-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-emerald-500/20 active:scale-95 shadow-md shadow-emerald-600/10 shrink-0"
                   title="Search User Entry"
                 >
                   <Sparkles size={11} className="text-white animate-pulse" />
@@ -2379,40 +2471,42 @@ export default function EntrySheet({
               </div>
             )}
 
-            {/* Create Folder toggler */}
-            {!isCreatingFolder ? (
-              <button
-                onClick={() => setIsCreatingFolder(true)}
-                className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
-              >
-                <FolderPlus size={14} />
-                New Folder
-              </button>
-            ) : (
-              <form onSubmit={handleCreateFolder} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
-                <input
-                  type="text"
-                  placeholder="Folder Name..."
-                  value={newFolderNameInput}
-                  onChange={(e) => setNewFolderNameInput(e.target.value)}
-                  className="px-3 py-1.5 text-xs bg-transparent border-none outline-none text-slate-950 dark:text-slate-100 w-36 font-bold"
-                  autoFocus
-                />
+            {/* Desktop-only container for Create Folder button */}
+            <div className="hidden md:block">
+              {!isCreatingFolder ? (
                 <button
-                  type="submit"
-                  className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all text-xs font-bold"
+                  onClick={() => setIsCreatingFolder(true)}
+                  className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
                 >
-                  Create
+                  <FolderPlus size={14} />
+                  New Folder
                 </button>
-                <button
-                  type="button"
-                  onClick={() => { setIsCreatingFolder(false); setNewFolderNameInput(''); }}
-                  className="p-1.5 bg-slate-300 dark:bg-slate-800 text-slate-705 dark:text-slate-300 rounded-lg text-xs font-bold"
-                >
-                  Cancel
-                </button>
-              </form>
-            )}
+              ) : (
+                <form onSubmit={handleCreateFolder} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <input
+                    type="text"
+                    placeholder="Folder Name..."
+                    value={newFolderNameInput}
+                    onChange={(e) => setNewFolderNameInput(e.target.value)}
+                    className="px-3 py-1.5 text-xs bg-transparent border-none outline-none text-slate-950 dark:text-slate-100 w-36 font-bold"
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all text-xs font-bold"
+                  >
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsCreatingFolder(false); setNewFolderNameInput(''); }}
+                    className="p-1.5 bg-slate-300 dark:bg-slate-800 text-slate-705 dark:text-slate-300 rounded-lg text-xs font-bold"
+                  >
+                    Cancel
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         </div>
 
@@ -3989,11 +4083,14 @@ export default function EntrySheet({
                             <button
                               key={st}
                               type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                              }}
                               onClick={() => {
                                 handleT1Change(index, 'amount', st);
                                 handleT1Change(index, 'status', st.toLowerCase());
                               }}
-                              className="w-full text-right px-2 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 transition-colors uppercase tracking-widest"
+                              className="w-full text-right px-2 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 transition-colors uppercase tracking-widest cursor-pointer"
                             >
                               {st}
                             </button>

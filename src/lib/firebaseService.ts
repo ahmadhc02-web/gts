@@ -2,6 +2,7 @@ import { supabase } from '../../supabaseClient';
 import { auth } from './firebase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget } from '../types';
 import { safeStringify } from './utils';
+import { toast } from 'sonner';
 
 // Unified snake_case/camelCase mappings for GTS ISP schema tables
 const mappings: Record<string, Record<string, string>> = {
@@ -245,6 +246,24 @@ function subscribeTable(
       const { data, error } = await q;
       if (error) {
         console.error(`Error loading table ${tableName}:`, error);
+        
+        const isTableMissing = error.message?.includes('relation') && error.message?.includes('does not exist');
+        const lastAlertTime = (window as any)[`gts_alert_time_${tableName}`] || 0;
+        const now = Date.now();
+        if (now - lastAlertTime > 20000) { // Throttled to 20 seconds to prevent alert storms
+          (window as any)[`gts_alert_time_${tableName}`] = now;
+          if (isTableMissing) {
+            toast.error(`Database table "${tableName}" does not exist. Please go to Admin Panel -> Settings -> Database Setup & Connection to run the SQL migration and provision your database tables!`, {
+              id: `missing-table-${tableName}`,
+              duration: 8000
+            });
+          } else {
+            toast.error(`Error syncing table "${tableName}": ${error.message || 'Connection offline'}`, {
+              id: `sync-error-${tableName}`,
+              duration: 4000
+            });
+          }
+        }
         return;
       }
       const mapped = (data || []).map(mapRow);
@@ -2144,20 +2163,31 @@ export const firebaseService = {
   // --- Recycle Bin Service Methods ---
   saveToRecycleBin: async (tableName: string, recordId: string, authorName: string, dealerId?: string, extraData?: any) => {
     try {
-      // 1. Fetch current row before deleting
-      const { data, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .eq(tableName === 'users' ? 'uid' : 'id', recordId)
-        .maybeSingle();
+      let recordData: any = null;
+      const isVirtual = ['billing_row', 'ledger_folder'].includes(tableName);
 
-      if (error || !data) {
-        console.warn(`Could not fetch record from ${tableName} with ID ${recordId} for Recycle Bin`);
-        return;
+      if (isVirtual) {
+        recordData = extraData?.originalData || extraData || {};
+      } else {
+        // 1. Fetch current row before deleting
+        const { data, error } = await supabase
+          .from(tableName)
+          .select('*')
+          .eq(tableName === 'users' ? 'uid' : 'id', recordId)
+          .maybeSingle();
+
+        if (error || !data) {
+          if (extraData) {
+            recordData = extraData.originalData || extraData;
+          } else {
+            console.warn(`Could not fetch record from ${tableName} with ID ${recordId} for Recycle Bin`);
+            return;
+          }
+        } else {
+          // Convert from DB format to client format using existing fromDb if applicable
+          recordData = fromDb(tableName, data);
+        }
       }
-
-      // Convert from DB format to client format using existing fromDb if applicable
-      const recordData = fromDb(tableName, data);
 
       // 2. Generate a Recycle Bin notification item
       const id = 'recycle_' + tableName + '_' + recordId + '_' + Date.now();
@@ -2175,13 +2205,26 @@ export const firebaseService = {
         label = recordData.label || recordData.domain || recordId;
       } else if (tableName === 'branding_config') {
         // This is used for billing month sheets
-        label = recordData.id.replace('billing_month_', '') || recordId;
+        label = recordData.id ? recordData.id.replace('billing_month_', '') : recordId;
+      } else if (tableName === 'billing_row') {
+        label = recordData.name || recordData.username || recordId;
+      } else if (tableName === 'ledger_folder') {
+        label = recordData.name || recordId;
+      }
+
+      let tableDisplay = tableName.toUpperCase().slice(0, -1) || tableName;
+      if (tableName === 'branding_config') {
+        tableDisplay = 'Billing Month';
+      } else if (tableName === 'billing_row') {
+        tableDisplay = 'Billing Row';
+      } else if (tableName === 'ledger_folder') {
+        tableDisplay = 'Ledger Folder';
       }
 
       const dbRow = {
         id,
         type: 'recycle_bin',
-        message: `Deleted ${tableName === 'branding_config' ? 'Billing Month' : tableName.toUpperCase().slice(0, -1) || tableName}: ${label}`,
+        message: `Deleted ${tableDisplay}: ${label}`,
         author_name: authorName || 'admin',
         created_at: Date.now(),
         is_read: false,
@@ -2262,6 +2305,62 @@ export const firebaseService = {
             const chunk = extraData.slice(index, index + 50);
             await supabase.from('users_data').upsert(chunk, { onConflict: 'id' });
           }
+        }
+      } else if (originalTable === 'billing_row') {
+        // Restore individual billing row to its billing month sheet
+        const { monthId, dealerId } = extraData || {};
+        if (monthId) {
+          const docId = dealerId ? `billing_month_${dealerId}_${monthId}` : `billing_month_${monthId}`;
+          const { data: monthConfig } = await supabase
+            .from('branding_config')
+            .select('*')
+            .eq('id', docId)
+            .maybeSingle();
+
+          let currentRows: any[] = [];
+          if (monthConfig && monthConfig.dashboard_subtext) {
+            try {
+              currentRows = JSON.parse(monthConfig.dashboard_subtext);
+            } catch (pErr) {
+              console.error("Failed to parse billing month rows during restore:", pErr);
+            }
+          }
+
+          // Check if this row is already there to avoid duplicates
+          const isDuplicate = currentRows.some((r: any) => 
+            (r.clientId && r.clientId === originalData.clientId) || 
+            (r.username && r.username === originalData.username)
+          );
+
+          if (!isDuplicate) {
+            currentRows.push(originalData);
+            await firebaseService.saveBillingMonth(monthId, currentRows, 'System Restore', dealerId);
+          }
+        }
+      } else if (originalTable === 'ledger_folder') {
+        // Restore ledger folder to folders config
+        const { dealerId } = extraData || {};
+        const docId = dealerId ? `ledger_folders_${dealerId}` : 'ledger_folders_main';
+        const { data: foldersConfig } = await supabase
+          .from('branding_config')
+          .select('*')
+          .eq('id', docId)
+          .maybeSingle();
+
+        let currentFolders: any[] = [];
+        if (foldersConfig && foldersConfig.dashboard_subtext) {
+          try {
+            currentFolders = JSON.parse(foldersConfig.dashboard_subtext);
+          } catch (pErr) {
+            console.error("Failed to parse ledger folders during restore:", pErr);
+          }
+        }
+
+        // Check if already exists
+        const exists = currentFolders.some((f: any) => f.id === originalData.id);
+        if (!exists) {
+          currentFolders.push(originalData);
+          await firebaseService.updateLedgerFolders(currentFolders, dealerId);
         }
       }
 

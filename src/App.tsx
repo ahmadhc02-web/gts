@@ -1780,6 +1780,8 @@ export default function App() {
         onUpdateBranding={handleUpdateBranding}
         activeTab={activeTab}
         onNavigate={setActiveTab}
+        appConfig={appConfig}
+        onRegisterComplaint={handleRegisterComplaint}
       >
         {!firebaseAuthReady ? (
           <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950">

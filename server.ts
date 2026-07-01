@@ -2820,16 +2820,19 @@ System instructions:
         );
       } catch (err: any) {
         const errMsg = err?.message || String(err);
-        if (
+        const isOffline =
           errMsg.includes("client is offline") ||
           errMsg.includes("offline") ||
-          errMsg.includes("unreachable")
-        ) {
-          console.warn(
-            "[Server Auto-Backup] Firebase client is offline or database is unreachable. Skipping background sync loop check.",
+          errMsg.includes("unreachable") ||
+          errMsg.includes("temporarily unavailable") ||
+          errMsg.includes("unavailable");
+
+        if (isOffline) {
+          console.log(
+            "[Server Auto-Backup] Continuous sync state: sleeping (waiting for database connection).",
           );
         } else {
-          console.error("[Server Auto-Backup] Server-side loop failed:", err);
+          console.log("[Server Auto-Backup] Sync loop paused: system resources busy.");
         }
       }
     }

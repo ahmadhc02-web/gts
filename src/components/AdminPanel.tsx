@@ -163,6 +163,8 @@ export default function AdminPanel({
   const [purgingItemId, setPurgingItemId] = useState<string | null>(null);
   const [expandedRecycleItem, setExpandedRecycleItem] = useState<string | null>(null);
   const [recycleSearchTerm, setRecycleSearchTerm] = useState('');
+  const [isEmptyRecycleBinModalOpen, setIsEmptyRecycleBinModalOpen] = useState(false);
+  const [recycleConfirmPhrase, setRecycleConfirmPhrase] = useState('');
 
   useEffect(() => {
     if (activeTab === 'recycle_bin') {
@@ -221,15 +223,14 @@ export default function AdminPanel({
 
   const handleEmptyRecycleBin = async () => {
     if (recycleItems.length === 0) return;
-    if (!window.confirm(`Are you sure you want to permanently delete ALL ${recycleItems.length} items in the Recycle Bin? This action is irreversible!`)) {
-      return;
-    }
     setIsRecycleLoading(true);
+    setIsEmptyRecycleBinModalOpen(false);
     try {
       for (const item of recycleItems) {
         await firebaseService.permanentlyDeleteFromRecycleBin(item.id);
       }
       toast.success("Recycle Bin emptied successfully");
+      setRecycleConfirmPhrase('');
     } catch (e: any) {
       toast.error("An error occurred while emptying the Recycle Bin");
     } finally {
@@ -769,49 +770,6 @@ export default function AdminPanel({
     return () => unsubscribe();
   }, [currentUser, activeDealerId]);
 
-  // Broadcast billing states for header integration in Layout
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('gts-billing-state-changed', {
-      detail: { 
-        billingMonths, 
-        currentMonthId, 
-        isBillingUnlocked 
-      }
-    }));
-  }, [billingMonths, currentMonthId, isBillingUnlocked]);
-
-  // Listen to actions emitted from Layout's custom header
-  useEffect(() => {
-    const handleBillingAction = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const action = customEvent.detail;
-      if (action === 'ledger-vault') {
-        setEntrySheetOpenWithUserLedger(true);
-      } else if (action === 'entry-sheet') {
-        setIsEntrySheetOpen(true);
-      } else if (action === 'new-month') {
-        setIsConfiguringNewMonth(true);
-      } else if (action === 'purge-sheet') {
-        setSheetIdToDelete(currentMonthId || (billingMonths[0]?.id || ''));
-        setIsConfirmingPurge(false);
-        setIsDeleteSheetModalOpen(true);
-      }
-    };
-
-    const handleMonthSelected = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      setCurrentMonthId(customEvent.detail);
-    };
-
-    window.addEventListener('gts-billing-action', handleBillingAction);
-    window.addEventListener('gts-billing-month-selected', handleMonthSelected);
-
-    return () => {
-      window.removeEventListener('gts-billing-action', handleBillingAction);
-      window.removeEventListener('gts-billing-month-selected', handleMonthSelected);
-    };
-  }, [currentMonthId, billingMonths]);
-
   // Automatic background synchronization:
   // Detects newly created/updated master clients and automatically incorporates them or updates their details in the active billing sheet
   useEffect(() => {
@@ -1163,7 +1121,7 @@ export default function AdminPanel({
   };
 
   const handleSaveRowField = async (rowIndex: number, field: string, val: any) => {
-    if (!isBillingUnlocked) {
+    if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments') {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to edit billing information." });
       return;
     }
@@ -1234,11 +1192,28 @@ export default function AdminPanel({
 
     try {
       const updatedRows = [...(activeDoc.rows || [])];
-      updatedRows.splice(rowIndex, 1);
+      const [deletedRow] = updatedRows.splice(rowIndex, 1);
       
       // Update local state instantly
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
       
+      // Save billing row to Recycle Bin
+      try {
+        await firebaseService.saveToRecycleBin(
+          'billing_row',
+          deletedRow.clientId || deletedRow.username || `row_${rowIndex}_${Date.now()}`,
+          currentUser.username || 'admin',
+          activeDealerId || 'main',
+          {
+            originalData: deletedRow,
+            monthId: currentMonthId,
+            dealerId: activeDealerId || 'main'
+          }
+        );
+      } catch (binErr) {
+        console.error("Error saving billing row to recycle bin:", binErr);
+      }
+
       await firebaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId);
       toast.success("Recovery row removed from current month's sheet.");
     } catch (err: any) {
@@ -1995,6 +1970,54 @@ export default function AdminPanel({
     link.click();
     document.body.removeChild(link);
   };
+
+  // Broadcast billing states for header integration in Layout
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('gts-billing-state-changed', {
+      detail: { 
+        billingMonths, 
+        currentMonthId, 
+        isBillingUnlocked,
+        hasActiveRows: activeRows.length > 0
+      }
+    }));
+  }, [billingMonths, currentMonthId, isBillingUnlocked, activeRows]);
+
+  // Listen to actions emitted from Layout's custom header
+  useEffect(() => {
+    const handleBillingAction = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const action = customEvent.detail;
+      if (action === 'ledger-vault') {
+        setEntrySheetOpenWithUserLedger(true);
+      } else if (action === 'entry-sheet') {
+        setIsEntrySheetOpen(true);
+      } else if (action === 'new-month') {
+        setIsConfiguringNewMonth(true);
+      } else if (action === 'purge-sheet') {
+        setSheetIdToDelete(currentMonthId || (billingMonths[0]?.id || ''));
+        setIsConfirmingPurge(false);
+        setIsDeleteSheetModalOpen(true);
+      } else if (action === 'batch-print') {
+        setIsBatchPrintOpen(true);
+      } else if (action === 'download-csv') {
+        handleDownloadCSV();
+      }
+    };
+
+    const handleMonthSelected = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setCurrentMonthId(customEvent.detail);
+    };
+
+    window.addEventListener('gts-billing-action', handleBillingAction);
+    window.addEventListener('gts-billing-month-selected', handleMonthSelected);
+
+    return () => {
+      window.removeEventListener('gts-billing-action', handleBillingAction);
+      window.removeEventListener('gts-billing-month-selected', handleMonthSelected);
+    };
+  }, [currentMonthId, billingMonths, activeRows]);
 
   const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
@@ -4046,7 +4069,7 @@ export default function AdminPanel({
 
                 <button
                   type="button"
-                  onClick={handleEmptyRecycleBin}
+                  onClick={() => setIsEmptyRecycleBinModalOpen(true)}
                   disabled={recycleItems.length === 0 || isRecycleLoading}
                   className="px-6 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:bg-rose-600/30 text-white font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
@@ -4209,6 +4232,99 @@ export default function AdminPanel({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {isEmptyRecycleBinModalOpen && (
+          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setIsEmptyRecycleBinModalOpen(false);
+                setRecycleConfirmPhrase('');
+              }}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-rose-500/30 overflow-hidden"
+            >
+              <div className="p-6 md:p-8 space-y-6">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 animate-pulse">
+                      <Trash2 size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Empty Recycle Bin</h3>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Permanent Database Deletion</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setIsEmptyRecycleBinModalOpen(false);
+                      setRecycleConfirmPhrase('');
+                    }}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Warning message & breakdown */}
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs leading-relaxed">
+                    <p className="font-extrabold mb-1 flex items-center gap-1">
+                      ⚠️ CRITICAL WARNING: IRREVERSIBLE OPERATION
+                    </p>
+                    <p className="font-medium text-[11px]">
+                      This will permanently delete all <span className="font-black underline">{recycleItems.length}</span> items currently held in the Recycle Bin. There is no way to recover these records once this action is performed.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className={labelClasses}>
+                      Type <span className="text-rose-500 font-extrabold select-all">CONFIRM</span> to empty
+                    </label>
+                    <input
+                      type="text"
+                      value={recycleConfirmPhrase}
+                      onChange={(e) => setRecycleConfirmPhrase(e.target.value)}
+                      placeholder="Type CONFIRM here..."
+                      className={cn(inputClasses, "normal-case")}
+                    />
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 justify-end pt-2 border-t border-slate-100 dark:border-slate-900">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEmptyRecycleBinModalOpen(false);
+                      setRecycleConfirmPhrase('');
+                    }}
+                    className="px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleEmptyRecycleBin}
+                    disabled={recycleConfirmPhrase !== 'CONFIRM'}
+                    className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:hover:bg-rose-600 text-white font-black uppercase tracking-widest text-[10px] transition-all flex items-center gap-1.5 shadow-md shadow-rose-600/10 cursor-pointer"
+                  >
+                    <Trash2 size={12} />
+                    Permanently Empty Bin
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           </div>
         )}
 
@@ -6308,252 +6424,72 @@ export default function AdminPanel({
         )}
 
         {activeTab === 'billing' && (
-          <div className="max-w-[115rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
-            {/* Advanced Billing Recovery Header and Config Controls */}
-            <div className={cn("p-8 sm:p-10", getCardStyle(branding.cardStyle), "space-y-6")}>
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shadow-sm">
-                    <FileSpreadsheet size={28} />
+          <div className="max-w-[115rem] mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
+            {/* Configure New Month Popup-card Block */}
+            <AnimatePresence>
+              {isConfiguringNewMonth && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className={cn("p-6 rounded-2xl border space-y-4 max-w-lg mb-4", getCardStyle(branding.cardStyle))}
+                >
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Establish Monthly Recovery Cycle</span>
+                    <button type="button" onClick={() => setIsConfiguringNewMonth(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
                   </div>
-                  <div>
-                    <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-100">WiFi Billing & Recovery</h3>
-                    <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">Enterprise Recovery Ledger & User Recheck Console</p>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Month Label</label>
+                      <input
+                        type="text"
+                        value={newMonthName}
+                        onChange={(e) => setNewMonthName(e.target.value)}
+                        placeholder="e.g. JUN, JUL, OCT"
+                        className="w-full px-4 py-3 text-xs uppercase font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500 select-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Year Tag</label>
+                      <select
+                        value={newMonthYear}
+                        onChange={(e) => setNewMonthYear(e.target.value)}
+                        className="w-full px-4 py-3 text-xs font-mono font-bold bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500"
+                      >
+                        <option value="25">2025</option>
+                        <option value="26">2026</option>
+                        <option value="27">2027</option>
+                        <option value="28">2028</option>
+                      </select>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex flex-wrap gap-3 items-center">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="button"
-                    onClick={() => setEntrySheetOpenWithUserLedger(true)}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all shadow-sm cursor-pointer"
-                  >
-                    <Users size={14} className="text-slate-500 dark:text-slate-400" />
-                    User Ledger Vault
-                  </motion.button>
+                  <div className="p-3 bg-blue-500/5 border border-blue-500/10 rounded-lg text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed uppercase tracking-wider">
+                    Note: This will deploy a new billing sheet initialized with all current {masterClients.length} clients registered in the database, with calculated defaults based on their customized bandwidth packages.
+                  </div>
 
-                  {isBillingUnlocked && (
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
                       type="button"
-                      onClick={() => setIsEntrySheetOpen(true)}
-                      className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all shadow-sm cursor-pointer"
+                      onClick={() => setIsConfiguringNewMonth(false)}
+                      className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 transition-colors"
                     >
-                      <ClipboardList size={14} className="text-slate-500 dark:text-slate-400" />
-                      Entry Sheet
-                    </motion.button>
-                  )}
-
-                  {isBillingUnlocked && (
-                    <>
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        type="button"
-                        onClick={() => setIsConfiguringNewMonth(true)}
-                        className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all shadow-sm cursor-pointer"
-                      >
-                        <PlusSquare size={14} className="text-slate-500 dark:text-slate-400" />
-                        New Month
-                      </motion.button>
-
-                      {currentMonthId && (
-                        <motion.button
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          type="button"
-                          onClick={() => {
-                            setSheetIdToDelete(currentMonthId || (billingMonths[0]?.id || ''));
-                            setIsConfirmingPurge(false);
-                            setIsDeleteSheetModalOpen(true);
-                          }}
-                          className="inline-flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-all border border-rose-100 dark:border-rose-900/20 cursor-pointer"
-                          title="Purge / delete monthly recovery sheets"
-                        >
-                          <Trash2 size={14} />
-                        </motion.button>
-                      )}
-                    </>
-                  )}
-
-                  {/* High Quality Interactive Actions Dropdown */}
-                  <div className="relative">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                      Cancel
+                    </button>
+                    <button
                       type="button"
-                      onClick={() => setIsBillingDropdownOpen(!isBillingDropdownOpen)}
-                      className="inline-flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[10px] transition-all shadow-sm cursor-pointer select-none relative overflow-hidden"
+                      onClick={handleAddMonth}
+                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors shadow-lg shadow-blue-500/10"
                     >
-                      <Layers size={14} className="text-slate-500 dark:text-slate-400" />
-                      <span>Print & CSV Actions</span>
-                      <motion.div
-                        animate={{ rotate: isBillingDropdownOpen ? 180 : 0 }}
-                        transition={{ duration: 0.2, type: "spring", stiffness: 300 }}
-                        className="inline-flex text-slate-500 dark:text-slate-400"
-                      >
-                        <ChevronDown size={14} />
-                      </motion.div>
-                    </motion.button>
-
-                    <AnimatePresence>
-                      {isBillingDropdownOpen && (
-                        <>
-                          {/* Invisible layer to handle dim close click */}
-                          <div 
-                            className="fixed inset-0 z-30 opacity-0 cursor-default" 
-                            onClick={() => setIsBillingDropdownOpen(false)} 
-                          />
-                          
-                          <motion.div
-                            initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                            transition={{ type: "spring", stiffness: 450, damping: 25 }}
-                            className="absolute right-0 mt-2.5 w-56 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 shadow-2xl py-3 z-40 overflow-hidden font-sans border-t-4 border-t-indigo-500"
-                          >
-                            <div className="px-4 pb-2 mb-1.5 border-b border-slate-100 dark:border-slate-900 text-[8.5px] text-slate-400 font-mono font-black uppercase tracking-widest block">
-                              Recovers Export Hub
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsBatchPrintOpen(true);
-                                setIsBillingDropdownOpen(false);
-                              }}
-                              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900/60 flex items-center gap-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                            >
-                              <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center text-blue-500 shrink-0">
-                                <Printer size={13} />
-                              </div>
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-sans font-black text-[10.5px]">Batch Print</span>
-                                <span className="text-[8px] text-slate-400 lowercase font-medium">Generate slips in bulk</span>
-                              </div>
-                            </button>
-
-                            <button
-                              type="button"
-                              disabled={!activeRows.length}
-                              onClick={() => {
-                                handleDownloadCSV();
-                                setIsBillingDropdownOpen(false);
-                              }}
-                              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-900/60 flex items-center gap-2.5 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 transition-colors disabled:opacity-40  cursor-pointer"
-                            >
-                              <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-500 shrink-0">
-                                <HardDriveDownload size={13} />
-                              </div>
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-sans font-black text-[10.5px]">CSV Sheet</span>
-                                <span className="text-[8px] text-slate-400 lowercase font-medium">Download spreadsheet</span>
-                              </div>
-                            </button>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
+                      Launch Recovery Cycle
+                    </button>
                   </div>
-                </div>
-              </div>
-
-              {/* Configure New Month Popup-card Block */}
-              <AnimatePresence>
-                {isConfiguringNewMonth && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4 max-w-lg"
-                  >
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
-                      <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Establish Monthly Recovery Cycle</span>
-                      <button type="button" onClick={() => setIsConfiguringNewMonth(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Month Label</label>
-                        <input
-                          type="text"
-                          value={newMonthName}
-                          onChange={(e) => setNewMonthName(e.target.value)}
-                          placeholder="e.g. JUN, JUL, OCT"
-                          className="w-full px-4 py-3 text-xs uppercase font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500 select-all"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Year Tag</label>
-                        <select
-                          value={newMonthYear}
-                          onChange={(e) => setNewMonthYear(e.target.value)}
-                          className="w-full px-4 py-3 text-xs font-mono font-bold bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500"
-                        >
-                          <option value="25">2025</option>
-                          <option value="26">2026</option>
-                          <option value="27">2027</option>
-                          <option value="28">2028</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-blue-500/5 border border-blue-500/10 rounded-lg text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed uppercase tracking-wider">
-                      Note: This will deploy a new billing sheet initialized with all current {masterClients.length} clients registered in the database, with calculated defaults based on their customized bandwidth packages.
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsConfiguringNewMonth(false)}
-                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleAddMonth}
-                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors shadow-lg shadow-blue-500/10"
-                      >
-                        Launch Recovery Cycle
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Months Folder Tabs - Google Sheet style at top */}
-              {billingMonths.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/60">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mr-2">Recovery Sheets:</span>
-                  {billingMonths.map((m) => {
-                    const isSelected = m.id === currentMonthId;
-                    return (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setCurrentMonthId(m.id)}
-                        className={cn(
-                          "px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-all rounded-lg border",
-                          isSelected
-                            ? "bg-slate-900 border-slate-900 text-white dark:bg-blue-600 dark:border-blue-600"
-                            : "bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-800 dark:bg-slate-950 dark:border-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                        )}
-                      >
-                        {m.id}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-4 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                  No active sheets found. Click "New Billing Month" to initiate your connection recovery logs.
-                </div>
+                </motion.div>
               )}
-            </div>
+            </AnimatePresence>
+
+
 
             {/* FLOATING CORNER SECURITY SHIELD */}
             <div className="fixed bottom-6 left-4 lg:left-[88px] z-[90] flex items-end">
@@ -6857,7 +6793,7 @@ export default function AdminPanel({
                               Sr#{getBillingSortIcon('sr')}
                             </th>
                             <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[200px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('name')}>
-                              NAME (EDIT){getBillingSortIcon('name')}
+                              FULL NAME{getBillingSortIcon('name')}
                             </th>
                             <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[140px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('username')}>
                               USER ID (PPPoE){getBillingSortIcon('username')}
@@ -6891,7 +6827,9 @@ export default function AdminPanel({
                             </th>
                             {isAdvanceMode && (
                               <>
-                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[240px]">COMMENTS</th>
+                                <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[240px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors text-left" onClick={() => handleBillingSort('comments')}>
+                                  COMMENTS{getBillingSortIcon('comments')}
+                                </th>
                                 <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[120px]">OCCUPATION</th>
                                 <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[140px]">SER NAM</th>
                                 <th className="py-3 px-4 border-r border-slate-200 dark:border-slate-800 min-w-[110px]">PKG DETAILS</th>
@@ -7039,7 +6977,8 @@ export default function AdminPanel({
                                   <input
                                     type="text"
                                     defaultValue={rowRef.billingDay}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={false}
+                                    onClick={(e) => e.stopPropagation()}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
                                     className="w-10 text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
@@ -7091,7 +7030,8 @@ export default function AdminPanel({
                                       <input
                                         type="text"
                                         defaultValue={rowRef.comments}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={false}
+                                        onClick={(e) => e.stopPropagation()}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
                                         className="w-full bg-transparent px-1.5 py-0.5 border-none rounded text-[11px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                         placeholder="Add comment..."
@@ -7492,7 +7432,8 @@ export default function AdminPanel({
                                 <input
                                   type="text"
                                   defaultValue={rowRef.billingDay}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={false}
+                                  onClick={(e) => e.stopPropagation()}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
                                   className="w-6 text-center bg-transparent border-none p-0 text-[9px] font-black focus:ring-0 text-black dark:text-white font-sans"
                                 />
@@ -7537,7 +7478,8 @@ export default function AdminPanel({
                                 <input
                                   type="text"
                                   defaultValue={rowRef.comments}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={false}
+                                  onClick={(e) => e.stopPropagation()}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
                                   className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-1 border border-slate-200/50 dark:border-slate-800/80 rounded font-bold text-black dark:text-white font-sans"
                                   placeholder="No comment..."
