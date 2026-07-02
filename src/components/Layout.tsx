@@ -231,7 +231,13 @@ export default function Layout({
   const [editPassword, setEditPassword] = useState(user?.password || '');
   const [editProfilePicture, setEditProfilePicture] = useState(user?.profilePicture || '');
   const [editEmail, setEditEmail] = useState(user?.email || '');
-  const [editGender, setEditGender] = useState<'male'|'female'>(user?.profilePicture === 'default:female' ? 'female' : 'male');
+  const [editGender, setEditGender] = useState<'male'|'female'|'not_set'>(
+    user?.profilePicture === 'default:female' 
+      ? 'female' 
+      : user?.profilePicture === 'default:male'
+      ? 'male'
+      : 'not_set'
+  );
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -242,7 +248,13 @@ export default function Layout({
       setEditPassword(user.password || '');
       setEditProfilePicture(user.profilePicture || '');
       setEditEmail(user.email || '');
-      setEditGender(user.profilePicture === 'default:female' ? 'female' : 'male');
+      setEditGender(
+        user.profilePicture === 'default:female' 
+          ? 'female' 
+          : user.profilePicture === 'default:male'
+          ? 'male'
+          : 'not_set'
+      );
     }
   }, [user]);
 
@@ -1365,7 +1377,7 @@ export default function Layout({
                 id="sidebar-toggle-btn"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={cn(
-                  "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden",
+                  "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden -ml-2 sm:ml-0",
                   menuUnlocked ? "opacity-100 w-10 h-10 p-2 scale-100" : "opacity-100 w-10 h-10 p-2 scale-100 lg:hidden",
                   isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500"
                 )}
@@ -1377,34 +1389,35 @@ export default function Layout({
               </motion.button>
             )}
             
-            <div className="flex items-center gap-2.5">
-              {/* Branded box size and aura matching screenshot */}
-              <div className="relative shrink-0 select-none group cursor-pointer lg:hidden" onClick={handleLogoClick}>
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-40 transition duration-1000 animate-pulse" />
-                <div className="relative w-11 h-11 rounded-2xl bg-slate-950 flex items-center justify-center border border-white/10 shadow-lg">
-                  <span className="text-white font-black text-lg tracking-tighter italic leading-none">
-                    G<span className="text-emerald-500">TS</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
             {/* Custom Complaint Trigger Button */}
             {user && (
               <motion.button
-                whileHover={{ scale: 1.05, y: -1 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
                 onClick={() => setIsComplaintSwipeDownOpen(!isComplaintSwipeDownOpen)}
-                className="relative overflow-hidden flex items-center gap-2 px-3.5 py-1.5 h-9 rounded-xl font-black uppercase tracking-widest text-[9.5px] transition-all duration-300 shadow-md cursor-pointer select-none border border-emerald-500/20 dark:border-emerald-450 bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-500 text-white shadow-emerald-500/15"
+                className="uiverse-complaint-btn"
               >
-                <div className="absolute inset-0 bg-gradient-to-r from-teal-400 to-emerald-550 opacity-0 hover:opacity-100 transition-opacity duration-300" />
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-200"></span>
-                </span>
-                <PlusSquare size={13.5} className="relative z-10 text-white animate-pulse" />
-                <span className="relative z-10 hidden md:inline">{branding?.tabNames?.submit || 'Register Complaint'}</span>
-                <span className="relative z-10 md:hidden">Complain</span>
+                <span className="uiverse-decor"></span>
+                <div className="uiverse-content">
+                  <div className="uiverse-icon">
+                    <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg" width="22" height="22">
+                      <circle opacity="0.5" cx="25" cy="25" r="23" fill="url(#icon-payments-cat_svg__paint0_linear_1141_21101)"></circle>
+                      <mask id="icon-payments-cat_svg__a" fill="#fff">
+                        <path fillRule="evenodd" clipRule="evenodd" d="M34.42 15.93c.382-1.145-.706-2.234-1.851-1.852l-18.568 6.189c-1.186.395-1.362 2-.29 2.644l5.12 3.072a1.464 1.464 0 001.733-.167l5.394-4.854a1.464 1.464 0 011.958 2.177l-5.154 4.638a1.464 1.464 0 00-.276 1.841l3.101 5.17c.644 1.072 2.25.896 2.645-.29L34.42 15.93z">
+                        </path>
+                      </mask>
+                      <path fillRule="evenodd" clipRule="evenodd" d="M34.42 15.93c.382-1.145-.706-2.234-1.851-1.852l-18.568 6.189c-1.186.395-1.362 2-.29 2.644l5.12 3.072a1.464 1.464 0 001.733-.167l5.394-4.854a1.464 1.464 0 011.958 2.177l-5.154 4.638a1.464 1.464 0 00-.276 1.841l3.101 5.17c.644 1.072 2.25.896 2.645-.29L34.42 15.93z" fill="#fff"></path>
+                      <path d="M25.958 20.962l-1.47-1.632 1.47 1.632zm2.067.109l-1.632 1.469 1.632-1.469zm-.109 2.068l-1.469-1.633 1.47 1.633zm-5.154 4.638l-1.469-1.632 1.469 1.632zm-.276 1.841l-1.883 1.13 1.883-1.13zM34.42 15.93l-2.084-.695 2.084.695zm-19.725 6.42l18.568-6.189-1.39-4.167-18.567 6.19 1.389 4.166zm5.265 1.75l-5.12-3.072-2.26 3.766 5.12 3.072 2.26-3.766zm2.072 3.348l5.394-4.854-2.938-3.264-5.394 4.854 2.938 3.264zm5.394-4.854a.732.732 0 01-1.034-.054l3.265-2.938a3.66 3.66 0 00-5.17-.272l2.939 3.265zm-1.034-.054a.732.732 0 01.054-1.034l2.938 3.265a3.66 3.66 0 00.273-5.169l-3.265 2.938zm.054-1.034l-5.154 4.639 2.938 3.264 5.154-4.638-2.938-3.265zm1.023 12.152l-3.101-5.17-3.766 2.26 3.101 5.17 3.766-2.26zm4.867-18.423l-6.189 18.568 4.167 1.389 6.19-18.568-4.168-1.389zm-8.633 20.682c1.61 2.682 5.622 2.241 6.611-.725l-4.167-1.39a.732.732 0 011.322-.144l-3.766 2.26zm-6.003-8.05a3.66 3.66 0 004.332-.419l-2.938-3.264a.732.732 0 01.866-.084l-2.26 3.766zm3.592-1.722a3.66 3.66 0 00-.69 4.603l3.766-2.26c.18.301.122.687-.138.921l-2.938-3.264zm11.97-9.984a.732.732 0 01-.925-.926l4.166 1.389c.954-2.861-1.768-5.583-4.63-4.63l1.39 4.167zm-19.956 2.022c-2.967.99-3.407 5.003-.726 6.611l2.26-3.766a.732.732 0 01-.145 1.322l-1.39-4.167z" fill="#fff" mask="url(#icon-payments-cat_svg__a)"></path>
+                      <defs>
+                        <linearGradient id="icon-payments-cat_svg__paint0_linear_1141_21101" x1="25" y1="2" x2="25" y2="48" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#fff" stopOpacity="0.71"></stop>
+                          <stop offset="1" stopColor="#fff" stopOpacity="0"></stop>
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  </div>
+                  <span className="uiverse-text">{branding?.tabNames?.submit || 'Register Complaint'}</span>
+                </div>
               </motion.button>
             )}
           </motion.div>
@@ -1487,27 +1500,13 @@ export default function Layout({
               </div>
             )}
 
-             {user && (
-              <div className="flex items-center gap-1.5 h-9">
-                {/* Audio voice toggle indicator */}
-                <button
-                  onClick={onToggleAudio}
-                  className={cn(
-                    "w-8 h-8 rounded-full border flex items-center justify-center transition-all bg-white dark:bg-slate-900 shadow-sm cursor-pointer hover:scale-105 active:scale-95",
-                    isAudioMuted 
-                      ? "border-slate-200 dark:border-slate-800 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" 
-                      : "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10"
-                  )}
-                  title={isAudioMuted ? "Unmute Alerts" : "Mute Alerts"}
-                >
-                  {isAudioMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                </button>
-
-                {/* Alerts/Bell notification indicator */}
+            {user && (
+            <div className="flex items-center gap-2 h-9">
+              {/* Alerts/Bell notification indicator */}
                 <button
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                   className={cn(
-                    "w-8 h-8 rounded-full border flex items-center justify-center relative transition-all bg-white dark:bg-slate-900 shadow-sm cursor-pointer hover:scale-105 active:scale-95",
+                    "w-9 h-9 rounded-full border flex items-center justify-center relative transition-all bg-white dark:bg-slate-900 shadow-sm cursor-pointer hover:scale-105 active:scale-95",
                     alertAuthorized 
                       ? "border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10"
                       : "border-slate-200 dark:border-slate-800 text-amber-500 bg-amber-500/5 hover:bg-amber-500/10"
@@ -1515,9 +1514,9 @@ export default function Layout({
                   title={alertAuthorized ? (isAudioMuted ? "Alert History (Muted)" : "Alert History") : "Alert Restricted"}
                 >
                   {isAudioMuted && alertAuthorized ? (
-                    <BellOff size={14} />
+                    <BellOff size={15} />
                   ) : (
-                    <Bell size={14} className={!alertAuthorized ? "opacity-60" : ""} />
+                    <Bell size={15} className={!alertAuthorized ? "opacity-60" : ""} />
                   )}
                   {notifications.length > 0 && (
                     <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5">
@@ -1693,7 +1692,22 @@ export default function Layout({
                           </div>
                           
                           <div className="flex items-center gap-2 mt-2 bg-slate-100/50 dark:bg-slate-800/30 p-1.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50">
-                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Default:</span>
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Gender:</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditGender('not_set');
+                                if (!editProfilePicture || editProfilePicture.startsWith('default:')) {
+                                  setEditProfilePicture('default:none');
+                                }
+                              }}
+                              className={cn(
+                                "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer",
+                                editGender === 'not_set' ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+                              )}
+                            >
+                              Not Set
+                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -1703,7 +1717,7 @@ export default function Layout({
                                 }
                               }}
                               className={cn(
-                                "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
+                                "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                                 editGender === 'male' ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
                               )}
                             >
@@ -1718,7 +1732,7 @@ export default function Layout({
                                 }
                               }}
                               className={cn(
-                                "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all",
+                                "px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer",
                                 editGender === 'female' ? "bg-emerald-500 text-white shadow-sm" : "text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
                               )}
                             >
@@ -1885,33 +1899,33 @@ export default function Layout({
               animate={{ y: 0, opacity: 1, scaleY: 1, originY: 0 }}
               exit={{ y: -150, opacity: 0, scaleY: 0.9, originY: 0 }}
               transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-              className="relative w-full max-w-2xl bg-white dark:bg-slate-950 border border-emerald-500/20 dark:border-emerald-500/20 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_30px_70px_rgba(0,0,0,0.5)] overflow-hidden"
+              className="relative w-full max-w-4xl bg-white dark:bg-slate-950 border-2 border-emerald-500/30 dark:border-emerald-500/20 rounded-[32px] shadow-[0_30px_70px_rgba(0,0,0,0.22)] dark:shadow-[0_40px_90px_rgba(0,0,0,0.6)] overflow-hidden"
             >
               {/* Top Accent Gradient Line */}
-              <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
+              <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 animate-pulse" />
               
-              <div className="p-5 sm:p-7 space-y-5">
+              <div className="p-6 sm:p-8 space-y-6">
                 {/* Header section with instructions */}
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-4">
+                <div className="flex items-center justify-between border-b-2 border-slate-200 dark:border-slate-800 pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 dark:bg-emerald-400/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                      <PlusSquare size={20} className="animate-pulse" />
+                    <div className="relative flex h-3.5 w-3.5 items-center justify-center">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                     </div>
-                    <div>
-                      <h3 className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">Quick Complaint Desk</h3>
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Register subscriber support tickets instantly</p>
-                    </div>
+                    <span className="text-sm sm:text-base font-extrabold uppercase tracking-[0.2em] text-slate-950 dark:text-white">
+                      Complaint Entry Portal
+                    </span>
                   </div>
                   <button
                     onClick={() => setIsComplaintSwipeDownOpen(false)}
-                    className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition-all cursor-pointer shadow-sm"
                   >
                     <X size={18} />
                   </button>
                 </div>
 
                 {/* Complaint form wrapper */}
-                <div className="max-h-[75vh] overflow-y-auto pr-1">
+                <div className="max-h-[75vh] overflow-y-auto pr-2">
                   <ComplaintForm
                     onSubmit={async (data) => {
                       if (onRegisterComplaint) {

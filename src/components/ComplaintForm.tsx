@@ -4,7 +4,7 @@ import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned, Layers, 
 import { ComplaintStatus, ComplaintCategory, ComplaintPriority, Client, UserProfile, BrandingConfig } from '../types';
 import { cn, safeStringify } from '../lib/utils';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
-import { Network, Wifi, ShieldAlert, Zap, Search } from 'lucide-react';
+import { Network, Wifi, ShieldAlert, Zap, Search, ChevronDown } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { AppConfig } from '../constants';
 import { firebaseService } from '../lib/firebaseService';
@@ -183,39 +183,41 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
   const inputClasses = "w-full px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-brand-accent/10 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm text-center [text-align-last:center] uppercase placeholder:normal-case";
   const labelClasses = "block text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-2 text-center group-focus-within/field:text-brand-accent transition-colors duration-300";
 
-  const compactInputClasses = "w-full pl-9 pr-3 py-2.5 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/40 text-slate-950 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-300 uppercase placeholder:normal-case shadow-sm h-10";
-  const compactLabelContainerClasses = "absolute left-3 -top-1.5 px-1.5 bg-white dark:bg-slate-950 text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 group-focus-within/field:text-emerald-500 transition-all duration-200 z-10 flex items-center gap-1.5";
+  const compactInputClasses = "w-full pl-10 pr-4 py-3 text-sm font-black rounded-xl border-2 border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-600 dark:focus:border-emerald-500 hover:border-slate-400 dark:hover:border-slate-700 transition-all duration-300 uppercase placeholder:normal-case shadow-sm h-12";
+  const compactLabelContainerClasses = "absolute left-3.5 -top-2 px-1.5 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-all duration-200 z-10 flex items-center gap-1.5";
 
   if (compact) {
     return (
       <div className="w-full">
-        {/* Offline / Online Status Indicator */}
-        <div className="flex items-center justify-between px-3 py-1.5 mb-4 rounded-xl bg-slate-50/50 dark:bg-slate-900/20 border border-slate-100 dark:border-slate-900 text-[9px] font-black uppercase tracking-wider">
-          {isOffline ? (
-            <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-              <WifiOff size={11} className="animate-pulse" />
-              Offline: Local Cache Active
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Secure Link Active
-            </div>
-          )}
+        {/* Offline / Online Status Indicator - Only show if offline or has pending syncs */}
+        {(isOffline || pendingCount > 0) && (
+          <div className="flex items-center justify-between px-3 py-1.5 mb-4 rounded-xl bg-slate-50/50 dark:bg-slate-900/20 border border-slate-100 dark:border-slate-900 text-[9px] font-black uppercase tracking-wider">
+            {isOffline ? (
+              <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                <WifiOff size={11} className="animate-pulse" />
+                Offline: Local Cache Active
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Secure Link Active
+              </div>
+            )}
 
-          {pendingCount > 0 && (
-            <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
-              <RefreshCw size={10} className={cn(isSyncing && "animate-spin")} />
-              {pendingCount} Pending Sync{pendingCount > 1 ? 's' : ''}
-            </div>
-          )}
-        </div>
+            {pendingCount > 0 && (
+              <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                <RefreshCw size={10} className={cn(isSyncing && "animate-spin")} />
+                {pendingCount} Pending Sync{pendingCount > 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-x-4 gap-y-4">
           {/* Identity Fields */}
           <div className="col-span-12 sm:col-span-6 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <Search size={10} />
+              <Search size={11} />
               {customNames.username || 'System Username'}
             </div>
             <div className="relative" ref={clientListRef}>
@@ -233,7 +235,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 className={compactInputClasses}
                 required
               />
-              <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
               
               {showClientList && customerUsername && filteredClients.length > 0 && (
                 <div className="absolute left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
@@ -263,7 +265,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
 
           <div className="col-span-12 sm:col-span-6 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <User size={10} />
+              <User size={11} />
               {customNames.client || 'Full Legal Name'}
             </div>
             <div className="relative">
@@ -275,13 +277,13 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 className={compactInputClasses}
                 required
               />
-              <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
             </div>
           </div>
 
           <div className="col-span-12 sm:col-span-6 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <Phone size={10} />
+              <Phone size={11} />
               {customNames.number || 'Contact Number'}
             </div>
             <div className="relative">
@@ -293,34 +295,35 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 className={compactInputClasses}
                 required
               />
-              <Phone size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <Phone size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
             </div>
           </div>
 
           <div className="col-span-12 sm:col-span-6 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <MapPin size={10} />
+              <MapPin size={11} />
               {customNames.zone || 'Deployment Zone'}
             </div>
             <div className="relative">
               <select
                 value={area}
                 onChange={(e) => setArea(e.target.value)}
-                className={cn(compactInputClasses, "appearance-none cursor-pointer")}
+                className={cn(compactInputClasses, "appearance-none pr-8 cursor-pointer")}
                 required
               >
                 {appConfig.zones?.map((zone, i) => (
                   <option key={`zone-${i}`} value={zone}>{zone.toUpperCase()}</option>
                 ))}
               </select>
-              <MapPin size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <MapPin size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none transition-transform duration-300 group-focus-within/field:rotate-180" />
             </div>
           </div>
 
           {/* Technical Info Row */}
           <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <Package size={10} />
+              <Package size={11} />
               {customNames.pkg || 'Profile (Package)'}
             </div>
             <div className="relative">
@@ -331,13 +334,13 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 placeholder="EX: 50MB FIBER"
                 className={compactInputClasses}
               />
-              <Package size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <Package size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
             </div>
           </div>
 
           <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <Layers size={10} />
+              <Layers size={11} />
               {customNames.panel || 'Distribution Node'}
             </div>
             <div className="relative">
@@ -348,13 +351,13 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 placeholder="BOX / PORT DETAILS"
                 className={compactInputClasses}
               />
-              <Layers size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <Layers size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
             </div>
           </div>
 
           <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <MapPinned size={10} />
+              <MapPinned size={11} />
               {customNames.nearby || 'Locality Landmark'}
             </div>
             <div className="relative">
@@ -365,65 +368,68 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 placeholder="NEARBY REFERENCE"
                 className={compactInputClasses}
               />
-              <MapPinned size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <MapPinned size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
             </div>
           </div>
 
           {/* Settings Row */}
           <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <Info size={10} />
+              <Info size={11} />
               {customNames.category || 'Category'}
             </div>
             <div className="relative">
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
-                className={cn(compactInputClasses, "appearance-none cursor-pointer")}
+                className={cn(compactInputClasses, "appearance-none pr-8 cursor-pointer")}
               >
                 {appConfig.categories.map((cat, i) => (
                   <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
                 ))}
               </select>
-              <Info size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <Info size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none transition-transform duration-300 group-focus-within/field:rotate-180" />
             </div>
           </div>
 
           <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <ShieldAlert size={10} />
+              <ShieldAlert size={11} />
               {customNames.priority || 'Security Priority'}
             </div>
             <div className="relative">
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as ComplaintPriority)}
-                className={cn(compactInputClasses, "appearance-none cursor-pointer")}
+                className={cn(compactInputClasses, "appearance-none pr-8 cursor-pointer")}
               >
                 {appConfig.priorities.map((pri, i) => (
                   <option key={`pri-${i}`} value={pri}>{pri.toUpperCase()}</option>
                 ))}
               </select>
-              <ShieldAlert size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <ShieldAlert size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none transition-transform duration-300 group-focus-within/field:rotate-180" />
             </div>
           </div>
 
           <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <Wifi size={10} />
+              <Wifi size={11} />
               {customNames.status || 'Current Status'}
             </div>
             <div className="relative">
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as ComplaintStatus)}
-                className={cn(compactInputClasses, "appearance-none cursor-pointer")}
+                className={cn(compactInputClasses, "appearance-none pr-8 cursor-pointer")}
               >
                 {appConfig.statuses.map((stat, i) => (
                   <option key={`stat-${i}`} value={stat}>{stat.toUpperCase()}</option>
                 ))}
               </select>
-              <Wifi size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <Wifi size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none transition-transform duration-300 group-focus-within/field:rotate-180" />
             </div>
           </div>
 
@@ -458,7 +464,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           {/* Description Textarea */}
           <div className="col-span-12 group/field relative mt-1">
             <div className={compactLabelContainerClasses}>
-              <FileText size={10} />
+              <FileText size={11} />
               {customNames.description || 'Mission Objectives / Details'}
             </div>
             <div className="relative">
@@ -467,10 +473,10 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 onChange={(e) => setDescription(e.target.value.toUpperCase())}
                 placeholder="DESCRIBE THE TECHNICAL ISSUE IN DETAIL..."
                 rows={1}
-                className={cn(compactInputClasses, "resize-none h-14 py-1.5 rounded-xl pl-9")}
+                className={cn(compactInputClasses, "resize-none h-16 py-3 rounded-xl pl-10")}
                 required
               />
-              <FileText size={13} className="absolute left-3 top-2.5 text-slate-400 dark:text-slate-600 group-focus-within/field:text-emerald-500 transition-colors duration-300 pointer-events-none" />
+              <FileText size={15} className="absolute left-3.5 top-3.5 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
             </div>
           </div>
 
@@ -485,23 +491,23 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               )}
             >
               <div className={cn(
-                "relative flex items-center justify-center gap-2 rounded-[11px] px-4 py-2.5 text-white transition-all",
+                "relative flex items-center justify-center gap-2 rounded-[11px] px-5 py-3 text-white transition-all",
                 isOffline ? "bg-amber-600 hover:bg-amber-500" : "bg-slate-950/10 group-hover:bg-slate-950/0 dark:bg-slate-950/30"
               )}>
                 {isLoading || isSyncing ? (
                   <>
-                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                    <span className="text-[10px] uppercase tracking-wider font-bold">{isSyncing ? "Syncing..." : "Processing..."}</span>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                    <span className="text-xs sm:text-sm uppercase tracking-wider font-bold">{isSyncing ? "Syncing..." : "Processing..."}</span>
                   </>
                 ) : (
                   <>
-                    <span className="text-[10px] uppercase tracking-wider font-black">
+                    <span className="text-xs sm:text-sm uppercase tracking-wider font-black">
                       {isOffline ? "Store Locally (Offline)" : "Register Operations Log"}
                     </span>
                     {isOffline ? (
-                      <CloudOff size={12} />
+                      <CloudOff size={15} />
                     ) : (
-                      <Send size={12} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      <Send size={15} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                     )}
                   </>
                 )}

@@ -6,12 +6,180 @@ import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown,
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig } from '../types';
 import { cn } from '../lib/utils';
 import { getCardStyle } from '../lib/styleUtils';
-import { Network, ShieldAlert, Zap, Layers } from 'lucide-react';
+import { Network, ShieldAlert, Zap, Layers, Mail } from 'lucide-react';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
 import { getAvatarUrl } from '../utils/avatar';
+
+interface ProtocolStep {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+function ProtocolChecklistBuilder({
+  value,
+  onChange,
+  placeholder = "Add resolution protocol step..."
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+}) {
+  const [newStep, setNewStep] = React.useState('');
+
+  const steps: ProtocolStep[] = React.useMemo(() => {
+    if (!value || value.trim() === '') return [];
+    const lines = value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    return lines.map((line, idx) => {
+      let completed = false;
+      let title = line;
+      const match = line.match(/^\[([ xX])\]\s*(.*)$/);
+      if (match) {
+        completed = match[1].toLowerCase() === 'x';
+        title = match[2];
+      } else {
+        const lower = line.toLowerCase();
+        if (lower.includes('done') || lower.includes('ok') || lower.includes('complete') || lower.includes('resolved') || lower.includes('fixed') || lower.includes('success')) {
+          completed = true;
+        }
+      }
+      return {
+        id: `${idx}-${title}`,
+        title: title || line,
+        completed
+      };
+    });
+  }, [value]);
+
+  const updateValue = (updatedSteps: ProtocolStep[]) => {
+    const serialized = updatedSteps
+      .map(s => `[${s.completed ? 'X' : ' '}] ${s.title.trim().toUpperCase()}`)
+      .join('\n');
+    onChange(serialized);
+  };
+
+  const handleAddStep = () => {
+    if (!newStep.trim()) return;
+    const added: ProtocolStep = {
+      id: `${Date.now()}-${newStep}`,
+      title: newStep.toUpperCase(),
+      completed: false
+    };
+    updateValue([...steps, added]);
+    setNewStep('');
+  };
+
+  const handleToggleStep = (index: number) => {
+    const copy = [...steps];
+    copy[index] = { ...copy[index], completed: !copy[index].completed };
+    updateValue(copy);
+  };
+
+  const handleRemoveStep = (index: number) => {
+    const copy = steps.filter((_, idx) => idx !== index);
+    updateValue(copy);
+  };
+
+  const handleEditStepText = (index: number, newText: string) => {
+    const copy = [...steps];
+    copy[index] = { ...copy[index], title: newText.toUpperCase() };
+    updateValue(copy);
+  };
+
+  const [rawMode, setRawMode] = React.useState(false);
+
+  return (
+    <div className="space-y-3 bg-slate-50/50 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/80">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+          📋 Protocol Commands ({steps.length})
+        </span>
+        <button
+          type="button"
+          onClick={() => setRawMode(!rawMode)}
+          className="text-[8px] font-black uppercase tracking-wider text-brand-accent hover:underline cursor-pointer"
+        >
+          {rawMode ? "📋 Checklist Builder" : "✍️ Custom Text Mode"}
+        </button>
+      </div>
+
+      {rawMode ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          placeholder="E.g.\n[X] CHECK FIBER ATTENUATION\n[ ] SWAP FAULTY CLIENT ONT"
+          className="w-full h-32 p-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none uppercase"
+        />
+      ) : (
+        <div className="space-y-2">
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              value={newStep}
+              onChange={(e) => setNewStep(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddStep();
+                }
+              }}
+              placeholder={placeholder}
+              className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase"
+            />
+            <button
+              type="button"
+              onClick={handleAddStep}
+              className="px-3 py-1.5 bg-brand-accent hover:bg-brand-accent-hover text-white text-xs font-bold rounded-lg transition-all active:scale-95 flex items-center gap-1 shadow-sm"
+            >
+              <span>+</span>
+              <span className="text-[10px] font-black uppercase tracking-wider">Add</span>
+            </button>
+          </div>
+
+          {steps.length === 0 ? (
+            <div className="text-center py-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-lg bg-white/40 dark:bg-slate-950/20">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">No protocol commands added. Build steps above.</span>
+            </div>
+          ) : (
+            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+              {steps.map((step, idx) => (
+                <div
+                  key={step.id}
+                  className="flex items-center gap-2 p-2 bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-900 rounded-lg shadow-sm group"
+                >
+                  <input
+                    type="checkbox"
+                    checked={step.completed}
+                    onChange={() => handleToggleStep(idx)}
+                    className="h-3.5 w-3.5 rounded text-emerald-500 border-slate-300 dark:border-slate-700 focus:ring-emerald-400 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={step.title}
+                    onChange={(e) => handleEditStepText(idx, e.target.value)}
+                    className={`flex-1 bg-transparent border-none p-0 text-xs font-bold focus:ring-0 outline-none uppercase ${
+                      step.completed ? 'line-through text-slate-400 dark:text-slate-600' : 'text-slate-800 dark:text-slate-100'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveStep(idx)}
+                    className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ComplaintListProps {
   complaints: Complaint[];
@@ -70,6 +238,7 @@ export default function ComplaintList({
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(20);
   const [selectedComplaint, setSelectedComplaint] = React.useState<Complaint | null>(null);
+  const [selectedDelegate, setSelectedDelegate] = React.useState<UserProfile | null>(null);
   const [statusRemarks, setStatusRemarks] = React.useState('');
   const [customerReview, setCustomerReview] = React.useState('');
   const [hideStatusRemarksBox, setHideStatusRemarksBox] = React.useState(false);
@@ -1308,13 +1477,25 @@ export default function ComplaintList({
                             {/* Delegate staff avatar */}
                             {(() => {
                               const authorUser = users.find(u => u.uid === complaint.memberId);
+                              const handleClick = (e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                setSelectedDelegate(authorUser || {
+                                  uid: complaint.memberId,
+                                  username: complaint.memberName || 'System',
+                                  fullName: complaint.memberName || 'System',
+                                  role: 'member',
+                                  createdAt: Date.now(),
+                                  profilePicture: 'default:male'
+                                });
+                              };
                               if (authorUser && authorUser.profilePicture) {
                                 return (
                                   <img 
                                     src={getAvatarUrl(authorUser.profilePicture)} 
                                     alt={complaint.memberName} 
-                                    className="h-6 w-6 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0"
-                                    title={`Logged by: ${complaint.memberName || 'System'}`}
+                                    className="h-6 w-6 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700 shadow-sm shrink-0 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                                    title={`Click to view profile of ${complaint.memberName || 'Delegate'}`}
+                                    onClick={handleClick}
                                   />
                                 );
                               }
@@ -1322,8 +1503,9 @@ export default function ComplaintList({
                                 <img 
                                   src={getAvatarUrl('default:male')} 
                                   alt={complaint.memberName || 'System'}
-                                  className="h-6 w-6 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0 opacity-80"
-                                  title={`Logged by: ${complaint.memberName || 'System'}`}
+                                  className="h-6 w-6 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700 shadow-sm shrink-0 opacity-80 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                                  title={`Click to view profile of ${complaint.memberName || 'System'}`}
+                                  onClick={handleClick}
                                 />
                               );
                             })()}
@@ -1491,6 +1673,150 @@ export default function ComplaintList({
               }
             }}
           />
+        )}
+
+        {selectedDelegate && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedDelegate(null)}
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-md"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 30 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/80 dark:border-slate-800/80 z-10 animate-in fade-in zoom-in-95 duration-200"
+            >
+              {/* Banner/Header Graphic background */}
+              <div className="h-28 bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 relative flex items-end justify-center">
+                <button 
+                  onClick={() => setSelectedDelegate(null)}
+                  className="absolute top-4 right-4 p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-white transition-all cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Profile details block */}
+              <div className="px-6 pb-6 pt-1 flex flex-col items-center">
+                
+                {/* Large Profile Picture overlapping the banner */}
+                <div className="relative -mt-14 mb-4">
+                  <div className="w-24 h-24 rounded-full border-4 border-white dark:border-slate-950 overflow-hidden shadow-xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
+                    <img 
+                      src={getAvatarUrl(selectedDelegate.profilePicture || 'default:male')} 
+                      alt={selectedDelegate.fullName || selectedDelegate.username}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  
+                  {/* Status Indicator circle badge */}
+                  <div className="absolute bottom-1 right-1 w-5 h-5 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full flex items-center justify-center shadow-md" title="Active Account">
+                    <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                  </div>
+                </div>
+
+                {/* Name */}
+                <h3 className="text-xl font-black text-slate-950 dark:text-white uppercase tracking-tight text-center leading-tight">
+                  {selectedDelegate.fullName || selectedDelegate.username}
+                </h3>
+                
+                {/* Username handle */}
+                <p className="text-[10px] font-mono font-bold text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-widest">
+                  @{selectedDelegate.username}
+                </p>
+
+                {/* Role Badge */}
+                <span className={cn(
+                  "mt-3 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-sm",
+                  selectedDelegate.role === 'admin' || selectedDelegate.role === 'super_admin'
+                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
+                    : selectedDelegate.role === 'editor'
+                    ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                    : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                )}>
+                  {selectedDelegate.role === 'admin' || selectedDelegate.role === 'super_admin' ? '🛡️ Administrator' : '🔧 Service Delegate'}
+                </span>
+
+                {/* Horizontal divider */}
+                <div className="w-full border-b border-slate-100 dark:border-slate-800/85 my-4.5" />
+
+                {/* Meta Attributes Grid */}
+                <div className="w-full space-y-3">
+                  
+                  {/* Email Field Row */}
+                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-800/40 flex items-center justify-center text-emerald-500 dark:text-emerald-400 shrink-0">
+                      <Mail size={15} />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Corporate Email</span>
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate select-all">
+                        {selectedDelegate.email || `${selectedDelegate.username}@gtspak.net`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Gender Field Row */}
+                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                    {selectedDelegate.profilePicture?.includes('female') ? (
+                      <>
+                        <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200/50 dark:border-rose-800/40 flex items-center justify-center text-rose-500 dark:text-rose-400 shrink-0">
+                          <User size={15} />
+                        </div>
+                        <div className="flex flex-col flex-1">
+                          <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Gender Identity</span>
+                          <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
+                            Female 👩‍🔧
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200/50 dark:border-blue-800/40 flex items-center justify-center text-blue-500 dark:text-blue-400 shrink-0">
+                          <User size={15} />
+                        </div>
+                        <div className="flex flex-col flex-1">
+                          <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Gender Identity</span>
+                          <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wide flex items-center gap-1.5">
+                            Male 👨‍🔧
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Activity/Joining Date Row */}
+                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/50 dark:border-amber-800/40 flex items-center justify-center text-amber-500 dark:text-amber-400 shrink-0">
+                      <Calendar size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Commission Date</span>
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase">
+                        {selectedDelegate.createdAt ? new Date(selectedDelegate.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : 'July 2, 2026'}
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Footer Action to close */}
+                <button
+                  onClick={() => setSelectedDelegate(null)}
+                  className="w-full mt-6 py-3 rounded-2xl bg-slate-900 hover:bg-black dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-black uppercase tracking-widest text-[10px] shadow-md transition-all active:scale-[0.98] cursor-pointer text-center"
+                >
+                  Dismiss Profile
+                </button>
+
+              </div>
+            </motion.div>
+          </div>
         )}
 
         {selectedComplaint && (
@@ -1720,12 +2046,10 @@ export default function ComplaintList({
                               exit={{ opacity: 0, scale: 0.98 }}
                               className="space-y-1.5"
                             >
-                              <textarea
+                              <ProtocolChecklistBuilder
                                 value={editedRemarks}
-                                onChange={(e) => setEditedRemarks(e.target.value)}
-                                className="w-full p-3 bg-slate-50 dark:bg-slate-900/60 border border-brand-accent/30 dark:border-brand-accent/20 rounded-xl text-sm focus:ring-2 focus:ring-brand-accent/25 focus:border-brand-accent outline-none h-24 resize-none"
-                                placeholder="Type structural logging protocol..."
-                                autoFocus
+                                onChange={(val) => setEditedRemarks(val)}
+                                placeholder="Add resolution protocol step..."
                               />
                               <div className="flex justify-end gap-1.5 text-[9px] font-black uppercase tracking-widest">
                                 <button 
@@ -1758,14 +2082,51 @@ export default function ComplaintList({
                               transition={{ type: "spring", stiffness: 150, damping: 15 }}
                               className="p-4 sm:p-5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent rounded-xl border border-emerald-500/20 text-emerald-800 dark:text-emerald-400 text-sm sm:text-base font-semibold whitespace-pre-wrap leading-relaxed shadow-inner"
                             >
-                              <div className="flex items-center gap-2 mb-2">
+                              <div className="flex items-center gap-2 mb-3">
                                 <span className="relative flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                 </span>
-                                <span className="text-[8px] sm:text-[9.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed</span>
+                                <span className="text-[8px] sm:text-[9.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed Protocol Steps</span>
                               </div>
-                              <p className="italic">"{selectedComplaint.remarks}"</p>
+                              {(() => {
+                                const remarks = selectedComplaint.remarks || '';
+                                if (remarks.includes('[ ]') || remarks.includes('[X]') || remarks.includes('[x]')) {
+                                  const lines = remarks.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                                  return (
+                                    <div className="space-y-2">
+                                      {lines.map((line, idx) => {
+                                        let completed = false;
+                                        let text = line;
+                                        const match = line.match(/^\[([ xX])\]\s*(.*)$/);
+                                        if (match) {
+                                          completed = match[1].toLowerCase() === 'x';
+                                          text = match[2];
+                                        }
+                                        return (
+                                          <div key={idx} className="flex items-center gap-2.5 text-xs sm:text-sm font-bold">
+                                            <span className={cn(
+                                              "w-4 h-4 rounded flex items-center justify-center border text-[9px] shrink-0 font-black",
+                                              completed 
+                                                ? "bg-emerald-500/20 border-emerald-500 text-emerald-600 dark:text-emerald-400" 
+                                                : "bg-slate-100 dark:bg-slate-900 border-slate-300/60 dark:border-slate-800 text-slate-400"
+                                            )}>
+                                              {completed ? "✓" : ""}
+                                            </span>
+                                            <span className={cn(
+                                              "uppercase tracking-wide",
+                                              completed ? "line-through text-slate-400 dark:text-slate-600" : "text-slate-800 dark:text-slate-200"
+                                            )}>
+                                              {text}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                }
+                                return <p className="italic">"{selectedComplaint.remarks}"</p>;
+                              })()}
                             </motion.div>
                           ) : (
                             <motion.div 
@@ -1859,12 +2220,25 @@ export default function ComplaintList({
                       <div className="flex items-center gap-1.5 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
                         {(() => {
                           const authorUser = users.find(u => u.uid === selectedComplaint.memberId);
+                          const handleClick = (e: React.MouseEvent) => {
+                            e.stopPropagation();
+                            setSelectedDelegate(authorUser || {
+                              uid: selectedComplaint.memberId,
+                              username: selectedComplaint.memberName || 'System',
+                              fullName: selectedComplaint.memberName || 'System',
+                              role: 'member',
+                              createdAt: Date.now(),
+                              profilePicture: 'default:male'
+                            });
+                          };
                           if (authorUser && authorUser.profilePicture) {
                             return (
                               <img 
                                 src={getAvatarUrl(authorUser.profilePicture)} 
                                 alt={selectedComplaint.memberName} 
-                                className="h-4 w-4 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0"
+                                className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm shrink-0 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                                title={`Click to view profile of ${selectedComplaint.memberName || 'Delegate'}`}
+                                onClick={handleClick}
                               />
                             );
                           }
@@ -1872,7 +2246,9 @@ export default function ComplaintList({
                             <img 
                               src={getAvatarUrl('default:male')} 
                               alt={selectedComplaint.memberName || 'System'}
-                              className="h-4 w-4 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0 opacity-80"
+                              className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm shrink-0 opacity-80 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                              title={`Click to view profile of ${selectedComplaint.memberName || 'System'}`}
+                              onClick={handleClick}
                             />
                           );
                         })()}
@@ -1970,58 +2346,59 @@ export default function ComplaintList({
                                       className="space-y-1"
                                     >
                                       <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Team Resolution Protocol (Required for completion)</label>
-                                      <div className="relative">
-                                        <textarea
+                                      <div className="space-y-2">
+                                        <ProtocolChecklistBuilder
                                           value={statusRemarks}
-                                          onChange={(e) => setStatusRemarks(e.target.value.toUpperCase())}
-                                          placeholder="Enter resolution protocol details..."
-                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
+                                          onChange={(val) => setStatusRemarks(val)}
+                                          placeholder="Add resolution protocol step..."
                                         />
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            if (!statusRemarks.trim()) {
-                                              toast.error("Please enter a Team Resolution Protocol first.");
-                                              return;
-                                            }
-                                            // Copy to selected complaint remarks trigger
-                                            setSelectedComplaint(prev => prev ? { ...prev, remarks: statusRemarks } : null);
-                                            
-                                            // Enable slide transition shifting right to left
-                                            setAnimateRemarksLeft(true);
-                                            setHideStatusRemarksBox(true);
-                                            
-                                            // Check if both elements are completed to trigger Thank You animations
-                                            if (customerReview.trim() && hideCustomerReviewBox) {
-                                              setShowLeftThankYou(true);
-                                            }
-                                            
-                                            try {
-                                              const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
-                                              sound.volume = 0.2;
-                                              sound.play().catch(() => {});
-                                            } catch (e) {}
-
-                                            try {
-                                              if (onUpdateRemarks) {
-                                                await onUpdateRemarks(selectedComplaint.id, statusRemarks);
-                                                toast.success("Protocol remark saved to database.");
-                                              } else if (onEdit) {
-                                                await onEdit(selectedComplaint.id, { remarks: statusRemarks });
-                                                toast.success("Protocol remark saved to database.");
-                                              } else {
-                                                toast.success("Protocol saved in memory.");
+                                        <div className="flex justify-end">
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              if (!statusRemarks.trim()) {
+                                                toast.error("Please enter a Team Resolution Protocol first.");
+                                                return;
                                               }
-                                            } catch (err) {
-                                              console.error("Failed to update database remarks:", err);
-                                              toast.error("Failed to save to database. Kept in memory.");
-                                            }
-                                          }}
-                                          className="absolute bottom-2 right-2 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
-                                        >
-                                          <span>Enter</span>
-                                          <Send size={7} />
-                                        </button>
+                                              // Copy to selected complaint remarks trigger
+                                              setSelectedComplaint(prev => prev ? { ...prev, remarks: statusRemarks } : null);
+                                              
+                                              // Enable slide transition shifting right to left
+                                              setAnimateRemarksLeft(true);
+                                              setHideStatusRemarksBox(true);
+                                              
+                                              // Check if both elements are completed to trigger Thank You animations
+                                              if (customerReview.trim() && hideCustomerReviewBox) {
+                                                setShowLeftThankYou(true);
+                                              }
+                                              
+                                              try {
+                                                const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+                                                sound.volume = 0.2;
+                                                sound.play().catch(() => {});
+                                              } catch (e) {}
+
+                                              try {
+                                                if (onUpdateRemarks) {
+                                                  await onUpdateRemarks(selectedComplaint.id, statusRemarks);
+                                                  toast.success("Protocol remark saved to database.");
+                                                } else if (onEdit) {
+                                                  await onEdit(selectedComplaint.id, { remarks: statusRemarks });
+                                                  toast.success("Protocol remark saved to database.");
+                                                } else {
+                                                  toast.success("Protocol saved in memory.");
+                                                }
+                                              } catch (err) {
+                                                console.error("Failed to update database remarks:", err);
+                                                toast.error("Failed to save to database. Kept in memory.");
+                                              }
+                                            }}
+                                            className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
+                                          >
+                                            <span>Enter Protocols</span>
+                                            <Send size={9} />
+                                          </button>
+                                        </div>
                                       </div>
                                     </motion.div>
                                   ) : (

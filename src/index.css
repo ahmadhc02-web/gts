@@ -393,3 +393,126 @@
     left: 1.5rem;
   }
 }
+
+/* Custom premium complaints button from Uiverse.io */
+.uiverse-complaint-btn {
+  text-decoration: none;
+  line-height: 1;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 173, 84, 0.08);
+  background-color: #ffffff;
+  color: #0f172a !important;
+  border: 1px solid rgba(0, 173, 84, 0.25);
+  cursor: pointer;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+.dark .uiverse-complaint-btn {
+  background-color: #ffffff;
+  color: #0f172a !important;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.uiverse-decor {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #009647, #00ad54);
+  transform: translateX(-101%);
+  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
+}
+
+.dark .uiverse-decor {
+  background: linear-gradient(90deg, #059669, #10b981);
+}
+
+.uiverse-content {
+  display: flex;
+  align-items: center;
+  font-weight: 800;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  z-index: 10;
+  background: transparent;
+}
+
+.uiverse-icon {
+  width: 36px;
+  height: 100%;
+  background-color: #00ad54;
+  display: grid;
+  place-items: center;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(0, 173, 84, 0.15);
+}
+
+.dark .uiverse-icon {
+  background-color: #10b981;
+  border-right-color: rgba(16, 185, 129, 0.15);
+}
+
+.uiverse-text {
+  display: inline-block;
+  transition: color 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 2px 0.85rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 900;
+  color: #0f172a !important;
+  z-index: 10;
+}
+
+.uiverse-complaint-btn:hover .uiverse-decor {
+  transform: translateX(0);
+}
+
+.uiverse-complaint-btn:hover .uiverse-text {
+  color: #ffffff !important;
+}
+
+.uiverse-complaint-btn:hover .uiverse-icon {
+  background-color: transparent;
+  border-right-color: transparent;
+}
+
+.uiverse-complaint-btn:hover {
+  border-color: #00ad54;
+  box-shadow: 0 0 14px rgba(0, 173, 84, 0.4);
+}
+
+.dark .uiverse-complaint-btn:hover {
+  border-color: #10b981;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);
+}
+
+@media (max-width: 640px) {
+  .uiverse-complaint-btn {
+    height: 30px !important;
+    border-radius: 0.375rem !important;
+  }
+  .uiverse-icon {
+    width: 28px !important;
+  }
+  .uiverse-icon svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .uiverse-text {
+    font-size: 8.5px !important;
+    padding: 1px 0.5rem !important;
+    letter-spacing: 0.04em !important;
+  }
+}
