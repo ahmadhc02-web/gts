@@ -1,5 +1,58 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
+
+// Globals polyfill for sandboxed iframe environments (like Hugging Face)
+if (typeof window !== 'undefined') {
+  const checkStorage = (type: 'localStorage' | 'sessionStorage') => {
+    try {
+      const storage = window[type];
+      if (storage) {
+        storage.getItem('__test_sandbox__');
+      }
+    } catch (e) {
+      console.warn(`[Sandbox Polyfill] ${type} is blocked by browser policies. Activating resilient in-memory fallback.`, e);
+      try {
+        const fallbackStore: Record<string, string> = {};
+        const fallbackStorage = {
+          getItem: (key: string): string | null => {
+            return fallbackStore[key] !== undefined ? fallbackStore[key] : null;
+          },
+          setItem: (key: string, value: string): void => {
+            fallbackStore[key] = String(value);
+          },
+          removeItem: (key: string): void => {
+            delete fallbackStore[key];
+          },
+          clear: (): void => {
+            for (const key in fallbackStore) {
+              delete fallbackStore[key];
+            }
+          },
+          key: (index: number): string | null => {
+            const keys = Object.keys(fallbackStore);
+            return keys[index] || null;
+          },
+          get length(): number {
+            return Object.keys(fallbackStore).length;
+          }
+        };
+
+        Object.defineProperty(window, type, {
+          value: fallbackStorage,
+          writable: true,
+          configurable: true,
+          enumerable: true
+        });
+      } catch (err) {
+        console.error(`[Sandbox Polyfill] Failed to redefine window.${type}:`, err);
+      }
+    }
+  };
+
+  checkStorage('localStorage');
+  checkStorage('sessionStorage');
+}
+
 import App from './App.tsx';
 import './index.css';
 

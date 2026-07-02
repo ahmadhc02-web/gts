@@ -565,22 +565,34 @@ export default function App() {
     let unsubscribeAuth: (() => void) | undefined;
     let initialized = false;
 
+    function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> {
+      return Promise.race([
+        promise,
+        new Promise<T>((resolve) => setTimeout(() => {
+          console.warn(`[Init Speed Optimization] Query timed out after ${timeoutMs}ms, proceeding with offline cache/fallback.`);
+          resolve(fallbackValue);
+        }, timeoutMs))
+      ]);
+    }
+
     const init = async (userAuth: any) => {
       console.log('App: Initializing Data Registry...');
       
       // Load Google Sheets config from Firestore to local storage first
       try {
-        await googleSheetsService.loadConfigFromFirestore();
+        await promiseWithTimeout(googleSheetsService.loadConfigFromFirestore(), 1500, null);
       } catch (e) {
         console.warn("Could not retrieve shared Google Sheets configuration:", e);
       }
       
       // Test Firestore connection
-      firebaseService.testConnection();
+      try {
+        firebaseService.testConnection();
+      } catch (e) {}
       
       try {
-        // Fetch all users to ensure bootstrap accounts exist
-        const initialUsers = await firebaseService.getUsers();
+        // Fetch all users to ensure bootstrap accounts exist with a fast 2.0-second timeout
+        const initialUsers = await promiseWithTimeout(firebaseService.getUsers(), 2000, []);
         let currentUsers = [...initialUsers];
         
         // Self-Healing Boot Seed: ONLY activate if the database is brand new and completely empty!

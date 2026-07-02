@@ -29,6 +29,63 @@ function ProtocolChecklistBuilder({
   placeholder?: string;
 }) {
   const [newStep, setNewStep] = React.useState('');
+  const [customTemplateName, setCustomTemplateName] = React.useState('');
+  const [showSaveModal, setShowSaveModal] = React.useState(false);
+
+  const PREDEFINED_PROTOCOLS = React.useMemo(() => [
+    {
+      name: "FIBER CUT / DOWN",
+      color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-950/30",
+      steps: [
+        "MEASURE OLT PORT POWER & ATTENUATION",
+        "INSPECT CUSTOMER DROP CABLE & CONNECTOR",
+        "CLEAN OPTICAL CONNECTOR SLEEVE WITH ISO",
+        "SPLICING CORRECTION AT DISTRIBUTION BOX",
+        "VERIFY ONT RE-REGISTRATION PON LIGHT UP"
+      ]
+    },
+    {
+      name: "SLOW SPEED / LAGGING",
+      color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-950/30",
+      steps: [
+        "PERFORM CORE BRAS DIRECT PORT TEST",
+        "CLEAR MAC ARP LEASE & SESSION REBOOT",
+        "CONFIRM PROFILE BOUND BANDWIDTH SPEED",
+        "SCAN FOR 2.4GHZ WIFI CO-CHANNEL INTERFERENCE",
+        "UPDATE DNS IP CONFIG TO 8.8.8.8 / 1.1.1.1"
+      ]
+    },
+    {
+      name: "ROUTER RESETS & CONFIGS",
+      color: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-950/30",
+      steps: [
+        "FACTORY DEFAULTS ROUTER FIRMWARE REBOOT",
+        "RE-WRITE PPPOE SUBSCRIBER CREDENTIALS",
+        "ACTIVATE 5GHZ BAND WITH SEPARATE SSID",
+        "OPTIMIZE MTU CLAMP SIZE TO 1480 / 1492",
+        "VERIFY LAN DHCP POOL ASSIGNMENT SUCCESS"
+      ]
+    },
+    {
+      name: "PHYSICAL LINE REPAIR",
+      color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-950/30",
+      steps: [
+        "SWAP CAT6 ETHERNET ROUTER IN-DOOR PATCH",
+        "RE-ALIGN COIL TENSION OF OUTDOOR FIBER",
+        "REPLACE FAULTY ONT 12V DC TRANSFORMER",
+        "SEAL DROP BOX CONNECTOR FROM WATER DUST"
+      ]
+    }
+  ], []);
+
+  const [customTemplates, setCustomTemplates] = React.useState<{name: string, steps: string[]}[]>(() => {
+    try {
+      const saved = localStorage.getItem('gts_custom_protocols');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   const steps: ProtocolStep[] = React.useMemo(() => {
     if (!value || value.trim() === '') return [];
@@ -72,6 +129,60 @@ function ProtocolChecklistBuilder({
     setNewStep('');
   };
 
+  const handleAppendTemplate = (templateSteps: string[]) => {
+    const currentTitles = steps.map(s => s.title.toUpperCase());
+    const filteredNewSteps = templateSteps.filter(tStep => !currentTitles.includes(tStep.toUpperCase()));
+    
+    if (filteredNewSteps.length === 0) {
+      toast.info("All steps in this template are already added!");
+      return;
+    }
+
+    const appended: ProtocolStep[] = filteredNewSteps.map((title, idx) => ({
+      id: `${Date.now()}-${idx}-${title}`,
+      title: title.toUpperCase(),
+      completed: false
+    }));
+
+    updateValue([...steps, ...appended]);
+    toast.success(`Successfully appended ${appended.length} unique steps!`);
+  };
+
+  const handleClearAllSteps = () => {
+    if (window.confirm("Are you sure you want to clear all active steps?")) {
+      onChange('');
+      toast.info("Cleared protocol checklist.");
+    }
+  };
+
+  const handleSaveAsTemplate = () => {
+    if (!customTemplateName.trim()) {
+      toast.error("Template name is required");
+      return;
+    }
+    if (steps.length === 0) {
+      toast.error("Checklist is empty. Add steps before saving.");
+      return;
+    }
+    const templateSteps = steps.map(s => s.title);
+    const updated = [...customTemplates, { name: customTemplateName.trim().toUpperCase(), steps: templateSteps }];
+    setCustomTemplates(updated);
+    localStorage.setItem('gts_custom_protocols', JSON.stringify(updated));
+    setCustomTemplateName('');
+    setShowSaveModal(false);
+    toast.success(`Saved template "${customTemplateName.toUpperCase()}"!`);
+  };
+
+  const handleDeleteCustomTemplate = (name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm(`Delete custom template "${name}"?`)) {
+      const updated = customTemplates.filter(t => t.name !== name);
+      setCustomTemplates(updated);
+      localStorage.setItem('gts_custom_protocols', JSON.stringify(updated));
+      toast.info(`Deleted template "${name}"`);
+    }
+  };
+
   const handleToggleStep = (index: number) => {
     const copy = [...steps];
     copy[index] = { ...copy[index], completed: !copy[index].completed };
@@ -92,19 +203,118 @@ function ProtocolChecklistBuilder({
   const [rawMode, setRawMode] = React.useState(false);
 
   return (
-    <div className="space-y-3 bg-slate-50/50 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800/80">
+    <div className="space-y-3 bg-slate-50/55 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-inner">
       <div className="flex items-center justify-between">
-        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
           📋 Protocol Commands ({steps.length})
         </span>
-        <button
-          type="button"
-          onClick={() => setRawMode(!rawMode)}
-          className="text-[8px] font-black uppercase tracking-wider text-brand-accent hover:underline cursor-pointer"
-        >
-          {rawMode ? "📋 Checklist Builder" : "✍️ Custom Text Mode"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setRawMode(!rawMode)}
+            className="text-[9px] font-black uppercase tracking-wider text-brand-accent hover:underline cursor-pointer"
+          >
+            {rawMode ? "📋 Checklist Builder" : "✍️ Custom Text Mode"}
+          </button>
+          {steps.length > 0 && !rawMode && (
+            <button
+              type="button"
+              onClick={handleClearAllSteps}
+              className="text-[9px] font-black uppercase tracking-wider text-rose-500 hover:underline cursor-pointer"
+            >
+              🧹 Clear All
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Predefined Templates Section */}
+      {!rawMode && (
+        <div className="space-y-1.5 border-b border-slate-200/60 dark:border-slate-800/80 pb-3">
+          <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
+            ⚡ Quick Multi-Protocol Injectors (Click to combine)
+          </span>
+          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto py-1">
+            {PREDEFINED_PROTOCOLS.map((proto) => (
+              <button
+                key={proto.name}
+                type="button"
+                onClick={() => handleAppendTemplate(proto.steps)}
+                className={cn(
+                  "px-2 py-1 text-[8.5px] font-black uppercase tracking-wider rounded-lg border cursor-pointer transition-all active:scale-95 flex items-center gap-1",
+                  proto.color
+                )}
+                title={`Append ${proto.steps.length} steps of ${proto.name}`}
+              >
+                <span>➕</span>
+                <span>{proto.name}</span>
+              </button>
+            ))}
+
+            {customTemplates.map((proto) => (
+              <div
+                key={proto.name}
+                onClick={() => handleAppendTemplate(proto.steps)}
+                className="px-2 py-1 text-[8.5px] font-black uppercase tracking-wider rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all active:scale-95 flex items-center gap-1.5 group"
+                title={`Append custom template: ${proto.name}`}
+              >
+                <span>⭐️</span>
+                <span>{proto.name}</span>
+                <span
+                  onClick={(e) => handleDeleteCustomTemplate(proto.name, e)}
+                  className="text-red-500 hover:text-red-700 font-extrabold px-0.5 ml-0.5 rounded hover:bg-red-500/10 pointer-events-auto"
+                  title="Delete Template"
+                >
+                  ×
+                </span>
+              </div>
+            ))}
+
+            {steps.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowSaveModal(true)}
+                className="px-2 py-1 text-[8.5px] font-black uppercase tracking-wider rounded-lg border border-dashed border-brand-accent/40 bg-brand-accent/5 text-brand-accent hover:bg-brand-accent/10 cursor-pointer transition-all active:scale-95 flex items-center gap-1"
+              >
+                <span>💾</span>
+                <span>Save Active as Template</span>
+              </button>
+            )}
+          </div>
+
+          {/* Save Custom Template Modal inline block */}
+          {showSaveModal && (
+            <div className="p-2.5 bg-brand-accent/5 rounded-xl border border-brand-accent/25 space-y-2 mt-2">
+              <span className="text-[8.5px] font-black text-brand-accent uppercase tracking-widest block">
+                Save Active Steps As Custom Preset Template
+              </span>
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={customTemplateName}
+                  onChange={(e) => setCustomTemplateName(e.target.value)}
+                  placeholder="E.g., MY CUSTOM ROUTER VERIFICATION"
+                  className="flex-1 px-2.5 py-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-[10px] font-semibold uppercase tracking-wider outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveAsTemplate}
+                  className="px-2.5 py-1 bg-brand-accent text-white text-[9.5px] font-black uppercase tracking-wider rounded hover:bg-brand-accent-hover transition-all"
+                >
+                  Save Preset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSaveModal(false)}
+                  className="px-2.5 py-1 text-slate-400 text-[9.5px] font-black uppercase tracking-wider rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {rawMode ? (
         <textarea
@@ -140,8 +350,8 @@ function ProtocolChecklistBuilder({
           </div>
 
           {steps.length === 0 ? (
-            <div className="text-center py-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-lg bg-white/40 dark:bg-slate-950/20">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">No protocol commands added. Build steps above.</span>
+            <div className="text-center py-5 border border-dashed border-slate-200 dark:border-slate-800 rounded-lg bg-white/40 dark:bg-slate-950/20">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">No protocol commands added. Build steps or use templates above.</span>
             </div>
           ) : (
             <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
