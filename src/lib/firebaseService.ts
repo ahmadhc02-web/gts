@@ -2048,7 +2048,7 @@ export const firebaseService = {
       const docIdFolders = 'ledger_folders_main';
       const docIdMap = 'ledger_sheet_map_main';
       
-      const { data: sheets } = await supabase.from('ledger_sheets').select('id, data');
+      const { data: sheets } = await supabase.from('ledger_sheets').select('*');
       const { data: mapData } = await supabase.from('branding_config').select('id, dashboard_subtext').eq('id', docIdMap).maybeSingle();
       const { data: foldersData } = await supabase.from('branding_config').select('id, dashboard_subtext').eq('id', docIdFolders).maybeSingle();
 
@@ -2056,31 +2056,48 @@ export const firebaseService = {
       let folders = foldersData && foldersData.dashboard_subtext ? JSON.parse(foldersData.dashboard_subtext) : [];
       
       if (!Array.isArray(folders)) folders = [];
-      if (folders.length === 0) {
-          folders = [{ id: 'june_data', name: 'June Data', createdAt: Date.now() }];
-      }
+      
+      const julyFolderId = "folder_1782822316447_zm8i1";
+      const juneFolderId = "june_data";
 
-      let julyFolder = folders.find((f: any) => f.name.toLowerCase().includes('july'));
+      let julyFolder = folders.find((f: any) => f.id === julyFolderId || f.name.toLowerCase().includes('july'));
       if (!julyFolder) {
-          julyFolder = { id: `folder_${Date.now()}_july`, name: '1 July Data', createdAt: Date.now() };
+          julyFolder = { id: julyFolderId, name: '1 July Data', createdAt: Date.now() };
           folders.push(julyFolder);
+      } else {
+          julyFolder.id = julyFolderId;
+          if (!julyFolder.name) julyFolder.name = '1 July Data';
       }
 
-      let juneFolder = folders.find((f: any) => f.name.toLowerCase().includes('june') || f.id === 'june_data');
+      let juneFolder = folders.find((f: any) => f.id === juneFolderId || f.name.toLowerCase().includes('june'));
       if (!juneFolder) {
-          juneFolder = { id: 'june_data', name: 'June Data', createdAt: Date.now() };
+          juneFolder = { id: juneFolderId, name: 'June Data', createdAt: Date.now() };
           folders.push(juneFolder);
+      } else {
+          juneFolder.id = juneFolderId;
+          if (!juneFolder.name) juneFolder.name = 'June Data';
       }
+
+      const isJulySheet = (sDate: string): boolean => {
+        const clean = sDate.toLowerCase().trim();
+        if (clean.includes('july') || clean.includes('jul')) return true;
+        const parts = clean.split('-');
+        if (parts.length >= 2) {
+          const month = parts[1].trim();
+          if (month === '07' || month === '7') return true;
+        }
+        return false;
+      };
 
       if (sheets) {
         sheets.forEach((s: any) => {
           // Map to June or July ONLY if it is currently unmapped!
           if (!map[s.id]) {
-            const sheetDate = (s.data?.sheetDate || '').toLowerCase();
-            if (sheetDate.includes('jul') || sheetDate.includes('07 -') || sheetDate.includes('july')) {
-                map[s.id] = julyFolder.id;
+            const sheetDate = (s.sheet_date || '').toLowerCase();
+            if (isJulySheet(sheetDate)) {
+                map[s.id] = julyFolderId;
             } else {
-                map[s.id] = juneFolder.id;
+                map[s.id] = juneFolderId;
             }
           }
         });

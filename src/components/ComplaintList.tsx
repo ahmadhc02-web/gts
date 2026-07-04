@@ -13,384 +13,6 @@ import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
 import { getAvatarUrl } from '../utils/avatar';
 
-interface ProtocolStep {
-  id: string;
-  title: string;
-  completed: boolean;
-}
-
-function ProtocolChecklistBuilder({
-  value,
-  onChange,
-  placeholder = "Add resolution protocol step..."
-}: {
-  value: string;
-  onChange: (val: string) => void;
-  placeholder?: string;
-}) {
-  const [newStep, setNewStep] = React.useState('');
-  const [customTemplateName, setCustomTemplateName] = React.useState('');
-  const [showSaveModal, setShowSaveModal] = React.useState(false);
-
-  const PREDEFINED_PROTOCOLS = React.useMemo(() => [
-    {
-      name: "FIBER CUT / DOWN",
-      color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-950/30",
-      steps: [
-        "MEASURE OLT PORT POWER & ATTENUATION",
-        "INSPECT CUSTOMER DROP CABLE & CONNECTOR",
-        "CLEAN OPTICAL CONNECTOR SLEEVE WITH ISO",
-        "SPLICING CORRECTION AT DISTRIBUTION BOX",
-        "VERIFY ONT RE-REGISTRATION PON LIGHT UP"
-      ]
-    },
-    {
-      name: "SLOW SPEED / LAGGING",
-      color: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-950/30",
-      steps: [
-        "PERFORM CORE BRAS DIRECT PORT TEST",
-        "CLEAR MAC ARP LEASE & SESSION REBOOT",
-        "CONFIRM PROFILE BOUND BANDWIDTH SPEED",
-        "SCAN FOR 2.4GHZ WIFI CO-CHANNEL INTERFERENCE",
-        "UPDATE DNS IP CONFIG TO 8.8.8.8 / 1.1.1.1"
-      ]
-    },
-    {
-      name: "ROUTER RESETS & CONFIGS",
-      color: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-950/30",
-      steps: [
-        "FACTORY DEFAULTS ROUTER FIRMWARE REBOOT",
-        "RE-WRITE PPPOE SUBSCRIBER CREDENTIALS",
-        "ACTIVATE 5GHZ BAND WITH SEPARATE SSID",
-        "OPTIMIZE MTU CLAMP SIZE TO 1480 / 1492",
-        "VERIFY LAN DHCP POOL ASSIGNMENT SUCCESS"
-      ]
-    },
-    {
-      name: "PHYSICAL LINE REPAIR",
-      color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-950/30",
-      steps: [
-        "SWAP CAT6 ETHERNET ROUTER IN-DOOR PATCH",
-        "RE-ALIGN COIL TENSION OF OUTDOOR FIBER",
-        "REPLACE FAULTY ONT 12V DC TRANSFORMER",
-        "SEAL DROP BOX CONNECTOR FROM WATER DUST"
-      ]
-    }
-  ], []);
-
-  const [customTemplates, setCustomTemplates] = React.useState<{name: string, steps: string[]}[]>(() => {
-    try {
-      const saved = localStorage.getItem('gts_custom_protocols');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const steps: ProtocolStep[] = React.useMemo(() => {
-    if (!value || value.trim() === '') return [];
-    const lines = value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    return lines.map((line, idx) => {
-      let completed = false;
-      let title = line;
-      const match = line.match(/^\[([ xX])\]\s*(.*)$/);
-      if (match) {
-        completed = match[1].toLowerCase() === 'x';
-        title = match[2];
-      } else {
-        const lower = line.toLowerCase();
-        if (lower.includes('done') || lower.includes('ok') || lower.includes('complete') || lower.includes('resolved') || lower.includes('fixed') || lower.includes('success')) {
-          completed = true;
-        }
-      }
-      return {
-        id: `${idx}-${title}`,
-        title: title || line,
-        completed
-      };
-    });
-  }, [value]);
-
-  const updateValue = (updatedSteps: ProtocolStep[]) => {
-    const serialized = updatedSteps
-      .map(s => `[${s.completed ? 'X' : ' '}] ${s.title.trim().toUpperCase()}`)
-      .join('\n');
-    onChange(serialized);
-  };
-
-  const handleAddStep = () => {
-    if (!newStep.trim()) return;
-    const added: ProtocolStep = {
-      id: `${Date.now()}-${newStep}`,
-      title: newStep.toUpperCase(),
-      completed: false
-    };
-    updateValue([...steps, added]);
-    setNewStep('');
-  };
-
-  const handleAppendTemplate = (templateSteps: string[]) => {
-    const currentTitles = steps.map(s => s.title.toUpperCase());
-    const filteredNewSteps = templateSteps.filter(tStep => !currentTitles.includes(tStep.toUpperCase()));
-    
-    if (filteredNewSteps.length === 0) {
-      toast.info("All steps in this template are already added!");
-      return;
-    }
-
-    const appended: ProtocolStep[] = filteredNewSteps.map((title, idx) => ({
-      id: `${Date.now()}-${idx}-${title}`,
-      title: title.toUpperCase(),
-      completed: false
-    }));
-
-    updateValue([...steps, ...appended]);
-    toast.success(`Successfully appended ${appended.length} unique steps!`);
-  };
-
-  const handleClearAllSteps = () => {
-    if (window.confirm("Are you sure you want to clear all active steps?")) {
-      onChange('');
-      toast.info("Cleared protocol checklist.");
-    }
-  };
-
-  const handleSaveAsTemplate = () => {
-    if (!customTemplateName.trim()) {
-      toast.error("Template name is required");
-      return;
-    }
-    if (steps.length === 0) {
-      toast.error("Checklist is empty. Add steps before saving.");
-      return;
-    }
-    const templateSteps = steps.map(s => s.title);
-    const updated = [...customTemplates, { name: customTemplateName.trim().toUpperCase(), steps: templateSteps }];
-    setCustomTemplates(updated);
-    localStorage.setItem('gts_custom_protocols', JSON.stringify(updated));
-    setCustomTemplateName('');
-    setShowSaveModal(false);
-    toast.success(`Saved template "${customTemplateName.toUpperCase()}"!`);
-  };
-
-  const handleDeleteCustomTemplate = (name: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (window.confirm(`Delete custom template "${name}"?`)) {
-      const updated = customTemplates.filter(t => t.name !== name);
-      setCustomTemplates(updated);
-      localStorage.setItem('gts_custom_protocols', JSON.stringify(updated));
-      toast.info(`Deleted template "${name}"`);
-    }
-  };
-
-  const handleToggleStep = (index: number) => {
-    const copy = [...steps];
-    copy[index] = { ...copy[index], completed: !copy[index].completed };
-    updateValue(copy);
-  };
-
-  const handleRemoveStep = (index: number) => {
-    const copy = steps.filter((_, idx) => idx !== index);
-    updateValue(copy);
-  };
-
-  const handleEditStepText = (index: number, newText: string) => {
-    const copy = [...steps];
-    copy[index] = { ...copy[index], title: newText.toUpperCase() };
-    updateValue(copy);
-  };
-
-  const [rawMode, setRawMode] = React.useState(false);
-
-  return (
-    <div className="space-y-3 bg-slate-50/55 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-inner">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-          📋 Protocol Commands ({steps.length})
-        </span>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setRawMode(!rawMode)}
-            className="text-[9px] font-black uppercase tracking-wider text-brand-accent hover:underline cursor-pointer"
-          >
-            {rawMode ? "📋 Checklist Builder" : "✍️ Custom Text Mode"}
-          </button>
-          {steps.length > 0 && !rawMode && (
-            <button
-              type="button"
-              onClick={handleClearAllSteps}
-              className="text-[9px] font-black uppercase tracking-wider text-rose-500 hover:underline cursor-pointer"
-            >
-              🧹 Clear All
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Predefined Templates Section */}
-      {!rawMode && (
-        <div className="space-y-1.5 border-b border-slate-200/60 dark:border-slate-800/80 pb-3">
-          <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
-            ⚡ Quick Multi-Protocol Injectors (Click to combine)
-          </span>
-          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto py-1">
-            {PREDEFINED_PROTOCOLS.map((proto) => (
-              <button
-                key={proto.name}
-                type="button"
-                onClick={() => handleAppendTemplate(proto.steps)}
-                className={cn(
-                  "px-2 py-1 text-[8.5px] font-black uppercase tracking-wider rounded-lg border cursor-pointer transition-all active:scale-95 flex items-center gap-1",
-                  proto.color
-                )}
-                title={`Append ${proto.steps.length} steps of ${proto.name}`}
-              >
-                <span>➕</span>
-                <span>{proto.name}</span>
-              </button>
-            ))}
-
-            {customTemplates.map((proto) => (
-              <div
-                key={proto.name}
-                onClick={() => handleAppendTemplate(proto.steps)}
-                className="px-2 py-1 text-[8.5px] font-black uppercase tracking-wider rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all active:scale-95 flex items-center gap-1.5 group"
-                title={`Append custom template: ${proto.name}`}
-              >
-                <span>⭐️</span>
-                <span>{proto.name}</span>
-                <span
-                  onClick={(e) => handleDeleteCustomTemplate(proto.name, e)}
-                  className="text-red-500 hover:text-red-700 font-extrabold px-0.5 ml-0.5 rounded hover:bg-red-500/10 pointer-events-auto"
-                  title="Delete Template"
-                >
-                  ×
-                </span>
-              </div>
-            ))}
-
-            {steps.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowSaveModal(true)}
-                className="px-2 py-1 text-[8.5px] font-black uppercase tracking-wider rounded-lg border border-dashed border-brand-accent/40 bg-brand-accent/5 text-brand-accent hover:bg-brand-accent/10 cursor-pointer transition-all active:scale-95 flex items-center gap-1"
-              >
-                <span>💾</span>
-                <span>Save Active as Template</span>
-              </button>
-            )}
-          </div>
-
-          {/* Save Custom Template Modal inline block */}
-          {showSaveModal && (
-            <div className="p-2.5 bg-brand-accent/5 rounded-xl border border-brand-accent/25 space-y-2 mt-2">
-              <span className="text-[8.5px] font-black text-brand-accent uppercase tracking-widest block">
-                Save Active Steps As Custom Preset Template
-              </span>
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  value={customTemplateName}
-                  onChange={(e) => setCustomTemplateName(e.target.value)}
-                  placeholder="E.g., MY CUSTOM ROUTER VERIFICATION"
-                  className="flex-1 px-2.5 py-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-[10px] font-semibold uppercase tracking-wider outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveAsTemplate}
-                  className="px-2.5 py-1 bg-brand-accent text-white text-[9.5px] font-black uppercase tracking-wider rounded hover:bg-brand-accent-hover transition-all"
-                >
-                  Save Preset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSaveModal(false)}
-                  className="px-2.5 py-1 text-slate-400 text-[9.5px] font-black uppercase tracking-wider rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {rawMode ? (
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value.toUpperCase())}
-          placeholder="E.g.\n[X] CHECK FIBER ATTENUATION\n[ ] SWAP FAULTY CLIENT ONT"
-          className="w-full h-32 p-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none uppercase"
-        />
-      ) : (
-        <div className="space-y-2">
-          <div className="flex gap-1.5">
-            <input
-              type="text"
-              value={newStep}
-              onChange={(e) => setNewStep(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddStep();
-                }
-              }}
-              placeholder={placeholder}
-              className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase"
-            />
-            <button
-              type="button"
-              onClick={handleAddStep}
-              className="px-3 py-1.5 bg-brand-accent hover:bg-brand-accent-hover text-white text-xs font-bold rounded-lg transition-all active:scale-95 flex items-center gap-1 shadow-sm"
-            >
-              <span>+</span>
-              <span className="text-[10px] font-black uppercase tracking-wider">Add</span>
-            </button>
-          </div>
-
-          {steps.length === 0 ? (
-            <div className="text-center py-5 border border-dashed border-slate-200 dark:border-slate-800 rounded-lg bg-white/40 dark:bg-slate-950/20">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">No protocol commands added. Build steps or use templates above.</span>
-            </div>
-          ) : (
-            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-              {steps.map((step, idx) => (
-                <div
-                  key={step.id}
-                  className="flex items-center gap-2 p-2 bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-900 rounded-lg shadow-sm group"
-                >
-                  <input
-                    type="checkbox"
-                    checked={step.completed}
-                    onChange={() => handleToggleStep(idx)}
-                    className="h-3.5 w-3.5 rounded text-emerald-500 border-slate-300 dark:border-slate-700 focus:ring-emerald-400 cursor-pointer"
-                  />
-                  <input
-                    type="text"
-                    value={step.title}
-                    onChange={(e) => handleEditStepText(idx, e.target.value)}
-                    className={`flex-1 bg-transparent border-none p-0 text-xs font-bold focus:ring-0 outline-none uppercase ${
-                      step.completed ? 'line-through text-slate-400 dark:text-slate-600' : 'text-slate-800 dark:text-slate-100'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveStep(idx)}
-                    className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded transition-colors"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 interface ComplaintListProps {
   complaints: Complaint[];
   users?: UserProfile[];
@@ -2256,10 +1878,12 @@ export default function ComplaintList({
                               exit={{ opacity: 0, scale: 0.98 }}
                               className="space-y-1.5"
                             >
-                              <ProtocolChecklistBuilder
+                              <textarea
                                 value={editedRemarks}
-                                onChange={(val) => setEditedRemarks(val)}
-                                placeholder="Add resolution protocol step..."
+                                onChange={(e) => setEditedRemarks(e.target.value)}
+                                className="w-full p-3 bg-slate-50 dark:bg-slate-900/60 border border-brand-accent/30 dark:border-brand-accent/20 rounded-xl text-sm focus:ring-2 focus:ring-brand-accent/25 focus:border-brand-accent outline-none h-24 resize-none"
+                                placeholder="Type structural logging protocol..."
+                                autoFocus
                               />
                               <div className="flex justify-end gap-1.5 text-[9px] font-black uppercase tracking-widest">
                                 <button 
@@ -2292,51 +1916,14 @@ export default function ComplaintList({
                               transition={{ type: "spring", stiffness: 150, damping: 15 }}
                               className="p-4 sm:p-5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent rounded-xl border border-emerald-500/20 text-emerald-800 dark:text-emerald-400 text-sm sm:text-base font-semibold whitespace-pre-wrap leading-relaxed shadow-inner"
                             >
-                              <div className="flex items-center gap-2 mb-3">
+                              <div className="flex items-center gap-2 mb-2">
                                 <span className="relative flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                                 </span>
-                                <span className="text-[8px] sm:text-[9.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed Protocol Steps</span>
+                                <span className="text-[8px] sm:text-[9.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed</span>
                               </div>
-                              {(() => {
-                                const remarks = selectedComplaint.remarks || '';
-                                if (remarks.includes('[ ]') || remarks.includes('[X]') || remarks.includes('[x]')) {
-                                  const lines = remarks.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                                  return (
-                                    <div className="space-y-2">
-                                      {lines.map((line, idx) => {
-                                        let completed = false;
-                                        let text = line;
-                                        const match = line.match(/^\[([ xX])\]\s*(.*)$/);
-                                        if (match) {
-                                          completed = match[1].toLowerCase() === 'x';
-                                          text = match[2];
-                                        }
-                                        return (
-                                          <div key={idx} className="flex items-center gap-2.5 text-xs sm:text-sm font-bold">
-                                            <span className={cn(
-                                              "w-4 h-4 rounded flex items-center justify-center border text-[9px] shrink-0 font-black",
-                                              completed 
-                                                ? "bg-emerald-500/20 border-emerald-500 text-emerald-600 dark:text-emerald-400" 
-                                                : "bg-slate-100 dark:bg-slate-900 border-slate-300/60 dark:border-slate-800 text-slate-400"
-                                            )}>
-                                              {completed ? "✓" : ""}
-                                            </span>
-                                            <span className={cn(
-                                              "uppercase tracking-wide",
-                                              completed ? "line-through text-slate-400 dark:text-slate-600" : "text-slate-800 dark:text-slate-200"
-                                            )}>
-                                              {text}
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  );
-                                }
-                                return <p className="italic">"{selectedComplaint.remarks}"</p>;
-                              })()}
+                              <p className="italic">"{selectedComplaint.remarks}"</p>
                             </motion.div>
                           ) : (
                             <motion.div 
@@ -2556,59 +2143,58 @@ export default function ComplaintList({
                                       className="space-y-1"
                                     >
                                       <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Team Resolution Protocol (Required for completion)</label>
-                                      <div className="space-y-2">
-                                        <ProtocolChecklistBuilder
+                                      <div className="relative">
+                                        <textarea
                                           value={statusRemarks}
-                                          onChange={(val) => setStatusRemarks(val)}
-                                          placeholder="Add resolution protocol step..."
+                                          onChange={(e) => setStatusRemarks(e.target.value.toUpperCase())}
+                                          placeholder="Enter resolution protocol details..."
+                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
                                         />
-                                        <div className="flex justify-end">
-                                          <button
-                                            type="button"
-                                            onClick={async () => {
-                                              if (!statusRemarks.trim()) {
-                                                toast.error("Please enter a Team Resolution Protocol first.");
-                                                return;
-                                              }
-                                              // Copy to selected complaint remarks trigger
-                                              setSelectedComplaint(prev => prev ? { ...prev, remarks: statusRemarks } : null);
-                                              
-                                              // Enable slide transition shifting right to left
-                                              setAnimateRemarksLeft(true);
-                                              setHideStatusRemarksBox(true);
-                                              
-                                              // Check if both elements are completed to trigger Thank You animations
-                                              if (customerReview.trim() && hideCustomerReviewBox) {
-                                                setShowLeftThankYou(true);
-                                              }
-                                              
-                                              try {
-                                                const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
-                                                sound.volume = 0.2;
-                                                sound.play().catch(() => {});
-                                              } catch (e) {}
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            if (!statusRemarks.trim()) {
+                                              toast.error("Please enter a Team Resolution Protocol first.");
+                                              return;
+                                            }
+                                            // Copy to selected complaint remarks trigger
+                                            setSelectedComplaint(prev => prev ? { ...prev, remarks: statusRemarks } : null);
+                                            
+                                            // Enable slide transition shifting right to left
+                                            setAnimateRemarksLeft(true);
+                                            setHideStatusRemarksBox(true);
+                                            
+                                            // Check if both elements are completed to trigger Thank You animations
+                                            if (customerReview.trim() && hideCustomerReviewBox) {
+                                              setShowLeftThankYou(true);
+                                            }
+                                            
+                                            try {
+                                              const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+                                              sound.volume = 0.2;
+                                              sound.play().catch(() => {});
+                                            } catch (e) {}
 
-                                              try {
-                                                if (onUpdateRemarks) {
-                                                  await onUpdateRemarks(selectedComplaint.id, statusRemarks);
-                                                  toast.success("Protocol remark saved to database.");
-                                                } else if (onEdit) {
-                                                  await onEdit(selectedComplaint.id, { remarks: statusRemarks });
-                                                  toast.success("Protocol remark saved to database.");
-                                                } else {
-                                                  toast.success("Protocol saved in memory.");
-                                                }
-                                              } catch (err) {
-                                                console.error("Failed to update database remarks:", err);
-                                                toast.error("Failed to save to database. Kept in memory.");
+                                            try {
+                                              if (onUpdateRemarks) {
+                                                await onUpdateRemarks(selectedComplaint.id, statusRemarks);
+                                                toast.success("Protocol remark saved to database.");
+                                              } else if (onEdit) {
+                                                await onEdit(selectedComplaint.id, { remarks: statusRemarks });
+                                                toast.success("Protocol remark saved to database.");
+                                              } else {
+                                                toast.success("Protocol saved in memory.");
                                               }
-                                            }}
-                                            className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
-                                          >
-                                            <span>Enter Protocols</span>
-                                            <Send size={9} />
-                                          </button>
-                                        </div>
+                                            } catch (err) {
+                                              console.error("Failed to update database remarks:", err);
+                                              toast.error("Failed to save to database. Kept in memory.");
+                                            }
+                                          }}
+                                          className="absolute bottom-2 right-2 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
+                                        >
+                                          <span>Enter</span>
+                                          <Send size={7} />
+                                        </button>
                                       </div>
                                     </motion.div>
                                   ) : (

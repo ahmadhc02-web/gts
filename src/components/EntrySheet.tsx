@@ -66,6 +66,19 @@ export default function EntrySheet({
   const [folders, setFolders] = useState<any[]>([]);
   const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>({});
   const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
+  const [editFolderName, setEditFolderName] = useState<string>('');
+  const [editConnectedMonthId, setEditConnectedMonthId] = useState<string>('');
+
+  useEffect(() => {
+    if (settingsFolderId) {
+      const folder = folders.find(f => f.id === settingsFolderId);
+      setEditFolderName(folder?.name || '');
+      setEditConnectedMonthId(folder?.connectedMonthId || '');
+    } else {
+      setEditFolderName('');
+      setEditConnectedMonthId('');
+    }
+  }, [settingsFolderId]);
 
   // Scoped folders loading on user change
   useEffect(() => {
@@ -76,12 +89,6 @@ export default function EntrySheet({
       console.log("Migration done");
       window.location.reload();
     };
-
-    if (!localStorage.getItem('july_migration_done_v3')) {
-      firebaseService.runOneTimeJulyMigration().then(() => {
-        localStorage.setItem('july_migration_done_v3', 'true');
-      });
-    }
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
     const originalSuffix = `_${originalScopeId}`;
@@ -252,11 +259,17 @@ export default function EntrySheet({
   const saveFoldersToDb = async (newFolders: any[]) => {
     const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
     await firebaseService.updateLedgerFolders(newFolders, scopeId);
+    
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
   };
 
   const saveMapToDb = async (newMap: Record<string, string>) => {
     const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
     await firebaseService.updateLedgerSheetFolderMap(newMap, scopeId);
+
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(newMap));
   };
 
 
@@ -4926,17 +4939,24 @@ export default function EntrySheet({
               <div className="space-y-4">
                 <div>
                   <label className="block text-[10px] uppercase font-black tracking-widest text-slate-500 mb-2">
+                    Folder Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editFolderName}
+                    onChange={(e) => setEditFolderName(e.target.value)}
+                    placeholder="Enter folder name..."
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500 mb-2"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-black tracking-widest text-slate-500 mb-2">
                     Connected Recovery Sheet (Billing Month)
                   </label>
                   <select
-                    value={folders.find(f => f.id === settingsFolderId)?.connectedMonthId || ''}
-                    onChange={(e) => {
-                      const newMonthId = e.target.value;
-                      const newFolders = folders.map(f => f.id === settingsFolderId ? { ...f, connectedMonthId: newMonthId } : f);
-                      setFolders(newFolders);
-                      saveFoldersToDb(newFolders);
-                      toast.success(newMonthId ? "Folder connected to Recovery Sheet!" : "Folder disconnected.");
-                    }}
+                    value={editConnectedMonthId}
+                    onChange={(e) => setEditConnectedMonthId(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">-- Not Connected --</option>
@@ -4954,7 +4974,23 @@ export default function EntrySheet({
 
                 <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/60">
                   <button
-                    onClick={() => setSettingsFolderId(null)}
+                    onClick={() => {
+                      const cleanName = editFolderName.trim();
+                      if (!cleanName) {
+                        toast.error("Folder name cannot be empty");
+                        return;
+                      }
+                      const folderExists = folders.some(f => f.id !== settingsFolderId && f.name.toLowerCase() === cleanName.toLowerCase());
+                      if (folderExists) {
+                        toast.error("A folder with this name already exists");
+                        return;
+                      }
+                      const newFolders = folders.map(f => f.id === settingsFolderId ? { ...f, name: cleanName, connectedMonthId: editConnectedMonthId } : f);
+                      setFolders(newFolders);
+                      saveFoldersToDb(newFolders);
+                      toast.success("Folder settings saved successfully!");
+                      setSettingsFolderId(null);
+                    }}
                     className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-colors shadow-md"
                   >
                     Save & Close
