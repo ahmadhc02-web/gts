@@ -246,7 +246,7 @@ function subscribeTable(
       q = queryBuilder(q);
       const { data, error } = await q;
       if (error) {
-        console.error(`Error loading table ${tableName} from Supabase:`, error);
+        console.warn(`Error loading table ${tableName} from Supabase:`, error);
         
         const isTableMissing = error.message?.includes('relation') && error.message?.includes('does not exist');
         const lastAlertTime = (window as any)[`gts_alert_time_${tableName}`] || 0;
@@ -278,7 +278,7 @@ function subscribeTable(
 
       callback(mapped);
     } catch (err) {
-      console.error(`Exception loading table ${tableName} from Supabase:`, err);
+      console.warn(`Exception loading table ${tableName} from Supabase:`, err);
     }
   };
 
@@ -400,7 +400,7 @@ export const firebaseService = {
       if (error) throw error;
       return (data || []).map(row => fromDb('users', row));
     } catch (error) {
-      console.error('getUsers error:', error);
+      console.warn('getUsers error:', error);
       return [];
     }
   },
@@ -411,7 +411,7 @@ export const firebaseService = {
       if (error) throw error;
       return data ? fromDb('users', data) : null;
     } catch (error) {
-      console.error('getUser error:', error);
+      console.warn('getUser error:', error);
       return null;
     }
   },
@@ -2016,7 +2016,11 @@ export const firebaseService = {
       dashboard_subtext: JSON.stringify(folders),
       updated_at: Date.now()
     };
-    await supabase.from('branding_config').upsert(payload);
+    const { error } = await supabase.from('branding_config').upsert(payload);
+    if (error) {
+      console.error("Supabase error in updateLedgerFolders:", error);
+      throw error;
+    }
   },
 
   subscribeLedgerSheetFolderMap: (callback: (map: Record<string, string>) => void, dealerId?: string) => {
@@ -2072,7 +2076,11 @@ export const firebaseService = {
       dashboard_subtext: JSON.stringify(map),
       updated_at: Date.now()
     };
-    await supabase.from('branding_config').upsert(payload);
+    const { error } = await supabase.from('branding_config').upsert(payload);
+    if (error) {
+      console.error("Supabase error in updateLedgerSheetFolderMap:", error);
+      throw error;
+    }
   },
 
   runOneTimeJulyMigration: async () => {

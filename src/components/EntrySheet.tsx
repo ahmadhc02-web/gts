@@ -302,36 +302,32 @@ export default function EntrySheet({
       return;
     }
 
+    const previousFolders = [...folders];
+    const previousMap = { ...sheetFolderMap };
+
     const newFolders = folders.filter(f => f.id !== folderId);
     
     // Get list of sheets associated with this folder to store in Recycle Bin
     const associatedSheetIds = Object.keys(sheetFolderMap).filter(sheetId => sheetFolderMap[sheetId] === folderId);
     
-    // 1. Instantly update folders local state & local storage to prevent any race conditions
-    setFolders(newFolders);
-    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
-
-    // 2. Safely unmap sheets inside this folder
-    setSheetFolderMap(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(sheetId => {
-        if (next[sheetId] === folderId) {
-          delete next[sheetId];
-        }
-      });
-      
-      const originalScopeIdMap = activeDealerId || currentUser?.uid || 'main';
-      localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeIdMap}`, JSON.stringify(next));
-      
-      // Async DB map update
-      const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-      firebaseService.updateLedgerSheetFolderMap(next, scopeId).catch(console.error);
-      
-      return next;
+    // Safely unmap sheets inside this folder locally
+    const nextMap = { ...sheetFolderMap };
+    Object.keys(nextMap).forEach(sheetId => {
+      if (nextMap[sheetId] === folderId) {
+        delete nextMap[sheetId];
+      }
     });
 
-    // 3. Save folder to Recycle Bin first, then update folders in database
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+
+    // 1. Instantly update folders and map in local state & local storage to prevent any race conditions
+    setFolders(newFolders);
+    localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+
+    setSheetFolderMap(nextMap);
+    localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(nextMap));
+
+    // 2. Save folder to Recycle Bin first, then update folders in database
     try {
       const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
       
@@ -347,12 +343,26 @@ export default function EntrySheet({
         }
       );
 
-      await firebaseService.updateLedgerFolders(newFolders, scopeId);
+      // Update both database records concurrently
+      await Promise.all([
+        firebaseService.updateLedgerFolders(newFolders, scopeId),
+        firebaseService.updateLedgerSheetFolderMap(nextMap, scopeId)
+      ]);
+
       toast.success(`📁 Folder "${folderToDelete.name}" moved to Recycle Bin!`);
-    } catch (binErr) {
-      console.error("Error saving ledger folder to recycle bin:", binErr);
-      const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-      await firebaseService.updateLedgerFolders(newFolders, scopeId).catch(console.error);
+    } catch (error: any) {
+      console.error("Supabase Delete Error:", error);
+      
+      // Rollback UI state and localStorage upon failure to prevent inconsistent states
+      setFolders(previousFolders);
+      setSheetFolderMap(previousMap);
+      localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(previousFolders));
+      localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(previousMap));
+
+      toast.error(`Database Error: Failed to delete folder. Remind: Please check your Supabase RLS (Row Level Security) policies on the 'branding_config' table to allow updates!`, {
+        id: `folder-delete-error-${folderId}`,
+        duration: 8000
+      });
     }
 
     setFolderToDeleteId(null);
