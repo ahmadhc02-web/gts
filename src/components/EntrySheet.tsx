@@ -108,13 +108,14 @@ export default function EntrySheet({
         // Absolute first time loading, document not created in DB yet
         mergedFolders = isDealerTied ? [] : [{ id: 'june_data', name: 'June Data', createdAt: Date.now() }];
         didMerge = true;
+        localStorage.setItem(migrationFlag, 'true');
       } else {
         mergedFolders = [...data];
-        if (data.length > 0) {
-          localStorage.setItem(migrationFlag, 'true');
-        }
 
         if (!localStorage.getItem(migrationFlag)) {
+          // Unconditionally mark migration as run to avoid any re-trigger loops or race conditions on folder modifications
+          localStorage.setItem(migrationFlag, 'true');
+
           const savedFolders = localStorage.getItem(foldersKey);
           if (savedFolders) {
             try {
@@ -129,7 +130,6 @@ export default function EntrySheet({
               }
             } catch (e) { console.error("Migration parse error", e); }
           }
-          localStorage.setItem(migrationFlag, 'true');
         }
       }
 
@@ -5020,7 +5020,7 @@ export default function EntrySheet({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+            className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-[99999]"
             onClick={() => setFolderToDeleteId(null)}
           >
             <motion.div

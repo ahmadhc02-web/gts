@@ -217,18 +217,6 @@ export function fromDb(table: string, obj: any): any {
   return result;
 }
 
-const firestorePaths: Record<string, string> = {
-  users: 'users',
-  complaints: 'complaints',
-  clients: 'clients',
-  chat_groups: 'chat_groups',
-  chat_messages: 'chat_messages',
-  notifications: 'notifications',
-  monitor_targets: 'monitor',
-  ledger_sheets: 'ledger_sheets',
-  branding_config: 'branding_config'
-};
-
 // Global subscription query listener with instant cache-first fallback for premium panel speed
 function subscribeTable(
   tableName: string,
@@ -252,48 +240,31 @@ function subscribeTable(
     console.warn(`[Cache] Synchronous load failed for ${tableName}:`, e);
   }
 
-  let unsubscribeFirestore: (() => void) | undefined;
-  let hasSetupFirestore = false;
-
-  const setupFirestoreSubscription = async () => {
-    if (hasSetupFirestore) return;
-    const fPath = firestorePaths[tableName];
-    if (fPath) {
-      try {
-        console.log(`[Firestore Fallback] Subscribing to real-time changes on collection "${fPath}"...`);
-        const { collection, onSnapshot } = await import('firebase/firestore');
-        hasSetupFirestore = true;
-        unsubscribeFirestore = onSnapshot(collection(getDb(), fPath), (snap) => {
-          let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          if (dealerId && dealerId !== 'all') {
-            docs = docs.filter((d: any) => d.dealerId === dealerId || d.dealer_id === dealerId);
-          }
-          const mapped = docs.map(mapRow);
-          try {
-            localStorage.setItem(cacheKey, JSON.stringify(mapped));
-          } catch (e) {
-            console.warn(`[Cache] Failed updating cache for ${tableName}:`, e);
-          }
-          callback(mapped);
-        }, (fErr) => {
-          console.error(`[Firestore Fallback] Real-time subscription error on collection "${fPath}":`, fErr);
-        });
-      } catch (e) {
-        console.error(`[Firestore Fallback] Failed to initialize Firestore subscription for "${tableName}":`, e);
-      }
-    }
-  };
-
   const fetchAndCallback = async () => {
     try {
       let q = supabase.from(tableName).select('*');
       q = queryBuilder(q);
       const { data, error } = await q;
       if (error) {
-        console.warn(`Error loading table ${tableName} from Supabase, entering resilient Firestore fallback mode:`, error);
+        console.error(`Error loading table ${tableName} from Supabase:`, error);
         
-        // Suppress alert storms, enter Firestore mode silently and seamlessly
-        await setupFirestoreSubscription();
+        const isTableMissing = error.message?.includes('relation') && error.message?.includes('does not exist');
+        const lastAlertTime = (window as any)[`gts_alert_time_${tableName}`] || 0;
+        const now = Date.now();
+        if (now - lastAlertTime > 20000) { // Throttled to 20 seconds to prevent alert storms
+          (window as any)[`gts_alert_time_${tableName}`] = now;
+          if (isTableMissing) {
+            toast.error(`Database table "${tableName}" does not exist. Please go to Admin Panel -> Settings -> Database Setup & Connection to run the SQL migration and provision your database tables!`, {
+              id: `missing-table-${tableName}`,
+              duration: 8000
+            });
+          } else {
+            toast.error(`Error syncing table "${tableName}": ${error.message || 'Connection offline'}`, {
+              id: `sync-error-${tableName}`,
+              duration: 4000
+            });
+          }
+        }
         return;
       }
       const mapped = (data || []).map(mapRow);
@@ -307,8 +278,7 @@ function subscribeTable(
 
       callback(mapped);
     } catch (err) {
-      console.warn(`Exception loading table ${tableName} from Supabase, entering resilient Firestore fallback mode:`, err);
-      await setupFirestoreSubscription();
+      console.error(`Exception loading table ${tableName} from Supabase:`, err);
     }
   };
 
@@ -331,9 +301,6 @@ function subscribeTable(
   return () => {
     supabase.removeChannel(channel);
     window.removeEventListener(localEventName, handleLocalUpdate);
-    if (unsubscribeFirestore) {
-      unsubscribeFirestore();
-    }
   };
 }
 
@@ -2004,14 +1971,23 @@ export const firebaseService = {
           .select('*')
           .eq('id', docId)
           .maybeSingle();
-        if (!error && data) {
+        if (error) {
+          console.error("Ledger folders fetch error from Supabase:", error);
+          return; // Return early, don't execute callback with null/incorrect state
+        }
+        if (data) {
           if (data.dashboard_subtext) {
-            callback(JSON.parse(data.dashboard_subtext));
+            try {
+              callback(JSON.parse(data.dashboard_subtext));
+            } catch (pErr) {
+              console.error("Failed to parse ledger folders JSON:", pErr);
+              callback([]);
+            }
           } else {
             callback([]);
           }
         } else {
-          callback(null as any); // Null indicates completely uninitialized in database
+          callback(null as any); // Null indicates completely uninitialized in database (no record)
         }
       } catch (e) {
         console.error("Ledger folders fetch failed:", e);
@@ -2053,10 +2029,21 @@ export const firebaseService = {
           .select('*')
           .eq('id', docId)
           .maybeSingle();
-        if (!error && data && data.dashboard_subtext) {
-          callback(JSON.parse(data.dashboard_subtext));
-        } else {
+        if (error) {
+          console.error("Ledger sheet map fetch error from Supabase:", error);
+          return; // Return early, don't execute callback with null/incorrect state
+        }
+        if (data && data.dashboard_subtext) {
+          try {
+            callback(JSON.parse(data.dashboard_subtext));
+          } catch (pErr) {
+            console.error("Failed to parse ledger sheet map JSON:", pErr);
+            callback({});
+          }
+        } else if (data) {
           callback({});
+        } else {
+          callback(null as any); // Null indicates completely uninitialized in database (no record)
         }
       } catch (e) {
         console.error("Ledger sheet map fetch failed:", e);
