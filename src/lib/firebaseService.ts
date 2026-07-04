@@ -1,5 +1,5 @@
 import { supabase } from '../../supabaseClient';
-import { auth } from './firebase';
+import { auth, getDb } from './firebase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget } from '../types';
 import { safeStringify } from './utils';
 import { toast } from 'sonner';
@@ -217,12 +217,25 @@ export function fromDb(table: string, obj: any): any {
   return result;
 }
 
+const firestorePaths: Record<string, string> = {
+  users: 'users',
+  complaints: 'complaints',
+  clients: 'clients',
+  chat_groups: 'chat_groups',
+  chat_messages: 'chat_messages',
+  notifications: 'notifications',
+  monitor_targets: 'monitor',
+  ledger_sheets: 'ledger_sheets',
+  branding_config: 'branding_config'
+};
+
 // Global subscription query listener with instant cache-first fallback for premium panel speed
 function subscribeTable(
   tableName: string,
   queryBuilder: (query: any) => any,
   callback: (data: any[]) => void,
-  mapRow: (row: any) => any = (row) => row
+  mapRow: (row: any) => any = (row) => row,
+  dealerId?: string
 ) {
   const cacheKey = `gts_cache_v3_${tableName}`;
   
@@ -239,31 +252,48 @@ function subscribeTable(
     console.warn(`[Cache] Synchronous load failed for ${tableName}:`, e);
   }
 
+  let unsubscribeFirestore: (() => void) | undefined;
+  let hasSetupFirestore = false;
+
+  const setupFirestoreSubscription = async () => {
+    if (hasSetupFirestore) return;
+    const fPath = firestorePaths[tableName];
+    if (fPath) {
+      try {
+        console.log(`[Firestore Fallback] Subscribing to real-time changes on collection "${fPath}"...`);
+        const { collection, onSnapshot } = await import('firebase/firestore');
+        hasSetupFirestore = true;
+        unsubscribeFirestore = onSnapshot(collection(getDb(), fPath), (snap) => {
+          let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          if (dealerId && dealerId !== 'all') {
+            docs = docs.filter((d: any) => d.dealerId === dealerId || d.dealer_id === dealerId);
+          }
+          const mapped = docs.map(mapRow);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(mapped));
+          } catch (e) {
+            console.warn(`[Cache] Failed updating cache for ${tableName}:`, e);
+          }
+          callback(mapped);
+        }, (fErr) => {
+          console.error(`[Firestore Fallback] Real-time subscription error on collection "${fPath}":`, fErr);
+        });
+      } catch (e) {
+        console.error(`[Firestore Fallback] Failed to initialize Firestore subscription for "${tableName}":`, e);
+      }
+    }
+  };
+
   const fetchAndCallback = async () => {
     try {
       let q = supabase.from(tableName).select('*');
       q = queryBuilder(q);
       const { data, error } = await q;
       if (error) {
-        console.error(`Error loading table ${tableName}:`, error);
+        console.warn(`Error loading table ${tableName} from Supabase, entering resilient Firestore fallback mode:`, error);
         
-        const isTableMissing = error.message?.includes('relation') && error.message?.includes('does not exist');
-        const lastAlertTime = (window as any)[`gts_alert_time_${tableName}`] || 0;
-        const now = Date.now();
-        if (now - lastAlertTime > 20000) { // Throttled to 20 seconds to prevent alert storms
-          (window as any)[`gts_alert_time_${tableName}`] = now;
-          if (isTableMissing) {
-            toast.error(`Database table "${tableName}" does not exist. Please go to Admin Panel -> Settings -> Database Setup & Connection to run the SQL migration and provision your database tables!`, {
-              id: `missing-table-${tableName}`,
-              duration: 8000
-            });
-          } else {
-            toast.error(`Error syncing table "${tableName}": ${error.message || 'Connection offline'}`, {
-              id: `sync-error-${tableName}`,
-              duration: 4000
-            });
-          }
-        }
+        // Suppress alert storms, enter Firestore mode silently and seamlessly
+        await setupFirestoreSubscription();
         return;
       }
       const mapped = (data || []).map(mapRow);
@@ -277,7 +307,8 @@ function subscribeTable(
 
       callback(mapped);
     } catch (err) {
-      console.error(`Exception during query loading on ${tableName}:`, err);
+      console.warn(`Exception loading table ${tableName} from Supabase, entering resilient Firestore fallback mode:`, err);
+      await setupFirestoreSubscription();
     }
   };
 
@@ -300,6 +331,9 @@ function subscribeTable(
   return () => {
     supabase.removeChannel(channel);
     window.removeEventListener(localEventName, handleLocalUpdate);
+    if (unsubscribeFirestore) {
+      unsubscribeFirestore();
+    }
   };
 }
 
@@ -686,7 +720,8 @@ export const firebaseService = {
         return q;
       },
       callback,
-      (row) => fromDb('users', row)
+      (row) => fromDb('users', row),
+      dealerId
     );
   },
 
@@ -747,7 +782,8 @@ export const firebaseService = {
         }
         callback(filtered.sort((a, b) => b.createdAt - a.createdAt));
       },
-      (row) => fromDb('notifications', row)
+      (row) => fromDb('notifications', row),
+      dealerId
     );
   },
 
@@ -895,7 +931,8 @@ export const firebaseService = {
       (complaints) => {
         callback(complaints.sort((a, b) => b.createdAt - a.createdAt));
       },
-      (row) => fromDb('complaints', row)
+      (row) => fromDb('complaints', row),
+      dealerId
     );
   },
 
@@ -1223,7 +1260,8 @@ export const firebaseService = {
         }
         callback(filtered);
       },
-      (row) => fromDb('chat_groups', row)
+      (row) => fromDb('chat_groups', row),
+      dealerId
     );
   },
 
@@ -1294,7 +1332,8 @@ export const firebaseService = {
       (messages) => {
         callback(messages.sort((a, b) => a.createdAt - b.createdAt));
       },
-      (row) => fromDb('chat_messages', row)
+      (row) => fromDb('chat_messages', row),
+      dealerId
     );
   },
 
@@ -1559,7 +1598,8 @@ export const firebaseService = {
       (clients) => {
         callback(clients.sort((a, b) => b.createdAt - a.createdAt));
       },
-      (row) => fromDb('clients', row)
+      (row) => fromDb('clients', row),
+      dealerId
     );
   },
 
@@ -1631,7 +1671,8 @@ export const firebaseService = {
         }
         callback(filtered.sort((a, b) => a.createdAt - b.createdAt));
       },
-      (row) => fromDb('monitor_targets', row)
+      (row) => fromDb('monitor_targets', row),
+      dealerId
     );
   },
 
@@ -1963,10 +2004,14 @@ export const firebaseService = {
           .select('*')
           .eq('id', docId)
           .maybeSingle();
-        if (!error && data && data.dashboard_subtext) {
-          callback(JSON.parse(data.dashboard_subtext));
+        if (!error && data) {
+          if (data.dashboard_subtext) {
+            callback(JSON.parse(data.dashboard_subtext));
+          } else {
+            callback([]);
+          }
         } else {
-          callback([]); // Empty array if no folders exist yet
+          callback(null as any); // Null indicates completely uninitialized in database
         }
       } catch (e) {
         console.error("Ledger folders fetch failed:", e);
@@ -2150,7 +2195,8 @@ export const firebaseService = {
       (sheets) => {
         callback(sheets.sort((a, b) => b.createdAt - a.createdAt));
       },
-      (row) => fromDb('ledger_sheets', row)
+      (row) => fromDb('ledger_sheets', row),
+      dealerId
     );
   },
 
@@ -2356,7 +2402,7 @@ export const firebaseService = {
         }
       } else if (originalTable === 'ledger_folder') {
         // Restore ledger folder to folders config
-        const { dealerId } = extraData || {};
+        const { dealerId, associatedSheetIds } = extraData || {};
         const docId = dealerId ? `ledger_folders_${dealerId}` : 'ledger_folders_main';
         const { data: foldersConfig } = await supabase
           .from('branding_config')
@@ -2378,6 +2424,31 @@ export const firebaseService = {
         if (!exists) {
           currentFolders.push(originalData);
           await firebaseService.updateLedgerFolders(currentFolders, dealerId);
+        }
+
+        // Restore associated sheet mappings
+        if (Array.isArray(associatedSheetIds) && associatedSheetIds.length > 0) {
+          const mapDocId = dealerId ? `ledger_sheet_map_${dealerId}` : 'ledger_sheet_map_main';
+          const { data: mapConfig } = await supabase
+            .from('branding_config')
+            .select('*')
+            .eq('id', mapDocId)
+            .maybeSingle();
+
+          let currentMap: Record<string, string> = {};
+          if (mapConfig && mapConfig.dashboard_subtext) {
+            try {
+              currentMap = JSON.parse(mapConfig.dashboard_subtext);
+            } catch (pErr) {
+              console.error("Failed to parse ledger sheet map during restore:", pErr);
+            }
+          }
+
+          associatedSheetIds.forEach((sheetId: string) => {
+            currentMap[sheetId] = originalData.id;
+          });
+
+          await firebaseService.updateLedgerSheetFolderMap(currentMap, dealerId);
         }
       }
 

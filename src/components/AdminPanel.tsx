@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -166,6 +166,45 @@ export default function AdminPanel({
   const [isEmptyRecycleBinModalOpen, setIsEmptyRecycleBinModalOpen] = useState(false);
   const [recycleConfirmPhrase, setRecycleConfirmPhrase] = useState('');
 
+  // Multi-select and bulk actions state
+  const [selectedRecycleItemIds, setSelectedRecycleItemIds] = useState<string[]>([]);
+  const [isBulkRestoring, setIsBulkRestoring] = useState(false);
+  const [isBulkPurging, setIsBulkPurging] = useState(false);
+
+  // Filtered recycle bin items memo
+  const filteredRecycleItems = useMemo(() => {
+    return recycleItems.filter(item => {
+      if (!recycleSearchTerm) return true;
+      const term = recycleSearchTerm.toLowerCase();
+      return item.message?.toLowerCase().includes(term) || 
+             item.author_name?.toLowerCase().includes(term) ||
+             item.details?.originalTable?.toLowerCase().includes(term);
+    });
+  }, [recycleItems, recycleSearchTerm]);
+
+  // Handle multi-select toggle
+  const handleToggleSelectAll = () => {
+    const visibleIds = filteredRecycleItems.map(item => item.id);
+    const allSelected = visibleIds.every(id => selectedRecycleItemIds.includes(id));
+    if (allSelected) {
+      setSelectedRecycleItemIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      setSelectedRecycleItemIds(prev => {
+        const union = [...prev];
+        visibleIds.forEach(id => {
+          if (!union.includes(id)) union.push(id);
+        });
+        return union;
+      });
+    }
+  };
+
+  const handleToggleSelect = (itemId: string) => {
+    setSelectedRecycleItemIds(prev => 
+      prev.includes(itemId) ? prev.filter(id => id !== itemId) : [...prev, itemId]
+    );
+  };
+
   useEffect(() => {
     if (activeTab === 'recycle_bin') {
       setIsRecycleLoading(true);
@@ -193,6 +232,8 @@ export default function AdminPanel({
       toast.success("Item restored successfully!", {
         description: "The item was safely restored back to its original location.",
       });
+      // Remove from selected list if it was selected
+      setSelectedRecycleItemIds(prev => prev.filter(id => id !== itemId));
     } catch (e: any) {
       toast.error("Failed to restore item", {
         description: e.message || "An error occurred during restoration.",
@@ -212,12 +253,61 @@ export default function AdminPanel({
       toast.success("Item permanently deleted", {
         description: "The item has been permanently removed from the database.",
       });
+      // Remove from selected list if it was selected
+      setSelectedRecycleItemIds(prev => prev.filter(id => id !== itemId));
     } catch (e: any) {
       toast.error("Failed to permanently delete item", {
         description: e.message || "An error occurred.",
       });
     } finally {
       setPurgingItemId(null);
+    }
+  };
+
+  const handleBulkRestore = async () => {
+    if (selectedRecycleItemIds.length === 0) return;
+    setIsBulkRestoring(true);
+    let successCount = 0;
+    try {
+      for (const itemId of selectedRecycleItemIds) {
+        await firebaseService.restoreFromRecycleBin(itemId);
+        successCount++;
+      }
+      toast.success(`${successCount} items restored successfully!`, {
+        description: "The selected items were successfully restored to their original databases.",
+      });
+      setSelectedRecycleItemIds([]);
+    } catch (e: any) {
+      toast.error("Some or all items failed to restore", {
+        description: e.message || "Bulk restore error occurred.",
+      });
+    } finally {
+      setIsBulkRestoring(false);
+    }
+  };
+
+  const handleBulkPurge = async () => {
+    if (selectedRecycleItemIds.length === 0) return;
+    if (!window.confirm(`Are you absolutely sure you want to permanently delete these ${selectedRecycleItemIds.length} item(s)? This action is completely irreversible!`)) {
+      return;
+    }
+    setIsBulkPurging(true);
+    let successCount = 0;
+    try {
+      for (const itemId of selectedRecycleItemIds) {
+        await firebaseService.permanentlyDeleteFromRecycleBin(itemId);
+        successCount++;
+      }
+      toast.success(`${successCount} items permanently purged.`, {
+        description: "The selected items have been permanently cleared from database archives.",
+      });
+      setSelectedRecycleItemIds([]);
+    } catch (e: any) {
+      toast.error("Some or all items failed to purge", {
+        description: e.message || "Bulk purge error occurred.",
+      });
+    } finally {
+      setIsBulkPurging(false);
     }
   };
 
@@ -4159,135 +4249,211 @@ export default function AdminPanel({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {recycleItems
-                    .filter(item => {
-                      if (!recycleSearchTerm) return true;
-                      const term = recycleSearchTerm.toLowerCase();
-                      return item.message?.toLowerCase().includes(term) || 
-                             item.author_name?.toLowerCase().includes(term) ||
-                             item.details?.originalTable?.toLowerCase().includes(term);
-                    })
-                    .map((item) => {
-                      const details = item.details || {};
-                      const isExpanded = expandedRecycleItem === item.id;
-                      const deletedAt = details.deletedAt || item.created_at;
-                      const relativeTime = (() => {
-                        const diff = Date.now() - deletedAt;
-                        const mins = Math.floor(diff / 60000);
-                        const hours = Math.floor(mins / 60);
-                        const days = Math.floor(hours / 24);
-                        if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-                        if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-                        if (mins > 0) return `${mins} min${mins > 1 ? 's' : ''} ago`;
-                        return 'just now';
-                      })();
-
-                      return (
-                        <div
-                          key={item.id}
-                          className="border border-slate-100 dark:border-slate-800/80 rounded-2xl overflow-hidden bg-white dark:bg-slate-950/40 hover:border-slate-200 dark:hover:border-slate-800 transition-all shadow-sm"
-                        >
-                          {/* Row Header */}
-                          <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <div className="flex items-start gap-4 flex-1">
-                              <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 flex items-center justify-center shrink-0 text-slate-500">
-                                <Trash2 size={18} />
-                              </div>
-                              <div className="space-y-1">
-                                <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest font-mono bg-slate-100 dark:bg-slate-900 text-slate-500">
-                                  {details.originalTable || 'Unknown'}
-                                </span>
-                                <h4 className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight leading-none mt-1">
-                                  {item.message || "Deleted entry"}
-                                </h4>
-                                <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                  <span className="flex items-center gap-1">
-                                    👤 {item.author_name || "admin"}
-                                  </span>
-                                  <span>•</span>
-                                  <span className="flex items-center gap-1">
-                                    📅 {new Date(deletedAt).toLocaleDateString()} {new Date(deletedAt).toLocaleTimeString()}
-                                  </span>
-                                  <span>•</span>
-                                  <span className="text-rose-500 font-black">{relativeTime}</span>
+                  {/* Bulk Actions and Master Checkbox Bar */}
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleToggleSelectAll}
+                        className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-all cursor-pointer"
+                      >
+                        <div className="shrink-0">
+                          {(() => {
+                            const visibleIds = filteredRecycleItems.map(item => item.id);
+                            const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedRecycleItemIds.includes(id));
+                            const someSelected = visibleIds.some(id => selectedRecycleItemIds.includes(id)) && !allSelected;
+                            
+                            if (allSelected) {
+                              return <CheckSquare className="text-rose-500 fill-rose-500/10" size={18} />;
+                            } else if (someSelected) {
+                              return (
+                                <div className="w-[18px] h-[18px] border-2 border-rose-500 bg-rose-500/10 rounded flex items-center justify-center">
+                                  <div className="w-2 h-0.5 bg-rose-500" />
                                 </div>
-                              </div>
-                            </div>
+                              );
+                            } else {
+                              return <Square className="text-slate-400" size={18} />;
+                            }
+                          })()}
+                        </div>
+                        <span>Select All Visible</span>
+                      </button>
 
-                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                              <button
-                                type="button"
-                                onClick={() => setExpandedRecycleItem(isExpanded ? null : item.id)}
-                                className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold text-[10px] uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                              >
-                                {isExpanded ? 'Hide Details' : 'View Details'}
-                              </button>
+                      {selectedRecycleItemIds.length > 0 && (
+                        <div className="text-[10px] font-black uppercase tracking-wider text-rose-500 font-mono px-2 py-0.5 rounded bg-rose-500/10">
+                          {selectedRecycleItemIds.length} SELECTED
+                        </div>
+                      )}
+                    </div>
 
-                              <button
-                                type="button"
-                                onClick={() => handleRestoreItem(item.id)}
-                                disabled={restoringItemId !== null}
-                                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-sm cursor-pointer"
-                              >
-                                {restoringItemId === item.id ? 'Restoring...' : 'Restore'}
-                              </button>
+                    {selectedRecycleItemIds.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleBulkRestore}
+                          disabled={isBulkRestoring || isBulkPurging}
+                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                        >
+                          <RotateCcw size={12} className={isBulkRestoring ? "animate-spin" : ""} />
+                          {isBulkRestoring ? "Restoring..." : "Restore Selected"}
+                        </button>
 
-                              <button
-                                type="button"
-                                onClick={() => handlePurgeItem(item.id)}
-                                disabled={purgingItemId !== null}
-                                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-sm cursor-pointer"
-                              >
-                                {purgingItemId === item.id ? 'Purging...' : 'Purge'}
-                              </button>
-                            </div>
-                          </div>
+                        <button
+                          type="button"
+                          onClick={handleBulkPurge}
+                          disabled={isBulkRestoring || isBulkPurging}
+                          className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                        >
+                          <Trash2 size={12} className={isBulkPurging ? "animate-pulse" : ""} />
+                          {isBulkPurging ? "Purging..." : "Purge Selected"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
-                          {/* Expanded detail box */}
-                          {isExpanded && (
-                            <div className="p-5 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-100 dark:border-slate-800/80 font-mono text-xs text-slate-600 dark:text-slate-300 space-y-4">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Database Entry Metadata</h5>
-                                  <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 space-y-1 text-[11px]">
-                                    <div><span className="font-bold text-slate-500">ORIGINAL TABLE:</span> {details.originalTable}</div>
-                                    <div><span className="font-bold text-slate-500">ORIGINAL ID:</span> {details.originalId}</div>
-                                    <div><span className="font-bold text-slate-500">DEALER SCOPE:</span> {item.dealer_id}</div>
-                                    <div><span className="font-bold text-slate-500">DELETED AT:</span> {new Date(deletedAt).toLocaleString()}</div>
+                  <div className="space-y-4 relative">
+                    <AnimatePresence mode="popLayout">
+                      {filteredRecycleItems.map((item) => {
+                        const details = item.details || {};
+                        const isExpanded = expandedRecycleItem === item.id;
+                        const deletedAt = details.deletedAt || item.created_at;
+                        const relativeTime = (() => {
+                          const diff = Date.now() - deletedAt;
+                          const mins = Math.floor(diff / 60000);
+                          const hours = Math.floor(mins / 60);
+                          const days = Math.floor(hours / 24);
+                          if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+                          if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+                          if (mins > 0) return `${mins} min${mins > 1 ? 's' : ''} ago`;
+                          return 'just now';
+                        })();
+
+                        return (
+                          <motion.div
+                            key={item.id}
+                            layout
+                            initial={{ opacity: 0, y: 15, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: -50, scale: 0.95, transition: { duration: 0.25 } }}
+                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                            className="border border-slate-100 dark:border-slate-800/80 rounded-2xl overflow-hidden bg-white dark:bg-slate-950/40 hover:border-slate-200 dark:hover:border-slate-800 transition-all shadow-sm"
+                          >
+                            {/* Row Header */}
+                            <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div className="flex items-start gap-4 flex-1">
+                                {/* Individual Selection Checkbox */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleSelect(item.id)}
+                                  className="mt-1 shrink-0 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                                >
+                                  {selectedRecycleItemIds.includes(item.id) ? (
+                                    <CheckSquare className="text-rose-500 fill-rose-500/10" size={18} />
+                                  ) : (
+                                    <Square className="text-slate-300 dark:text-slate-700 hover:text-slate-450" size={18} />
+                                  )}
+                                </button>
+
+                                <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 flex items-center justify-center shrink-0 text-slate-500">
+                                  <Trash2 size={18} />
+                                </div>
+                                <div className="space-y-1">
+                                  <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest font-mono bg-slate-100 dark:bg-slate-900 text-slate-500">
+                                    {details.originalTable || 'Unknown'}
+                                  </span>
+                                  <h4 className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight leading-none mt-1">
+                                    {item.message || "Deleted entry"}
+                                  </h4>
+                                  <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                    <span className="flex items-center gap-1">
+                                      👤 {item.author_name || "admin"}
+                                    </span>
+                                    <span>•</span>
+                                    <span className="flex items-center gap-1">
+                                      📅 {new Date(deletedAt).toLocaleDateString()} {new Date(deletedAt).toLocaleTimeString()}
+                                    </span>
+                                    <span>•</span>
+                                    <span className="text-rose-500 font-black">{relativeTime}</span>
                                   </div>
                                 </div>
+                              </div>
 
-                                <div className="space-y-2">
-                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Purge Schedule</h5>
-                                  <div className="p-3 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-600 dark:text-rose-400 space-y-1 text-[11px] font-semibold">
-                                    <div><span className="font-black">AUTO PURGE DATE:</span> {new Date(deletedAt + (7 * 24 * 60 * 60 * 1000)).toLocaleString()}</div>
-                                    <div className="text-[10px] font-medium leading-relaxed uppercase tracking-wider mt-1.5 text-slate-400">
-                                      This item is securely isolated. To revert all data including billings, click "Restore". To erase completely, click "Purge".
+                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedRecycleItem(isExpanded ? null : item.id)}
+                                  className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold text-[10px] uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                                >
+                                  {isExpanded ? 'Hide Details' : 'View Details'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleRestoreItem(item.id)}
+                                  disabled={restoringItemId !== null}
+                                  className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-sm cursor-pointer"
+                                >
+                                  {restoringItemId === item.id ? 'Restoring...' : 'Restore'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handlePurgeItem(item.id)}
+                                  disabled={purgingItemId !== null}
+                                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-sm cursor-pointer"
+                                >
+                                  {purgingItemId === item.id ? 'Purging...' : 'Purge'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Expanded detail box */}
+                            {isExpanded && (
+                              <div className="p-5 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-100 dark:border-slate-800/80 font-mono text-xs text-slate-600 dark:text-slate-300 space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Database Entry Metadata</h5>
+                                    <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 space-y-1 text-[11px]">
+                                      <div><span className="font-bold text-slate-500">ORIGINAL TABLE:</span> {details.originalTable}</div>
+                                      <div><span className="font-bold text-slate-500">ORIGINAL ID:</span> {details.originalId}</div>
+                                      <div><span className="font-bold text-slate-500">DEALER SCOPE:</span> {item.dealer_id}</div>
+                                      <div><span className="font-bold text-slate-500">DELETED AT:</span> {new Date(deletedAt).toLocaleString()}</div>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Purge Schedule</h5>
+                                    <div className="p-3 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-600 dark:text-rose-400 space-y-1 text-[11px] font-semibold">
+                                      <div><span className="font-black">AUTO PURGE DATE:</span> {new Date(deletedAt + (7 * 24 * 60 * 60 * 1000)).toLocaleString()}</div>
+                                      <div className="text-[10px] font-medium leading-relaxed uppercase tracking-wider mt-1.5 text-slate-400">
+                                        This item is securely isolated. To revert all data including billings, click "Restore". To erase completely, click "Purge".
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
-                              </div>
 
-                              <div className="space-y-2">
-                                <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payload Snapshot</h5>
-                                <pre className="p-4 rounded-xl bg-slate-950 text-emerald-400 text-[10.5px] leading-relaxed border border-slate-900 overflow-x-auto font-mono max-h-64 scrollbar-thin">
-                                  {JSON.stringify(details.originalData, null, 2)}
-                                </pre>
-                              </div>
-
-                              {details.extraData && Array.isArray(details.extraData) && details.extraData.length > 0 && (
                                 <div className="space-y-2">
-                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Associated billing month rows ({details.extraData.length})</h5>
-                                  <pre className="p-4 rounded-xl bg-slate-950 text-amber-400 text-[10.5px] leading-relaxed border border-slate-900 overflow-x-auto font-mono max-h-64 scrollbar-thin">
-                                    {JSON.stringify(details.extraData, null, 2)}
+                                  <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payload Snapshot</h5>
+                                  <pre className="p-4 rounded-xl bg-slate-950 text-emerald-400 text-[10.5px] leading-relaxed border border-slate-900 overflow-x-auto font-mono max-h-64 scrollbar-thin">
+                                    {JSON.stringify(details.originalData, null, 2)}
                                   </pre>
                                 </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+
+                                {details.extraData && Array.isArray(details.extraData) && details.extraData.length > 0 && (
+                                  <div className="space-y-2">
+                                    <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Associated billing month rows ({details.extraData.length})</h5>
+                                    <pre className="p-4 rounded-xl bg-slate-950 text-amber-400 text-[10.5px] leading-relaxed border border-slate-900 overflow-x-auto font-mono max-h-64 scrollbar-thin">
+                                      {JSON.stringify(details.extraData, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </div>
                 </div>
               )}
             </div>
@@ -7759,7 +7925,7 @@ export default function AdminPanel({
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-4xl lg:max-w-5xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300"
             >
               <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
                 <div className="flex items-center gap-3">
@@ -7780,7 +7946,7 @@ export default function AdminPanel({
               </div>
               
               <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {/* Basic Details */}
                   <div className="space-y-4">
                     <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Client Information</h4>
@@ -7858,11 +8024,17 @@ export default function AdminPanel({
                     <Zap size={14} /> Advanced Parameters
                   </h4>
                   
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Comments</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.comments || '—'}</div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {/* Full-width landscape-optimized comments box */}
+                    <div className="col-span-2 sm:col-span-3 bg-slate-50 dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-150 dark:border-slate-800 space-y-2 shadow-sm">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 flex items-center gap-1.5">
+                        💬 Comments & Remarks
+                      </div>
+                      <div className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-150 dark:border-slate-850/80 shadow-inner leading-relaxed whitespace-pre-wrap select-text min-h-[90px]">
+                        {selectedRecoveryRow.comments || '—'}
+                      </div>
                     </div>
+
                     <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Occupation</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.occ || '—'}</div>

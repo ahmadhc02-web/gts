@@ -66,6 +66,7 @@ export default function EntrySheet({
   const [folders, setFolders] = useState<any[]>([]);
   const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>({});
   const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
+  const [folderToDeleteId, setFolderToDeleteId] = useState<string | null>(null);
   const [editFolderName, setEditFolderName] = useState<string>('');
   const [editConnectedMonthId, setEditConnectedMonthId] = useState<string>('');
 
@@ -99,31 +100,37 @@ export default function EntrySheet({
     
     // Subscribe to Folders
     const unsubFolders = firebaseService.subscribeLedgerFolders((data) => {
-      let mergedFolders = data && data.length > 0 ? [...data] : [];
+      let mergedFolders: any[] = [];
       let didMerge = false;
-
       const migrationFlag = `migrated_local_folders_${scopeId || 'main'}`;
-      if (!localStorage.getItem(migrationFlag)) {
-        const savedFolders = localStorage.getItem(foldersKey);
-        if (savedFolders) {
-          try {
-            const parsed = JSON.parse(savedFolders);
-            if (parsed && Array.isArray(parsed)) {
-              parsed.forEach(pf => {
-                if (!mergedFolders.find(mf => mf.id === pf.id || mf.name.toLowerCase() === pf.name.toLowerCase())) {
-                  mergedFolders.push(pf);
-                  didMerge = true;
-                }
-              });
-            }
-          } catch (e) { console.error("Migration parse error", e); }
-        }
-        localStorage.setItem(migrationFlag, 'true');
-      }
 
-      if (mergedFolders.length === 0) {
+      if (data === null) {
+        // Absolute first time loading, document not created in DB yet
         mergedFolders = isDealerTied ? [] : [{ id: 'june_data', name: 'June Data', createdAt: Date.now() }];
         didMerge = true;
+      } else {
+        mergedFolders = [...data];
+        if (data.length > 0) {
+          localStorage.setItem(migrationFlag, 'true');
+        }
+
+        if (!localStorage.getItem(migrationFlag)) {
+          const savedFolders = localStorage.getItem(foldersKey);
+          if (savedFolders) {
+            try {
+              const parsed = JSON.parse(savedFolders);
+              if (parsed && Array.isArray(parsed)) {
+                parsed.forEach(pf => {
+                  if (!mergedFolders.find(mf => mf.id === pf.id || mf.name.toLowerCase() === pf.name.toLowerCase())) {
+                    mergedFolders.push(pf);
+                    didMerge = true;
+                  }
+                });
+              }
+            } catch (e) { console.error("Migration parse error", e); }
+          }
+          localStorage.setItem(migrationFlag, 'true');
+        }
       }
 
       if (didMerge) {
@@ -139,6 +146,10 @@ export default function EntrySheet({
       let didMerge = false;
 
       const migrationFlag = `migrated_local_map_${scopeId || 'main'}`;
+      if (data && Object.keys(data).length > 0) {
+        localStorage.setItem(migrationFlag, 'true');
+      }
+
       if (!localStorage.getItem(migrationFlag)) {
         const savedMap = localStorage.getItem(sheetFoldersKey);
         if (savedMap) {
@@ -278,19 +289,30 @@ export default function EntrySheet({
 
   const handleDeleteFolder = (folderId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (folders.length <= 1) {
-      toast.error("You must keep at least one folder in the system.");
+    setFolderToDeleteId(folderId);
+  };
+
+  const confirmDeleteFolder = async () => {
+    if (!folderToDeleteId) return;
+    const folderId = folderToDeleteId;
+    
+    const folderToDelete = folders.find(f => f.id === folderId);
+    if (!folderToDelete) {
+      setFolderToDeleteId(null);
       return;
     }
-    const conf = window.confirm("Are you sure you want to delete this folder? Sheets inside will become Uncategorized.");
-    if (!conf) return;
-
-    const folderToDelete = folders.find(f => f.id === folderId);
 
     const newFolders = folders.filter(f => f.id !== folderId);
-    setFolders(newFolders);
-    saveFoldersToDb(newFolders);
     
+    // Get list of sheets associated with this folder to store in Recycle Bin
+    const associatedSheetIds = Object.keys(sheetFolderMap).filter(sheetId => sheetFolderMap[sheetId] === folderId);
+    
+    // 1. Instantly update folders local state & local storage to prevent any race conditions
+    setFolders(newFolders);
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+
+    // 2. Safely unmap sheets inside this folder
     setSheetFolderMap(prev => {
       const next = { ...prev };
       Object.keys(next).forEach(sheetId => {
@@ -298,29 +320,42 @@ export default function EntrySheet({
           delete next[sheetId];
         }
       });
-      saveMapToDb(next);
+      
+      const originalScopeIdMap = activeDealerId || currentUser?.uid || 'main';
+      localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeIdMap}`, JSON.stringify(next));
+      
+      // Async DB map update
+      const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+      firebaseService.updateLedgerSheetFolderMap(next, scopeId).catch(console.error);
+      
       return next;
     });
 
-    if (folderToDelete) {
-      try {
-        const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-        firebaseService.saveToRecycleBin(
-          'ledger_folder',
-          folderToDelete.id,
-          currentUser?.username || 'admin',
-          scopeId || 'main',
-          {
-            originalData: folderToDelete,
-            dealerId: scopeId || 'main'
-          }
-        );
-      } catch (binErr) {
-        console.error("Error saving ledger folder to recycle bin:", binErr);
-      }
+    // 3. Save folder to Recycle Bin first, then update folders in database
+    try {
+      const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+      
+      await firebaseService.saveToRecycleBin(
+        'ledger_folder',
+        folderToDelete.id,
+        currentUser?.username || currentUser?.fullName || 'admin',
+        scopeId || 'main',
+        {
+          originalData: folderToDelete,
+          dealerId: scopeId || 'main',
+          associatedSheetIds: associatedSheetIds
+        }
+      );
+
+      await firebaseService.updateLedgerFolders(newFolders, scopeId);
+      toast.success(`📁 Folder "${folderToDelete.name}" moved to Recycle Bin!`);
+    } catch (binErr) {
+      console.error("Error saving ledger folder to recycle bin:", binErr);
+      const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+      await firebaseService.updateLedgerFolders(newFolders, scopeId).catch(console.error);
     }
 
-    toast.success("Folder deleted");
+    setFolderToDeleteId(null);
   };
 
   const handleCreateSheetInFolder = (folderId: string, e?: React.MouseEvent) => {
@@ -2654,7 +2689,7 @@ export default function EntrySheet({
                           </div>
 
                           {/* Quick delete option */}
-                          {folder.id !== 'june_data' && (
+                          {true && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -4975,6 +5010,70 @@ export default function EntrySheet({
                     Save & Close
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {folderToDeleteId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+            onClick={() => setFolderToDeleteId(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-6"
+            >
+              <div className="flex items-center gap-4 text-rose-500 dark:text-rose-450">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center shrink-0">
+                  <Trash2 size={24} className="stroke-[2]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                    Confirm Folder Deletion
+                  </h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
+                    Move Directory to Recycle Bin
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Are you sure you want to delete this folder?
+                </p>
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-widest text-slate-450">Folder Name:</span>
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-850 dark:text-slate-200">
+                      {folders.find(f => f.id === folderToDeleteId)?.name}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-rose-500 font-semibold leading-relaxed">
+                    ⚠️ Sheets inside this folder will automatically become "Uncategorized", but will not be deleted.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={() => setFolderToDeleteId(null)}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteFolder}
+                  className="flex-1 py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md shadow-rose-500/10 active:scale-[0.98]"
+                >
+                  Confirm Delete
+                </button>
               </div>
             </motion.div>
           </motion.div>
