@@ -1999,8 +1999,22 @@ export const firebaseService = {
     const channelId = `ledger_folders_${docId}_${Math.random().toString(36).substring(2, 11)}`;
     const channel = supabase
       .channel(channelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: `id=eq.${docId}` }, () => {
-        fetchFolders();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: `id=eq.${docId}` }, (payload) => {
+        if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
+          const newData = payload.new as any;
+          if (newData.dashboard_subtext) {
+            try {
+              callback(JSON.parse(newData.dashboard_subtext));
+            } catch (pErr) {
+              console.error("Failed to parse realtime payload:", pErr);
+              fetchFolders();
+            }
+          } else {
+            callback([]);
+          }
+        } else {
+          fetchFolders();
+        }
       })
       .subscribe();
 
@@ -2059,8 +2073,22 @@ export const firebaseService = {
     const channelId = `ledger_sheet_map_${docId}_${Math.random().toString(36).substring(2, 11)}`;
     const channel = supabase
       .channel(channelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: `id=eq.${docId}` }, () => {
-        fetchMap();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: `id=eq.${docId}` }, (payload) => {
+        if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
+          const newData = payload.new as any;
+          if (newData.dashboard_subtext) {
+            try {
+              callback(JSON.parse(newData.dashboard_subtext));
+            } catch (pErr) {
+              console.error("Failed to parse realtime payload:", pErr);
+              fetchMap();
+            }
+          } else {
+            callback({});
+          }
+        } else {
+          fetchMap();
+        }
       })
       .subscribe();
 
