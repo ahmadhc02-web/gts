@@ -99,90 +99,69 @@ export default function EntrySheet({
     
     // Subscribe to Folders
     const unsubFolders = firebaseService.subscribeLedgerFolders((data) => {
-      setFolders(prev => {
-        let mergedFolders = data && data.length > 0 ? [...data] : [];
-        let didMerge = false;
-        
-        // Ensure local folders aren't lost due to realtime race conditions
-        prev.forEach(pf => {
-          if (!mergedFolders.find(mf => mf.id === pf.id)) {
-            mergedFolders.push(pf);
-            didMerge = true;
-          }
-        });
+      let mergedFolders = data && data.length > 0 ? [...data] : [];
+      let didMerge = false;
 
-        const migrationFlag = `migrated_local_folders_${scopeId || 'main'}`;
-        if (!localStorage.getItem(migrationFlag)) {
-          const savedFolders = localStorage.getItem(foldersKey);
-          if (savedFolders) {
-            try {
-              const parsed = JSON.parse(savedFolders);
-              if (parsed && Array.isArray(parsed)) {
-                parsed.forEach(pf => {
-                  if (!mergedFolders.find(mf => mf.id === pf.id || mf.name.toLowerCase() === pf.name.toLowerCase())) {
-                    mergedFolders.push(pf);
-                    didMerge = true;
-                  }
-                });
-              }
-            } catch (e) { console.error("Migration parse error", e); }
-          }
-          localStorage.setItem(migrationFlag, 'true');
+      const migrationFlag = `migrated_local_folders_${scopeId || 'main'}`;
+      if (!localStorage.getItem(migrationFlag)) {
+        const savedFolders = localStorage.getItem(foldersKey);
+        if (savedFolders) {
+          try {
+            const parsed = JSON.parse(savedFolders);
+            if (parsed && Array.isArray(parsed)) {
+              parsed.forEach(pf => {
+                if (!mergedFolders.find(mf => mf.id === pf.id || mf.name.toLowerCase() === pf.name.toLowerCase())) {
+                  mergedFolders.push(pf);
+                  didMerge = true;
+                }
+              });
+            }
+          } catch (e) { console.error("Migration parse error", e); }
         }
+        localStorage.setItem(migrationFlag, 'true');
+      }
 
-        if (mergedFolders.length === 0) {
-          mergedFolders = isDealerTied ? [] : [{ id: 'june_data', name: 'June Data', createdAt: Date.now() }];
-          didMerge = true;
-        }
-        
-        if (didMerge) {
-          firebaseService.updateLedgerFolders(mergedFolders, scopeId).catch(console.error);
-        }
-        return mergedFolders;
-      });
+      if (mergedFolders.length === 0) {
+        mergedFolders = isDealerTied ? [] : [{ id: 'june_data', name: 'June Data', createdAt: Date.now() }];
+        didMerge = true;
+      }
+
+      if (didMerge) {
+        firebaseService.updateLedgerFolders(mergedFolders, scopeId).catch(console.error);
+      }
+      
+      setFolders(mergedFolders);
     }, scopeId);
 
     // Subscribe to Sheet Folder Map
     const unsubMap = firebaseService.subscribeLedgerSheetFolderMap((data) => {
-      setSheetFolderMap(prev => {
-        let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
-        let didMerge = false;
-        
-        // Ensure local map changes aren't lost due to realtime race conditions
-        Object.keys(prev).forEach(k => {
-          if (!mergedMap[k] || (mergedMap[k] !== prev[k] && typeof mergedMap[k] !== 'undefined')) {
-            // Keep the local mapping if it was recently modified (we prefer prev[k] if there's a conflict just in case, but let's just keep missing ones for safety)
-            if (!mergedMap[k]) {
-              mergedMap[k] = prev[k];
-              didMerge = true;
+      let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
+      let didMerge = false;
+
+      const migrationFlag = `migrated_local_map_${scopeId || 'main'}`;
+      if (!localStorage.getItem(migrationFlag)) {
+        const savedMap = localStorage.getItem(sheetFoldersKey);
+        if (savedMap) {
+          try {
+            const parsed = JSON.parse(savedMap);
+            if (parsed && typeof parsed === 'object') {
+              Object.keys(parsed).forEach(k => {
+                if (!mergedMap[k]) {
+                  mergedMap[k] = parsed[k];
+                  didMerge = true;
+                }
+              });
             }
-          }
-        });
-
-        const migrationFlag = `migrated_local_map_${scopeId || 'main'}`;
-        if (!localStorage.getItem(migrationFlag)) {
-          const savedMap = localStorage.getItem(sheetFoldersKey);
-          if (savedMap) {
-            try {
-              const parsed = JSON.parse(savedMap);
-              if (parsed && typeof parsed === 'object') {
-                Object.keys(parsed).forEach(k => {
-                  if (!mergedMap[k]) {
-                    mergedMap[k] = parsed[k];
-                    didMerge = true;
-                  }
-                });
-              }
-            } catch (e) { console.error("Migration map parse error", e); }
-          }
-          localStorage.setItem(migrationFlag, 'true');
+          } catch (e) { console.error("Migration map parse error", e); }
         }
+        localStorage.setItem(migrationFlag, 'true');
+      }
 
-        if (didMerge) {
-          firebaseService.updateLedgerSheetFolderMap(mergedMap, scopeId).catch(console.error);
-        }
-        return mergedMap;
-      });
+      if (didMerge) {
+        firebaseService.updateLedgerSheetFolderMap(mergedMap, scopeId).catch(console.error);
+      }
+      
+      setSheetFolderMap(mergedMap);
     }, scopeId);
 
     return () => {
