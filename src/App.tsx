@@ -1578,6 +1578,7 @@ export default function App() {
   const handleUpdateUser = async (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role'], profilePicture?: string, email?: string) => {
     if (!user) return;
     try {
+      console.log("App.tsx updating user:", uid, "with profilePicture:", profilePicture);
       await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode !== undefined && { lineCode }), ...(companyName !== undefined && { companyName }), ...(profilePicture !== undefined && { profilePicture }), ...(email !== undefined && { email: email.trim() }) }, user.fullName || user.username);
       
       const targetUser = users.find(u => u.uid === uid);

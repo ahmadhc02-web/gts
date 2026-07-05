@@ -1596,7 +1596,7 @@ export default function ComplaintList({
 
                   {/* Gender Field Row */}
                   <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
-                    {selectedDelegate.profilePicture?.includes('female') ? (
+                    {(selectedDelegate.profilePicture?.includes(':::gender:female') || selectedDelegate.profilePicture === 'default:female') ? (
                       <>
                         <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200/50 dark:border-rose-800/40 flex items-center justify-center text-rose-500 dark:text-rose-400 shrink-0">
                           <User size={15} />

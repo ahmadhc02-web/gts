@@ -232,9 +232,9 @@ export default function Layout({
   const [editProfilePicture, setEditProfilePicture] = useState(user?.profilePicture || '');
   const [editEmail, setEditEmail] = useState(user?.email || '');
   const [editGender, setEditGender] = useState<'male'|'female'|'not_set'>(
-    user?.profilePicture === 'default:female' 
+    user?.profilePicture?.includes(':::gender:female') || user?.profilePicture === 'default:female' 
       ? 'female' 
-      : user?.profilePicture === 'default:male'
+      : user?.profilePicture?.includes(':::gender:male') || user?.profilePicture === 'default:male'
       ? 'male'
       : 'not_set'
   );
@@ -248,13 +248,15 @@ export default function Layout({
       setEditPassword(user.password || '');
       setEditProfilePicture(user.profilePicture || '');
       setEditEmail(user.email || '');
-      setEditGender(
-        user.profilePicture === 'default:female' 
-          ? 'female' 
-          : user.profilePicture === 'default:male'
-          ? 'male'
-          : 'not_set'
-      );
+      let initialGender: 'male'|'female'|'not_set' = 'not_set';
+      if (user.profilePicture) {
+        if (user.profilePicture.includes(':::gender:female') || user.profilePicture === 'default:female') {
+          initialGender = 'female';
+        } else if (user.profilePicture.includes(':::gender:male') || user.profilePicture === 'default:male') {
+          initialGender = 'male';
+        }
+      }
+      setEditGender(initialGender);
     }
   }, [user]);
 
@@ -289,7 +291,7 @@ export default function Layout({
           
           // Compress to WebP or JPEG with lower quality
           const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-          setEditProfilePicture(dataUrl);
+          setEditProfilePicture(editGender !== 'not_set' ? `${dataUrl}:::gender:${editGender}` : dataUrl);
         };
         img.src = reader.result as string;
       };
@@ -301,6 +303,7 @@ export default function Layout({
     e.preventDefault();
     if (!user || !onUpdateUser) return;
     
+    console.log("Updating profile with gender:", editGender, "and picture:", editProfilePicture);
     setIsUpdatingProfile(true);
     try {
       await onUpdateUser(
@@ -1699,6 +1702,9 @@ export default function Layout({
                                 setEditGender('not_set');
                                 if (!editProfilePicture || editProfilePicture.startsWith('default:')) {
                                   setEditProfilePicture('default:none');
+                                } else {
+                                  const cleanPic = editProfilePicture.split(':::gender:')[0];
+                                  setEditProfilePicture(cleanPic);
                                 }
                               }}
                               className={cn(
@@ -1714,6 +1720,9 @@ export default function Layout({
                                 setEditGender('male');
                                 if (!editProfilePicture || editProfilePicture.startsWith('default:')) {
                                   setEditProfilePicture('default:male');
+                                } else {
+                                  const cleanPic = editProfilePicture.split(':::gender:')[0];
+                                  setEditProfilePicture(`${cleanPic}:::gender:male`);
                                 }
                               }}
                               className={cn(
@@ -1729,6 +1738,9 @@ export default function Layout({
                                 setEditGender('female');
                                 if (!editProfilePicture || editProfilePicture.startsWith('default:')) {
                                   setEditProfilePicture('default:female');
+                                } else {
+                                  const cleanPic = editProfilePicture.split(':::gender:')[0];
+                                  setEditProfilePicture(`${cleanPic}:::gender:female`);
                                 }
                               }}
                               className={cn(

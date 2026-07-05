@@ -1333,6 +1333,8 @@ export const firebaseService = {
       const { error } = await supabase.from('clients').insert(dbRow);
       if (error) throw error;
       
+      window.dispatchEvent(new CustomEvent('gts-table-updated-clients'));
+
       await firebaseService.createNotification({
         type: 'client_added',
         message: `New client added to registry: ${newClient.name}`,
@@ -1353,6 +1355,8 @@ export const firebaseService = {
       const { error } = await supabase.from('clients').update(dbRow).eq('id', id);
       if (error) throw error;
       
+      window.dispatchEvent(new CustomEvent('gts-table-updated-clients'));
+
       await firebaseService.createNotification({
         type: 'client_updated',
         message: `Client record modified: Updated info for "${clientName}"`,
@@ -1375,6 +1379,7 @@ export const firebaseService = {
         area: updatedData.area || ''
       };
       await supabase.from('complaints').update(payload).eq('customer_username', originalUsername);
+      window.dispatchEvent(new CustomEvent('gts-table-updated-complaints'));
     } catch (error) {
       console.error("updateClientComplaints error:", error);
     }
@@ -2025,12 +2030,26 @@ export const firebaseService = {
 
   updateLedgerFolders: async (folders: any[], dealerId?: string) => {
     const docId = dealerId ? `ledger_folders_${dealerId}` : 'ledger_folders_main';
+    
+    // Fetch existing first to ensure we don't violate not-null constraints on upsert
+    const { data: existing } = await supabase.from('branding_config').select('*').eq('id', docId).maybeSingle();
+    
     const payload = {
+      ...(existing || {}),
       id: docId,
       dashboard_subtext: JSON.stringify(folders),
       updated_at: Date.now()
     };
-    const { error } = await supabase.from('branding_config').upsert(payload);
+    
+    let error;
+    if (existing) {
+      const { error: updateError } = await supabase.from('branding_config').update(payload).eq('id', docId);
+      error = updateError;
+    } else {
+      const { error: insertError } = await supabase.from('branding_config').insert(payload);
+      error = insertError;
+    }
+    
     if (error) {
       console.error("Supabase error in updateLedgerFolders:", error);
       throw error;
@@ -2099,12 +2118,26 @@ export const firebaseService = {
 
   updateLedgerSheetFolderMap: async (map: Record<string, string>, dealerId?: string) => {
     const docId = dealerId ? `ledger_sheet_map_${dealerId}` : 'ledger_sheet_map_main';
+    
+    // Fetch existing first to ensure we don't violate not-null constraints on upsert
+    const { data: existing } = await supabase.from('branding_config').select('*').eq('id', docId).maybeSingle();
+    
     const payload = {
+      ...(existing || {}),
       id: docId,
       dashboard_subtext: JSON.stringify(map),
       updated_at: Date.now()
     };
-    const { error } = await supabase.from('branding_config').upsert(payload);
+    
+    let error;
+    if (existing) {
+      const { error: updateError } = await supabase.from('branding_config').update(payload).eq('id', docId);
+      error = updateError;
+    } else {
+      const { error: insertError } = await supabase.from('branding_config').insert(payload);
+      error = insertError;
+    }
+    
     if (error) {
       console.error("Supabase error in updateLedgerSheetFolderMap:", error);
       throw error;

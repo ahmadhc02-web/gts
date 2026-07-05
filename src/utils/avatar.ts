@@ -5,11 +5,15 @@ const FEMALE_AVATAR = `data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2
 const NEUTRAL_AVATAR = `data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f1f5f9'/%3E%3Ccircle cx='50' cy='40' r='22' fill='%23e2e8f0'/%3E%3Cpath d='M 15 100 Q 15 70 50 70 Q 85 70 85 100' fill='%2394a3b8'/%3E%3C/svg%3E`;
 
 export const getAvatarUrl = (pic?: string | null) => {
-  if (pic === 'default:female') return FEMALE_AVATAR;
-  if (pic === 'default:male') return MALE_AVATAR;
-  if (pic === 'default:none' || pic === 'default:not_set') return NEUTRAL_AVATAR;
-  if (pic && pic.startsWith('data:')) return pic;
-  if (pic && pic.startsWith('http')) return pic;
+  if (!pic) return NEUTRAL_AVATAR;
+  
+  const cleanPic = pic.split(':::gender:')[0];
+  
+  if (cleanPic === 'default:female') return FEMALE_AVATAR;
+  if (cleanPic === 'default:male') return MALE_AVATAR;
+  if (cleanPic === 'default:none' || cleanPic === 'default:not_set') return NEUTRAL_AVATAR;
+  if (cleanPic.startsWith('data:')) return cleanPic;
+  if (cleanPic.startsWith('http')) return cleanPic;
   // Falsy or unknown default - fallback to neutral
   return NEUTRAL_AVATAR;
 };
