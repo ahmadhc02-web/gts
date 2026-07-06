@@ -650,11 +650,15 @@ export default function EntrySheet({
 
   const [isReceiptSwipeOpen, setIsReceiptSwipeOpen] = useState(false);
   const [isPendingReceipt, setIsPendingReceipt] = useState(false);
-  const [lastSavedEntry, setLastSavedEntry] = useState<{ name: string; amount: number } | null>(null);
-  const [multiSavedEntries, setMultiSavedEntries] = useState<{ name: string; amount: number }[] | null>(null);
+  const [lastSavedEntry, setLastSavedEntry] = useState<{ name: string; amount: number; comments?: string } | null>(null);
+  const [multiSavedEntries, setMultiSavedEntries] = useState<{ name: string; amount: number; comments?: string }[] | null>(null);
   const [showMultiSlipConfirm, setShowMultiSlipConfirm] = useState(false);
-  const [pendingActiveRows, setPendingActiveRows] = useState<{ name: string; amount: number }[]>([]);
-  const [originalActiveRows, setOriginalActiveRows] = useState<{ name: string; amount: number }[]>([]);
+  const [pendingActiveRows, setPendingActiveRows] = useState<{ name: string; amount: number; comments?: string }[]>([]);
+  const [originalActiveRows, setOriginalActiveRows] = useState<{ name: string; amount: number; comments?: string }[]>([]);
+  
+  // New states for manual receipt selection
+  const [showReceiptSelectionPopup, setShowReceiptSelectionPopup] = useState(false);
+  const [selectedReceiptIndices, setSelectedReceiptIndices] = useState<number[]>([]);
 
   const [receiptConfig, setReceiptConfig] = useState({
     title: 'GREEN TECH SERVICES',
@@ -1571,38 +1575,14 @@ export default function EntrySheet({
           });
         }
 
-        // Trigger Receipt Swipe Left panel only for the NEWLY entered user(s) in table1Rows
+        // Auto receipt opening has been disabled per user request.
         const activeRows = table1Rows.filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
-        
-        // Find which active rows are newly added or updated relative to the load/last-save state
-        const newlyAddedRows = activeRows.filter(r => {
-          return !originalActiveRows.some(orig => 
-            orig.name.toLowerCase() === (r.name || '').trim().toLowerCase() && 
-            orig.amount === (Number(r.amount) || 0)
-          );
-        });
-
-        if (newlyAddedRows.length === 1) {
-          const lastRow = newlyAddedRows[0];
-          setLastSavedEntry({
-            name: lastRow.name.trim(),
-            amount: Number(lastRow.amount) || 0
-          });
-          setMultiSavedEntries(null);
-          setIsReceiptSwipeOpen(true);
-          setIsPendingReceipt(false);
-        } else if (newlyAddedRows.length > 1) {
-          setPendingActiveRows(newlyAddedRows.map(r => ({
-            name: (r.name || '').trim(),
-            amount: Number(r.amount) || 0
-          })));
-          setShowMultiSlipConfirm(true);
-        }
 
         // Update originalActiveRows state so subsequent saves are compared against this saved point
         setOriginalActiveRows(activeRows.map(r => ({
           name: (r.name || '').trim(),
-          amount: Number(r.amount) || 0
+          amount: Number(r.amount) || 0,
+          comments: (r.comments || '').trim()
         })));
       }
     } catch (e: any) {
@@ -4604,26 +4584,40 @@ export default function EntrySheet({
                       </div>
 
                       {/* Items List */}
-                      <div className="space-y-1 text-[11px] font-bold text-left mb-4">
+                      <div className="space-y-2 text-[11px] font-bold text-left mb-4">
                         {multiSavedEntries && multiSavedEntries.length > 0 ? (
                           multiSavedEntries.slice(0, 4).map((entry, index) => (
-                            <div key={index} className="flex justify-between items-center">
-                              <span className="truncate max-w-[170px] uppercase font-bold text-slate-900">
-                                {entry.name}
-                              </span>
-                              <span className="font-mono">
-                                {Number(entry.amount).toFixed(2)}
-                              </span>
+                            <div key={index} className="flex flex-col">
+                              <div className="flex justify-between items-start">
+                                <span className="truncate max-w-[170px] uppercase font-bold text-slate-900 leading-tight">
+                                  {entry.name}
+                                </span>
+                                <span className="font-mono pt-0.5">
+                                  {Number(entry.amount).toFixed(2)}
+                                </span>
+                              </div>
+                              {entry.comments && (
+                                <span className="text-[9px] text-slate-500 font-medium truncate max-w-[170px] mt-0.5 leading-tight">
+                                  {entry.comments}
+                                </span>
+                              )}
                             </div>
                           ))
                         ) : (
-                          <div className="flex justify-between items-center">
-                            <span className="truncate max-w-[170px] uppercase font-bold text-slate-900">
-                              {lastSavedEntry.name}
-                            </span>
-                            <span className="font-mono">
-                              {lastSavedEntry.amount.toFixed(2)}
-                            </span>
+                          <div className="flex flex-col">
+                            <div className="flex justify-between items-start">
+                              <span className="truncate max-w-[170px] uppercase font-bold text-slate-900 leading-tight">
+                                {lastSavedEntry.name}
+                              </span>
+                              <span className="font-mono pt-0.5">
+                                {lastSavedEntry.amount.toFixed(2)}
+                              </span>
+                            </div>
+                            {lastSavedEntry.comments && (
+                              <span className="text-[9px] text-slate-500 font-medium truncate max-w-[170px] mt-0.5 leading-tight">
+                                {lastSavedEntry.comments}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -4701,9 +4695,12 @@ export default function EntrySheet({
                       const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
                       const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
                       const itemsHtml = itemsToPrint.map(item => `
-                        <div style="display: flex; justify-content: space-between; font-size: 11pt; font-weight: bold; text-align: left; margin-bottom: 8px;">
-                          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; text-transform: uppercase;">${item.name}</span>
-                          <span>${Number(item.amount).toFixed(2)}</span>
+                        <div style="display: flex; flex-direction: column; font-size: 11pt; font-weight: bold; text-align: left; margin-bottom: 8px;">
+                          <div style="display: flex; justify-content: space-between;">
+                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; text-transform: uppercase;">${item.name}</span>
+                            <span>${Number(item.amount).toFixed(2)}</span>
+                          </div>
+                          ${item.comments ? `<span style="font-size: 9pt; color: #555; font-weight: normal; margin-top: 2px;">${item.comments}</span>` : ''}
                         </div>
                       `).join('');
                       const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
@@ -4847,9 +4844,20 @@ export default function EntrySheet({
                         doc.setFont('Helvetica', 'bold');
                         doc.setFontSize(11);
                         itemsToPrint.forEach(item => {
+                          doc.setFont('Helvetica', 'bold');
+                          doc.setFontSize(11);
                           doc.text(item.name, 15, y);
                           doc.text(Number(item.amount).toFixed(2), 133, y, { align: 'right' });
-                          y += 8;
+                          y += 6;
+                          if (item.comments) {
+                            doc.setFont('Helvetica', 'normal');
+                            doc.setFontSize(9);
+                            doc.setTextColor(80, 80, 80);
+                            doc.text(item.comments, 15, y);
+                            doc.setTextColor(0, 0, 0);
+                            y += 6;
+                          }
+                          y += 2;
                         });
                         
                         y += 2;
@@ -4907,6 +4915,26 @@ export default function EntrySheet({
             </motion.div>
           )}
         </AnimatePresence>
+
+      {/* Floating Manual Receipt Button (Left Side) */}
+      <AnimatePresence>
+        <motion.div
+          initial={{ scale: 0.5, opacity: 0, y: 30 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          className="fixed bottom-6 left-6 z-[300] print:hidden text-left"
+        >
+          <button
+            onClick={() => {
+              setSelectedReceiptIndices([]);
+              setShowReceiptSelectionPopup(true);
+            }}
+            className="flex items-center gap-2 px-4 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-black uppercase tracking-wider text-[11px] rounded-2xl shadow-2xl transition-all duration-150 active:scale-95 border-none cursor-pointer"
+          >
+            <Printer size={15} />
+            <span>Receipt</span>
+          </button>
+        </motion.div>
+      </AnimatePresence>
 
       {/* Floating Pending Receipt Badge */}
       <AnimatePresence>
@@ -5644,6 +5672,121 @@ export default function EntrySheet({
                     No
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {showReceiptSelectionPopup && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 15, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left flex flex-col max-h-[80vh]"
+            >
+              <div className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-start gap-3">
+                <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-500 shrink-0">
+                  <Printer size={20} className="text-emerald-500" />
+                </div>
+                <div className="space-y-0.5">
+                  <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-emerald-500 font-mono">
+                    Select Users
+                  </h4>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider leading-snug">
+                    Generate Receipt
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setShowReceiptSelectionPopup(false)}
+                  className="ml-auto p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-400 dark:text-slate-500 rounded-xl transition-all cursor-pointer border-none"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="p-5 flex-1 overflow-y-auto min-h-0 flex flex-col gap-2 scrollbar-thin">
+                {(() => {
+                  const availableRows = table1Rows
+                    .map((r, i) => ({ ...r, originalIndex: i }))
+                    .filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
+                    
+                  if (availableRows.length === 0) {
+                    return <div className="text-xs text-slate-500 py-4 text-center">No active users in current entry.</div>;
+                  }
+
+                  return availableRows.map((r, idx) => {
+                    const isSelected = selectedReceiptIndices.includes(r.originalIndex);
+                    return (
+                      <div 
+                        key={r.originalIndex}
+                        onClick={() => {
+                          setSelectedReceiptIndices(prev => {
+                            if (prev.includes(r.originalIndex)) {
+                              return prev.filter(i => i !== r.originalIndex);
+                            }
+                            if (prev.length >= 4) {
+                              toast.error("You can select a maximum of 4 users.");
+                              return prev;
+                            }
+                            return [...prev, r.originalIndex];
+                          });
+                        }}
+                        className={`flex items-center justify-between p-3 rounded-xl border ${isSelected ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20' : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50'} cursor-pointer transition-colors`}
+                      >
+                        <div className="flex flex-col gap-0.5 overflow-hidden pr-3">
+                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{r.name}</span>
+                          {r.comments && <span className="text-[10px] text-slate-500 truncate">{r.comments}</span>}
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-mono text-xs font-black text-emerald-600 dark:text-emerald-400">Rs. {Number(r.amount).toLocaleString()}</span>
+                          <div className={`w-4 h-4 rounded shadow-inner flex items-center justify-center transition-colors ${isSelected ? 'bg-emerald-500 text-white' : 'bg-slate-200 dark:bg-slate-800'}`}>
+                            {isSelected && <svg viewBox="0 0 14 14" fill="none" className="w-3 h-3"><path d="M11.6666 3.5L5.24992 9.91667L2.33325 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+
+              <div className="p-5 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  onClick={() => {
+                    if (selectedReceiptIndices.length === 0) {
+                      toast.error("Please select at least 1 user.");
+                      return;
+                    }
+                    
+                    const selectedData = selectedReceiptIndices.map(idx => {
+                      const row = table1Rows[idx];
+                      return {
+                        name: (row.name || '').trim(),
+                        amount: Number(row.amount) || 0,
+                        comments: (row.comments || '').trim()
+                      };
+                    });
+                    
+                    setPendingActiveRows(selectedData);
+                    setMultiSavedEntries(selectedData);
+                    if (selectedData.length > 0) {
+                      setLastSavedEntry(selectedData[selectedData.length - 1]);
+                    }
+                    
+                    setShowReceiptSelectionPopup(false);
+                    setIsReceiptSwipeOpen(true);
+                    setIsPendingReceipt(false);
+                  }}
+                  className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-black uppercase tracking-widest text-xs transition-all cursor-pointer border-none shadow-md shadow-emerald-500/20"
+                >
+                  Okay ({selectedReceiptIndices.length} Selected)
+                </button>
               </div>
             </motion.div>
           </motion.div>

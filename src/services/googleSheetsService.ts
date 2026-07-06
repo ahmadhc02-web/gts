@@ -187,6 +187,7 @@ export const googleSheetsService = {
     fetchConfig();
 
     const channelId = `google_sheets_config_realtime_${Math.random().toString(36).substring(2, 11)}`;
+    console.log(`[Realtime] Opening channel ${channelId} for google_sheets config`);
     const channel = supabase
       .channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.google_sheets' }, () => {
@@ -195,6 +196,7 @@ export const googleSheetsService = {
       .subscribe();
 
     return () => {
+      console.log(`[Realtime] Closing channel ${channelId}`);
       supabase.removeChannel(channel);
     };
   },
@@ -315,6 +317,7 @@ export const googleSheetsService = {
         let unsubSupabase = () => {};
         try {
           const channelId = `google_sheets_auth_realtime_${Math.random().toString(36).substring(2, 11)}`;
+          console.log(`[Realtime] Opening channel ${channelId} for google_sheets auth polling`);
           const channel = supabase
             .channel(channelId)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.google_sheets' }, (payload) => {
@@ -335,6 +338,7 @@ export const googleSheetsService = {
             .subscribe();
 
           unsubSupabase = () => {
+            console.log(`[Realtime] Closing channel ${channelId}`);
             supabase.removeChannel(channel);
           };
         } catch (fsErr) {

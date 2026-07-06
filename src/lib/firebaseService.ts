@@ -251,6 +251,10 @@ export function fromDb(table: string, obj: any): any {
 }
 
 // Global subscription query listener with instant cache-first fallback for premium panel speed
+const globalTableChannels: Record<string, any> = {};
+const globalTableSubscribers: Record<string, Set<(data: any[]) => void>> = {};
+const globalTableCaches: Record<string, any[]> = {};
+
 function subscribeTable(
   tableName: string,
   queryBuilder: (query: any) => any,
@@ -258,11 +262,12 @@ function subscribeTable(
   mapRow: (row: any) => any = (row) => row,
   dealerId?: string
 ) {
-  const cacheKey = `gts_cache_v3_${tableName}`;
-  
-  // Try to deliver cached data immediately & synchronously to avoid loading screens completely
+  const syncKey = `${tableName}_${dealerId || 'all'}`;
+  const pk = tableName === 'users' ? 'uid' : 'id';
+
+  // Try to deliver cached data immediately & synchronously
   try {
-    const cachedData = localStorage.getItem(cacheKey);
+    const cachedData = localStorage.getItem(`gts_cache_v3_${tableName}`);
     if (cachedData) {
       const parsed = JSON.parse(cachedData);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -273,71 +278,133 @@ function subscribeTable(
     console.warn(`[Cache] Synchronous load failed for ${tableName}:`, e);
   }
 
-  const fetchAndCallback = async () => {
+  // 1. Fetch initial state
+  const fetchInitial = async () => {
     try {
       let q = supabase.from(tableName).select('*');
       q = queryBuilder(q);
       const { data, error } = await q;
+      
       if (error) {
         console.warn(`Error loading table ${tableName} from Supabase:`, error);
-        
-        const isTableMissing = error.message?.includes('relation') && error.message?.includes('does not exist');
-        const lastAlertTime = (window as any)[`gts_alert_time_${tableName}`] || 0;
-        const now = Date.now();
-        if (now - lastAlertTime > 20000) { // Throttled to 20 seconds to prevent alert storms
-          (window as any)[`gts_alert_time_${tableName}`] = now;
-          if (isTableMissing) {
-            toast.error(`Database table "${tableName}" does not exist. Please go to Admin Panel -> Settings -> Database Setup & Connection to run the SQL migration and provision your database tables!`, {
-              id: `missing-table-${tableName}`,
-              duration: 8000
-            });
-          } else {
-            toast.error(`Error syncing table "${tableName}": ${error.message || 'Connection offline'}`, {
-              id: `sync-error-${tableName}`,
-              duration: 4000
-            });
-          }
-        }
         return;
       }
+      
       const mapped = (data || []).map(mapRow);
       
-      // Update our high-speed local cache with fresh data
       try {
-        localStorage.setItem(cacheKey, JSON.stringify(mapped));
-      } catch (e) {
-        console.warn(`[Cache] Failed updating cache for ${tableName}:`, e);
-      }
+        localStorage.setItem(`gts_cache_v3_${tableName}`, JSON.stringify(mapped));
+      } catch (e) { }
 
+      globalTableCaches[syncKey] = mapped;
+      
+      // Since this callback might be called twice (from cache, then from fetch), it's fine.
       callback(mapped);
     } catch (err) {
       console.warn(`Exception loading table ${tableName} from Supabase:`, err);
     }
   };
 
-  fetchAndCallback();
+  // If we already have a runtime cache, serve it immediately
+  if (globalTableCaches[syncKey]) {
+    callback(globalTableCaches[syncKey]);
+  }
+  
+  fetchInitial();
 
-  const localEventName = `gts-table-updated-${tableName}`;
-  const handleLocalUpdate = () => {
-    fetchAndCallback();
-  };
-  window.addEventListener(localEventName, handleLocalUpdate);
+  // 2. Register subscriber
+  if (!globalTableSubscribers[syncKey]) {
+    globalTableSubscribers[syncKey] = new Set();
+  }
+  globalTableSubscribers[syncKey].add(callback);
 
-  const channelId = `realtime_${tableName}_${Math.random().toString(36).substr(2, 6)}`;
-  const channel = supabase
-    .channel(channelId)
-    .on('postgres_changes', { event: '*', schema: 'public', table: tableName }, () => {
-      fetchAndCallback();
-    })
-    .subscribe();
+  // 3. Setup shared channel if not exists
+  if (!globalTableChannels[syncKey]) {
+    const channelId = `realtime_${syncKey}`;
+    
+    // Add filtering to reduce Realtime egress (10.1GB fix)
+    const hasDealerIdCol = !['branding_config'].includes(tableName);
+    let filterStr = undefined;
+    if (dealerId && dealerId !== 'all' && hasDealerIdCol) {
+      filterStr = `dealer_id=eq.${dealerId}`;
+    }
 
+    const config: any = { event: '*', schema: 'public', table: tableName };
+    if (filterStr) {
+      config.filter = filterStr;
+    }
+
+    const channel = supabase.channel(channelId);
+    channel.on('postgres_changes', config, (payload: any) => {
+      let nextCache = globalTableCaches[syncKey] || [];
+      
+      if (payload.eventType === 'INSERT') {
+        const newRow = mapRow(payload.new);
+        // Fallback local filter just in case
+        if (dealerId && dealerId !== 'all' && newRow.dealerId && newRow.dealerId !== dealerId) return;
+        
+        if (!nextCache.find((r: any) => r[pk] === newRow[pk])) {
+          nextCache = [newRow, ...nextCache];
+          // Auto-sort if createdAt exists
+          if (newRow.createdAt !== undefined) {
+             nextCache.sort((a, b) => b.createdAt - a.createdAt);
+          }
+        }
+      } else if (payload.eventType === 'UPDATE') {
+        const updatedRow = mapRow(payload.new);
+        nextCache = nextCache.map((r: any) => r[pk] === updatedRow[pk] ? updatedRow : r);
+        if (updatedRow.createdAt !== undefined) {
+             nextCache.sort((a, b) => b.createdAt - a.createdAt);
+        }
+      } else if (payload.eventType === 'DELETE') {
+        nextCache = nextCache.filter((r: any) => r[pk] !== payload.old[pk]);
+      }
+      
+      globalTableCaches[syncKey] = nextCache;
+      
+      try {
+        localStorage.setItem(`gts_cache_v3_${tableName}`, JSON.stringify(nextCache));
+      } catch(e){}
+
+      globalTableSubscribers[syncKey].forEach(cb => cb(nextCache));
+    }).subscribe();
+
+    globalTableChannels[syncKey] = channel;
+  }
+
+  // Cleanup
   return () => {
-    supabase.removeChannel(channel);
-    window.removeEventListener(localEventName, handleLocalUpdate);
+    globalTableSubscribers[syncKey].delete(callback);
+    if (globalTableSubscribers[syncKey].size === 0) {
+      supabase.removeChannel(globalTableChannels[syncKey]);
+      delete globalTableChannels[syncKey];
+      delete globalTableCaches[syncKey];
+    }
   };
 }
 
 // Utility to remove undefined keys
+
+const globalBrandingSubscribers = new Set<(payload: any) => void>();
+let globalBrandingChannel: any = null;
+
+function ensureBrandingChannel() {
+   if (!globalBrandingChannel) {
+       globalBrandingChannel = supabase.channel('global_branding_config_shared');
+       globalBrandingChannel.on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, (payload: any) => {
+           globalBrandingSubscribers.forEach(cb => cb(payload));
+       }).subscribe();
+   }
+}
+
+function releaseBrandingChannel(cb: (payload: any) => void) {
+   globalBrandingSubscribers.delete(cb);
+   if (globalBrandingSubscribers.size === 0 && globalBrandingChannel) {
+      supabase.removeChannel(globalBrandingChannel);
+      globalBrandingChannel = null;
+   }
+}
+
 function sanitize<T>(obj: T): T {
   const result: any = {};
   if (!obj) return obj;
@@ -1022,16 +1089,12 @@ export const firebaseService = {
 
     fetchConfig();
 
-    const configChannelId = `config_realtime_${tenantId}_${Math.random().toString(36).substring(2, 11)}`;
-    const channel = supabase
-      .channel(configChannelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => {
-        fetchConfig();
-      })
-      .subscribe();
+    ensureBrandingChannel();
+    const handleUpdate = () => fetchConfig();
+    globalBrandingSubscribers.add(handleUpdate);
 
     return () => {
-      supabase.removeChannel(channel);
+      releaseBrandingChannel(handleUpdate);
     };
   },
 
@@ -1132,16 +1195,14 @@ export const firebaseService = {
 
     fetchBranding();
 
-    const brandingChannelId = `branding_config_realtime_${Math.random().toString(36).substring(2, 11)}`;
-    const channel = supabase
-      .channel(brandingChannelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.branding' }, () => {
-        fetchBranding();
-      })
-      .subscribe();
+    ensureBrandingChannel();
+    const handleUpdate = (payload: any) => {
+      if (!payload.new || payload.new.id === 'branding') fetchBranding();
+    };
+    globalBrandingSubscribers.add(handleUpdate);
 
     return () => {
-      supabase.removeChannel(channel);
+      releaseBrandingChannel(handleUpdate);
     };
   },
 
@@ -1797,16 +1858,12 @@ export const firebaseService = {
 
     fetchBillingMonths();
 
-    const billingMonthsChannelId = `billing_months_realtime_${Math.random().toString(36).substring(2, 11)}`;
-    const channel = supabase
-      .channel(billingMonthsChannelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => {
-        fetchBillingMonths();
-      })
-      .subscribe();
+    ensureBrandingChannel();
+    const handleUpdate = () => fetchBillingMonths();
+    globalBrandingSubscribers.add(handleUpdate);
 
     return () => {
-      supabase.removeChannel(channel);
+      releaseBrandingChannel(handleUpdate);
     };
   },
 
@@ -1976,16 +2033,14 @@ export const firebaseService = {
 
     fetchTranslations();
 
-    const translationsChannelId = `translations_realtime_${Math.random().toString(36).substring(2, 11)}`;
-    const channel = supabase
-      .channel(translationsChannelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.translations' }, () => {
-        fetchTranslations();
-      })
-      .subscribe();
+    ensureBrandingChannel();
+    const handleUpdate = (payload: any) => {
+      if (!payload.new || payload.new.id === 'translations') fetchTranslations();
+    };
+    globalBrandingSubscribers.add(handleUpdate);
 
     return () => {
-      supabase.removeChannel(channel);
+      releaseBrandingChannel(handleUpdate);
     };
   },
 
@@ -2034,30 +2089,18 @@ export const firebaseService = {
 
     fetchFolders();
 
-    const channelId = `ledger_folders_${docId}_${Math.random().toString(36).substring(2, 11)}`;
-    const channel = supabase
-      .channel(channelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: `id=eq.${docId}` }, (payload) => {
-        if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
-          const newData = payload.new as any;
-          if (newData.dashboard_subtext) {
-            try {
-              callback(JSON.parse(newData.dashboard_subtext));
-            } catch (pErr) {
-              console.error("Failed to parse realtime payload:", pErr);
-              fetchFolders();
-            }
-          } else {
-            callback([]);
-          }
-        } else {
-          fetchFolders();
+    ensureBrandingChannel();
+    const handleUpdate = (payload: any) => {
+      if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new && payload.new.id === docId) {
+        if (payload.new.dashboard_subtext) {
+          try { callback(JSON.parse(payload.new.dashboard_subtext)); } catch(e){}
         }
-      })
-      .subscribe();
+      }
+    };
+    globalBrandingSubscribers.add(handleUpdate);
 
     return () => {
-      supabase.removeChannel(channel);
+      releaseBrandingChannel(handleUpdate);
     };
   },
 
@@ -2122,30 +2165,18 @@ export const firebaseService = {
 
     fetchMap();
 
-    const channelId = `ledger_sheet_map_${docId}_${Math.random().toString(36).substring(2, 11)}`;
-    const channel = supabase
-      .channel(channelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: `id=eq.${docId}` }, (payload) => {
-        if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new) {
-          const newData = payload.new as any;
-          if (newData.dashboard_subtext) {
-            try {
-              callback(JSON.parse(newData.dashboard_subtext));
-            } catch (pErr) {
-              console.error("Failed to parse realtime payload:", pErr);
-              fetchMap();
-            }
-          } else {
-            callback({});
-          }
-        } else {
-          fetchMap();
+    ensureBrandingChannel();
+    const handleUpdate = (payload: any) => {
+      if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && payload.new && payload.new.id === docId) {
+        if (payload.new.dashboard_subtext) {
+          try { callback(JSON.parse(payload.new.dashboard_subtext)); } catch(e){}
         }
-      })
-      .subscribe();
+      }
+    };
+    globalBrandingSubscribers.add(handleUpdate);
 
     return () => {
-      supabase.removeChannel(channel);
+      releaseBrandingChannel(handleUpdate);
     };
   },
 

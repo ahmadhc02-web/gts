@@ -804,51 +804,6 @@ export default function App() {
     }
   };
 
-  // 1. Setup a dynamic useEffect hook / Supabase Channel subscription that listens to ALL events ('*') on 'public.complaints', 'public.clients', and 'public.branding_config'.
-  useEffect(() => {
-    if (!user || !firebaseAuthReady) return;
-
-    console.log("Setting up parent Supabase Realtime channel for instant table synchronizations...");
-    const channelId = `supabase_main_sync_channel_${Math.random().toString(36).substring(2, 11)}`;
-    
-    const channel = supabase
-      .channel(channelId)
-      // Listen to complaints table
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, (payload) => {
-        console.log("[Supabase Realtime Event] complaints table postgres_change received:", payload);
-        if (payload.eventType === 'INSERT') {
-          const newDoc = fromDb('complaints', payload.new);
-          setComplaints(prev => {
-            if (prev.find(c => c.id === newDoc.id)) return prev;
-            return [newDoc, ...prev].sort((a, b) => b.createdAt - a.createdAt);
-          });
-        } else if (payload.eventType === 'UPDATE') {
-          const updatedDoc = fromDb('complaints', payload.new);
-          setComplaints(prev => prev.map(c => c.id === updatedDoc.id ? updatedDoc : c).sort((a, b) => b.createdAt - a.createdAt));
-        } else if (payload.eventType === 'DELETE') {
-          setComplaints(prev => prev.filter(c => c.id !== payload.old.id));
-        }
-      })
-      // Listen to clients table
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, (payload) => {
-        console.log("[Supabase Realtime Event] clients table postgres_change received:", payload);
-        window.dispatchEvent(new CustomEvent('supabase-clients-updated-incremental', { detail: payload }));
-      })
-      // Listen to branding_config table
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, (payload) => {
-        console.log("[Supabase Realtime Event] branding_config table postgres_change received:", payload);
-        fetchBrandingConfig(); // Branding config is just one document, so fetching it is fine
-      })
-      .subscribe();
-
-    // 3. Ensure that when the components unmount, the .unsubscribe() clean-up function is properly called to prevent any websocket memory leaks.
-    return () => {
-      console.log("Unsubscribing and removing Supabase sync channel to prevent websocket memory leaks...");
-      channel.unsubscribe();
-      supabase.removeChannel(channel);
-    };
-  }, [user, firebaseAuthReady]);
-
   // 10-Minute Automatic Background Bulk System Backup Scheduler
   useEffect(() => {
     if (!firebaseAuthReady) return;
