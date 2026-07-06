@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned, Send, Users, Activity, RotateCcw, FileSpreadsheet, Flag, UserPlus, Info, Sparkles } from 'lucide-react';
-import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig } from '../types';
+import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig, ComplaintReview } from '../types';
 import { cn } from '../lib/utils';
 import { getCardStyle } from '../lib/styleUtils';
 import { Network, ShieldAlert, Zap, Layers, Mail } from 'lucide-react';
@@ -12,12 +12,14 @@ import { toast } from 'sonner';
 import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
 import { getAvatarUrl } from '../utils/avatar';
+import ReviewTimeline from './ReviewTimeline';
+import ComplaintPrintPreviewModal from './ComplaintPrintPreviewModal';
 
 interface ComplaintListProps {
   complaints: Complaint[];
   users?: UserProfile[];
   onDelete?: (id: string) => Promise<void>;
-  onStatusChange?: (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => Promise<void>;
+  onStatusChange?: (id: string, status: ComplaintStatus, remarks?: string, reviews?: ComplaintReview[]) => Promise<void>;
   onUpdateRemarks?: (id: string, remarks: string) => Promise<void>;
   onEdit?: (id: string, data: Partial<Complaint>) => Promise<void>;
   isAdmin?: boolean;
@@ -83,6 +85,7 @@ export default function ComplaintList({
   const [showScheduleModal, setShowScheduleModal] = React.useState(false);
   const [showInlineSchedulePicker, setShowInlineSchedulePicker] = React.useState(false);
   const [scheduleModalDate, setScheduleModalDate] = React.useState('');
+  const [showPrintPreview, setShowPrintPreview] = React.useState(false);
 
   const playPopupSound = () => {
     try {
@@ -1716,6 +1719,17 @@ export default function ComplaintList({
                     )}
                   </div>
 
+                  <div className="flex items-center gap-2 absolute top-3 right-14 sm:relative sm:top-0 sm:right-0">
+                    <button
+                      id="open-print-preview-modal-btn"
+                      onClick={() => setShowPrintPreview(true)}
+                      className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700 text-white flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer border-none shadow-md shadow-indigo-500/20"
+                    >
+                      <Printer size={13} />
+                      <span>Print Preview</span>
+                    </button>
+                  </div>
+
                   <button 
                     onClick={() => setSelectedComplaint(null)}
                     className="absolute top-3 right-3 sm:relative sm:top-0 sm:right-0 w-9 h-9 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:scale-110 active:scale-95 transition-all shadow-sm cursor-pointer"
@@ -1989,21 +2003,7 @@ export default function ComplaintList({
                           </div>
                         </div>
 
-                        {selectedComplaint.customerReview ? (
-                          <motion.div 
-                            key={selectedComplaint.customerReview}
-                            initial={animateReviewLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
-                            animate={{ x: 0, opacity: 1, scale: 1 }}
-                            transition={{ type: "spring", stiffness: 150, damping: 15 }}
-                            className="p-4 sm:p-5 bg-gradient-to-r from-brand-accent/10 via-brand-accent/5 to-transparent rounded-xl border border-brand-accent/20 text-brand-accent text-sm sm:text-base font-semibold whitespace-pre-wrap leading-relaxed shadow-inner italic"
-                          >
-                            "{selectedComplaint.customerReview}"
-                          </motion.div>
-                        ) : (
-                          <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-800/85 text-xs text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1.5">
-                            <span>💬 Awaiting Telemetry / No Review Logged</span>
-                          </div>
-                        )}
+                        <ReviewTimeline reviews={selectedComplaint.reviews} />
                       </div>
                     </motion.div>
 
@@ -2067,7 +2067,7 @@ export default function ComplaintList({
                         
                         <div className="space-y-3 relative">
                           <AnimatePresence mode="wait">
-                            {hideStatusRemarksBox && hideCustomerReviewBox ? (
+                            {selectedComplaint.status.toLowerCase() === 'complete' ? (
                               <motion.div
                                 key="thank-you-view"
                                 initial={{ scale: 0.9, opacity: 0, y: 15 }}
@@ -2110,19 +2110,24 @@ export default function ComplaintList({
                                 <div className="w-full text-left space-y-1.5 p-3 bg-slate-100/50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800">
                                   <div className="flex items-center gap-1.5 justify-between">
                                     <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Team Resolution:</span>
-                                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 truncate max-w-[140px]">{statusRemarks || 'Confirmed'}</span>
+                                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 truncate max-w-[140px]">{selectedComplaint.remarks || 'Confirmed'}</span>
                                   </div>
-                                  <div className="flex items-center gap-1.5 justify-between">
-                                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Customer Review:</span>
-                                    <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 truncate max-w-[140px]">{customerReview || 'Confirmed'}</span>
-                                  </div>
+                                  {selectedComplaint.reviews && selectedComplaint.reviews.length > 0 && (
+                                    <div className="flex items-center gap-1.5 justify-between">
+                                      <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Customer Review:</span>
+                                      <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400">DONE</span>
+                                    </div>
+                                  )}
                                 </div>
 
                                 <button
                                   type="button"
-                                  onClick={() => {
+                                  onClick={async () => {
+                                    if (onStatusChange) {
+                                      await onStatusChange(selectedComplaint.id, 'pending', selectedComplaint.remarks, selectedComplaint.reviews);
+                                    }
+                                    setSelectedComplaint(prev => prev ? { ...prev, status: 'pending' } : null);
                                     setHideStatusRemarksBox(false);
-                                    setHideCustomerReviewBox(false);
                                   }}
                                   className="mt-3.5 text-[9px] font-black uppercase text-brand-accent tracking-widest hover:underline cursor-pointer"
                                 >
@@ -2163,11 +2168,6 @@ export default function ComplaintList({
                                             // Enable slide transition shifting right to left
                                             setAnimateRemarksLeft(true);
                                             setHideStatusRemarksBox(true);
-                                            
-                                            // Check if both elements are completed to trigger Thank You animations
-                                            if (customerReview.trim() && hideCustomerReviewBox) {
-                                              setShowLeftThankYou(true);
-                                            }
                                             
                                             try {
                                               const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
@@ -2215,7 +2215,6 @@ export default function ComplaintList({
                                         onClick={() => {
                                           setHideStatusRemarksBox(false);
                                           setAnimateRemarksLeft(false);
-                                          setShowLeftThankYou(false);
                                         }}
                                         className="text-[8px] font-black uppercase text-brand-accent hover:underline cursor-pointer"
                                       >
@@ -2225,96 +2224,72 @@ export default function ComplaintList({
                                   )}
                                 </AnimatePresence>
 
-                                {/* 2. Customer Review Field */}
-                                <AnimatePresence mode="wait">
-                                  {!hideCustomerReviewBox ? (
-                                    <motion.div
-                                      key="review-input"
-                                      initial={{ x: 50, opacity: 0 }}
-                                      animate={{ x: 0, opacity: 1 }}
-                                      exit={{ x: -100, opacity: 0 }}
-                                      transition={{ type: 'spring', stiffness: 220, damping: 20 }}
-                                      className="space-y-1"
-                                    >
-                                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Customer Review (Required for completion)</label>
-                                      <div className="relative">
-                                        <textarea
-                                          value={customerReview}
-                                          onChange={(e) => setCustomerReview(e.target.value.toUpperCase())}
-                                          placeholder="Type customer feedback or review here..."
-                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            if (!customerReview.trim()) {
-                                              toast.error("Please type a Customer Review first.");
-                                              return;
-                                            }
-                                            // Copy to selected complaint customerReview trigger
-                                            setSelectedComplaint(prev => prev ? { ...prev, customerReview: customerReview } : null);
-                                            
-                                            // Enable slide transition shifting right to left
-                                            setAnimateReviewLeft(true);
-                                            setHideCustomerReviewBox(true);
-                                            
-                                            // Check if both elements are completed to trigger Thank You animations
-                                            if (statusRemarks.trim() && hideStatusRemarksBox) {
-                                              setShowLeftThankYou(true);
-                                            }
-                                            
-                                            try {
-                                              const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
-                                              sound.volume = 0.2;
-                                              sound.play().catch(() => {});
-                                            } catch (e) {}
+                                {/* 2. Customer Review Field (Add New Review) */}
+                                <div className="space-y-1">
+                                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                                    Add Customer Review (Required for completion)
+                                  </label>
+                                  <div className="relative">
+                                    <textarea
+                                      value={customerReview}
+                                      onChange={(e) => setCustomerReview(e.target.value.toUpperCase())}
+                                      placeholder="Type customer feedback or review here..."
+                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-indigo-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (!customerReview.trim()) {
+                                          toast.error("Please type a Customer Review first.");
+                                          return;
+                                        }
+                                        
+                                        const newReview: ComplaintReview = {
+                                          id: 'rev-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+                                          text: customerReview.trim(),
+                                          createdAt: Date.now(),
+                                          authorId: currentUser.uid,
+                                          authorName: currentUser.fullName || currentUser.username
+                                        };
 
-                                            try {
-                                              if (onEdit) {
-                                                await onEdit(selectedComplaint.id, { customerReview: customerReview });
-                                                toast.success("Customer review saved to database.");
-                                              } else {
-                                                toast.success("Customer review saved in memory.");
-                                              }
-                                            } catch (err) {
-                                              console.error("Failed to update customer review:", err);
-                                              toast.error("Failed to save to database. Kept in memory.");
-                                            }
-                                          }}
-                                          className="absolute bottom-2 right-2 px-2 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-indigo-500/20"
-                                        >
-                                          <span>Enter</span>
-                                          <Send size={7} />
-                                        </button>
-                                      </div>
-                                    </motion.div>
-                                  ) : (
-                                    <motion.div
-                                      key="review-badge"
-                                      initial={{ x: 100, opacity: 0 }}
-                                      animate={{ x: 0, opacity: 1 }}
-                                      exit={{ x: -50, opacity: 0 }}
-                                      transition={{ type: 'spring', stiffness: 220, damping: 20 }}
-                                      className="p-2 bg-indigo-500/5 rounded-lg border border-indigo-500/25 flex items-center justify-between shadow-sm"
+                                        const updatedReviews = [...(selectedComplaint.reviews || []), newReview];
+
+                                        setSelectedComplaint(prev => prev ? { ...prev, reviews: updatedReviews } : null);
+                                        setCustomerReview('');
+
+                                        try {
+                                          const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+                                          sound.volume = 0.2;
+                                          sound.play().catch(() => {});
+                                        } catch (e) {}
+
+                                        try {
+                                          if (onEdit) {
+                                            await onEdit(selectedComplaint.id, { reviews: updatedReviews });
+                                            toast.success("Review added to database.");
+                                          } else {
+                                            toast.success("Review added in memory.");
+                                          }
+                                        } catch (err) {
+                                          console.error("Failed to add review:", err);
+                                          toast.error("Failed to save review.");
+                                        }
+                                      }}
+                                      className="absolute bottom-2 right-2 px-2 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-indigo-500/20"
                                     >
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 anim-pulse" />
-                                        <span className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest leading-none">Customer Review Checked In</span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setHideCustomerReviewBox(false);
-                                          setAnimateReviewLeft(false);
-                                          setShowLeftThankYou(false);
-                                        }}
-                                        className="text-[8px] font-black uppercase text-brand-accent hover:underline cursor-pointer"
-                                      >
-                                        Edit
-                                      </button>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
+                                      <span>Add</span>
+                                      <Send size={7} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {selectedComplaint.reviews && selectedComplaint.reviews.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 p-2 bg-indigo-500/5 rounded-lg border border-indigo-500/10">
+                                    <span className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider leading-none">
+                                      Reviews Submitted: {selectedComplaint.reviews.length}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </AnimatePresence>
@@ -2334,21 +2309,30 @@ export default function ComplaintList({
                                   return;
                                 }
                                 setShowInlineSchedulePicker(false);
-                                if (s.toLowerCase() === 'complete' && (!statusRemarks.trim() || !customerReview.trim())) {
-                                  toast.error('Both Resolution Protocol and Customer Review are required for completion.');
+                                
+                                const finalRemarks = statusRemarks.trim() || selectedComplaint.remarks || '';
+                                const reviewsList = selectedComplaint.reviews || [];
+
+                                if (s.toLowerCase() === 'complete' && (!finalRemarks.trim() || reviewsList.length === 0)) {
+                                  toast.error('Both Resolution Protocol and at least one Customer Review are required for completion.');
                                   return;
                                 }
                                 if (onEdit && selectedComplaint.scheduledAt && s.toLowerCase() !== 'scheduled') {
                                   onEdit(selectedComplaint.id, { status: s as ComplaintStatus, scheduledAt: undefined });
                                 }
                                 if (onStatusChange) {
-                                  onStatusChange(selectedComplaint.id, s as ComplaintStatus, statusRemarks, customerReview);
+                                  onStatusChange(selectedComplaint.id, s as ComplaintStatus, finalRemarks, reviewsList);
                                 }
-                                setSelectedComplaint({ ...selectedComplaint, status: s as ComplaintStatus, scheduledAt: undefined, remarks: statusRemarks, customerReview: customerReview });
+                                setSelectedComplaint({ 
+                                  ...selectedComplaint, 
+                                  status: s as ComplaintStatus, 
+                                  scheduledAt: undefined, 
+                                  remarks: finalRemarks, 
+                                  reviews: reviewsList 
+                                });
                                 setStatusRemarks('');
                                 setCustomerReview('');
                                 setHideStatusRemarksBox(false);
-                                setHideCustomerReviewBox(false);
                               }}
                               className={cn(
                                 "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
@@ -2403,26 +2387,30 @@ export default function ComplaintList({
                                       return;
                                     }
                                     const scheduledTime = new Date(scheduleModalDate).getTime();
+                                    const finalRemarks = statusRemarks.trim() || selectedComplaint.remarks || '';
+                                    const reviewsList = selectedComplaint.reviews || [];
+
                                     if (onEdit) {
                                       await onEdit(selectedComplaint.id, {
                                         status: 'scheduled',
-                                        scheduledAt: scheduledTime
+                                        scheduledAt: scheduledTime,
+                                        remarks: finalRemarks,
+                                        reviews: reviewsList
                                       });
                                     }
                                     if (onStatusChange) {
-                                      await onStatusChange(selectedComplaint.id, 'scheduled', statusRemarks, customerReview);
+                                      await onStatusChange(selectedComplaint.id, 'scheduled', finalRemarks, reviewsList);
                                     }
                                     setSelectedComplaint({ 
                                       ...selectedComplaint, 
                                       status: 'scheduled', 
                                       scheduledAt: scheduledTime,
-                                      remarks: statusRemarks,
-                                      customerReview: customerReview
+                                      remarks: finalRemarks,
+                                      reviews: reviewsList
                                     });
                                     setStatusRemarks('');
                                     setCustomerReview('');
                                     setHideStatusRemarksBox(false);
-                                    setHideCustomerReviewBox(false);
                                     setShowInlineSchedulePicker(false);
                                     toast.success('Complaint Scheduled successfully.');
                                   }}
@@ -2456,6 +2444,18 @@ export default function ComplaintList({
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showPrintPreview && selectedComplaint && (
+          <ComplaintPrintPreviewModal
+            isOpen={showPrintPreview}
+            onClose={() => setShowPrintPreview(false)}
+            complaint={selectedComplaint}
+            currentUser={currentUser}
+            branding={branding}
+          />
         )}
       </AnimatePresence>
 

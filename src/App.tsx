@@ -7,7 +7,7 @@ import LoginForm from './components/LoginForm';
 import AdminPanel from './components/AdminPanel';
 import MemberPanel from './components/MemberPanel';
 import WelcomeOverlay from './components/WelcomeOverlay';
-import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification, BrandingConfig } from './types';
+import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification, BrandingConfig, ComplaintReview } from './types';
 import { firebaseService, fromDb } from './lib/firebaseService';
 import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
@@ -1420,10 +1420,10 @@ export default function App() {
     }
   };
 
-  const handleUpdateComplaintStatus = async (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => {
+  const handleUpdateComplaintStatus = async (id: string, status: ComplaintStatus, remarks?: string, reviews?: ComplaintReview[]) => {
     if (!user) return;
     if (isSuspended) {
-      toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
+       toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
         description: "Your dealer network node is currently frozen by the Super Admin. Status updates are disabled.",
         duration: 8000
       });
@@ -1432,12 +1432,12 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
-      await firebaseService.updateComplaintStatus(id, status, customerName, user.fullName || user.username, user.uid, remarks, customerReview);
+      await firebaseService.updateComplaintStatus(id, status, customerName, user.fullName || user.username, user.uid, remarks, reviews);
       toast.success(`Status updated to ${status}`);
 
       // Auto-sync for Operational Logs (History)
       if (complaint) {
-        const updatedData = { ...complaint, status, remarks: remarks || complaint.remarks };
+        const updatedData = { ...complaint, status, remarks: remarks || complaint.remarks, reviews: reviews || complaint.reviews };
         try {
           if (navigator.onLine) {
             await googleSheetsService.syncActivity('Operational Logs', updatedData);

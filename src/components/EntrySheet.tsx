@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
   History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
-  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings
+  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings, Download
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -647,6 +647,34 @@ export default function EntrySheet({
   }, [ledgerHistory, folders, isDealerTied, currentUser?.uid, sheetFolderMap, activeDealerId]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showUserLedger, setShowUserLedger] = useState(initialShowUserLedger);
+
+  const [isReceiptSwipeOpen, setIsReceiptSwipeOpen] = useState(false);
+  const [isPendingReceipt, setIsPendingReceipt] = useState(false);
+  const [lastSavedEntry, setLastSavedEntry] = useState<{ name: string; amount: number } | null>(null);
+  const [multiSavedEntries, setMultiSavedEntries] = useState<{ name: string; amount: number }[] | null>(null);
+  const [showMultiSlipConfirm, setShowMultiSlipConfirm] = useState(false);
+  const [pendingActiveRows, setPendingActiveRows] = useState<{ name: string; amount: number }[]>([]);
+
+  const [receiptConfig, setReceiptConfig] = useState({
+    title: 'GREEN TECH SERVICES',
+    address1: 'Jinnah Complax Road',
+    address2: 'Sadiqabad',
+    footer: 'Thank You For Using Our Services.'
+  });
+
+  useEffect(() => {
+    const handleSync = () => {
+      setReceiptConfig({
+        title: localStorage.getItem('gts_receipt_title') || 'GREEN TECH SERVICES',
+        address1: localStorage.getItem('gts_receipt_address1') || 'Jinnah Complax Road',
+        address2: localStorage.getItem('gts_receipt_address2') || 'Sadiqabad',
+        footer: localStorage.getItem('gts_receipt_footer') || 'Thank You For Using Our Services.'
+      });
+    };
+    handleSync();
+    window.addEventListener('storage', handleSync);
+    return () => window.removeEventListener('storage', handleSync);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -1528,6 +1556,25 @@ export default function EntrySheet({
             }
             return next;
           });
+        }
+
+        // Trigger Receipt Swipe Left panel for the entered user(s) in table1Rows
+        const activeRows = table1Rows.filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
+        if (activeRows.length === 1) {
+          const lastRow = activeRows[0];
+          setLastSavedEntry({
+            name: lastRow.name.trim(),
+            amount: Number(lastRow.amount) || 0
+          });
+          setMultiSavedEntries(null);
+          setIsReceiptSwipeOpen(true);
+          setIsPendingReceipt(false);
+        } else if (activeRows.length > 1) {
+          setPendingActiveRows(activeRows.map(r => ({
+            name: (r.name || '').trim(),
+            amount: Number(r.amount) || 0
+          })));
+          setShowMultiSlipConfirm(true);
         }
       }
     } catch (e: any) {
@@ -4438,6 +4485,429 @@ export default function EntrySheet({
               })()}
             </div> {/* center scale workspace ends */}
 
+        {/* Receipt Swipe Left Panel on the right */}
+        <AnimatePresence>
+          {isReceiptSwipeOpen && (
+            <motion.div
+              initial={{ opacity: 0, x: "100%" }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: "100%" }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              drag="x"
+              dragDirectionLock
+              dragConstraints={{ left: 0, right: 380 }}
+              dragElastic={{ left: 0.1, right: 0.6 }}
+              onDragEnd={(event, info) => {
+                if (info.offset.x > 120) {
+                  setIsReceiptSwipeOpen(false);
+                }
+              }}
+              className={`w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[400] max-w-full ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 right-0 shadow-2xl' : 'relative'}`}
+            >
+              {/* Header / Title block */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-205 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Printer className="text-brand-accent h-5 w-5 animate-pulse" />
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 font-mono">Receipt Panel</h3>
+                    <p className="text-[10px] text-slate-400">Live printer & pdf queue</p>
+                  </div>
+                </div>
+                
+                {/* Hold Action Button */}
+                <button
+                  onClick={() => {
+                    setIsReceiptSwipeOpen(false);
+                    setIsPendingReceipt(true);
+                    toast.info('Receipt placed on Hold. Click the floating pending badge to resume.');
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 border border-amber-500/20 cursor-pointer"
+                  title="Hold the receipt and show floating pending button"
+                >
+                  <span>Hold</span>
+                </button>
+              </div>
+
+              {/* Receipt Preview */}
+              <div className="flex-1 flex flex-col items-center justify-center py-4 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800/60 overflow-y-auto">
+                {lastSavedEntry ? (() => {
+                  const now = new Date();
+                  const optionsDate: Intl.DateTimeFormatOptions = { month: 'long', day: '2-digit', year: 'numeric' };
+                  const formattedDate = now.toLocaleDateString('en-US', optionsDate);
+                  
+                  let hours = now.getHours();
+                  const minutes = String(now.getMinutes()).padStart(2, '0');
+                  const ampm = hours >= 12 ? 'pm' : 'am';
+                  hours = hours % 12;
+                  hours = hours ? hours : 12;
+                  const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
+                  const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
+                  const displayTimeStr = `${formattedTime} - ${shift}`;
+
+                  return (
+                    <div className="w-[280px] bg-white text-slate-950 p-6 shadow-xl rounded-md border border-slate-200 relative text-center font-sans">
+                      {/* Company header */}
+                      <h1 className="text-sm font-black tracking-wide uppercase font-serif mt-2 mb-1">
+                        {receiptConfig.title}
+                      </h1>
+                      
+                      <p className="text-[9px] leading-tight font-medium text-slate-600">
+                        {receiptConfig.address1}
+                      </p>
+                      <p className="text-[9px] leading-tight font-medium text-slate-600 mb-2">
+                        {receiptConfig.address2}
+                      </p>
+
+                      {/* Date & Time */}
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-900 leading-normal space-y-0.5 mb-3">
+                        <div>{formattedDate}</div>
+                        <div>{displayTimeStr}</div>
+                      </div>
+
+                      {/* Separators & Title */}
+                      <div className="text-[8px] font-bold text-slate-400 tracking-tighter leading-none select-none">
+                        ..................................................................
+                      </div>
+                      <div className="text-[11px] font-bold uppercase tracking-widest text-slate-900 my-1">
+                        Online Receipt
+                      </div>
+                      <div className="text-[8px] font-bold text-slate-400 tracking-tighter leading-none select-none mb-3">
+                        ..................................................................
+                      </div>
+
+                      {/* Items List */}
+                      <div className="space-y-1 text-[11px] font-bold text-left mb-4">
+                        {multiSavedEntries && multiSavedEntries.length > 0 ? (
+                          multiSavedEntries.slice(0, 4).map((entry, index) => (
+                            <div key={index} className="flex justify-between items-center">
+                              <span className="truncate max-w-[170px] uppercase font-bold text-slate-900">
+                                {entry.name}
+                              </span>
+                              <span className="font-mono">
+                                {Number(entry.amount).toFixed(2)}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex justify-between items-center">
+                            <span className="truncate max-w-[170px] uppercase font-bold text-slate-900">
+                              {lastSavedEntry.name}
+                            </span>
+                            <span className="font-mono">
+                              {lastSavedEntry.amount.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Separation */}
+                      <div className="text-right text-[8px] font-bold text-slate-400 tracking-tighter leading-none select-none mb-1.5">
+                        ................................
+                      </div>
+
+                      {/* Total */}
+                      <div className="flex justify-between items-center text-[11px] font-extrabold text-slate-950 mb-6">
+                        <span>Total:</span>
+                        <span className="font-mono">
+                          = {(multiSavedEntries && multiSavedEntries.length > 0
+                            ? multiSavedEntries.slice(0, 4).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0)
+                            : lastSavedEntry.amount
+                          ).toFixed(2)}
+                        </span>
+                      </div>
+
+                      {/* Footer message */}
+                      <p className="text-[9px] font-bold text-slate-800 leading-relaxed max-w-[210px] mx-auto mb-6 whitespace-pre-line">
+                        {receiptConfig.footer}
+                      </p>
+
+                      {/* Signature & Stamp Watermark */}
+                      <div className="mt-8 pt-4 border-t border-dashed border-slate-150 flex items-end justify-between relative min-h-[55px]">
+                        <div className="flex flex-col items-center text-left">
+                          <div className="w-24 border-b border-slate-950 mb-1" />
+                          <span className="text-[10px] font-bold text-slate-500">Sign</span>
+                        </div>
+                        
+                        <div className="text-slate-200/40 text-4xl font-black uppercase tracking-wider select-none transform -rotate-12 absolute right-4 bottom-2 font-sans">
+                          STAMP
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })() : (
+                  <p className="text-xs text-slate-400 text-center px-4">
+                    No saved ledger entry found. Save the sheet first to see a receipt.
+                  </p>
+                )}
+              </div>
+
+              {/* Action Buttons for active receipt print */}
+              {lastSavedEntry && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const now = new Date();
+                      const optionsDate: Intl.DateTimeFormatOptions = { month: 'long', day: '2-digit', year: 'numeric' };
+                      const formattedDate = now.toLocaleDateString('en-US', optionsDate);
+                      
+                      let hours = now.getHours();
+                      const minutes = String(now.getMinutes()).padStart(2, '0');
+                      const ampm = hours >= 12 ? 'pm' : 'am';
+                      hours = hours % 12;
+                      hours = hours ? hours : 12;
+                      const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
+                      const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
+                      const displayTimeStr = `${formattedTime} - ${shift}`;
+
+                      const printSection = document.createElement('div');
+                      printSection.id = 'print-section';
+                      printSection.style.position = 'absolute';
+                      printSection.style.left = '0';
+                      printSection.style.top = '0';
+                      printSection.style.width = '100%';
+                      printSection.style.background = 'white';
+                      printSection.style.color = 'black';
+                      printSection.style.padding = '0';
+                      printSection.style.margin = '0';
+                      
+                      const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
+                      const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
+                      const itemsHtml = itemsToPrint.map(item => `
+                        <div style="display: flex; justify-content: space-between; font-size: 11pt; font-weight: bold; text-align: left; margin-bottom: 8px;">
+                          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; text-transform: uppercase;">${item.name}</span>
+                          <span>${Number(item.amount).toFixed(2)}</span>
+                        </div>
+                      `).join('');
+                      const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+                      printSection.innerHTML = `
+                        <style>
+                          @media print {
+                            @page {
+                              size: A5 portrait;
+                              margin: 0 !important;
+                            }
+                            html, body {
+                              background: white !important;
+                              color: black !important;
+                              margin: 0 !important;
+                              padding: 0 !important;
+                              width: 148mm !important;
+                              height: 210mm !important;
+                              -webkit-print-color-adjust: exact !important;
+                              print-color-adjust: exact !important;
+                            }
+                            /* Hide absolutely any other element to prevent leaking pages/headers */
+                            #root, .print\\:hidden, .fixed, .absolute, [class*="fixed"], [class*="absolute"], #root > * {
+                              display: none !important;
+                            }
+                            #print-section {
+                              display: block !important;
+                              position: absolute !important;
+                              left: 0 !important;
+                              top: 0 !important;
+                              width: 148mm !important;
+                              height: 210mm !important;
+                              padding: 15mm !important;
+                              box-sizing: border-box !important;
+                              background: white !important;
+                            }
+                          }
+                        </style>
+                        <div style="width: 100%; max-width: 118mm; height: 180mm; margin: 0 auto; text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 15mm; border: 1.5px solid #000; border-radius: 12px; box-sizing: border-box; background: #fff; display: flex; flex-direction: column; justify-content: space-between;">
+                          <div>
+                            <h1 style="font-size: 18pt; font-weight: bold; margin: 5px 0 5px 0; text-transform: uppercase; letter-spacing: 1px;">${receiptConfig.title}</h1>
+                            <p style="font-size: 10pt; margin: 0; color: #444; font-weight: 500;">${receiptConfig.address1}</p>
+                            <p style="font-size: 10pt; margin: 0 0 15px 0; color: #444; font-weight: 500;">${receiptConfig.address2}</p>
+                            <div style="font-size: 11pt; font-weight: bold; margin-bottom: 15px; color: #111;">
+                              <div>${formattedDate}</div>
+                              <div>${displayTimeStr}</div>
+                            </div>
+                            <div style="font-size: 10pt; letter-spacing: -0.5px; margin-bottom: 4px; color: #aaa;">..................................................................</div>
+                            <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; margin: 8px 0; letter-spacing: 2px;">Online Receipt</div>
+                            <div style="font-size: 10pt; letter-spacing: -0.5px; margin-bottom: 15px; color: #aaa;">..................................................................</div>
+                            
+                            <div style="margin-bottom: 20px; min-height: 50px;">
+                              ${itemsHtml}
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <div style="text-align: right; font-size: 10pt; letter-spacing: -0.5px; margin-bottom: 10px; color: #aaa;">................................</div>
+                            <div style="display: flex; justify-content: space-between; font-size: 13pt; font-weight: bold; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+                              <span>Total:</span>
+                              <span>= ${computedTotal.toFixed(2)}</span>
+                            </div>
+                            
+                            <p style="font-size: 10pt; font-weight: bold; white-space: pre-line; margin: 15px 0 30px 0; color: #333; line-height: 1.5;">${receiptConfig.footer}</p>
+                            
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; position: relative; min-height: 60px;">
+                              <div style="display: flex; flex-direction: column; align-items: center; text-align: left;">
+                                <div style="width: 120px; border-bottom: 1.5px solid #000; margin-bottom: 4px;"></div>
+                                <span style="font-size: 10pt; font-weight: bold; color: #555;">Sign</span>
+                              </div>
+                              
+                              <div style="color: rgba(200, 200, 200, 0.4); font-size: 36pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; transform: rotate(-12deg); position: absolute; right: 20px; bottom: 10px; font-family: sans-serif; pointer-events: none;">
+                                STAMP
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      `;
+                      document.body.appendChild(printSection);
+                      
+                      const rootEl = document.getElementById('root');
+                      if (rootEl) rootEl.style.display = 'none';
+                      
+                      window.print();
+                      
+                      if (rootEl) rootEl.style.display = 'block';
+                      document.body.removeChild(printSection);
+                    }}
+                    className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer border-none"
+                  >
+                    <Printer size={13} />
+                    Print Receipt
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      try {
+                        const now = new Date();
+                        const optionsDate: Intl.DateTimeFormatOptions = { month: 'long', day: '2-digit', year: 'numeric' };
+                        const formattedDate = now.toLocaleDateString('en-US', optionsDate);
+                        
+                        let hours = now.getHours();
+                        const minutes = String(now.getMinutes()).padStart(2, '0');
+                        const ampm = hours >= 12 ? 'pm' : 'am';
+                        hours = hours % 12;
+                        hours = hours ? hours : 12;
+                        const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
+                        const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
+                        const displayTimeStr = `${formattedTime} - ${shift}`;
+
+                        const doc = new jsPDF({
+                          orientation: 'portrait',
+                          unit: 'mm',
+                          format: 'a5'
+                        });
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(16);
+                        doc.text(receiptConfig.title, 74, 18, { align: 'center' });
+                        doc.setFont('Helvetica', 'normal');
+                        doc.setFontSize(10);
+                        doc.text(receiptConfig.address1, 74, 25, { align: 'center' });
+                        doc.text(receiptConfig.address2, 74, 31, { align: 'center' });
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(11);
+                        doc.text(formattedDate, 74, 38, { align: 'center' });
+                        doc.text(displayTimeStr, 74, 44, { align: 'center' });
+                        doc.setFont('Helvetica', 'normal');
+                        doc.setFontSize(10);
+                        doc.text('....................................................................................................................', 74, 50, { align: 'center' });
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(12);
+                        doc.text('Online Receipt', 74, 56, { align: 'center' });
+                        doc.setFont('Helvetica', 'normal');
+                        doc.setFontSize(10);
+                        doc.text('....................................................................................................................', 74, 62, { align: 'center' });
+                        
+                        let y = 72;
+                        const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
+                        const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
+                        
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(11);
+                        itemsToPrint.forEach(item => {
+                          doc.text(item.name, 15, y);
+                          doc.text(Number(item.amount).toFixed(2), 133, y, { align: 'right' });
+                          y += 8;
+                        });
+                        
+                        y += 2;
+                        doc.setFont('Helvetica', 'normal');
+                        doc.text('....................................................................................', 133, y, { align: 'right' });
+                        
+                        y += 8;
+                        doc.setFont('Helvetica', 'bold');
+                        doc.text('Total:', 15, y);
+                        const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+                        doc.text(`= ${computedTotal.toFixed(2)}`, 133, y, { align: 'right' });
+
+                        y += 12;
+                        const footerLines = doc.splitTextToSize(receiptConfig.footer, 118);
+                        doc.text(footerLines, 74, y, { align: 'center' });
+
+                        // Signature & STAMP watermark
+                        y += 24;
+                        doc.setDrawColor(0);
+                        doc.setLineWidth(0.3);
+                        doc.line(15, y, 55, y); // 40mm line for signature
+                        
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(10);
+                        doc.text('Sign', 35, y + 5, { align: 'center' });
+
+                        // Rotated semi-transparent STAMP watermark
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(26);
+                        doc.setTextColor(230, 230, 230); // light gray color
+                        doc.text('STAMP', 105, y + 2, { angle: -15 });
+                        doc.setTextColor(0, 0, 0); // Restore to black for other uses
+
+                        doc.save('Receipt.pdf');
+                        toast.success('Receipt PDF saved!');
+                      } catch (err) {
+                        console.error(err);
+                        toast.error('Could not save PDF');
+                      }
+                    }}
+                    className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer border-none"
+                  >
+                    <Download size={13} />
+                    Save PDF
+                  </button>
+
+                  <button
+                    onClick={() => setIsReceiptSwipeOpen(false)}
+                    className="py-2 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+      {/* Floating Pending Receipt Badge */}
+      <AnimatePresence>
+        {isPendingReceipt && (
+          <motion.div
+            initial={{ scale: 0.5, opacity: 0, y: 30 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.5, opacity: 0, y: 30 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            className="fixed bottom-6 right-6 z-[300] print:hidden text-left"
+          >
+            <button
+              onClick={() => {
+                setIsReceiptSwipeOpen(true);
+                setIsPendingReceipt(false);
+              }}
+              className="flex items-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-wider text-[11px] rounded-2xl shadow-2xl transition-all duration-150 active:scale-95 border-none cursor-pointer"
+            >
+              <Printer size={15} className="animate-pulse" />
+              <span>Pending Receipt</span>
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+              </span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
         {/* Financial Ledger Sheets Registry & Backup Sidebar Panel on the right */}
         {showHistoryPanel && (
           <motion.div
@@ -5084,6 +5554,68 @@ export default function EntrySheet({
                 >
                   Confirm Delete
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {showMultiSlipConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 15, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+            >
+              <div className="p-5 flex flex-col gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center text-indigo-500 shrink-0">
+                    <Printer size={20} className="text-indigo-500" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-indigo-500 font-mono">
+                      Multi Slip Request
+                    </h4>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider leading-snug">
+                      Entry main new users multi slip chahiya?
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-relaxed">
+                  You have entered {pendingActiveRows.length} users. Yes will generate a multi-user slip (up to 4) on the receipt panel, and No will skip generating the receipt.
+                </div>
+
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => {
+                      setMultiSavedEntries(pendingActiveRows);
+                      if (pendingActiveRows.length > 0) {
+                        setLastSavedEntry(pendingActiveRows[pendingActiveRows.length - 1]);
+                      }
+                      setIsReceiptSwipeOpen(true);
+                      setIsPendingReceipt(false);
+                      setShowMultiSlipConfirm(false);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-[10px] transition-all cursor-pointer border-none shadow-md shadow-indigo-600/20"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMultiSlipConfirm(false);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-black uppercase tracking-widest text-[10px] transition-all cursor-pointer border-none"
+                  >
+                    No
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity, Flame } from 'lucide-react';
-import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig } from '../types';
+import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintForm from './ComplaintForm';
 import ComplaintList from './ComplaintList';
 import ClientManagement from './ClientManagement';
@@ -29,7 +29,7 @@ interface MemberPanelProps {
     pkgDetails?: string;
     userNearby?: string;
   }) => Promise<void>;
-  onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => Promise<void>;
+  onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string, reviews?: ComplaintReview[]) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
   onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;

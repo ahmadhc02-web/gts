@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square } from 'lucide-react';
-import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig } from '../types';
+import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
 import ClientManagement from './ClientManagement';
@@ -19,6 +19,7 @@ import MicVisualizer from './MicVisualizer';
 import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import EntrySheet from './EntrySheet';
+import ReceiptManager from './ReceiptManager';
 import BatchPrintModal from './BatchPrintModal';
 import { extractFirebaseCollections, generateSupabaseMigrationSQL, pushCollectionsToSupabase, getSupabaseClient } from '../lib/supabaseService';
 import { getAvatarUrl } from '../utils/avatar';
@@ -29,7 +30,7 @@ interface AdminPanelProps {
   currentUser: UserProfile;
   isSuspended?: boolean;
   onDeleteComplaint: (id: string) => Promise<void>;
-  onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string, customerReview?: string) => Promise<void>;
+  onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string, reviews?: ComplaintReview[]) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
   onCreateUser: (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string, companyName?: string) => Promise<void>;
@@ -4570,7 +4571,8 @@ export default function AdminPanel({
                   { id: 'system_config', icon: Settings, title: 'Workflow Config', desc: 'Edit Categories & Active Zones' },
                   { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
                   { id: 'integrations', icon: CloudUpload, title: 'Google Sheet Link', desc: 'One-Time Enterprise Sync' },
-                  { id: 'branding_panel', icon: Palette, title: 'CUSTOMIZATION', desc: 'Design aesthetics & app layouts' }
+                  { id: 'branding_panel', icon: Palette, title: 'CUSTOMIZATION', desc: 'Design aesthetics & app layouts' },
+                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' }
                 ].map((item) => (
                   <motion.div
                     key={item.id}
@@ -4607,6 +4609,7 @@ export default function AdminPanel({
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
                         Running Frame: {
                           mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
+                          mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
                           mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
                           mypcOpenedFile === 'login_profiles' ? 'Active System Roles & Authentication Overview' :
                           mypcOpenedFile === 'system_config' ? 'Real-Time Tenant Parameters configuration' :
@@ -6640,6 +6643,14 @@ export default function AdminPanel({
                       isOpen={mypcOpenedFile === 'map_view'}
                       onClose={() => setMypcOpenedFile(null)}
                       user={currentUser}
+                    />
+                  )}
+
+                  {/* Subview 14: Receipt print_receipt_view */}
+                  {mypcOpenedFile === 'print_receipt_view' && (
+                    <ReceiptManager
+                      currentUser={currentUser}
+                      branding={branding}
                     />
                   )}
                 </div>

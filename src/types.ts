@@ -9,6 +9,14 @@ export type ComplaintCategory = string;
 
 export type ComplaintPriority = string;
 
+export interface ComplaintReview {
+  id: string;
+  text: string;
+  createdAt: number;
+  authorId?: string;
+  authorName?: string;
+}
+
 export interface Complaint {
   id: string;
   memberId: string;
@@ -29,7 +37,8 @@ export interface Complaint {
   remarks?: string;
   remarkAuthorId?: string;
   remarkAuthorName?: string;
-  customerReview?: string;
+  customerReview?: string; // Deprecated single review field, but kept for database mapping
+  reviews?: ComplaintReview[]; // Chronological array of reviews
   dealerId?: string; // Multi-tenancy support
   scheduledAt?: number; // millisecond timestamp
 }

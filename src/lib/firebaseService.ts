@@ -1,6 +1,6 @@
 import { supabase } from '../../supabaseClient';
 import { auth, getDb } from './firebase';
-import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget } from '../types';
+import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget, ComplaintReview } from '../types';
 import { safeStringify } from './utils';
 import { toast } from 'sonner';
 
@@ -44,6 +44,7 @@ const mappings: Record<string, Record<string, string>> = {
     remarkAuthorId: 'remark_author_id',
     remarkAuthorName: 'remark_author_name',
     customerReview: 'customer_review',
+    reviews: 'customer_review',
     dealerId: 'dealer_id',
     scheduledAt: 'scheduled_at'
   },
@@ -157,7 +158,11 @@ function toDb(table: string, obj: any): any {
   const result: any = {};
   for (const [clientKey, dbKey] of Object.entries(tableMapping)) {
     if (obj[clientKey] !== undefined) {
-      result[dbKey] = obj[clientKey];
+      if (table === 'complaints' && clientKey === 'reviews') {
+        result[dbKey] = Array.isArray(obj[clientKey]) ? JSON.stringify(obj[clientKey]) : obj[clientKey];
+      } else {
+        result[dbKey] = obj[clientKey];
+      }
     }
   }
 
@@ -178,7 +183,9 @@ function toDb(table: string, obj: any): any {
     for (const [key, val] of Object.entries(obj)) {
       const dbKey = tableMapping[key];
       if (!dbKey) {
-        result[key] = val;
+        if (key !== 'reviews') {
+          result[key] = val;
+        }
       }
     }
   }
@@ -198,6 +205,32 @@ export function fromDb(table: string, obj: any): any {
   for (const [clientKey, dbKey] of Object.entries(tableMapping)) {
     if (obj[dbKey] !== undefined && obj[dbKey] !== null) {
       result[clientKey] = obj[dbKey];
+    }
+  }
+
+  // Handle parse of reviews for complaints table
+  if (table === 'complaints') {
+    if (obj.customer_review) {
+      const cr = obj.customer_review.trim();
+      if (cr.startsWith('[')) {
+        try {
+          result.reviews = JSON.parse(cr);
+        } catch (e) {
+          result.reviews = [{
+            id: 'legacy-err',
+            text: obj.customer_review,
+            createdAt: obj.created_at || Date.now()
+          }];
+        }
+      } else {
+        result.reviews = [{
+          id: 'legacy-1',
+          text: obj.customer_review,
+          createdAt: obj.created_at || Date.now()
+        }];
+      }
+    } else {
+      result.reviews = [];
     }
   }
 
@@ -824,13 +857,13 @@ export const firebaseService = {
     }
   },
 
-  updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, remarks?: string, customerReview?: string) => {
+  updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, remarks?: string, reviews?: ComplaintReview[]) => {
     try {
       const updateData: any = { 
         status, 
         updatedAt: Date.now(),
         ...(remarks && { remarks, remarkAuthorId: authorId, remarkAuthorName: authorName }),
-        ...(customerReview && { customerReview })
+        ...(reviews !== undefined && { reviews })
       };
       
       const dbRow = toDb('complaints', updateData);
@@ -839,7 +872,7 @@ export const firebaseService = {
 
       await firebaseService.createNotification({
         type: 'complaint_updated',
-        message: `Status updated to ${status.toUpperCase()} for "${customerName}"${remarks ? ` - Remarks: ${remarks}` : ''}${customerReview ? ` - Review: ${customerReview}` : ''}`,
+        message: `Status updated to ${status.toUpperCase()} for "${customerName}"${remarks ? ` - Remarks: ${remarks}` : ''}${reviews && reviews.length > 0 ? ` - Reviews count: ${reviews.length}` : ''}`,
         authorName
       });
     } catch (error) {
