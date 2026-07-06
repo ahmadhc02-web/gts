@@ -1,20 +1,17 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+---
+title: GTS Operational Registry
+emoji: 🌐
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
 
-# Run and deploy your AI Studio app
+# GTS Operational Registry
 
-This contains everything you need to run your app locally.
+A secure, high-performance operational registry and management system designed for GTS Teams.
 
-View your app in AI Studio: https://ai.studio/apps/7d870feb-6855-4378-90a5-f3b6217b8cfc
+## Hugging Face Space Deployment
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+This application uses the Docker SDK on Hugging Face Spaces to run both the Vite React frontend and the Express backend server concurrently.

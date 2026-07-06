@@ -30,6 +30,9 @@
     "dist",
     "build",
     "android_app",
-    "app"
+    "app",
+    "test_*.ts",
+    "export_to_supabase.ts",
+    "src/check_*.ts"
   ]
 }

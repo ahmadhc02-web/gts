@@ -654,6 +654,7 @@ export default function EntrySheet({
   const [multiSavedEntries, setMultiSavedEntries] = useState<{ name: string; amount: number }[] | null>(null);
   const [showMultiSlipConfirm, setShowMultiSlipConfirm] = useState(false);
   const [pendingActiveRows, setPendingActiveRows] = useState<{ name: string; amount: number }[]>([]);
+  const [originalActiveRows, setOriginalActiveRows] = useState<{ name: string; amount: number }[]>([]);
 
   const [receiptConfig, setReceiptConfig] = useState({
     title: 'GREEN TECH SERVICES',
@@ -1011,7 +1012,18 @@ export default function EntrySheet({
       setSheetDate(target.sheetDate);
     }
     setDateLabel(target.dateLabel || 'DATE');
-    setTable1Rows(Array.isArray(target.table1Rows) ? target.table1Rows : []);
+    const loadedTableRows = Array.isArray(target.table1Rows) ? target.table1Rows : [];
+    setTable1Rows(loadedTableRows);
+    
+    // Capture initially active rows (with a valid name and amount > 0)
+    const initialActive = loadedTableRows
+      .filter((r: any) => (r.name || '').trim() && (Number(r.amount) || 0) > 0)
+      .map((r: any) => ({
+        name: r.name.trim(),
+        amount: Number(r.amount) || 0
+      }));
+    setOriginalActiveRows(initialActive);
+
     setTable2Rows(Array.isArray(target.table2Rows) ? target.table2Rows : []);
     setCashReceived(target.cashReceived || '');
     setSign(target.sign || '');
@@ -1077,6 +1089,7 @@ export default function EntrySheet({
       });
     }
     setTable1Rows(t1);
+    setOriginalActiveRows([]);
 
     // Create 3 static rows for Table 2
     const t2 = [
@@ -1558,10 +1571,19 @@ export default function EntrySheet({
           });
         }
 
-        // Trigger Receipt Swipe Left panel for the entered user(s) in table1Rows
+        // Trigger Receipt Swipe Left panel only for the NEWLY entered user(s) in table1Rows
         const activeRows = table1Rows.filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
-        if (activeRows.length === 1) {
-          const lastRow = activeRows[0];
+        
+        // Find which active rows are newly added or updated relative to the load/last-save state
+        const newlyAddedRows = activeRows.filter(r => {
+          return !originalActiveRows.some(orig => 
+            orig.name.toLowerCase() === (r.name || '').trim().toLowerCase() && 
+            orig.amount === (Number(r.amount) || 0)
+          );
+        });
+
+        if (newlyAddedRows.length === 1) {
+          const lastRow = newlyAddedRows[0];
           setLastSavedEntry({
             name: lastRow.name.trim(),
             amount: Number(lastRow.amount) || 0
@@ -1569,13 +1591,19 @@ export default function EntrySheet({
           setMultiSavedEntries(null);
           setIsReceiptSwipeOpen(true);
           setIsPendingReceipt(false);
-        } else if (activeRows.length > 1) {
-          setPendingActiveRows(activeRows.map(r => ({
+        } else if (newlyAddedRows.length > 1) {
+          setPendingActiveRows(newlyAddedRows.map(r => ({
             name: (r.name || '').trim(),
             amount: Number(r.amount) || 0
           })));
           setShowMultiSlipConfirm(true);
         }
+
+        // Update originalActiveRows state so subsequent saves are compared against this saved point
+        setOriginalActiveRows(activeRows.map(r => ({
+          name: (r.name || '').trim(),
+          amount: Number(r.amount) || 0
+        })));
       }
     } catch (e: any) {
       toast.dismiss("ledger-save");
