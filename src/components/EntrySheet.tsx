@@ -1965,8 +1965,7 @@ export default function EntrySheet({
 
       const isDupInCurrent = table1Rows.some((r, i) => i !== index && (
         (r.clientId && r.clientId === client.id) || 
-        (r.clientUsername && r.clientUsername === client.username) ||
-        (r.name && r.name.toLowerCase() === client.name?.toLowerCase())
+        (r.clientUsername && r.clientUsername === client.username)
       ));
 
       if (isDupInCurrent) {
@@ -1978,8 +1977,7 @@ export default function EntrySheet({
           const rows = Array.isArray(sh.table1Rows) ? sh.table1Rows : [];
           const isDup = rows.some((r: any) => 
             (r.clientId && r.clientId === client.id) || 
-            (r.clientUsername && r.clientUsername === client.username) ||
-            (r.name && r.name.toLowerCase() === client.name?.toLowerCase())
+            (r.clientUsername && r.clientUsername === client.username)
           );
           if (isDup) {
             duplicateFound = true;
