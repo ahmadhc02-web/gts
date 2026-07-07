@@ -213,13 +213,15 @@ export default function EntrySheet({
         const rowComments = String(r.comments || '').trim().toLowerCase();
         const rowClientId = String(r.clientId || '').trim().toLowerCase();
         const rowClientUsername = String(r.clientUsername || '').trim().toLowerCase();
+        const rowReceiptCode = String(r.receiptCode || '').trim().toLowerCase();
 
         return (
           rowCId.includes(q) ||
           rowName.includes(q) ||
           rowComments.includes(q) ||
           rowClientId.includes(q) ||
-          rowClientUsername.includes(q)
+          rowClientUsername.includes(q) ||
+          rowReceiptCode.includes(q)
         );
       });
 
@@ -650,15 +652,16 @@ export default function EntrySheet({
 
   const [isReceiptSwipeOpen, setIsReceiptSwipeOpen] = useState(false);
   const [isPendingReceipt, setIsPendingReceipt] = useState(false);
-  const [lastSavedEntry, setLastSavedEntry] = useState<{ name: string; amount: number; comments?: string } | null>(null);
-  const [multiSavedEntries, setMultiSavedEntries] = useState<{ name: string; amount: number; comments?: string }[] | null>(null);
+  const [lastSavedEntry, setLastSavedEntry] = useState<{ name: string; amount: number; comments?: string; originalIndex?: number } | null>(null);
+  const [multiSavedEntries, setMultiSavedEntries] = useState<{ name: string; amount: number; comments?: string; originalIndex?: number }[] | null>(null);
   const [showMultiSlipConfirm, setShowMultiSlipConfirm] = useState(false);
-  const [pendingActiveRows, setPendingActiveRows] = useState<{ name: string; amount: number; comments?: string }[]>([]);
+  const [pendingActiveRows, setPendingActiveRows] = useState<{ name: string; amount: number; comments?: string; originalIndex?: number }[]>([]);
   const [originalActiveRows, setOriginalActiveRows] = useState<{ name: string; amount: number; comments?: string }[]>([]);
   
   // New states for manual receipt selection
   const [showReceiptSelectionPopup, setShowReceiptSelectionPopup] = useState(false);
   const [selectedReceiptIndices, setSelectedReceiptIndices] = useState<number[]>([]);
+  const [currentReceiptCode, setCurrentReceiptCode] = useState<string>('');
 
   const [receiptConfig, setReceiptConfig] = useState({
     title: 'GREEN TECH SERVICES',
@@ -1318,6 +1321,37 @@ export default function EntrySheet({
     setArea(topArea.toUpperCase());
 
     toast.success(`Imported ${Math.min(collectableRows.length, 22)} outstanding accounts into Entry Sheet!`);
+  };
+
+  const saveReceiptCodeToDb = async (code: string) => {
+    if (isLocked) return;
+    try {
+      const activeSheet = sheets[activeSheetIdx];
+      if (activeSheet && multiSavedEntries && multiSavedEntries.length > 0) {
+        const updatedRows = [...activeSheet.table1Rows];
+        multiSavedEntries.forEach(entry => {
+          if (entry.originalIndex !== undefined && updatedRows[entry.originalIndex]) {
+            updatedRows[entry.originalIndex] = {
+              ...updatedRows[entry.originalIndex],
+              receiptCode: code
+            };
+          }
+        });
+        
+        const updatedSheet = { ...activeSheet, table1Rows: updatedRows };
+        
+        // Update locally immediately
+        const newSheets = [...sheets];
+        newSheets[activeSheetIdx] = updatedSheet;
+        setSheets(newSheets);
+        setTable1Rows(updatedRows);
+        
+        const tenantId = firebaseService.getReadTenantId(currentUser as any);
+        await firebaseService.updateLedgerSheet(updatedSheet, tenantId);
+      }
+    } catch (e) {
+      console.error("Failed to save receipt code", e);
+    }
   };
 
   // --- Financial Ledger Sheets History and Google Backup Core System ---
@@ -2111,7 +2145,10 @@ export default function EntrySheet({
 
         // Check T1
         (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).forEach((r: any) => {
-          const match = r.cId?.toLowerCase().includes(keyword) || r.name?.toLowerCase().includes(keyword) || r.clientUsername?.toLowerCase().includes(keyword);
+          const match = r.cId?.toLowerCase().includes(keyword) || 
+                        r.name?.toLowerCase().includes(keyword) || 
+                        r.clientUsername?.toLowerCase().includes(keyword) ||
+                        r.receiptCode?.toLowerCase().includes(keyword);
           if (match && Number(r.amount) > 0) {
             // Find corresponding client for extra connection info
             const matchClient = clients.find(c => 
@@ -2407,13 +2444,15 @@ export default function EntrySheet({
           const comments = String(r.comments || '').toLowerCase();
           const clientId = String(r.clientId || '').toLowerCase();
           const clientUsername = String(r.clientUsername || '').toLowerCase();
+          const receiptCode = String(r.receiptCode || '').toLowerCase();
 
           return (
             cId.includes(filterKeyword) ||
             name.includes(filterKeyword) ||
             comments.includes(filterKeyword) ||
             clientId.includes(filterKeyword) ||
-            clientUsername.includes(filterKeyword)
+            clientUsername.includes(filterKeyword) ||
+            receiptCode.includes(filterKeyword)
           );
         });
         if (matchT1) return true;
@@ -3943,7 +3982,8 @@ export default function EntrySheet({
                 {table1Rows.map((row, index) => {
                   const isSearchResultMatch = !!(historySearchQuery.trim() && (
                     (row.cId && row.cId.toLowerCase().includes(historySearchQuery.toLowerCase())) ||
-                    (row.name && row.name.toLowerCase().includes(historySearchQuery.toLowerCase()))
+                    (row.name && row.name.toLowerCase().includes(historySearchQuery.toLowerCase())) ||
+                    (row.receiptCode && row.receiptCode.toLowerCase().includes(historySearchQuery.toLowerCase()))
                   ));
                   return (
                     <tr 
@@ -4551,105 +4591,96 @@ export default function EntrySheet({
                   const displayTimeStr = `${formattedTime} - ${shift}`;
 
                   return (
-                    <div className="w-[280px] bg-white text-slate-950 p-6 shadow-xl rounded-md border border-slate-200 relative text-center font-sans">
+                    <div className="w-[320px] bg-white text-slate-950 p-6 shadow-xl rounded-md border border-slate-200 relative text-center font-sans">
                       {/* Company header */}
-                      <h1 className="text-sm font-black tracking-wide uppercase font-serif mt-2 mb-1">
+                      <h1 className="text-xl font-black tracking-widest uppercase mt-2 mb-1 text-slate-900 font-sans">
                         {receiptConfig.title}
                       </h1>
                       
-                      <p className="text-[9px] leading-tight font-medium text-slate-600">
-                        {receiptConfig.address1}
-                      </p>
-                      <p className="text-[9px] leading-tight font-medium text-slate-600 mb-2">
-                        {receiptConfig.address2}
+                      <p className="text-[10px] leading-tight font-medium text-slate-500 mb-4">
+                        {receiptConfig.address1} {receiptConfig.address2}
                       </p>
 
-                      {/* Date & Time */}
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-900 leading-normal space-y-0.5 mb-3">
-                        <div>{formattedDate}</div>
-                        <div>{displayTimeStr}</div>
+                      {/* Header Box */}
+                      <div className="border border-dashed border-emerald-200 bg-emerald-50/40 rounded-sm p-3 flex justify-between items-center mb-4">
+                        <div className="text-[13px] font-black uppercase tracking-widest text-slate-900">
+                          Online Receipt
+                        </div>
+                        <div className="text-[9px] font-bold text-slate-700 text-right space-y-0.5">
+                          <div>Date : {formattedDate}</div>
+                          <div>Time : {displayTimeStr}</div>
+                        </div>
                       </div>
 
-                      {/* Separators & Title */}
-                      <div className="text-[8px] font-bold text-slate-400 tracking-tighter leading-none select-none">
-                        ..................................................................
-                      </div>
-                      <div className="text-[11px] font-bold uppercase tracking-widest text-slate-900 my-1">
-                        Online Receipt
-                      </div>
-                      <div className="text-[8px] font-bold text-slate-400 tracking-tighter leading-none select-none mb-3">
-                        ..................................................................
-                      </div>
-
-                      {/* Items List */}
-                      <div className="space-y-2 text-[11px] font-bold text-left mb-4">
-                        {multiSavedEntries && multiSavedEntries.length > 0 ? (
-                          multiSavedEntries.slice(0, 4).map((entry, index) => (
-                            <div key={index} className="flex flex-col">
-                              <div className="flex justify-between items-start">
-                                <span className="truncate max-w-[170px] uppercase font-bold text-slate-900 leading-tight">
-                                  {entry.name}
-                                </span>
-                                <span className="font-mono pt-0.5">
-                                  {Number(entry.amount).toFixed(2)}
-                                </span>
-                              </div>
-                              {entry.comments && (
-                                <span className="text-[9px] text-slate-500 font-medium truncate max-w-[170px] mt-0.5 leading-tight">
-                                  {entry.comments}
-                                </span>
-                              )}
-                            </div>
-                          ))
-                        ) : (
-                          <div className="flex flex-col">
-                            <div className="flex justify-between items-start">
-                              <span className="truncate max-w-[170px] uppercase font-bold text-slate-900 leading-tight">
-                                {lastSavedEntry.name}
-                              </span>
-                              <span className="font-mono pt-0.5">
-                                {lastSavedEntry.amount.toFixed(2)}
-                              </span>
-                            </div>
-                            {lastSavedEntry.comments && (
-                              <span className="text-[9px] text-slate-500 font-medium truncate max-w-[170px] mt-0.5 leading-tight">
-                                {lastSavedEntry.comments}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Separation */}
-                      <div className="text-right text-[8px] font-bold text-slate-400 tracking-tighter leading-none select-none mb-1.5">
-                        ................................
-                      </div>
-
-                      {/* Total */}
-                      <div className="flex justify-between items-center text-[11px] font-extrabold text-slate-950 mb-6">
-                        <span>Total:</span>
-                        <span className="font-mono">
-                          = {(multiSavedEntries && multiSavedEntries.length > 0
-                            ? multiSavedEntries.slice(0, 4).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0)
-                            : lastSavedEntry.amount
-                          ).toFixed(2)}
+                      {/* Verification Code */}
+                      <div className="border-2 border-slate-300 rounded-full py-2 px-4 mb-4 flex items-center justify-center bg-slate-50 text-slate-300 opacity-70">
+                        <span className="font-mono text-xl font-bold tracking-widest text-slate-400">
+                          {currentReceiptCode || 'Code For Verification'}
                         </span>
                       </div>
 
+                      {/* Table */}
+                      <div className="w-full text-left mb-6">
+                        <div className="flex justify-between bg-[#1f2b23] text-white px-3 py-2 text-[10px] font-bold uppercase tracking-wider mb-2">
+                          <span>D escription</span>
+                          <span>Amount (PKR)</span>
+                        </div>
+                        
+                        <div className="space-y-2 text-[11px] font-medium text-slate-700 px-3">
+                          {multiSavedEntries && multiSavedEntries.length > 0 ? (
+                            multiSavedEntries.slice(0, 4).map((entry, index) => (
+                              <div key={index} className="flex justify-between items-center pb-1 border-b border-slate-100 last:border-0">
+                                <span className="truncate max-w-[170px] leading-tight">
+                                  {entry.name}
+                                </span>
+                                <span className="font-mono font-medium">
+                                  {Number(entry.amount).toFixed(2)}
+                                </span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="flex justify-between items-center pb-1">
+                              <span className="truncate max-w-[170px] leading-tight">
+                                {lastSavedEntry.name}
+                              </span>
+                              <span className="font-mono font-medium">
+                                {lastSavedEntry.amount.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="border-t-2 border-slate-900 mt-2 mb-3"></div>
+                        
+                        {/* Total */}
+                        <div className="flex justify-end items-center gap-4 text-[13px] font-black text-slate-900 pr-3">
+                          <span>Total:</span>
+                          <span className="font-mono text-emerald-500">
+                            = {(multiSavedEntries && multiSavedEntries.length > 0
+                              ? multiSavedEntries.slice(0, 4).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0)
+                              : lastSavedEntry.amount
+                            ).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
                       {/* Footer message */}
-                      <p className="text-[9px] font-bold text-slate-800 leading-relaxed max-w-[210px] mx-auto mb-6 whitespace-pre-line">
+                      <p className="text-[11px] italic font-medium text-slate-500 leading-relaxed mb-10">
                         {receiptConfig.footer}
                       </p>
 
                       {/* Signature & Stamp Watermark */}
-                      <div className="mt-8 pt-4 border-t border-dashed border-slate-150 flex items-end justify-between relative min-h-[55px]">
-                        <div className="flex flex-col items-center text-left">
-                          <div className="w-24 border-b border-slate-950 mb-1" />
-                          <span className="text-[10px] font-bold text-slate-500">Sign</span>
+                      <div className="flex items-end justify-between relative min-h-[50px] mb-2">
+                        <div className="text-emerald-500 border-2 border-emerald-500 rounded p-1 text-xl font-black uppercase tracking-widest transform -rotate-12 opacity-80">
+                          PAID
                         </div>
                         
-                        <div className="text-slate-200/40 text-4xl font-black uppercase tracking-wider select-none transform -rotate-12 absolute right-4 bottom-2 font-sans">
-                          STAMP
+                        <div className="flex flex-col items-center text-center">
+                          <div className="w-32 border-b border-slate-300 mb-1 relative">
+                            {/* Signature Placeholder overlay - logic handles when PDF is generated */}
+                            <span className="absolute bottom-1 left-0 right-0 text-[18px] font-black text-slate-800 opacity-20 pointer-events-none" style={{ fontFamily: "'Brush Script MT', cursive" }}>Ahmad</span>
+                          </div>
+                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Authorized Sign</span>
                         </div>
                       </div>
                     </div>
@@ -4693,12 +4724,9 @@ export default function EntrySheet({
                       const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
                       const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
                       const itemsHtml = itemsToPrint.map(item => `
-                        <div style="display: flex; flex-direction: column; font-size: 11pt; font-weight: bold; text-align: left; margin-bottom: 8px;">
-                          <div style="display: flex; justify-content: space-between;">
-                            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; text-transform: uppercase;">${item.name}</span>
-                            <span>${Number(item.amount).toFixed(2)}</span>
-                          </div>
-                          ${item.comments ? `<span style="font-size: 9pt; color: #555; font-weight: normal; margin-top: 2px;">${item.comments}</span>` : ''}
+                        <div style="display: flex; justify-content: space-between; font-size: 11pt; font-weight: normal; margin-bottom: 5px; border-bottom: 1px solid #f0f0f0; padding-bottom: 5px;">
+                          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;">${item.name}</span>
+                          <span style="font-family: monospace;">${Number(item.amount).toFixed(2)}</span>
                         </div>
                       `).join('');
                       const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
@@ -4720,7 +4748,6 @@ export default function EntrySheet({
                               -webkit-print-color-adjust: exact !important;
                               print-color-adjust: exact !important;
                             }
-                            /* Hide absolutely any other element to prevent leaking pages/headers */
                             #root, .print\\:hidden, .fixed, .absolute, [class*="fixed"], [class*="absolute"], #root > * {
                               display: none !important;
                             }
@@ -4737,41 +4764,49 @@ export default function EntrySheet({
                             }
                           }
                         </style>
-                        <div style="width: 100%; max-width: 118mm; height: 180mm; margin: 0 auto; text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 15mm; border: 1.5px solid #000; border-radius: 12px; box-sizing: border-box; background: #fff; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div style="width: 100%; max-width: 118mm; height: 180mm; margin: 0 auto; text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 15mm; border: 1.5px solid #eaeaea; border-radius: 8px; box-sizing: border-box; background: #fff; display: flex; flex-direction: column; justify-content: space-between;">
                           <div>
-                            <h1 style="font-size: 18pt; font-weight: bold; margin: 5px 0 5px 0; text-transform: uppercase; letter-spacing: 1px;">${receiptConfig.title}</h1>
-                            <p style="font-size: 10pt; margin: 0; color: #444; font-weight: 500;">${receiptConfig.address1}</p>
-                            <p style="font-size: 10pt; margin: 0 0 15px 0; color: #444; font-weight: 500;">${receiptConfig.address2}</p>
-                            <div style="font-size: 11pt; font-weight: bold; margin-bottom: 15px; color: #111;">
-                              <div>${formattedDate}</div>
-                              <div>${displayTimeStr}</div>
-                            </div>
-                            <div style="font-size: 10pt; letter-spacing: -0.5px; margin-bottom: 4px; color: #aaa;">..................................................................</div>
-                            <div style="font-size: 13pt; font-weight: bold; text-transform: uppercase; margin: 8px 0; letter-spacing: 2px;">Online Receipt</div>
-                            <div style="font-size: 10pt; letter-spacing: -0.5px; margin-bottom: 15px; color: #aaa;">..................................................................</div>
+                            <h1 style="font-size: 18pt; font-weight: 900; margin: 5px 0 2px 0; text-transform: uppercase; letter-spacing: 2px;">${receiptConfig.title}</h1>
+                            <p style="font-size: 10pt; margin: 0; color: #666; font-weight: 500;">${receiptConfig.address1} ${receiptConfig.address2}</p>
                             
-                            <div style="margin-bottom: 20px; min-height: 50px;">
-                              ${itemsHtml}
+                            <div style="border: 1px dashed #bbf7d0; background-color: #f0fdf4; border-radius: 4px; padding: 10px; display: flex; justify-content: space-between; align-items: center; margin: 15px 0;">
+                              <div style="font-size: 12pt; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">Online Receipt</div>
+                              <div style="font-size: 9pt; font-weight: bold; color: #444; text-align: right; line-height: 1.4;">
+                                <div>Date : ${formattedDate}</div>
+                                <div>Time : ${displayTimeStr}</div>
+                              </div>
+                            </div>
+                            
+                            <div style="border: 2px solid #cbd5e1; border-radius: 50px; padding: 8px 15px; margin-bottom: 20px; background-color: #f8fafc; color: #94a3b8; font-family: monospace; font-size: 16pt; font-weight: bold; letter-spacing: 2px;">
+                              ${currentReceiptCode || 'Code For Verification'}
+                            </div>
+
+                            <div style="text-align: left; margin-bottom: 20px;">
+                              <div style="display: flex; justify-content: space-between; background-color: #1f2b23; color: white; padding: 6px 10px; font-size: 10pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">
+                                <span>D escription</span>
+                                <span>Amount (PKR)</span>
+                              </div>
+                              <div style="padding: 0 10px; min-height: 50px;">
+                                ${itemsHtml}
+                              </div>
+                              <div style="border-top: 2px solid #000; margin-top: 10px; margin-bottom: 10px;"></div>
+                              <div style="display: flex; justify-content: flex-end; align-items: center; font-size: 13pt; font-weight: 900; padding-right: 10px;">
+                                <span style="margin-right: 15px;">Total:</span>
+                                <span style="font-family: monospace; color: #10b981;">= ${computedTotal.toFixed(2)}</span>
+                              </div>
                             </div>
                           </div>
                           
                           <div>
-                            <div style="text-align: right; font-size: 10pt; letter-spacing: -0.5px; margin-bottom: 10px; color: #aaa;">................................</div>
-                            <div style="display: flex; justify-content: space-between; font-size: 13pt; font-weight: bold; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
-                              <span>Total:</span>
-                              <span>= ${computedTotal.toFixed(2)}</span>
-                            </div>
+                            <p style="font-size: 11pt; font-style: italic; font-weight: 500; margin: 0 0 30px 0; color: #64748b;">${receiptConfig.footer}</p>
                             
-                            <p style="font-size: 10pt; font-weight: bold; white-space: pre-line; margin: 15px 0 30px 0; color: #333; line-height: 1.5;">${receiptConfig.footer}</p>
-                            
-                            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 25px; position: relative; min-height: 60px;">
-                              <div style="display: flex; flex-direction: column; align-items: center; text-align: left;">
-                                <div style="width: 120px; border-bottom: 1.5px solid #000; margin-bottom: 4px;"></div>
-                                <span style="font-size: 10pt; font-weight: bold; color: #555;">Sign</span>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; position: relative; min-height: 50px;">
+                              <div style="color: #10b981; border: 2px solid #10b981; border-radius: 4px; padding: 4px; font-size: 16pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; transform: rotate(-12deg); opacity: 0.8;">
+                                PAID
                               </div>
-                              
-                              <div style="color: rgba(200, 200, 200, 0.4); font-size: 36pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; transform: rotate(-12deg); position: absolute; right: 20px; bottom: 10px; font-family: sans-serif; pointer-events: none;">
-                                STAMP
+                              <div style="display: flex; flex-direction: column; align-items: center; text-align: center; position: relative;">
+                                <div style="width: 140px; border-bottom: 1.5px solid #ccc; margin-bottom: 4px;"></div>
+                                <span style="font-size: 9pt; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Authorized Sign</span>
                               </div>
                             </div>
                           </div>
@@ -4782,10 +4817,16 @@ export default function EntrySheet({
                       const rootEl = document.getElementById('root');
                       if (rootEl) rootEl.style.display = 'none';
                       
-                      window.print();
-                      
-                      if (rootEl) rootEl.style.display = 'block';
-                      document.body.removeChild(printSection);
+                      // Save code then print
+                      const printAndRegenerate = async () => {
+                        await saveReceiptCodeToDb(currentReceiptCode);
+                        window.print();
+                        
+                        if (rootEl) rootEl.style.display = 'block';
+                        document.body.removeChild(printSection);
+                        setCurrentReceiptCode(Math.random().toString(36).substring(2, 12).toUpperCase());
+                      };
+                      printAndRegenerate();
                     }}
                     className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer border-none"
                   >
@@ -4807,90 +4848,151 @@ export default function EntrySheet({
                         hours = hours ? hours : 12;
                         const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
                         const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
-                        const displayTimeStr = `${formattedTime} - ${shift}`;
-
-                        const doc = new jsPDF({
+                                           const doc = new jsPDF({
                           orientation: 'portrait',
                           unit: 'mm',
                           format: 'a5'
                         });
+
+                        // Main Header
                         doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(16);
-                        doc.text(receiptConfig.title, 74, 18, { align: 'center' });
-                        doc.setFont('Helvetica', 'normal');
-                        doc.setFontSize(10);
-                        doc.text(receiptConfig.address1, 74, 25, { align: 'center' });
-                        doc.text(receiptConfig.address2, 74, 31, { align: 'center' });
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(11);
-                        doc.text(formattedDate, 74, 38, { align: 'center' });
-                        doc.text(displayTimeStr, 74, 44, { align: 'center' });
-                        doc.setFont('Helvetica', 'normal');
-                        doc.setFontSize(10);
-                        doc.text('....................................................................................................................', 74, 50, { align: 'center' });
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(12);
-                        doc.text('Online Receipt', 74, 56, { align: 'center' });
-                        doc.setFont('Helvetica', 'normal');
-                        doc.setFontSize(10);
-                        doc.text('....................................................................................................................', 74, 62, { align: 'center' });
+                        doc.setFontSize(22);
+                        doc.text(receiptConfig.title, 74, 20, { align: 'center' });
                         
-                        let y = 72;
+                        // Address
+                        doc.setFont('Helvetica', 'normal');
+                        doc.setFontSize(10);
+                        doc.setTextColor(100, 100, 100);
+                        doc.text(`${receiptConfig.address1} ${receiptConfig.address2}`, 74, 26, { align: 'center' });
+                        
+                        doc.setTextColor(0, 0, 0);
+
+                        // Online Receipt Box
+                        doc.setDrawColor(187, 247, 208); // emerald-200
+                        doc.setFillColor(240, 253, 244); // emerald-50
+                        doc.setLineDashPattern([2, 2], 0);
+                        doc.roundedRect(15, 32, 118, 16, 2, 2, 'FD');
+                        doc.setLineDashPattern([], 0);
+
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(14);
+                        doc.text('ONLINE RECEIPT', 20, 42);
+                        
+                        doc.setFontSize(9);
+                        doc.setFont('Helvetica', 'bold');
+                        doc.text(`Date : ${formattedDate}`, 85, 38);
+                        doc.text(`Time : ${displayTimeStr}`, 85, 44);
+
+                        // Verification Code pill box
+                        doc.setDrawColor(203, 213, 225);
+                        doc.setFillColor(248, 250, 252);
+                        doc.roundedRect(22, 53, 104, 14, 7, 7, 'FD');
+                        
+                        doc.setFont('Courier', 'bold');
+                        doc.setFontSize(18);
+                        doc.setTextColor(148, 163, 184);
+                        const displayCode = currentReceiptCode || 'Code For Verification';
+                        doc.text(displayCode, 74, 62, { align: 'center' });
+                        
+                        doc.setTextColor(0, 0, 0);
+
+                        // Table Header
+                        doc.setFillColor(31, 43, 35);
+                        doc.rect(15, 75, 118, 10, 'F');
+                        
+                        doc.setTextColor(255, 255, 255);
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(10);
+                        doc.text('D escription', 18, 81.5);
+                        doc.text('Amount (PKR)', 130, 81.5, { align: 'right' });
+
+                        let y = 92;
                         const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
                         const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
                         
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(11);
+                        doc.setTextColor(50, 50, 50);
                         itemsToPrint.forEach(item => {
-                          doc.setFont('Helvetica', 'bold');
-                          doc.setFontSize(11);
-                          doc.text(item.name, 15, y);
-                          doc.text(Number(item.amount).toFixed(2), 133, y, { align: 'right' });
+                          doc.setFont('Helvetica', 'normal');
+                          doc.setFontSize(10);
+                          doc.text(item.name, 18, y);
+                          doc.setFont('Courier', 'normal');
+                          doc.text(Number(item.amount).toFixed(2), 130, y, { align: 'right' });
+                          
+                          y += 4;
+                          doc.setDrawColor(240, 240, 240);
+                          doc.line(15, y, 133, y);
                           y += 6;
-                          if (item.comments) {
-                            doc.setFont('Helvetica', 'normal');
-                            doc.setFontSize(9);
-                            doc.setTextColor(80, 80, 80);
-                            doc.text(item.comments, 15, y);
-                            doc.setTextColor(0, 0, 0);
-                            y += 6;
-                          }
-                          y += 2;
                         });
-                        
+
+                        // Thick line above total
                         y += 2;
-                        doc.setFont('Helvetica', 'normal');
-                        doc.text('....................................................................................', 133, y, { align: 'right' });
+                        doc.setDrawColor(0, 0, 0);
+                        doc.setLineWidth(0.6);
+                        doc.line(15, y, 133, y);
                         
                         y += 8;
+                        
+                        // Total
                         doc.setFont('Helvetica', 'bold');
-                        doc.text('Total:', 15, y);
+                        doc.setFontSize(12);
+                        doc.setTextColor(0, 0, 0);
+                        doc.text('Total:', 85, y);
+                        
+                        doc.setFont('Courier', 'bold');
+                        doc.setFontSize(16);
+                        doc.setTextColor(16, 185, 129); // emerald-500
                         const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-                        doc.text(`= ${computedTotal.toFixed(2)}`, 133, y, { align: 'right' });
+                        doc.text(`= ${computedTotal.toFixed(2)}`, 130, y, { align: 'right' });
+                        
+                        y += 18;
+                        
+                        // Footer
+                        doc.setFont('Helvetica', 'italic');
+                        doc.setFontSize(10);
+                        doc.setTextColor(100, 100, 100);
+                        doc.text(receiptConfig.footer, 74, y, { align: 'center' });
 
-                        y += 12;
-                        const footerLines = doc.splitTextToSize(receiptConfig.footer, 118);
-                        doc.text(footerLines, 74, y, { align: 'center' });
+                        // Paid Stamp
+                        y += 20;
+                        doc.setFont('Helvetica', 'bold');
+                        doc.setFontSize(22);
+                        doc.setTextColor(16, 185, 129); // emerald-500
+                        doc.setDrawColor(16, 185, 129);
+                        doc.setLineWidth(0.5);
+                        doc.setLineDashPattern([2, 2], 0);
+                        
+                        // draw rotated text and rectangle
+                        doc.saveGraphicsState();
+                        doc.setCurrentTransformationMatrix(doc.Matrix(0.9781, -0.2079, 0.2079, 0.9781, 20, y + 10)); // ~ -12 degrees
+                        doc.roundedRect(0, -8, 30, 12, 1, 1, 'D');
+                        doc.text('PAID', 15, 0, { align: 'center' });
+                        doc.restoreGraphicsState();
+                        doc.setLineDashPattern([], 0);
 
-                        // Signature & STAMP watermark
-                        y += 24;
-                        doc.setDrawColor(0);
+                        // Authorized Sign (always printed, PDF has "Ahmad" text)
+                        doc.setTextColor(0, 0, 0);
                         doc.setLineWidth(0.3);
-                        doc.line(15, y, 55, y); // 40mm line for signature
+                        doc.setDrawColor(150, 150, 150);
+                        doc.line(85, y + 15, 133, y + 15);
                         
                         doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(10);
-                        doc.text('Sign', 35, y + 5, { align: 'center' });
+                        doc.setFontSize(8);
+                        doc.setTextColor(120, 120, 120);
+                        doc.text('AUTHORIZED SIGN', 109, y + 20, { align: 'center' });
 
-                        // Rotated semi-transparent STAMP watermark
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(26);
-                        doc.setTextColor(230, 230, 230); // light gray color
-                        doc.text('STAMP', 105, y + 2, { angle: -15 });
-                        doc.setTextColor(0, 0, 0); // Restore to black for other uses
+                        // "Ahmad" Signature above line (ONLY in PDF, as requested)
+                        doc.setFont('Times', 'italic');
+                        doc.setFontSize(20);
+                        doc.setTextColor(50, 50, 50);
+                        doc.text('Ahmad', 109, y + 13, { align: 'center' });
 
-                        doc.save('Receipt.pdf');
-                        toast.success('Receipt PDF saved!');
+                        const saveAndRegen = async () => {
+                          await saveReceiptCodeToDb(currentReceiptCode);
+                          doc.save('Receipt.pdf');
+                          toast.success('Receipt PDF saved!');
+                          setCurrentReceiptCode(Math.random().toString(36).substring(2, 12).toUpperCase());
+                        };
+                        saveAndRegen();
                       } catch (err) {
                         console.error(err);
                         toast.error('Could not save PDF');
@@ -5767,7 +5869,8 @@ export default function EntrySheet({
                       return {
                         name: (row.name || '').trim(),
                         amount: Number(row.amount) || 0,
-                        comments: (row.comments || '').trim()
+                        comments: (row.comments || '').trim(),
+                        originalIndex: idx
                       };
                     });
                     
@@ -5777,6 +5880,7 @@ export default function EntrySheet({
                       setLastSavedEntry(selectedData[selectedData.length - 1]);
                     }
                     
+                    setCurrentReceiptCode(Math.random().toString(36).substring(2, 12).toUpperCase());
                     setShowReceiptSelectionPopup(false);
                     setIsReceiptSwipeOpen(true);
                     setIsPendingReceipt(false);

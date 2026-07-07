@@ -166,6 +166,7 @@ export interface LedgerTable1Row {
   amount: number;
   ch: boolean;
   originalAmount?: number;
+  receiptCode?: string;
 }
 
 export interface LedgerTable2Row {
