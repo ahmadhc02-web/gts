@@ -24,8 +24,14 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
     cr: true,
     totalAmount: true,
     paymentReceived: true,
-    paymentStatus: true
+    paymentStatus: true,
+    billingDay: false
   });
+
+  // Filter states
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [filterStartDay, setFilterStartDay] = useState<string>('');
+  const [filterEndDay, setFilterEndDay] = useState<string>('');
 
   // Automatically select the latest month on load if present
   useEffect(() => {
@@ -177,7 +183,8 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                     cr: "Arrears",
                     totalAmount: "Total Expect",
                     paymentReceived: "Recovered",
-                    paymentStatus: "Status"
+                    paymentStatus: "Status",
+                    billingDay: "Billing Day"
                   };
                   return (
                     <label 
@@ -194,6 +201,55 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                     </label>
                   );
                 })}
+              </div>
+
+              {/* Status and Date Filters */}
+              <div className="space-y-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                <span className="font-black text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-550 select-none block mb-2">
+                  Advanced Filters
+                </span>
+                
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Payment Status</label>
+                    <select
+                      value={filterPaymentStatus}
+                      onChange={(e) => setFilterPaymentStatus(e.target.value as any)}
+                      className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
+                    >
+                      <option value="all">Show All Rows</option>
+                      <option value="unpaid">Only Unpaid (unpaid, tdc)</option>
+                      <option value="paid">Only Paid (paid, partial)</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Start Date (BD)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        placeholder="e.g. 1"
+                        value={filterStartDay}
+                        onChange={(e) => setFilterStartDay(e.target.value)}
+                        className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">End Date (BD)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        placeholder="e.g. 15"
+                        value={filterEndDay}
+                        onChange={(e) => setFilterEndDay(e.target.value)}
+                        className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -243,7 +299,29 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
               </div>
             ) : (
               selectedSheets.map((monthDoc) => {
-                const rows = monthDoc.rows || [];
+                let rows = monthDoc.rows || [];
+
+                // Apply advanced filters
+                if (filterPaymentStatus === 'paid') {
+                  rows = rows.filter((r: any) => r.paymentStatus === 'paid' || r.paymentStatus === 'partial');
+                } else if (filterPaymentStatus === 'unpaid') {
+                  rows = rows.filter((r: any) => r.paymentStatus === 'unpaid' || r.paymentStatus === 'tdc' || !r.paymentStatus);
+                }
+
+                if (filterStartDay !== '') {
+                  rows = rows.filter((r: any) => {
+                    const day = parseInt(r.billingDay || '5', 10);
+                    return day >= parseInt(filterStartDay, 10);
+                  });
+                }
+
+                if (filterEndDay !== '') {
+                  rows = rows.filter((r: any) => {
+                    const day = parseInt(r.billingDay || '5', 10);
+                    return day <= parseInt(filterEndDay, 10);
+                  });
+                }
+
                 const expectedValue = rows.reduce((sum: number, r: any) => sum + (parseFloat(r.totalAmount) || 0), 0);
                 const baseValue = rows.reduce((sum: number, r: any) => sum + (parseFloat(r.baseAmount) || 0), 0);
                 const recoveredValue = rows.reduce((sum: number, r: any) => sum + (parseFloat(r.paymentReceived) || 0), 0);
@@ -309,6 +387,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                               <th className="py-1 px-1 border-r border-black w-[35px]">SR</th>
                               <th className="py-1 px-2 border-r border-black text-left">SUBSCRIBER NAME</th>
                               {enabledColumns.username && <th className="py-1 px-2 border-r border-black w-[80px]">USER ID</th>}
+                              {enabledColumns.billingDay && <th className="py-1 px-2 border-r border-black w-[40px] text-center">BD</th>}
                               {enabledColumns.area && <th className="py-1 px-2 border-r border-black w-[80px]">ZONAL AREA</th>}
                               {enabledColumns.baseAmount && <th className="py-1 px-2 border-r border-black w-[65px] text-right">RENT</th>}
                               {enabledColumns.cr && <th className="py-1 px-2 border-r border-black w-[65px] text-right">ARREARS</th>}
@@ -331,6 +410,11 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                                   {enabledColumns.username && (
                                     <td className="py-1 px-2 border-r border-black text-slate-500 truncate max-w-[80px]">
                                       {row.username || 'N/A'}
+                                    </td>
+                                  )}
+                                  {enabledColumns.billingDay && (
+                                    <td className="py-1 px-2 border-r border-black text-center font-bold text-slate-700">
+                                      {row.billingDay || '-'}
                                     </td>
                                   )}
                                   {enabledColumns.area && (
