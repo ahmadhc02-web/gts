@@ -1347,7 +1347,7 @@ export default function EntrySheet({
         setTable1Rows(updatedRows);
         
         const tenantId = firebaseService.getReadTenantId(currentUser as any);
-        await firebaseService.updateLedgerSheet(updatedSheet, tenantId);
+        await firebaseService.saveLedgerSheet(updatedSheet);
       }
     } catch (e) {
       console.error("Failed to save receipt code", e);
@@ -4848,6 +4848,7 @@ export default function EntrySheet({
                         hours = hours ? hours : 12;
                         const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
                         const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
+                        const displayTimeStr = `${formattedTime} - ${shift}`;
                                            const doc = new jsPDF({
                           orientation: 'portrait',
                           unit: 'mm',
