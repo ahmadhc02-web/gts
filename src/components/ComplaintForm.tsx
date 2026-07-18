@@ -7,7 +7,7 @@ import { safeLocalStorage } from '../lib/safeLocalStorage';
 import { Network, Wifi, ShieldAlert, Zap, Search, ChevronDown } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { AppConfig } from '../constants';
-import { firebaseService } from '../lib/firebaseService';
+import { pocketbaseService } from '../lib/pocketbaseService';
 
 interface ComplaintFormProps {
   onSubmit: (data: {
@@ -86,8 +86,8 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
   }, []);
 
   useEffect(() => {
-    const tenantId = firebaseService.getReadTenantId(currentUser);
-    const unsubscribe = firebaseService.subscribeClients((data) => {
+    const tenantId = pocketbaseService.getReadTenantId(currentUser);
+    const unsubscribe = pocketbaseService.subscribeClients((data) => {
       setClients(data);
     }, tenantId);
     return () => unsubscribe();
@@ -384,6 +384,9 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
                 className={cn(compactInputClasses, "appearance-none pr-8 cursor-pointer")}
               >
+                {appConfig.categories.length === 0 && (
+                  <option value="" disabled>No Categories Available</option>
+                )}
                 {appConfig.categories.map((cat, i) => (
                   <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
                 ))}
@@ -722,6 +725,9 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                     onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
                     className={cn(inputClasses, "appearance-none cursor-pointer")}
                   >
+                    {appConfig.categories.length === 0 && (
+                      <option value="" disabled>No Categories Available</option>
+                    )}
                     {appConfig.categories.map((cat, i) => (
                       <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
                     ))}

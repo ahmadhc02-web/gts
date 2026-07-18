@@ -1,12 +1,4 @@
-export const DEFAULT_CATEGORIES = [
-  'SPEED ISSUE', 
-  'Offline', 
-  'New Connection', 
-  'Router Configuration', 
-  'WiFi Issue', 
-  'Fiber Break',
-  'Slow Connection'
-];
+export const DEFAULT_CATEGORIES: string[] = [];
 
 export const DEFAULT_STATUSES = ['pending', 'in process', 'scheduled', 'complete', 'important'];
 

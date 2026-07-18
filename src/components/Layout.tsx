@@ -13,7 +13,7 @@ import RefreshControl from './RefreshControl';
 import FiberLoading from './FiberLoading';
 import InlineTextEditor from './InlineTextEditor';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { firebaseService } from '../lib/firebaseService';
+import { pocketbaseService } from '../lib/pocketbaseService';
 import { getAvatarUrl } from '../utils/avatar';
 import { toast } from 'sonner';
 import ComplaintForm from './ComplaintForm';
@@ -410,7 +410,7 @@ export default function Layout({
 
   const handleClearAll = async () => {
     try {
-      await firebaseService.clearAllNotifications();
+      await pocketbaseService.clearAllNotifications();
     } catch (error) {
       console.error('Failed to clear notifications:', error);
     }
@@ -544,6 +544,7 @@ export default function Layout({
                 { id: 'map', label: 'Network Map', icon: MapIcon },
                 { id: 'monitor', label: 'Service Monitor', icon: Activity },
                 { id: 'settings', label: 'Security', icon: Shield },
+                { id: 'sync_status', label: 'Sync Status', icon: RefreshCw, roles: ['super_admin', 'admin', 'dealer'] },
                 { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
                 { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
                 { id: 'chat', label: 'AI Help', icon: Sparkles }
@@ -1351,6 +1352,20 @@ export default function Layout({
                   >
                     <PlusSquare size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
                     <span className="hidden md:inline">New Month</span>
+                  </motion.button>
+                )}
+
+                {isBillingUnlocked && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'purge-all' }))}
+                    className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 transition-all border border-red-500/20 cursor-pointer shrink-0 font-black uppercase tracking-widest text-[8px] sm:text-[9px]"
+                    title="Delete All Billing Data / Purge All"
+                  >
+                    <AlertTriangle size={13} className="shrink-0" />
+                    <span className="hidden md:inline">Purge All</span>
                   </motion.button>
                 )}
 

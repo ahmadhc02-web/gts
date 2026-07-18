@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Send, User, X, MessageSquare, Clock, CheckCheck, Eye, Trash2, Smile, Paperclip, Mic, CornerUpLeft, Loader2, Plus, Users, ChevronLeft, Search, MoreVertical, LifeBuoy, Globe } from 'lucide-react';
 import EmojiPicker, { Theme, EmojiClickData } from 'emoji-picker-react';
 import { ChatMessage, UserProfile, ChatGroup } from '../types';
-import { firebaseService } from '../lib/firebaseService';
+import { pocketbaseService } from '../lib/pocketbaseService';
 import { cn } from '../lib/utils';
 import { useTheme } from '../hooks/useTheme';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
@@ -89,19 +89,19 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
 
   // Subscription for messages, groups and typing status
   useEffect(() => {
-    const tenantId = firebaseService.getReadTenantId(currentUser);
+    const tenantId = pocketbaseService.getReadTenantId(currentUser);
 
-    const unsubMessages = firebaseService.subscribeMessages((msgs) => {
+    const unsubMessages = pocketbaseService.subscribeMessages((msgs) => {
       setMessages(msgs);
     }, tenantId);
 
-    const unsubTyping = firebaseService.subscribeTypingStatus((typing) => {
+    const unsubTyping = pocketbaseService.subscribeTypingStatus((typing) => {
       setTypingUsers(typing.filter(u => u.uid !== currentUser.uid));
     });
 
-    const unsubGroups = firebaseService.subscribeGroups((gs) => {
+    const unsubGroups = pocketbaseService.subscribeGroups((gs) => {
       setGroups(gs);
-    }, currentUser.uid, tenantId);
+    }, tenantId);
 
     return () => {
       unsubMessages();
@@ -120,7 +120,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       });
 
       unseenMsgs.forEach(msg => {
-        firebaseService.markAsSeen(msg.id, currentUser.uid, currentUser.fullName || currentUser.username);
+        pocketbaseService.markAsSeen(msg.id, currentUser.uid, currentUser.fullName || currentUser.username);
       });
     }
   }, [viewState, messages, selectedScope, isGroupChat, currentUser]);
@@ -128,14 +128,14 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
   // Handle typing status
   useEffect(() => {
     if (newMessage.trim() === '' || viewState !== 'chat') {
-      firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false, currentUser.fullName);
+      pocketbaseService.setTypingStatus(currentUser.uid, currentUser.username, false, currentUser.fullName);
       return;
     }
 
-    firebaseService.setTypingStatus(currentUser.uid, currentUser.username, true, currentUser.fullName);
+    pocketbaseService.setTypingStatus(currentUser.uid, currentUser.username, true, currentUser.fullName);
     
     const timeout = setTimeout(() => {
-      firebaseService.setTypingStatus(currentUser.uid, currentUser.username, false, currentUser.fullName);
+      pocketbaseService.setTypingStatus(currentUser.uid, currentUser.username, false, currentUser.fullName);
     }, 3000);
 
     return () => clearTimeout(timeout);
@@ -216,7 +216,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       } : undefined;
 
       const recipientId = (selectedScope === 'global' || selectedScope === 'support') ? undefined : selectedScope;
-      await firebaseService.sendMessage(currentUser, trimmed, replyData, recipientId, isGroupChat);
+      await pocketbaseService.sendMessage(currentUser, trimmed, replyData, recipientId, isGroupChat);
       setNewMessage('');
       setShowEmojiPicker(false);
       setReplyTo(null);
@@ -239,7 +239,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       } : undefined;
 
       const recipientId = (selectedScope === 'global' || selectedScope === 'support') ? undefined : selectedScope;
-      await firebaseService.sendVoiceMessage(currentUser, base64, duration, replyData, recipientId, isGroupChat);
+      await pocketbaseService.sendVoiceMessage(currentUser, base64, duration, replyData, recipientId, isGroupChat);
       setIsRecording(false);
       setReplyTo(null);
     } catch (err) {
@@ -258,7 +258,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     if (!messageId) return;
     try {
       setDeleteConfirmId(null);
-      await firebaseService.deleteMessage(messageId);
+      await pocketbaseService.deleteMessage(messageId);
       toast.success('Message purged');
     } catch (err) {
       console.error('Failed to purge message:', err);
@@ -276,7 +276,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     setIsInitializingGroup(true);
     try {
       console.log('Initiating unit deployment:', { name: newGroupName, members: selectedMembers });
-      const group = await firebaseService.createGroup(newGroupName, selectedMembers, currentUser);
+      const group = await pocketbaseService.createGroup(newGroupName, selectedMembers, currentUser);
       console.log('Group created successfully:', group);
       toast.success(`Unit "${group.name}" initialized!`);
       setSelectedScope(group.id);
@@ -304,10 +304,10 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
 
     try {
       if (deleteChatConfirm.isGroup) {
-        await firebaseService.deleteGroup(deleteChatConfirm.id);
+        await pocketbaseService.deleteGroup(deleteChatConfirm.id);
         toast.success(`Unit "${deleteChatConfirm.name}" decommissioned`);
       } else {
-        await firebaseService.clearMessagesByScope(currentUser.uid, deleteChatConfirm.id, false);
+        await pocketbaseService.clearMessagesByScope(currentUser.uid, deleteChatConfirm.id, false);
         toast.success(`Terminal link with ${deleteChatConfirm.name} closed`);
       }
     } catch (err) {
@@ -404,7 +404,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       }
 
       unseenMsgs.forEach(msg => {
-        firebaseService.markAsSeen(msg.id, currentUser.uid, currentUser.fullName || currentUser.username);
+        pocketbaseService.markAsSeen(msg.id, currentUser.uid, currentUser.fullName || currentUser.username);
       });
       toast.success(`Broadcasting SEEN status for ${name}`);
     };

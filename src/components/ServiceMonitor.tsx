@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Activity, RefreshCw, Plus, Trash2, Wifi, TrendingUp, Server, Zap, Cpu, AlertTriangle, CheckCircle2, Network, Radio, Edit, ArrowLeft, Clock, BarChart2, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { LineChart, Line, AreaChart, Area, ResponsiveContainer, YAxis, Tooltip, XAxis, CartesianGrid } from 'recharts';
 import { cn } from '../lib/utils';
-import { firebaseService } from '../lib/firebaseService';
+import { pocketbaseService } from '../lib/pocketbaseService';
 import { MonitorTarget, UserProfile } from '../types';
 import { toast } from 'sonner';
 
@@ -450,7 +450,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
         return;
       }
       
-      await firebaseService.createMonitorTarget(domain, user, domainLabel);
+      await pocketbaseService.createMonitorTarget(domain, user, domainLabel);
       toast.success('Matrix Link Established', { description: `${domain} added to permanent monitor.` });
     } catch (error) {
       console.error("Monitor Write Failure:", error);
@@ -467,7 +467,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       setTargets(prev => prev.filter(t => t.key !== key));
 
       if (targetItem.id) {
-        await firebaseService.deleteMonitorTarget(targetItem.id);
+        await pocketbaseService.deleteMonitorTarget(targetItem.id);
         toast.success('Link Terminated', { description: 'Target removed from matrix.' });
       } else {
         toast.success('Local Gateway Removed');
@@ -499,7 +499,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       } : t));
 
       if (targetItem.id) {
-        await firebaseService.updateMonitorTarget(targetItem.id, {
+        await pocketbaseService.updateMonitorTarget(targetItem.id, {
           domain: normalizedDomain,
           label: editLabel.trim()
         });
@@ -525,7 +525,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
         if (!targetItem) continue;
 
         if (targetItem.id) {
-          await firebaseService.deleteMonitorTarget(targetItem.id);
+          await pocketbaseService.deleteMonitorTarget(targetItem.id);
         }
       }
 
@@ -548,10 +548,10 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       return;
     }
 
-    const tenantId = firebaseService.getReadTenantId(user);
+    const tenantId = pocketbaseService.getReadTenantId(user);
     const seedKey = `gts_monitor_seeded_${tenantId}`;
 
-    const unsubscribe = firebaseService.subscribeMonitorTargets(async (data) => {
+    const unsubscribe = pocketbaseService.subscribeMonitorTargets(async (data) => {
       // 1. Purge legacy targets (cloudflare, youtube, etc.) to clean up old defaults
       const legacyKeys = ['cloudflare.com', 'youtube.com', 'github.com', 'aws.amazon.com', 'whatsapp.com', 'wikipedia.org'];
       const legacyToPurge = data.filter(t => legacyKeys.includes((t.domain || '').toLowerCase().trim()));
@@ -559,7 +559,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       if (legacyToPurge.length > 0) {
         for (const lt of legacyToPurge) {
           try {
-            await firebaseService.deleteMonitorTarget(lt.id);
+            await pocketbaseService.deleteMonitorTarget(lt.id);
           } catch (e) {
             console.error("Error purging legacy target:", lt.domain, e);
           }
@@ -579,7 +579,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
             // Seed sequentially if missing completely or selectively if part of them is gone
             if (!currentKeys.includes(dt.key.toLowerCase().trim())) {
               try {
-                await firebaseService.createMonitorTarget(dt.key, user, dt.domain);
+                await pocketbaseService.createMonitorTarget(dt.key, user, dt.domain);
               } catch (e) {
                 console.error("Error seeding default target:", dt.key, e);
               }
@@ -594,7 +594,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
         localStorage.setItem(seedKey, 'true');
         for (const dt of DEFAULT_TARGETS) {
           try {
-            await firebaseService.createMonitorTarget(dt.key, user, dt.domain);
+            await pocketbaseService.createMonitorTarget(dt.key, user, dt.domain);
           } catch (e) {
             console.error("Error seeding target:", dt.key, e);
           }

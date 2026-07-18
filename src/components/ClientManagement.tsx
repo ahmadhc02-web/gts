@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield } from 'lucide-react';
 import { Client, UserProfile } from '../types';
-import { firebaseService, fromDb } from '../lib/firebaseService';
+import { pocketbaseService, fromDb } from '../lib/pocketbaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
@@ -73,7 +73,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
   const handleLocalUnlock = () => {
     const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
-    const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig.billingSecurityKey || '786786');
+    const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig.billingSecurityKey || '1239870');
     if (localPasskey === requiredKey) {
       setLocalUnlocked(true);
       sessionStorage.setItem('gts_billing_unlocked', 'true');
@@ -113,8 +113,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
   useEffect(() => {
     // Show scoped clients
-    const tenantId = firebaseService.getReadTenantId(currentUser);
-    const unsubscribe = firebaseService.subscribeClients((data) => {
+    const tenantId = pocketbaseService.getReadTenantId(currentUser);
+    const unsubscribe = pocketbaseService.subscribeClients((data) => {
       setClients(data);
       setIsLoading(false);
     }, tenantId);
@@ -210,6 +210,19 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       return;
     }
 
+    // Check for existing username in local list first for fast feedback
+    const isDuplicate = clients.some(c => 
+      c.username.toLowerCase() === trimmedUsername.toLowerCase() && 
+      c.id !== editingId
+    );
+
+    if (isDuplicate) {
+      toast.warning('Duplicate Identity Detected', {
+        description: 'This username is already assigned to another client.'
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const currentUserId = currentUser.uid;
@@ -229,11 +242,21 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           panelDetails: panelDetails.trim(),
           area: area,
         };
-        await firebaseService.updateClient(editingId, updatedData, trimmedName, currentUserName);
+        await pocketbaseService.updateClient(editingId, updatedData, trimmedName, currentUserName);
         
+        // Optimistic UI update
+        const updatedClient = {
+          ...(originalClient || {}),
+          id: editingId,
+          ...updatedData,
+          updatedAt: Date.now()
+        } as unknown as Client;
+
+        setClients(prev => prev.map(c => c.id === editingId ? updatedClient : c));
+
         // Propagate updates to all active and historic complaints for this client username
         try {
-          await firebaseService.updateClientComplaints(originalUsername, updatedData);
+          await pocketbaseService.updateClientComplaints(originalUsername, updatedData);
         } catch (complaintErr) {
           console.warn("Failed to propagate client updates back to complaint tickets:", complaintErr);
         }
@@ -254,15 +277,6 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           googleSheetsService.syncQueue.add({ tabName: 'Client Database', data: { id: editingId, ...updatedData } });
         }
       } else {
-        // Check for existing username in local list first for fast feedback
-        if (clients.some(c => c.username.toLowerCase() === trimmedUsername.toLowerCase())) {
-          toast.warning('Duplicate Identity Detected', {
-            description: 'This username is already assigned to another client.'
-          });
-          setIsSubmitting(false);
-          return;
-        }
-
         const newClientData = {
           name: trimmedName,
           username: trimmedUsername,
@@ -276,8 +290,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           createdBy: currentUserId
         };
 
-        const newClient = await firebaseService.createClient(newClientData, currentUserName, firebaseService.getTenantId(currentUser));
+        const newClient = await pocketbaseService.createClient(newClientData, currentUserName, pocketbaseService.getTenantId(currentUser));
         
+        // Optimistic state update
+        setClients(prev => {
+          if (prev.find(c => c.id === newClient.id)) return prev;
+          return [newClient, ...prev].sort((a, b) => b.createdAt - a.createdAt);
+        });
+
         toast.success('Client Registration Complete', {
           description: `${trimmedName} has been fully registered in the infrastructure matrix.`
         });
@@ -294,9 +314,6 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         }
       }
       resetForm();
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
     } catch (error) {
       console.error("Client Write Failure:", error);
       toast.error('Critical Write Failure', {
@@ -309,7 +326,10 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
   const handleDelete = async (id: string, clientName: string) => {
     try {
-      await firebaseService.deleteClient(id, clientName, currentUserName);
+      // Optimistic update
+      setClients(prev => prev.filter(c => c.id !== id));
+      
+      await pocketbaseService.deleteClient(id, clientName, currentUserName);
       toast.success('Record purged from primary database');
       setDeletingId(null);
     } catch (error) {

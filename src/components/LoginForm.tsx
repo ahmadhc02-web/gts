@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import NetworkBackground from "./NetworkBackground";
-import { firebaseService } from "../lib/firebaseService";
+import { pocketbaseService } from "../lib/pocketbaseService";
 
 const getApiUrl = (endpoint: string): string => {
   const host = window.location.hostname;
@@ -235,7 +235,7 @@ export default function LoginForm({
 
   useEffect(() => {
     if (isRightPanelActive) {
-      firebaseService.getUsers().then((users) => {
+      pocketbaseService.getUsers().then((users) => {
         const d = users.filter((u: any) => u.role === "dealer");
         setDealersList(d);
       });
@@ -289,7 +289,7 @@ export default function LoginForm({
     setSignupSuccess(false);
 
     try {
-      const allUsers = await firebaseService.getUsers();
+      const allUsers = await pocketbaseService.getUsers();
       if (
         allUsers.some(
           (u) =>
@@ -361,7 +361,7 @@ export default function LoginForm({
 
       // Email Verified! Proceed to create user record.
       const uid = Math.random().toString(36).substr(2, 9);
-      await firebaseService.createUser(
+      await pocketbaseService.createUser(
         uid,
         signupUsername.trim(),
         signupPassword,
@@ -554,7 +554,7 @@ export default function LoginForm({
 
       setIsCheckingUser(true);
       try {
-        const allUsers = await firebaseService.getUsers();
+        const allUsers = await pocketbaseService.getUsers();
         const foundUser = allUsers.find(
           (u) => u.username.toLowerCase() === username.trim().toLowerCase(),
         );

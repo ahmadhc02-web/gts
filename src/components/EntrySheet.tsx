@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { firebaseService } from '../lib/firebaseService';
+import { pocketbaseService } from '../lib/pocketbaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { Client, UserProfile } from '../types';
 import { getCleanErrorMessage } from '../lib/styleUtils';
@@ -59,12 +59,13 @@ export default function EntrySheet({
 }: EntrySheetProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
-  const activeDealerId = isDealerTied ? firebaseService.getTenantId(currentUser) : undefined;
+  const activeDealerId = isDealerTied ? pocketbaseService.getTenantId(currentUser) : undefined;
 
   // --- Folders & Dashboard State ---
   const [activeView, setActiveView] = useState<'dashboard' | 'editor'>('dashboard');
   const [folders, setFolders] = useState<any[]>([]);
   const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>({});
+  const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
   const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
   const [folderToDeleteId, setFolderToDeleteId] = useState<string | null>(null);
   const [editFolderName, setEditFolderName] = useState<string>('');
@@ -85,10 +86,7 @@ export default function EntrySheet({
   useEffect(() => {
     // Expose migration to window
     (window as any).runMigration = async () => {
-      console.log("Running migration...");
-      await firebaseService.runOneTimeJulyMigration();
-      console.log("Migration done");
-      window.location.reload();
+      console.log("Migration is no longer needed on PocketBase.");
     };
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
@@ -99,14 +97,14 @@ export default function EntrySheet({
     const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
     
     // Subscribe to Folders
-    const unsubFolders = firebaseService.subscribeLedgerFolders((data) => {
+    const unsubFolders = pocketbaseService.subscribeLedgerFolders((data) => {
       let mergedFolders: any[] = [];
       let didMerge = false;
       const migrationFlag = `migrated_local_folders_${scopeId || 'main'}`;
 
       if (data === null) {
         // Absolute first time loading, document not created in DB yet
-        mergedFolders = isDealerTied ? [] : [{ id: 'june_data', name: 'June Data', createdAt: Date.now() }];
+        mergedFolders = [];
         didMerge = true;
         localStorage.setItem(migrationFlag, 'true');
       } else {
@@ -134,14 +132,14 @@ export default function EntrySheet({
       }
 
       if (didMerge) {
-        firebaseService.updateLedgerFolders(mergedFolders, scopeId).catch(console.error);
+        pocketbaseService.updateLedgerFolders(mergedFolders, scopeId).catch(console.error);
       }
       
       setFolders(mergedFolders);
     }, scopeId);
 
     // Subscribe to Sheet Folder Map
-    const unsubMap = firebaseService.subscribeLedgerSheetFolderMap((data) => {
+    const unsubMap = pocketbaseService.subscribeLedgerSheetFolderMap((data) => {
       let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
       let didMerge = false;
 
@@ -169,7 +167,7 @@ export default function EntrySheet({
       }
 
       if (didMerge) {
-        firebaseService.updateLedgerSheetFolderMap(mergedMap, scopeId).catch(console.error);
+        pocketbaseService.updateLedgerSheetFolderMap(mergedMap, scopeId).catch(console.error);
       }
       
       setSheetFolderMap(mergedMap);
@@ -180,6 +178,17 @@ export default function EntrySheet({
       unsubMap();
     };
   }, [currentUser?.uid, activeDealerId, isDealerTied]);
+
+  // Synchronize sheetFolderMap from ledgerHistory in real-time
+  useEffect(() => {
+    const nextMap: Record<string, string> = {};
+    ledgerHistory.forEach(sh => {
+      if (sh.id && sh.folderId) {
+        nextMap[sh.id] = sh.folderId;
+      }
+    });
+    setSheetFolderMap(nextMap);
+  }, [ledgerHistory]);
 
   // Folder UI inputs
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
@@ -250,7 +259,7 @@ export default function EntrySheet({
   // Use these wrappers for local changes to push immediately to DB
   const saveFoldersToDb = async (newFolders: any[]) => {
     const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-    await firebaseService.updateLedgerFolders(newFolders, scopeId);
+    await pocketbaseService.updateLedgerFolders(newFolders, scopeId);
     
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
     localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
@@ -258,7 +267,7 @@ export default function EntrySheet({
 
   const saveMapToDb = async (newMap: Record<string, string>) => {
     const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-    await firebaseService.updateLedgerSheetFolderMap(newMap, scopeId);
+    await pocketbaseService.updateLedgerSheetFolderMap(newMap, scopeId);
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
     localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(newMap));
@@ -333,7 +342,7 @@ export default function EntrySheet({
     try {
       const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
       
-      await firebaseService.saveToRecycleBin(
+      await pocketbaseService.saveToRecycleBin(
         'ledger_folder',
         folderToDelete.id,
         currentUser?.username || currentUser?.fullName || 'admin',
@@ -345,10 +354,15 @@ export default function EntrySheet({
         }
       );
 
-      // Update both database records concurrently
+      // Update folder collection and unmap sheets in the database concurrently
+      const associatedSheets = ledgerHistory.filter(sh => sh.folderId === folderId);
+      const updateSheetPromises = associatedSheets.map(sh => 
+        pocketbaseService.saveLedgerSheet({ ...sh, folderId: '' }, scopeId)
+      );
+
       await Promise.all([
-        firebaseService.updateLedgerFolders(newFolders, scopeId),
-        firebaseService.updateLedgerSheetFolderMap(nextMap, scopeId)
+        pocketbaseService.updateLedgerFolders(newFolders, scopeId),
+        ...updateSheetPromises
       ]);
 
       toast.success(`📁 Folder "${folderToDelete.name}" moved to Recycle Bin!`);
@@ -480,7 +494,7 @@ export default function EntrySheet({
 
   const handleLocalUnlock = () => {
     const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
-    const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig?.billingSecurityKey || '786786');
+    const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig?.billingSecurityKey || '1239870');
     if (localPasskey === requiredKey) {
       setLocalUnlocked(true);
       sessionStorage.setItem('gts_billing_unlocked', 'true');
@@ -606,47 +620,6 @@ export default function EntrySheet({
   const [searchQuery, setSearchQuery] = useState('');
 
   // Ledger Card Monthly History and Backup States
-  const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
-
-  // Auto-migrate and synchronize: put every existing sheet inside 'June Data' (One-time migration)
-  useEffect(() => {
-    if (isDealerTied || ledgerHistory.length === 0) {
-      return;
-    }
-    
-    // Check if migration already ran
-    const migrationKey = `gts_june_data_migrated_v8_${currentUser?.uid || 'main'}`;
-    if (localStorage.getItem(migrationKey)) {
-      return;
-    }
-
-    const juneFolder = folders.find(f => f.name.toLowerCase() === 'june data' || f.id === 'june_data') || { id: 'june_data', name: 'June Data', createdAt: Date.now() };
-    
-    // Ensure juneFolder is in folders
-    if (!folders.some(f => f.id === juneFolder.id)) {
-      const newFolders = [...folders, juneFolder];
-      setFolders(newFolders);
-      saveFoldersToDb(newFolders);
-    }
-
-    // Map uncategorized sheets from ledgerHistory into the june_data folder
-    let mapChanged = false;
-    const nextMap = { ...sheetFolderMap };
-    
-    ledgerHistory.forEach(sh => {
-      // Only map it if it's not currently mapped to ANY folder
-      if (!nextMap[sh.id]) {
-        nextMap[sh.id] = juneFolder.id;
-        mapChanged = true;
-      }
-    });
-
-    if (mapChanged) {
-      setSheetFolderMap(nextMap);
-      saveMapToDb(nextMap).catch(console.error);
-    }
-    localStorage.setItem(migrationKey, 'true');
-  }, [ledgerHistory, folders, isDealerTied, currentUser?.uid, sheetFolderMap, activeDealerId]);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [showUserLedger, setShowUserLedger] = useState(initialShowUserLedger);
 
@@ -706,8 +679,8 @@ export default function EntrySheet({
   useEffect(() => {
     if (!isOpen) return;
     try {
-      const tenantId = firebaseService.getReadTenantId(currentUser as any);
-      const unsubscribe = firebaseService.subscribeClients((data) => {
+      const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
+      const unsubscribe = pocketbaseService.subscribeClients((data) => {
         setClients(data);
       }, tenantId);
       return () => unsubscribe();
@@ -720,8 +693,8 @@ export default function EntrySheet({
   useEffect(() => {
     if (!isOpen) return;
     try {
-      const tenantId = firebaseService.getReadTenantId(currentUser as any);
-      const unsubscribe = firebaseService.subscribeLedgerSheets((data) => {
+      const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
+      const unsubscribe = pocketbaseService.subscribeLedgerSheets((data) => {
         setLedgerHistory(data);
       }, tenantId);
       return () => unsubscribe();
@@ -1244,7 +1217,7 @@ export default function EntrySheet({
           dealerId: scopeId || 'main'
         };
 
-        firebaseService.saveToRecycleBin(
+        pocketbaseService.saveToRecycleBin(
           'ledger_sheets',
           sheetId,
           currentUser?.username || 'admin',
@@ -1346,8 +1319,8 @@ export default function EntrySheet({
         setSheets(newSheets);
         setTable1Rows(updatedRows);
         
-        const tenantId = firebaseService.getReadTenantId(currentUser as any);
-        await firebaseService.saveLedgerSheet(updatedSheet);
+        const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
+        await pocketbaseService.saveLedgerSheet(updatedSheet);
       }
     } catch (e) {
       console.error("Failed to save receipt code", e);
@@ -1393,7 +1366,7 @@ export default function EntrySheet({
         };
       }
 
-      const tenantId = firebaseService.getReadTenantId(currentUser as any);
+      const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
       let anySaved = false;
       let totalUpdatedBillingCount = 0;
 
@@ -1424,8 +1397,13 @@ export default function EntrySheet({
         }
 
         const isCurrentlyLoadedSheet = (i === activeSheetIdx) && loadedSheetId;
+        const targetFolderId = isCurrentlyLoadedSheet 
+          ? (sheetFolderMap[loadedSheetId] || openedFolderId || '') 
+          : (openedFolderId || '');
+
         const sheetPayload = {
           id: isCurrentlyLoadedSheet ? loadedSheetId : undefined,
+          folderId: targetFolderId,
           recOfficer: sh.recOfficer,
           recOfficerLabel: sh.recOfficerLabel || 'REC. OFFICER',
           area: sh.area || 'MAIN',
@@ -1463,7 +1441,7 @@ export default function EntrySheet({
         };
 
         toast.loading(`Saving Sheet ${i + 1} (${sh.recOfficer})...`, { id: `ledger-save-${i}` });
-        const savedDoc = await firebaseService.saveLedgerSheet(sheetPayload);
+        const savedDoc = await pocketbaseService.saveLedgerSheet(sheetPayload);
         toast.dismiss(`ledger-save-${i}`);
 
         if (savedDoc) {
@@ -1573,7 +1551,7 @@ export default function EntrySheet({
 
                 if (updatedCount > 0) {
                   totalUpdatedBillingCount += updatedCount;
-                  await firebaseService.saveBillingMonth(
+                  await pocketbaseService.saveBillingMonth(
                     targetMonthId, 
                     updatedBillingRows, 
                     currentUser.username || 'admin',
@@ -1739,7 +1717,7 @@ export default function EntrySheet({
     if (!confirmDel) return;
 
     try {
-      await firebaseService.deleteLedgerSheet(sheetId);
+      await pocketbaseService.deleteLedgerSheet(sheetId);
       toast.success("Ledger card deleted successfully.");
       if (loadedSheetId === sheetId) {
         resetToBlank();
@@ -1827,9 +1805,9 @@ export default function EntrySheet({
     if (!confirmReset) return;
 
     try {
-      const tenantId = firebaseService.getReadTenantId(currentUser as any);
+      const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
       toast.loading("Purging all monthly cards from Firebase registry...", { id: "terminate-proc" });
-      await firebaseService.terminateAllLedgerSheets(tenantId);
+      await pocketbaseService.terminateAllLedgerSheets(tenantId);
       toast.dismiss("terminate-proc");
       toast.success("Month terminated cleanly! Sheet cards starting fresh.");
       resetToBlank();
@@ -1850,9 +1828,9 @@ export default function EntrySheet({
     }
     try {
       if (deleteHistory) {
-        const tenantId = firebaseService.getReadTenantId(currentUser as any);
+        const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
         toast.loading("Purging all registered monthly sheets...", { id: "reset-all-proc" });
-        await firebaseService.terminateAllLedgerSheets(tenantId);
+        await pocketbaseService.terminateAllLedgerSheets(tenantId);
         toast.dismiss("reset-all-proc");
         toast.success("Active workspace reset and all registered sheet history purged successfully!");
       } else {
@@ -2898,6 +2876,8 @@ export default function EntrySheet({
                                   const newMap = { ...sheetFolderMap, [sh.id]: destId };
                                   setSheetFolderMap(newMap);
                                   saveMapToDb(newMap);
+                                  const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+                                  pocketbaseService.saveLedgerSheet({ ...sh, folderId: destId }, scopeId).catch(console.error);
                                   toast.success(`Organized sheet into ${folders.find(f => f.id === destId)?.name}`);
                                 }
                               }}
@@ -3033,6 +3013,8 @@ export default function EntrySheet({
                             const newMap = { ...sheetFolderMap, [sh.id]: destId };
                             setSheetFolderMap(newMap);
                             saveMapToDb(newMap);
+                            const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+                            pocketbaseService.saveLedgerSheet({ ...sh, folderId: destId }, scopeId).catch(console.error);
                             toast.success(`Moved sheet to ${folders.find(f => f.id === destId)?.name || 'folder'}`);
                           }}
                           className="py-1 px-2 border border-slate-205 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 text-[9px] font-black uppercase text-slate-500 cursor-pointer outline-none focus:ring-1 focus:ring-blue-500 transition-shadow shrink-0"
@@ -4848,7 +4830,6 @@ export default function EntrySheet({
                         hours = hours ? hours : 12;
                         const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
                         const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
-                        const displayTimeStr = `${formattedTime} - ${shift}`;
                                            const doc = new jsPDF({
                           orientation: 'portrait',
                           unit: 'mm',
@@ -4880,9 +4861,21 @@ export default function EntrySheet({
                         doc.text('ONLINE RECEIPT', 20, 42);
                         
                         doc.setFontSize(9);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.text(`Date : ${formattedDate}`, 85, 38);
-                        doc.text(`Time : ${displayTimeStr}`, 85, 44);
+                        {
+                            const d_now = new Date();
+                            let d_hours = d_now.getHours();
+                            const d_ampm = d_hours >= 12 ? 'PM' : 'AM';
+                            d_hours = d_hours % 12;
+                            d_hours = d_hours ? d_hours : 12; 
+                            const d_minutes = String(d_now.getMinutes()).padStart(2, '0');
+                            const d_formattedTime = `${String(d_hours).padStart(2, '0')}:${d_minutes}${d_ampm}`;
+                            const d_shift = (d_now.getHours() >= 6 && d_now.getHours() < 18) ? 'Day' : 'Night';
+                            const d_timeStr = `${d_formattedTime} - ${d_shift}`;
+
+                            doc.setFont('Helvetica', 'bold');
+                            doc.text(`Date : ${formattedDate}`, 85, 38);
+                            doc.text(`Time : ${d_timeStr}`, 85, 44);
+                        }
 
                         // Verification Code pill box
                         doc.setDrawColor(203, 213, 225);

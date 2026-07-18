@@ -1203,17 +1203,17 @@ export default function ComplaintList({
                             <span className="font-extrabold text-slate-950 dark:text-white uppercase tracking-tight text-xs group-hover:text-brand-accent transition-colors duration-300 leading-tight">
                               {complaint.customerName}
                             </span>
-                            {complaint.scheduledAt && (
+                            {Boolean(complaint.scheduledAt) && complaint.scheduledAt! > 0 && (
                               <div className="flex items-center gap-1.5 mt-1 text-[8.5px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-900/40 px-2 py-0.5 rounded-lg w-max uppercase tracking-wider animate-pulse">
                                 <Calendar size={10} className="shrink-0 text-indigo-500" />
-                                <span>Scheduled At: {new Date(complaint.scheduledAt).toLocaleString()}</span>
+                                <span>Scheduled At: {new Date(complaint.scheduledAt!).toLocaleString()}</span>
                               </div>
                             )}
                             <span className="text-[10px] font-lexend font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
                               <Phone size={10} className="text-slate-400 shrink-0" />
                               <span>({complaint.number.slice(0,4)}) {complaint.number.slice(4)}</span>
                             </span>
-                            {complaint.pkgDetails && (
+                            {Boolean(complaint.pkgDetails) && (
                               <span className="inline-block mt-1 text-[8.5px] font-black uppercase tracking-wider text-brand-accent bg-brand-accent/10 border border-brand-accent/15 px-1.5 py-0.5 rounded w-max">
                                 {complaint.pkgDetails}
                               </span>
@@ -2599,10 +2599,13 @@ function EditModal({
             <div className="space-y-1.5">
               <label className={labelClasses}>{customNames.category || 'Service Category'}</label>
               <select
-                value={data.category || (appConfig.categories[0])}
+                value={data.category || (appConfig.categories[0] || '')}
                 onChange={(e) => setData({ ...data, category: e.target.value as ComplaintCategory })}
                 className={cn(inputClasses, "appearance-none")}
               >
+                {appConfig.categories.length === 0 && (
+                  <option value="" disabled>No Categories Available</option>
+                )}
                 {appConfig.categories.map((cat, i) => (
                   <option key={`edit-cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
                 ))}

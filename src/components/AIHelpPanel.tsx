@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
-import { firebaseService } from '../lib/firebaseService';
+import { pocketbaseService } from '../lib/pocketbaseService';
 import { Complaint } from '../types';
 
 const getApiUrl = (endpoint: string): string => {
@@ -102,7 +102,7 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
       ? undefined 
       : (currentUser.role === 'dealer' ? (currentUser as any).uid : (currentUser as any).dealerId || 'main');
 
-    const unsubscribe = firebaseService.subscribeComplaints((complaintsData) => {
+    const unsubscribe = pocketbaseService.subscribeComplaints((complaintsData) => {
       // Filter out completed/resolved ones, keep pending, in process, important
       const activeTickets = complaintsData.filter(c => c.status !== 'complete' && c.status !== 'Resolved');
       setLiveComplaints(activeTickets);
@@ -279,7 +279,7 @@ Provide:
       const authorName = currentUser.fullName || currentUser.username;
       const authorId = (currentUser as any).uid || 'system_ai';
 
-      await firebaseService.updateComplaintRemarks(
+      await pocketbaseService.updateComplaintRemarks(
         selectedComplaintId,
         remarksText,
         complaint.customerName,

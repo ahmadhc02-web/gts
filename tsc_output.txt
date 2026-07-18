@@ -1,0 +1,134 @@
+src/lib/pocketbaseService.ts(670,9): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(670,27): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(670,96): error TS1005: '=>' expected.
+src/lib/pocketbaseService.ts(674,9): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(674,33): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(674,47): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(674,53): error TS1011: An element access expression should take an argument.
+src/lib/pocketbaseService.ts(674,65): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(674,83): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(674,102): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(722,4): error TS1128: Declaration or statement expected.
+src/lib/pocketbaseService.ts(724,3): error TS1434: Unexpected keyword or identifier.
+src/lib/pocketbaseService.ts(724,35): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(724,53): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(724,72): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(760,4): error TS1128: Declaration or statement expected.
+src/lib/pocketbaseService.ts(762,3): error TS1434: Unexpected keyword or identifier.
+src/lib/pocketbaseService.ts(762,38): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(762,57): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(798,4): error TS1128: Declaration or statement expected.
+src/lib/pocketbaseService.ts(800,3): error TS1434: Unexpected keyword or identifier.
+src/lib/pocketbaseService.ts(800,32): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(800,50): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(800,64): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(800,70): error TS1011: An element access expression should take an argument.
+src/lib/pocketbaseService.ts(800,73): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(906,4): error TS1128: Declaration or statement expected.
+src/lib/pocketbaseService.ts(908,3): error TS1434: Unexpected keyword or identifier.
+src/lib/pocketbaseService.ts(908,40): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(908,72): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(908,93): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(909,11): error TS1005: ':' expected.
+src/lib/pocketbaseService.ts(909,184): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(910,9): error TS1005: ':' expected.
+src/lib/pocketbaseService.ts(912,11): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(912,27): error TS1011: An element access expression should take an argument.
+src/lib/pocketbaseService.ts(912,33): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(913,11): error TS1005: ':' expected.
+src/lib/pocketbaseService.ts(916,11): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(917,9): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(922,7): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(922,11): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(922,26): error TS1011: An element access expression should take an argument.
+src/lib/pocketbaseService.ts(922,32): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(923,11): error TS1005: ':' expected.
+src/lib/pocketbaseService.ts(926,11): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(927,9): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(932,7): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(932,13): error TS1005: ':' expected.
+src/lib/pocketbaseService.ts(932,51): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(933,13): error TS1005: ':' expected.
+src/lib/pocketbaseService.ts(941,8): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(943,17): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(943,38): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(944,16): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(944,37): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(946,24): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(946,35): error TS1005: ',' expected.
+src/lib/pocketbaseService.ts(946,37): error TS1136: Property assignment expected.
+src/lib/pocketbaseService.ts(1033,5): error TS1128: Declaration or statement expected.
+src/lib/pocketbaseService.ts(1033,7): error TS1005: 'try' expected.
+src/lib/pocketbaseService.ts(1040,3): error TS1128: Declaration or statement expected.
+src/lib/pocketbaseService.ts(1040,4): error TS1128: Declaration or statement expected.
+src/lib/pocketbaseService.ts(1056,10): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1065,28): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1074,13): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1109,19): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1122,13): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1157,21): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1170,13): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1184,21): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1190,15): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1224,18): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1228,24): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1232,17): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1237,21): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1255,24): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1267,21): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1279,25): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1297,16): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1310,18): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1338,27): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1361,18): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1400,24): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1421,25): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1442,18): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1457,16): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1466,22): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1478,14): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1487,18): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1538,15): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1564,20): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1587,17): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1605,14): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1636,19): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1669,14): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1690,13): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1707,16): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1719,19): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1731,14): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1743,23): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1760,18): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1764,20): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1769,13): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1782,15): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1807,15): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1821,25): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1841,15): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1976,19): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(1981,22): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2002,22): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2019,22): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2028,26): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2048,22): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2078,26): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2103,25): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2152,24): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2174,21): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2188,25): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2192,32): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2212,19): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2223,20): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2235,22): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2243,29): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2248,18): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2264,24): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2275,18): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2298,27): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2309,20): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2320,19): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2333,24): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2334,34): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2339,26): error TS1005: ';' expected.
+src/lib/pocketbaseService.ts(2340,1): error TS1128: Declaration or statement expected.

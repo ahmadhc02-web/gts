@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { signInAnonymously } from 'firebase/auth';
-import { auth } from './lib/firebase';
 import { safeLocalStorage } from './lib/safeLocalStorage';
 import Layout from './components/Layout';
 import LoginForm from './components/LoginForm';
@@ -8,7 +6,7 @@ import AdminPanel from './components/AdminPanel';
 import MemberPanel from './components/MemberPanel';
 import WelcomeOverlay from './components/WelcomeOverlay';
 import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification, BrandingConfig, ComplaintReview } from './types';
-import { firebaseService, fromDb } from './lib/firebaseService';
+import { pocketbaseService, fromDb } from './lib/pocketbaseService';
 import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING } from './constants';
@@ -79,8 +77,8 @@ export default function App() {
     }
   };
 
-  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
-  const [firebaseUser, setFirebaseUser] = useState<any>(null);
+  const [pbAuthReady, setPbAuthReady] = useState(false);
+  const [pbUser, setPbUser] = useState<any>(null);
 
   const [user, setUser] = useState<UserProfile | null>(() => {
     try {
@@ -145,7 +143,7 @@ export default function App() {
     statuses: DEFAULT_STATUSES,
     priorities: DEFAULT_PRIORITIES,
     zones: DEFAULT_ZONES,
-    billingSecurityKey: '786786'
+    billingSecurityKey: '1239870'
   });
   const [branding, setBranding] = useState<BrandingConfig>(() => {
     try {
@@ -440,16 +438,16 @@ export default function App() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         requestWakeLock();
-        firebaseService.updateUserPresence(user.uid).catch(() => {});
+        pocketbaseService.updateUserPresence(user.uid).catch(() => {});
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // Immediate presence update
-    firebaseService.updateUserPresence(user.uid).catch(() => {});
+    pocketbaseService.updateUserPresence(user.uid).catch(() => {});
     
     const presenceInterval = setInterval(() => {
-      firebaseService.updateUserPresence(user.uid).catch(() => {});
+      pocketbaseService.updateUserPresence(user.uid).catch(() => {});
     }, 120000); // Pulse every 2 mins
 
     return () => {
@@ -462,9 +460,9 @@ export default function App() {
 
   // Sync branding subscriptions
   useEffect(() => {
-    if (!firebaseAuthReady) return;
+    if (!pbAuthReady) return;
     
-    return firebaseService.subscribeBranding((data) => {
+    return pocketbaseService.subscribeBranding((data) => {
       if (data) {
         setBranding((prev) => {
           const mergedTranslations = {
@@ -484,13 +482,13 @@ export default function App() {
         }
       }
     });
-  }, [firebaseAuthReady]);
+  }, [pbAuthReady]);
 
   // Synchronize unbreakable lifetime translations from Firestore and merge them into branding
   useEffect(() => {
-    if (!firebaseAuthReady) return;
+    if (!pbAuthReady) return;
 
-    return firebaseService.subscribeTranslations((data) => {
+    return pocketbaseService.subscribeTranslations((data) => {
       if (data) {
         setBranding((prev) => {
           const mergedTranslations = {
@@ -509,7 +507,7 @@ export default function App() {
         }
       }
     });
-  }, [firebaseAuthReady]);
+  }, [pbAuthReady]);
 
   // Apply branding design parameters and styles dynamically (both from cache and Firestore)
   useEffect(() => {
@@ -552,14 +550,14 @@ export default function App() {
 
   // Sync Google Sheets config with real-time updates from Firestore 24/7
   useEffect(() => {
-    if (!firebaseAuthReady) return;
+    if (!pbAuthReady) return;
     
     const unsubscribe = googleSheetsService.subscribeGoogleSheetsConfig((data) => {
       console.log('App: Live Google Sheets config synced from Firestore real-time.');
     });
     
     return () => unsubscribe();
-  }, [firebaseAuthReady]);
+  }, [pbAuthReady]);
 
   useEffect(() => {
     let unsubscribeAuth: (() => void) | undefined;
@@ -575,12 +573,12 @@ export default function App() {
         console.warn("Could not retrieve shared Google Sheets configuration:", e);
       }
       
-      // Test Firestore connection
-      firebaseService.testConnection();
+      // Test PocketBase connection
+      pocketbaseService.testConnection();
       
       try {
         // Fetch all users to ensure bootstrap accounts exist
-        const initialUsers = await firebaseService.getUsers();
+        const initialUsers = await pocketbaseService.getUsers();
         let currentUsers = [...initialUsers];
         
         // Self-Healing Boot Seed: ONLY activate if the database is brand new and completely empty!
@@ -596,7 +594,7 @@ export default function App() {
           for (const req of requiredCoreUsers) {
             console.log(`[Database Self-Heal] Seeding default core user: ${req.username}`);
             try {
-              const seededUser = await firebaseService.createUser(
+              const seededUser = await pocketbaseService.createUser(
                 req.uid,
                 req.username,
                 req.password,
@@ -676,8 +674,8 @@ export default function App() {
     // Completely bypass Firebase Auth in favor of direct Supabase loading
     const startBypass = async () => {
       const mockUserAuth = { uid: 'local_anon_user' };
-      setFirebaseUser(mockUserAuth);
-      setFirebaseAuthReady(true);
+      setPbUser(mockUserAuth);
+      setPbAuthReady(true);
       if (!initialized) {
         initialized = true;
         await init(mockUserAuth);
@@ -690,14 +688,14 @@ export default function App() {
 
   // Real-time user updates for presence and management
   useEffect(() => {
-    // Only subscribe to real-time user changes when logged in AND firebase is checked
+    // Only subscribe to real-time user changes when logged in AND pocketbase auth is checked
     if (!user) return;
-    if (!firebaseAuthReady) return;
+    if (!pbAuthReady) return;
     
-    const tenantId = firebaseService.getReadTenantId(user);
+    const tenantId = pocketbaseService.getReadTenantId(user);
     
     // Subscribe to app config for the current tenant
-    const unsubscribeConfig = firebaseService.subscribeConfig((data) => {
+    const unsubscribeConfig = pocketbaseService.subscribeConfig((data) => {
       if (data) {
         const fetchedStatuses = data.statuses || DEFAULT_STATUSES;
         const finalStatuses = fetchedStatuses.includes('scheduled') ? fetchedStatuses : [...fetchedStatuses, 'scheduled'];
@@ -707,12 +705,12 @@ export default function App() {
           statuses: finalStatuses,
           priorities: data.priorities || DEFAULT_PRIORITIES,
           zones: data.zones || DEFAULT_ZONES,
-          billingSecurityKey: data.billingSecurityKey || '786786',
+          billingSecurityKey: data.billingSecurityKey || '1239870',
         });
       } else {
         console.log('No app config found for tenant, initializing with defaults...');
         // First time initialization for this tenant
-        firebaseService.updateConfig({
+        pocketbaseService.updateConfig({
           categories: DEFAULT_CATEGORIES,
           statuses: DEFAULT_STATUSES,
           priorities: DEFAULT_PRIORITIES,
@@ -723,20 +721,20 @@ export default function App() {
       }
     }, tenantId);
 
-    const unsubscribeUsers = firebaseService.subscribeUsers((updatedUsers) => {
+    const unsubscribeUsers = pocketbaseService.subscribeUsers((updatedUsers) => {
       setUsers(updatedUsers);
     }, tenantId);
 
-    const unsubscribeGroups = firebaseService.subscribeGroups((updatedGroups) => {
+    const unsubscribeGroups = pocketbaseService.subscribeGroups((updatedGroups) => {
       setUserGroups(updatedGroups);
-    }, user.uid, tenantId);
+    }, tenantId);
 
     return () => {
       unsubscribeConfig();
       unsubscribeUsers();
       unsubscribeGroups();
     };
-  }, [user, firebaseAuthReady]);
+  }, [user, pbAuthReady]);
 
   // Fetch complaints only when a user is logged in
   useEffect(() => {
@@ -744,49 +742,49 @@ export default function App() {
       setComplaints([]);
       return;
     }
-    if (!firebaseAuthReady) return;
+    if (!pbAuthReady) return;
     
-    const tenantId = firebaseService.getReadTenantId(user);
+    const tenantId = pocketbaseService.getReadTenantId(user);
     
-    const unsubscribe = firebaseService.subscribeComplaints((data) => {
+    const unsubscribe = pocketbaseService.subscribeComplaints((data) => {
       setComplaints(data);
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, firebaseAuthReady]);
+  }, [user, pbAuthReady]);
 
-  // Real-time data fetch functions to instantly synchronize local states from Supabase
+  // Real-time data fetch functions to instantly synchronize local states from PocketBase
   const fetchComplaints = async () => {
     if (!user) return;
-    const tenantId = firebaseService.getReadTenantId(user);
+    const tenantId = pocketbaseService.getReadTenantId(user);
     try {
-      console.log("[Supabase Realtime Sync] Fetching updated complaints...");
-      const data = await firebaseService.getComplaints(tenantId);
+      console.log("[PocketBase Realtime Sync] Fetching updated complaints...");
+      const data = await pocketbaseService.getComplaints(tenantId);
       setComplaints(data.sort((a, b) => b.createdAt - a.createdAt));
     } catch (e) {
-      console.error("[Supabase Realtime Sync] fetchComplaints failed:", e);
+      console.error("[PocketBase Realtime Sync] fetchComplaints failed:", e);
     }
   };
 
   const fetchClients = async () => {
     if (!user) return;
-    const tenantId = firebaseService.getReadTenantId(user);
+    const tenantId = pocketbaseService.getReadTenantId(user);
     try {
-      console.log("[Supabase Realtime Sync] Fetching updated clients...");
-      const data = await firebaseService.getClients(tenantId);
+      console.log("[PocketBase Realtime Sync] Fetching updated clients...");
+      const data = await pocketbaseService.getClients(tenantId);
       // Dispatch custom window event to trigger updates across ClientManagement and AdminPanel components
       window.dispatchEvent(new CustomEvent('supabase-clients-updated', { detail: data }));
     } catch (e) {
-      console.error("[Supabase Realtime Sync] fetchClients failed:", e);
+      console.error("[PocketBase Realtime Sync] fetchClients failed:", e);
     }
   };
 
   const fetchBrandingConfig = async () => {
     if (!user) return;
-    const tenantId = firebaseService.getReadTenantId(user);
+    const tenantId = pocketbaseService.getReadTenantId(user);
     try {
-      console.log("[Supabase Realtime Sync] Fetching updated branding configs...");
-      const config = await firebaseService.getAppConfig(tenantId);
+      console.log("[PocketBase Realtime Sync] Fetching updated branding configs...");
+      const config = await pocketbaseService.getAppConfig(tenantId);
       if (config) {
         const fetchedStatuses = config.statuses || DEFAULT_STATUSES;
         const finalStatuses = fetchedStatuses.includes('scheduled') ? fetchedStatuses : [...fetchedStatuses, 'scheduled'];
@@ -796,7 +794,7 @@ export default function App() {
           statuses: finalStatuses,
           priorities: config.priorities || DEFAULT_PRIORITIES,
           zones: config.zones || DEFAULT_ZONES,
-          billingSecurityKey: config.billingSecurityKey || '786786',
+          billingSecurityKey: config.billingSecurityKey || '1239870',
         });
       }
     } catch (e) {
@@ -806,7 +804,7 @@ export default function App() {
 
   // 10-Minute Automatic Background Bulk System Backup Scheduler
   useEffect(() => {
-    if (!firebaseAuthReady) return;
+    if (!pbAuthReady) return;
 
     let timer: NodeJS.Timeout;
     const TEN_MINUTES = 10 * 60 * 1000;
@@ -827,7 +825,7 @@ export default function App() {
       clearTimeout(initialTimeout);
       if (timer) clearInterval(timer);
     };
-  }, [firebaseAuthReady]);
+  }, [pbAuthReady]);
 
   // Centralized Notifications Subscription
   useEffect(() => {
@@ -835,13 +833,13 @@ export default function App() {
       setNotifications([]);
       return;
     }
-    if (!firebaseAuthReady) return;
+    if (!pbAuthReady) return;
     
-    const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
+    const tenantId = user ? pocketbaseService.getReadTenantId(user) : undefined;
     let isInitialLoad = true;
     let lastNotificationId = '';
 
-    const unsubscribe = firebaseService.subscribeNotifications((data) => {
+    const unsubscribe = pocketbaseService.subscribeNotifications((data) => {
       const regularNotifications = data.filter(n => n.type !== 'recycle_bin');
       setNotifications(regularNotifications);
       if (regularNotifications.length > 0) {
@@ -906,20 +904,20 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, firebaseAuthReady, alertAuthorized, isAudioMuted, notificationAudio]);
+  }, [user, pbAuthReady, alertAuthorized, isAudioMuted, notificationAudio]);
 
   // Global Chat Notifications
   useEffect(() => {
     if (!user) return;
-    if (!firebaseAuthReady) return;
+    if (!pbAuthReady) return;
     
     let isInitialLoad = true;
     let lastMessageId = '';
 
-    const tenantId = user ? firebaseService.getReadTenantId(user) : undefined;
+    const tenantId = user ? pocketbaseService.getReadTenantId(user) : undefined;
     const userGroupIds = userGroups.map(g => g.id);
 
-    const unsubscribe = firebaseService.subscribeMessages((data) => {
+    const unsubscribe = pocketbaseService.subscribeMessages((data) => {
       // Filter out private messages not meant for user
       const visibleData = data.filter(msg => 
         !msg.recipientId || 
@@ -983,7 +981,7 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, firebaseAuthReady, alertAuthorized, isAudioMuted, chatAudio, userGroups]);
+  }, [user, pbAuthReady, alertAuthorized, isAudioMuted, chatAudio, userGroups]);
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
@@ -992,7 +990,7 @@ export default function App() {
     const loginUser = async (email: string, displayName: string, uid: string) => {
       let effectiveUsers = users;
       if (effectiveUsers.length === 0) {
-        effectiveUsers = await firebaseService.getUsers();
+        effectiveUsers = await pocketbaseService.getUsers();
         setUsers(effectiveUsers);
       }
 
@@ -1006,7 +1004,7 @@ export default function App() {
       if (!foundUser) {
         // Automatically provision them as a generic member/user with main dealer
         console.log(`Provisioning new identity via Google Auth: ${emailPrefix}`);
-        foundUser = await firebaseService.createUser(
+        foundUser = await pocketbaseService.createUser(
           uid, 
           emailPrefix, 
           'google_auth_' + uid.substring(0, 5), 
@@ -1048,22 +1046,26 @@ export default function App() {
 
     const processOAuthTokens = async (tokens: any) => {
       try {
-        const { signInWithCredential, GoogleAuthProvider } = await import('firebase/auth');
-        
-        if (!tokens || !tokens.id_token) {
-          throw new Error("No ID Token found in retrieved authorization tokens.");
+        if (!tokens || !tokens.access_token) {
+          throw new Error("No Access Token found in retrieved authorization tokens.");
         }
         
-        const credential = GoogleAuthProvider.credential(tokens.id_token, tokens.access_token);
-        const result = await signInWithCredential(auth, credential);
-        
-        const email = result.user.email;
+        const res = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo`, {
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`
+          }
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to retrieve Google profile: ${res.statusText}`);
+        }
+        const userInfo = await res.json();
+        const email = userInfo.email;
         if (!email) throw new Error("No email associated with this Google account.");
 
-        await loginUser(email, result.user.displayName || '', result.user.uid);
+        await loginUser(email, userInfo.name || userInfo.given_name || email.split('@')[0], userInfo.sub);
       } catch (authErr: any) {
-        console.error("Firebase sign in with credential failed:", authErr);
-        setError(`Firebase Credential Login Failed: ${authErr.message || authErr}`);
+        console.error("Google Profile retrieval failed:", authErr);
+        setError(`Google Authentication Failed: ${authErr.message || authErr}`);
       }
     };
 
@@ -1152,30 +1154,14 @@ export default function App() {
     };
 
     try {
-      const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      
-      const email = result.user.email;
-      if (!email) throw new Error("No email associated with this Google account.");
-
-      await loginUser(email, result.user.displayName || '', result.user.uid);
+      await runServerOAuthFallback();
     } catch (e: any) {
       console.error("Google Auth Exception:", e);
-      if (e.code === 'auth/unauthorized-domain' || e.message?.includes('unauthorized-domain')) {
-        console.log("Domain is unauthorized in Firebase Auth. Activating robust server-side callback fallback...");
-        try {
-          await runServerOAuthFallback();
-        } catch (fallbackError: any) {
-          console.error("OAuth fallback also failed:", fallbackError);
-        }
-      } else {
-        let errorMessage = 'Google Authentication Failed. Please try again.';
-        if (e.message) {
-           errorMessage = `OAuth Protocol Error: ${e.message}`;
-        }
-        setError(errorMessage);
+      let errorMessage = 'Google Authentication Failed. Please try again.';
+      if (e.message) {
+         errorMessage = `OAuth Protocol Error: ${e.message}`;
       }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -1191,13 +1177,13 @@ export default function App() {
       // If user list is empty, performing hot fetch
       if (effectiveUsers.length === 0) {
         console.log("Registry empty, synchronizing with primary infrastructure...");
-        effectiveUsers = await firebaseService.getUsers();
+        effectiveUsers = await pocketbaseService.getUsers();
         setUsers(effectiveUsers);
       }
 
       // If a line code is provided, we need to validate it first
       if (lineCode) {
-        const networkOwner = await firebaseService.getNetworkOwnerByLineCode(lineCode);
+        const networkOwner = await pocketbaseService.getNetworkOwnerByLineCode(lineCode);
         if (!networkOwner) {
           setError('Invalid Network Code. Access Denied.');
           setIsLoading(false);
@@ -1207,7 +1193,7 @@ export default function App() {
         if (networkOwner.role !== 'super_admin') {
            // For non-super admins, check if the username exists in THEIR network
            const dealerId = networkOwner.uid;
-           const networkUsers = await firebaseService.getUsers(dealerId);
+           const networkUsers = await pocketbaseService.getUsers(dealerId);
            effectiveUsers = [networkOwner, ...networkUsers];
         } else {
            // Super admins see all users already in effectiveUsers
@@ -1303,8 +1289,8 @@ export default function App() {
     if (!silent) setIsLoading(true);
     try {
       if (!navigator.onLine) {
-        // Run in background for Firestore persistence, don't await network resolution
-        firebaseService.createComplaint(data, user).catch(console.error);
+        // Run in background for PocketBase persistence, don't await network resolution
+        pocketbaseService.createComplaint(data, user).catch(console.error);
 
         // Treat it as locally persisted for UI
         const dummyComplaint = { ...data, id: 'temp_' + Date.now(), createdAt: Date.now() };
@@ -1314,8 +1300,21 @@ export default function App() {
         return;
       }
 
-      const newComplaint = await firebaseService.createComplaint(data, user);
-      if (!silent) toast.success('Complaint submitted successfully!');
+      const newComplaint = await pocketbaseService.createComplaint(data, user);
+      
+      // Verification step
+      const verified = await pocketbaseService.verifyComplaintPersisted(newComplaint.id);
+      if (!verified) {
+        throw new Error('Verification failed: Complaint could not be found in PocketBase after creation.');
+      }
+
+      if (!silent) toast.success('Complaint submitted and verified successfully!');
+      
+      // Update local cache manually (with duplicates prevention)
+      setComplaints(prev => {
+        if (prev.some(c => c.id === newComplaint.id)) return prev;
+        return [newComplaint, ...prev];
+      });
       
       // Auto-sync to Google Sheets if configured (Operational Logs)
       try {
@@ -1349,7 +1348,11 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
-      await firebaseService.deleteComplaint(id, customerName, user.fullName || user.username);
+
+      // Optimistic state update
+      setComplaints(prev => prev.filter(c => c.id !== id));
+
+      await pocketbaseService.deleteComplaint(id, customerName, user.fullName || user.username);
       toast.success('Complaint deleted successfully!');
 
       // Log deletion activity in Operational Logs
@@ -1387,7 +1390,16 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
-      await firebaseService.updateComplaintStatus(id, status, customerName, user.fullName || user.username, user.uid, remarks, reviews);
+
+      // Optimistic state update
+      setComplaints(prev => prev.map(c => c.id === id ? {
+        ...c,
+        status,
+        ...(remarks !== undefined && { remarks }),
+        ...(reviews !== undefined && { reviews })
+      } : c));
+
+      await pocketbaseService.updateComplaintStatus(id, status, customerName, user.fullName || user.username, user.uid, remarks, reviews);
       toast.success(`Status updated to ${status}`);
 
       // Auto-sync for Operational Logs (History)
@@ -1421,7 +1433,11 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
-      await firebaseService.updateComplaintRemarks(id, remarks, customerName, user.fullName || user.username, user.uid);
+
+      // Optimistic state update
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, remarks } : c));
+
+      await pocketbaseService.updateComplaintRemarks(id, remarks, customerName, user.fullName || user.username, user.uid);
       toast.success('Protocol remarks updated successfully');
 
       // Auto-sync for Operational Logs (History)
@@ -1455,8 +1471,18 @@ export default function App() {
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = data.customerName || complaint?.customerName || id;
-      await firebaseService.updateComplaint(id, data, customerName, user.fullName || user.username);
-      toast.success('Log record updated successfully');
+      await pocketbaseService.updateComplaint(id, data, customerName, user.fullName || user.username);
+      
+      // Verification step
+      const verified = await pocketbaseService.verifyComplaintPersisted(id);
+      if (!verified) {
+        throw new Error('Verification failed: Complaint update could not be verified in PocketBase.');
+      }
+
+      toast.success('Log record updated and verified successfully');
+
+      // Update local cache immediately
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
 
       // Auto-sync for Operational Logs (History/Updates/Remarks)
       if (complaint) {
@@ -1497,7 +1523,14 @@ export default function App() {
 
     try {
       const uid = Math.random().toString(36).substr(2, 9);
-      const newUser = await firebaseService.createUser(uid, trimmedName, pass, role, user.uid, user.fullName || user.username, dealerId, lineCode, companyName);
+      const newUser = await pocketbaseService.createUser(uid, trimmedName, pass, role, user.uid, user.fullName || user.username, dealerId, lineCode, companyName);
+      
+      // Optimistic UI update
+      setUsers(prev => {
+        if (prev.some(u => u.uid === newUser.uid)) return prev;
+        return [...prev, newUser];
+      });
+
       toast.success(`${role === 'dealer' ? 'Dealer' : 'User'} ${trimmedName} created successfully!`);
 
       // Auto-sync to User Register
@@ -1522,7 +1555,11 @@ export default function App() {
     try {
       const targetUser = users.find(u => u.uid === uid);
       const username = targetUser?.username || uid;
-      await firebaseService.deleteUser(uid, username, user.fullName || user.username);
+
+      // Optimistic UI update
+      setUsers(prev => prev.filter(u => u.uid !== uid));
+
+      await pocketbaseService.deleteUser(uid, username, user.fullName || user.username);
       toast.success('User deleted successfully');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
@@ -1534,7 +1571,6 @@ export default function App() {
     if (!user) return;
     try {
       console.log("App.tsx updating user:", uid, "with profilePicture:", profilePicture);
-      await firebaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode !== undefined && { lineCode }), ...(companyName !== undefined && { companyName }), ...(profilePicture !== undefined && { profilePicture }), ...(email !== undefined && { email: email.trim() }) }, user.fullName || user.username);
       
       const targetUser = users.find(u => u.uid === uid);
       const updatedUserObj = {
@@ -1548,21 +1584,13 @@ export default function App() {
         ...(companyName !== undefined && { companyName }),
         ...(profilePicture !== undefined && { profilePicture }),
         ...(email !== undefined && { email: email.trim() })
-      };
+      } as any;
 
-      // Ensure a shadow Firebase Auth user exists for sendPasswordResetEmail to work
-      if (email && email.trim() !== '') {
-        try {
-          const { createUserWithEmailAndPassword } = await import('firebase/auth');
-          await createUserWithEmailAndPassword(auth, email.trim(), pass);
-          console.log(`Shadow Firebase Auth account ensured for ${email.trim()}`);
-        } catch (authErr: any) {
-          if (authErr.code !== 'auth/email-already-in-use') {
-            console.warn("Defensive shadow account registration message:", authErr.message);
-          }
-        }
-      }
+      // Optimistic UI update
+      setUsers(prev => prev.map(u => u.uid === uid ? updatedUserObj : u));
 
+      await pocketbaseService.updateUser(uid, { username, password: pass, fullName, role, ...(lineCode !== undefined && { lineCode }), ...(companyName !== undefined && { companyName }), ...(profilePicture !== undefined && { profilePicture }), ...(email !== undefined && { email: email.trim() }) }, user.fullName || user.username);
+      
       // If updating self, update local user state too
       if (user && user.uid === uid) {
         const updatedUser = { ...user, username, password: pass, fullName, ...(role !== undefined && { role }), ...(lineCode !== undefined && { lineCode }), ...(companyName !== undefined && { companyName }), ...(profilePicture !== undefined && { profilePicture }), ...(email !== undefined && { email: email.trim() }) };
@@ -1591,14 +1619,15 @@ export default function App() {
   const handleChangeAdminPass = async (newPass: string) => {
     if (!user) return;
     try {
-      await firebaseService.updateUserPassword(user.uid, user.username, newPass, user.fullName || user.username);
-      const updatedUsers = await firebaseService.getUsers();
-      setUsers(updatedUsers);
+      await pocketbaseService.updateUserPassword(user.uid, user.username, newPass, user.fullName || user.username);
       
       // Update local state and persistence
       const updatedUser = { ...user, password: newPass };
       setUser(updatedUser);
       safeLocalStorage.setItem('complaint_app_user', safeStringify(updatedUser));
+
+      const updatedUsers = await pocketbaseService.getUsers();
+      setUsers(updatedUsers);
       
       toast.success(`Admin password changed successfully!`);
 
@@ -1621,7 +1650,7 @@ export default function App() {
   const handleRefresh = async () => {
     setIsLoading(true);
     try {
-      const updatedUsers = await firebaseService.getUsers();
+      const updatedUsers = await pocketbaseService.getUsers();
       setUsers(updatedUsers);
     } catch (err) {
       console.error("Refresh failed:", err instanceof Error ? err.message : String(err));
@@ -1632,8 +1661,8 @@ export default function App() {
 
   const handleUpdateConfig = (newConfig: AppConfig) => {
     if (!user) return;
-    const tenantId = firebaseService.getTenantId(user);
-    firebaseService.updateConfig(newConfig, user.fullName || user.username, tenantId);
+    const tenantId = pocketbaseService.getTenantId(user);
+    pocketbaseService.updateConfig(newConfig, user.fullName || user.username, tenantId);
     toast.success('System configuration updated');
     
     // Auto-sync to Google Sheets (System Config)
@@ -1653,10 +1682,10 @@ export default function App() {
         translations: mergedTranslations
       };
       
-      await firebaseService.updateBranding(mergedBranding, user.fullName || user.username);
+      await pocketbaseService.updateBranding(mergedBranding, user.fullName || user.username);
       
       if (newBranding.translations !== undefined) {
-        await firebaseService.updateTranslations(mergedTranslations);
+        await pocketbaseService.updateTranslations(mergedTranslations);
       }
 
       setBranding(mergedBranding);
@@ -1681,7 +1710,10 @@ export default function App() {
   const handleUpdateUserStatus = async (uid: string, status: UserProfile['status']) => {
     if (!user) return;
     try {
-      await firebaseService.updateUserStatus(uid, status, user.fullName || user.username);
+      // Optimistic UI update
+      setUsers(prev => prev.map(u => u.uid === uid ? { ...u, status } : u));
+
+      await pocketbaseService.updateUserStatus(uid, status, user.fullName || user.username);
       toast.success(`User status updated to ${status?.toUpperCase()}`);
     } catch (err) {
       console.error("User status update failure:", err);
@@ -1739,7 +1771,7 @@ export default function App() {
         appConfig={appConfig}
         onRegisterComplaint={handleRegisterComplaint}
       >
-        {!firebaseAuthReady ? (
+        {!pbAuthReady ? (
           <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950">
             <FiberLoading fullScreen />
           </div>

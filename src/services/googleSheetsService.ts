@@ -2,7 +2,6 @@
 import { safeStringify } from '../lib/utils';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
 import { supabase } from '../../supabaseClient';
-import { GoogleAuthProvider } from 'firebase/auth';
 
 const getApiUrl = (endpoint: string): string => {
   const host = window.location.hostname;
@@ -56,14 +55,6 @@ try {
 } catch (e) {
   console.warn("Storage fallbacks parsing failed:", e);
 }
-
-// Provider setup for Google Workspace
-const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/spreadsheets');
-provider.addScope('https://www.googleapis.com/auth/drive.file');
-provider.addScope('https://www.googleapis.com/auth/drive');
-provider.addScope('https://www.googleapis.com/auth/gmail.send');
-provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
 
 export const googleSheetsService = {
   syncConfigToFirestore: async (updates: any) => {
@@ -406,6 +397,43 @@ export const googleSheetsService = {
   initiateFirebaseAuth: async (): Promise<GoogleTokens> => {
     console.log("Redirecting to permanent server-side oauth gateway (Supabase system integration)...");
     return googleSheetsService.initiateAuth();
+  },
+
+  readSheetRows: async (tabName: string): Promise<any[][]> => {
+    const tokens = googleSheetsService.getTokens();
+    const spreadsheetId = googleSheetsService.getSpreadsheetId();
+
+    if (!tokens || !spreadsheetId) {
+      throw new Error("Google Sheets is not configured or authenticated in the Admin Panel.");
+    }
+
+    try {
+      const response = await fetch(getApiUrl('/api/sheets/read'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: safeStringify({
+          tokens,
+          spreadsheetId,
+          range: `'${tabName}'!A2:J5000`
+        })
+      });
+
+      if (!response.ok) {
+        let errorMsg = `Failed to read from ${tabName}`;
+        try {
+          const error = await response.json();
+          errorMsg = error.error || errorMsg;
+        } catch (e) {}
+        throw new Error(errorMsg);
+      }
+
+      const json = await response.json();
+      googleSheetsService.processResponseJson(json);
+      return json.values || [];
+    } catch (error) {
+      console.error(`Error reading from ${tabName}:`, error);
+      throw error;
+    }
   },
 
   appendComplaint: async (complaint: any) => {

@@ -4,7 +4,7 @@ import L from 'leaflet';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Map as MapIcon, Layers, Satellite, Crosshair, RefreshCw, ZoomIn, ZoomOut, Search, MapPin, Save, Plus, Ruler, Trash2, Navigation, ClipboardList, Globe } from 'lucide-react';
 import { UserProfile, Client, MonitorTarget } from '../types';
-import { firebaseService } from '../lib/firebaseService';
+import { pocketbaseService } from '../lib/pocketbaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { Polyline } from 'react-leaflet';
@@ -207,9 +207,9 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
   useEffect(() => {
     if (!isOpen || !user) return;
     setLoading(true);
-    const tenantId = firebaseService.getReadTenantId(user);
+    const tenantId = pocketbaseService.getReadTenantId(user);
     
-    const unsubscribe = firebaseService.subscribeClients((allClients) => {
+    const unsubscribe = pocketbaseService.subscribeClients((allClients) => {
       setClients(allClients);
       setLoading(false);
     }, tenantId);
@@ -220,9 +220,9 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
   // Subscribe to custom targets matching active tenant
   useEffect(() => {
     if (!isOpen || !user) return;
-    const tenantId = firebaseService.getReadTenantId(user);
+    const tenantId = pocketbaseService.getReadTenantId(user);
     
-    const unsubscribe = firebaseService.subscribeMonitorTargets((allTargets) => {
+    const unsubscribe = pocketbaseService.subscribeMonitorTargets((allTargets) => {
       setMonitorTargets(allTargets);
     }, tenantId);
     
@@ -311,7 +311,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
       const initialLat = SADIQABAD_CENTER[0] + latOffset;
       const initialLng = SADIQABAD_CENTER[1] + lngOffset;
       
-      const newTarget = await firebaseService.createMonitorTarget(
+      const newTarget = await pocketbaseService.createMonitorTarget(
         domainVal, 
         user, 
         labelVal, 
@@ -339,7 +339,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     try {
       const target = monitorTargets.find(t => t.id === id);
       if (!target) return;
-      await firebaseService.updateMonitorTarget(id, { lat, lng });
+      await pocketbaseService.updateMonitorTarget(id, { lat, lng });
       setPositioningTargetId(null);
       toast.success("📡 Node Repositioned", { description: `${target.label || target.domain} moved to chosen coordinates.` });
     } catch (err) {
@@ -387,7 +387,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     }
 
     try {
-      await firebaseService.updateClient(
+      await pocketbaseService.updateClient(
         client.id, 
         { lat: selectedCoord.lat, lng: selectedCoord.lng }, 
         client.name, 
@@ -408,7 +408,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     }
 
     try {
-      await firebaseService.updateClient(
+      await pocketbaseService.updateClient(
         client.id, 
         { lat: null, lng: null }, 
         client.name, 
@@ -844,7 +844,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                                 e.stopPropagation();
                                 if (confirm(`Remove custom target ${target.label || target.domain}?`)) {
                                   try {
-                                    await firebaseService.deleteMonitorTarget(target.id);
+                                    await pocketbaseService.deleteMonitorTarget(target.id);
                                     toast.success("Target discarded successfully.");
                                   } catch (err) {
                                     toast.error("Failed to delete target");
@@ -1491,7 +1491,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                                 onClick={async () => {
                                   if (confirm(`Remove custom target ${target.label || target.domain}?`)) {
                                     try {
-                                      await firebaseService.deleteMonitorTarget(target.id);
+                                      await pocketbaseService.deleteMonitorTarget(target.id);
                                       toast.success("Target discarded successfully.");
                                     } catch (err) {
                                       toast.error("Failed to delete target");

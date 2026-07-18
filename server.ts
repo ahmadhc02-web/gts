@@ -8,6 +8,7 @@ import fs from "fs";
 import exec from "child_process";
 import { GoogleGenAI, Type } from "@google/genai";
 import cors from "cors";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 dotenv.config();
 
@@ -35,7 +36,7 @@ const localOtpStore = new Map<string, MemoryOTP>();
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+  const PORT = 3000;
 
   // Robust CORS Middleware supporting Hugging Face, Netlify, and other external frontends
   app.use(
@@ -54,6 +55,18 @@ async function startServer() {
         "Authorization",
       ],
     }),
+  );
+
+  // --- Secure PocketBase Proxy to prevent Mixed Content (HTTP/HTTPS) blocking ---
+  app.use(
+    "/api/pb",
+    createProxyMiddleware({
+      target: "http://167.233.41.7:8090",
+      changeOrigin: true,
+      pathRewrite: {
+        "^/api/pb": "/api", // rewrite /api/pb/* to /api/*
+      },
+    })
   );
 
   app.use(express.json({ limit: "50mb" }));
@@ -2215,6 +2228,43 @@ System instructions:
       });
     } catch (error: any) {
       handleRouteError(res, error, "Error updating sheet");
+    }
+  });
+
+  app.post("/api/sheets/read", async (req, res) => {
+    let { tokens, spreadsheetId, range } = req.body;
+
+    if (!tokens) {
+      tokens = await loadTokensFromFirestore();
+    }
+
+    if (!tokens || !spreadsheetId) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Missing tokens or spreadsheetId. Please connect your Google account in the Admin Panel.",
+        });
+    }
+
+    try {
+      const { auth, getTokens } = await getAuthorizedClient(req, tokens);
+
+      const sheets = google.sheets({ version: "v4", auth });
+
+      console.log(`Reading sheet ${spreadsheetId} from range ${range}`);
+
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: range || "Sheet1!A1:Z1000",
+      });
+
+      res.json({
+        values: response.data.values || [],
+        refreshedTokens: getTokens(),
+      });
+    } catch (error: any) {
+      handleRouteError(res, error, "Error reading sheet");
     }
   });
 

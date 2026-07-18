@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Save, RotateCcw, AlertCircle, Edit, Sparkles, Check } from 'lucide-react';
 import { BrandingConfig } from '../types';
-import { firebaseService } from '../lib/firebaseService';
+import { pocketbaseService } from '../lib/pocketbaseService';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
 import { toast } from 'sonner';
 
@@ -329,8 +329,8 @@ export default function InlineTextEditor({
       }
 
       // Save to dedicated unbreakable translations storage and the global configuration document
-      await firebaseService.updateTranslations(existingTranslations);
-      await firebaseService.updateBranding(updatedBranding, userFullName);
+      await pocketbaseService.updateTranslations(existingTranslations);
+      await pocketbaseService.updateBranding(updatedBranding, userFullName);
       
       if (onUpdateBranding) {
         onUpdateBranding(updatedBranding);
@@ -382,8 +382,8 @@ export default function InlineTextEditor({
         console.warn("Failed to clear local cache for default", cacheErr);
       }
 
-      await firebaseService.updateTranslations(existingTranslations);
-      await firebaseService.updateBranding(updatedBranding, userFullName);
+      await pocketbaseService.updateTranslations(existingTranslations);
+      await pocketbaseService.updateBranding(updatedBranding, userFullName);
       
       if (onUpdateBranding) {
         onUpdateBranding(updatedBranding);
