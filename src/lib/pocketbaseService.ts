@@ -125,7 +125,8 @@ const mappings: Record<string, Record<string, string>> = {
     footnoteLeft: 'footnote_left',
     footnoteRight: 'footnote_right',
     dealerId: 'dealer_id',
-    createdAt: 'created_at'
+    createdAt: 'created_at',
+    folderId: 'folder_id'
   },
   branding_config: {
     id: 'config_id',
@@ -670,6 +671,44 @@ export const pocketbaseService = {
       return Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
     } catch (e) {
       console.error("PB: Failed to get billing months:", e);
+      return [];
+    }
+  },
+
+  getBillingMonthRowsDirect: async (monthId: string, dealerId: string = 'main') => {
+    try {
+      const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
+      const records = await pb.collection('billing_rows').getFullList({ filter });
+      if (records && records.length > 0) {
+        return records.map(r => ({
+          id: r.client_id || r.id,
+          clientId: r.client_id || r.id,
+          name: r.name || '',
+          username: r.username || '',
+          mobileNumber: r.mobile_number || '',
+          area: r.area || '',
+          rt: r.rt || '',
+          baseAmount: Number(r.base_amount) || Number(r.base_amount === 0 ? 0 : (r.amount || 0)) || 0,
+          cr: Number(r.cr) || 0,
+          totalAmount: Number(r.total_amount) || 0,
+          billingDay: r.billing_day || '5',
+          paymentReceived: Number(r.payment_received) || 0,
+          paymentStatus: r.payment_status || 'unpaid',
+          comments: r.comments || '',
+          occ: r.occ || '',
+          serNam: r.ser_nam || '',
+          pkgDetails: r.pkg_details || '',
+          sag: r.sag || '',
+          lai: r.lai || '',
+          connectionDate: r.connection_date || '',
+          devicePrice: r.device_price || '',
+          abl: r.abl || '',
+          network: r.network || ''
+        }));
+      }
+      return [];
+    } catch (e) {
+      console.warn("PB: Failed to fetch billing month rows directly:", e);
       return [];
     }
   },
@@ -2224,24 +2263,71 @@ export const pocketbaseService = {
     }), dealerId);
   },
 
-  subscribeLedgerSheetFolderMap: (callback: (map: any) => void, dealerId?: string) => {
+  subscribeLedgerSheetFolderMap: (callback: (map: any) => void, dealerId: string = 'main') => {
+    const docId = `ledger_sheet_map_${dealerId}`;
     const fetchMap = async () => {
       try {
-        const records = await pb.collection('ledger_folders').getFullList({ filter: dealerId ? `tenant_id = "${dealerId}"` : '' });
-        const map: any = {};
-        records.forEach((r: any) => {
-          map[r.folder_id] = r.name;
-        });
+        const record = await pb.collection('branding_config').getFirstListItem(`config_id = "${docId}"`);
+        const map = record.dashboard_subtext ? JSON.parse(record.dashboard_subtext) : {};
         callback(map);
       } catch (e) {
         callback({});
       }
     };
     fetchMap();
-    pb.collection('ledger_folders').subscribe('*', () => fetchMap()).catch(() => {});
+    
+    const promise = pb.collection('branding_config').subscribe('*', (e) => {
+      if (e.record.config_id === docId) {
+        try {
+          const map = e.record.dashboard_subtext ? JSON.parse(e.record.dashboard_subtext) : {};
+          callback(map);
+        } catch (err) {}
+      }
+    });
+
     return () => {
-      pb.collection('ledger_folders').unsubscribe('*').catch(() => {});
+      promise.then(un => un()).catch(() => {});
     };
+  },
+
+  subscribeFolderMonthMap: (callback: (map: any) => void, dealerId: string = 'main') => {
+    const docId = `folder_month_map_${dealerId}`;
+    const fetchMap = async () => {
+      try {
+        const record = await pb.collection('branding_config').getFirstListItem(`config_id = "${docId}"`);
+        const map = record.dashboard_subtext ? JSON.parse(record.dashboard_subtext) : {};
+        callback(map);
+      } catch (e) {
+        callback({});
+      }
+    };
+    fetchMap();
+
+    const promise = pb.collection('branding_config').subscribe('*', (e) => {
+      if (e.record.config_id === docId) {
+        try {
+          const map = e.record.dashboard_subtext ? JSON.parse(e.record.dashboard_subtext) : {};
+          callback(map);
+        } catch (err) {}
+      }
+    });
+
+    return () => {
+      promise.then(un => un()).catch(() => {});
+    };
+  },
+
+  updateFolderMonthMap: async (map: any, tenantId: string = 'main') => {
+    try {
+      const docId = `folder_month_map_${tenantId}`;
+      const payload = {
+        config_id: docId,
+        dashboard_subtext: JSON.stringify(map)
+      };
+      await upsertPB('branding_config', 'config_id', docId, payload);
+    } catch (e) {
+      console.error("PB: updateFolderMonthMap error:", e);
+    }
   },
 
   getLedgerFolders: async (tenantId: string = 'main') => {
@@ -2276,55 +2362,98 @@ export const pocketbaseService = {
   },
 
   updateLedgerSheetFolderMap: async (map: any, tenantId: string = 'main') => {
-    // No-op to prevent overwriting the 'ledger_folders' collection.
-    // Sheet folder associations are now saved directly inside individual sheets.
+    try {
+      const docId = `ledger_sheet_map_${tenantId}`;
+      const payload = {
+        config_id: docId,
+        dashboard_subtext: JSON.stringify(map)
+      };
+      await upsertPB('branding_config', 'config_id', docId, payload);
+    } catch (e) {
+      console.error("PB: updateLedgerSheetFolderMap error:", e);
+    }
   },
 
   // --- Ledger Sheets ---
   getLedgerSheets: async (tenantId: string = 'main') => {
     try {
-      const records = await pb.collection('ledger_sheets').getFullList({ filter: `tenant_id = "${tenantId}"` });
-      return records.map((r: any) => ({
-        id: r.sheet_id,
-        name: r.name,
-        folderId: r.folder_id,
-        rows: typeof r.rows_data === 'string' ? JSON.parse(r.rows_data) : r.rows_data,
-        createdAt: new Date(r.created).getTime(),
-        updatedAt: new Date(r.updated).getTime()
-      }));
+      const records = await pb.collection('ledger_sheets').getFullList({ filter: `dealer_id = "${tenantId}"` });
+      return records.map((r: any) => {
+        const item = fromDb('ledger_sheets', r);
+        item.id = r.id;
+        item.createdAt = r.created_at || new Date(r.created).getTime();
+        item.updatedAt = new Date(r.updated).getTime();
+        return item;
+      });
     } catch (e) {
+      console.error("PB: getLedgerSheets error:", e);
       return [];
     }
   },
 
   subscribeLedgerSheets: (callback: (sheets: any[]) => void, dealerId?: string) => {
-    return subscribeTable('ledger_sheets', callback, (r: any) => ({
-      id: r.sheet_id,
-      name: r.name,
-      folderId: r.folder_id,
-      rows: typeof r.rows_data === 'string' ? JSON.parse(r.rows_data) : r.rows_data || [],
-      createdAt: new Date(r.created).getTime(),
-      updatedAt: new Date(r.updated).getTime()
-    }), dealerId);
+    return subscribeTable('ledger_sheets', callback, (r: any) => {
+      const item = fromDb('ledger_sheets', r);
+      item.id = r.id;
+      item.createdAt = r.created_at || new Date(r.created).getTime();
+      item.updatedAt = new Date(r.updated).getTime();
+      return item;
+    }, dealerId);
   },
 
   saveLedgerSheet: async (sheet: any, tenantId: string = 'main') => {
     try {
-      const filter = `sheet_id = "${sheet.id}" && tenant_id = "${tenantId}"`;
-      const existing = await pb.collection('ledger_sheets').getList(1, 1, { filter });
-      const payload = {
-        sheet_id: sheet.id,
-        name: sheet.name,
-        folder_id: sheet.folderId,
-        rows_data: JSON.stringify(sheet.rows),
-        tenant_id: tenantId
-      };
-      if (existing.items.length > 0) {
-        await pb.collection('ledger_sheets').update(existing.items[0].id, payload);
-      } else {
-        await pb.collection('ledger_sheets').create(payload);
+      const dbRow = toDb('ledger_sheets', sheet);
+      dbRow.dealer_id = tenantId;
+
+      if (!dbRow.created_at) {
+        dbRow.created_at = Date.now();
       }
-      return { id: sheet.id };
+
+      // Generate the sheet_subtext summary of all entries
+      const summaryParts: string[] = [];
+      const table1Rows = Array.isArray(sheet.table1Rows) ? sheet.table1Rows : [];
+      table1Rows.forEach((r: any) => {
+        const rowName = (r.name || '').trim();
+        const comment = (r.comments || r.comment || '').trim();
+        const amount = Number(r.amount) || 0;
+        if (rowName || comment || amount > 0) {
+          let str = `${rowName || 'N/A'}`;
+          if (amount > 0) {
+            str += ` - Rs. ${amount}`;
+          }
+          if (comment) {
+            str += ` [Comments: ${comment}]`;
+          }
+          summaryParts.push(str);
+        }
+      });
+
+      const table2Rows = Array.isArray(sheet.table2Rows) ? sheet.table2Rows : [];
+      table2Rows.forEach((r: any) => {
+        const rowName = (r.name || '').trim();
+        const amount = Number(r.amount) || 0;
+        if (rowName || amount > 0) {
+          summaryParts.push(`[Total] ${rowName}: Rs. ${amount}`);
+        }
+      });
+
+      dbRow.sheet_subtext = summaryParts.join('\n');
+
+      let savedRecord: any = null;
+      const isValidPbId = typeof sheet.id === 'string' && /^[a-z0-9]{15}$/.test(sheet.id);
+
+      if (isValidPbId) {
+        try {
+          savedRecord = await pb.collection('ledger_sheets').update(sheet.id, dbRow);
+        } catch (e) {
+          savedRecord = await pb.collection('ledger_sheets').create(dbRow);
+        }
+      } else {
+        savedRecord = await pb.collection('ledger_sheets').create(dbRow);
+      }
+
+      return fromDb('ledger_sheets', savedRecord);
     } catch (e) {
       console.error("PB: saveLedgerSheet error:", e);
       return null;
@@ -2333,7 +2462,7 @@ export const pocketbaseService = {
 
   terminateAllLedgerSheets: async (tenantId: string = 'main') => {
     try {
-      const records = await pb.collection('ledger_sheets').getFullList({ filter: `tenant_id = "${tenantId}"` });
+      const records = await pb.collection('ledger_sheets').getFullList({ filter: `dealer_id = "${tenantId}"` });
       for (const r of records) {
         await pb.collection('ledger_sheets').delete(r.id).catch(() => {});
       }
@@ -2344,12 +2473,13 @@ export const pocketbaseService = {
 
   deleteLedgerSheet: async (sheetId: string, tenantId: string = 'main') => {
     try {
-      const filter = `sheet_id = "${sheetId}" && tenant_id = "${tenantId}"`;
-      const existing = await pb.collection('ledger_sheets').getList(1, 1, { filter });
-      if (existing.items.length > 0) {
-        await pb.collection('ledger_sheets').delete(existing.items[0].id);
+      const isPbId = typeof sheetId === 'string' && /^[a-z0-9]{15}$/.test(sheetId);
+      if (isPbId) {
+        await pb.collection('ledger_sheets').delete(sheetId);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("PB: deleteLedgerSheet error:", e);
+    }
   },
 
   // --- Recycle Bin ---

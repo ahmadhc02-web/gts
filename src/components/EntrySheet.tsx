@@ -65,6 +65,7 @@ export default function EntrySheet({
   const [activeView, setActiveView] = useState<'dashboard' | 'editor'>('dashboard');
   const [folders, setFolders] = useState<any[]>([]);
   const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>({});
+  const [folderMonthMap, setFolderMonthMap] = useState<Record<string, string>>({});
   const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
   const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
   const [folderToDeleteId, setFolderToDeleteId] = useState<string | null>(null);
@@ -75,12 +76,12 @@ export default function EntrySheet({
     if (settingsFolderId) {
       const folder = folders.find(f => f.id === settingsFolderId);
       setEditFolderName(folder?.name || '');
-      setEditConnectedMonthId(folder?.connectedMonthId || '');
+      setEditConnectedMonthId(folderMonthMap[settingsFolderId] || folder?.connectedMonthId || '');
     } else {
       setEditFolderName('');
       setEditConnectedMonthId('');
     }
-  }, [settingsFolderId]);
+  }, [settingsFolderId, folderMonthMap]);
 
   // Scoped folders loading on user change
   useEffect(() => {
@@ -173,22 +174,48 @@ export default function EntrySheet({
       setSheetFolderMap(mergedMap);
     }, scopeId);
 
+    // Subscribe to Folder Month Map
+    const unsubFolderMonths = pocketbaseService.subscribeFolderMonthMap((data) => {
+      let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
+      let didMerge = false;
+
+      const folderMonthsKey = `gts_ledger_folder_months_${originalScopeId}`;
+      const migrationFlag = `migrated_local_folder_months_${scopeId || 'main'}`;
+      if (data && Object.keys(data).length > 0) {
+        localStorage.setItem(migrationFlag, 'true');
+      }
+
+      if (!localStorage.getItem(migrationFlag)) {
+        const savedMap = localStorage.getItem(folderMonthsKey);
+        if (savedMap) {
+          try {
+            const parsed = JSON.parse(savedMap);
+            if (parsed && typeof parsed === 'object') {
+              Object.keys(parsed).forEach(k => {
+                if (!mergedMap[k]) {
+                  mergedMap[k] = parsed[k];
+                  didMerge = true;
+                }
+              });
+            }
+          } catch (e) { console.error("Migration folder months map parse error", e); }
+        }
+        localStorage.setItem(migrationFlag, 'true');
+      }
+
+      if (didMerge) {
+        pocketbaseService.updateFolderMonthMap(mergedMap, scopeId).catch(console.error);
+      }
+      
+      setFolderMonthMap(mergedMap);
+    }, scopeId);
+
     return () => {
       unsubFolders();
       unsubMap();
+      unsubFolderMonths();
     };
   }, [currentUser?.uid, activeDealerId, isDealerTied]);
-
-  // Synchronize sheetFolderMap from ledgerHistory in real-time
-  useEffect(() => {
-    const nextMap: Record<string, string> = {};
-    ledgerHistory.forEach(sh => {
-      if (sh.id && sh.folderId) {
-        nextMap[sh.id] = sh.folderId;
-      }
-    });
-    setSheetFolderMap(nextMap);
-  }, [ledgerHistory]);
 
   // Folder UI inputs
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
@@ -273,6 +300,14 @@ export default function EntrySheet({
     localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(newMap));
   };
 
+  const saveFolderMonthMapToDb = async (newMap: Record<string, string>) => {
+    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+    await pocketbaseService.updateFolderMonthMap(newMap, scopeId);
+
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    localStorage.setItem(`gts_ledger_folder_months_${originalScopeId}`, JSON.stringify(newMap));
+  };
+
 
   const handleCreateFolder = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -355,10 +390,9 @@ export default function EntrySheet({
       );
 
       // Update folder collection and unmap sheets in the database concurrently
-      const associatedSheets = ledgerHistory.filter(sh => sh.folderId === folderId);
-      const updateSheetPromises = associatedSheets.map(sh => 
-        pocketbaseService.saveLedgerSheet({ ...sh, folderId: '' }, scopeId)
-      );
+      const updateSheetPromises = [
+        pocketbaseService.updateLedgerSheetFolderMap(nextMap, scopeId)
+      ];
 
       await Promise.all([
         pocketbaseService.updateLedgerFolders(newFolders, scopeId),
@@ -1452,6 +1486,48 @@ export default function EntrySheet({
 
           // Map new generated Firestore ID to sheetFolderMap
           const targetFolderId = savedDoc.id ? (sheetFolderMap[savedDoc.id] || (loadedSheetId ? sheetFolderMap[loadedSheetId] : null) || openedFolderId) : openedFolderId;
+
+          // Build local object to instantly record in local state for zero-latency website display
+          const savedSheetToLocal = {
+            id: lastSavedId || sheetPayload.id,
+            name: sheetPayload.recOfficer || '',
+            folderId: targetFolderId || '',
+            recOfficer: sheetPayload.recOfficer,
+            recOfficerLabel: sheetPayload.recOfficerLabel,
+            area: sheetPayload.area,
+            areaLabel: sheetPayload.areaLabel,
+            sheetDate: sheetPayload.sheetDate,
+            dateLabel: sheetPayload.dateLabel,
+            table1Rows: sheetPayload.table1Rows,
+            table2Rows: sheetPayload.table2Rows,
+            cashReceived: sheetPayload.cashReceived,
+            sign: sheetPayload.sign,
+            submitted: sheetPayload.submitted,
+            cashReceivedLabel: sheetPayload.cashReceivedLabel,
+            signLabel: sheetPayload.signLabel,
+            submittedLabel: sheetPayload.submittedLabel,
+            footnoteLeft: sheetPayload.footnoteLeft,
+            footnoteRight: sheetPayload.footnoteRight,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+
+          setLedgerHistory(prev => {
+            const exists = prev.findIndex(sh => sh.id === savedSheetToLocal.id);
+            if (exists >= 0) {
+              const next = [...prev];
+              next[exists] = { ...next[exists], ...savedSheetToLocal };
+              return next;
+            } else {
+              return [savedSheetToLocal, ...prev];
+            }
+          });
+
+          // Sonner toast notification triggered immediately upon successful save to verify both local state and PocketBase database sync occurred perfectly.
+          toast.success("⚡ Database Synchronized Successfully!", {
+            description: `Sheet for "${sheetPayload.recOfficer}" successfully persisted in PocketBase ('ledger_sheets' collection) and registered in the website local state memory.`,
+            duration: 5000
+          });
           
           if (savedDoc.id && targetFolderId) {
             const updated = { ...sheetFolderMap };
@@ -1464,11 +1540,21 @@ export default function EntrySheet({
           }
 
           const folderObj = folders.find(f => f.id === targetFolderId);
-          const targetMonthId = folderObj?.connectedMonthId;
+          const targetMonthId = targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined;
 
           if (targetMonthId) {
-            const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
-            const targetMonthRows = targetMonthDoc?.rows || [];
+            let targetMonthRows: any[] = [];
+            try {
+              // Fetch directly from database for instant and 100% reliable real-time updates
+              targetMonthRows = await pocketbaseService.getBillingMonthRowsDirect(targetMonthId, activeDealerId || 'main');
+            } catch (err) {
+              console.warn("Failed to fetch billing month rows directly:", err);
+            }
+
+            if (targetMonthRows.length === 0) {
+              const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
+              targetMonthRows = targetMonthDoc?.rows || [];
+            }
             
             if (targetMonthRows.length > 0) {
               try {
@@ -2639,7 +2725,7 @@ export default function EntrySheet({
           </div>
         )}
 
-        {!openedFolderId ? (
+        {!openedFolderId || !activeFolder ? (
           /* ================= ROOT DIRECTORY (PC DESKTOP FOLDERS) ================= */
           <div className="flex flex-col gap-4 text-left">
             {/* Folders grid styled as real PC drive folder icons */}
@@ -2910,7 +2996,7 @@ export default function EntrySheet({
                 animate={{ opacity: 1, scale: 1 }}
                 whileHover={{ scale: 1.02, y: -3 }}
                 transition={{ type: "spring", stiffness: 350, damping: 22 }}
-                onClick={() => handleCreateSheetInFolder(activeFolder.id)}
+                onClick={() => activeFolder && handleCreateSheetInFolder(activeFolder.id)}
                 className="group cursor-pointer border-2 border-dashed border-blue-400/50 dark:border-blue-900/40 hover:border-blue-500 dark:hover:border-blue-400 rounded-3xl p-6 bg-blue-50/10 dark:bg-blue-950/5 hover:bg-blue-50/25 flex flex-col items-center justify-center text-center gap-4 min-h-[180px] transition-all duration-300"
               >
                 <div className="p-3 bg-blue-600 dark:bg-blue-500 text-white rounded-2xl group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/20 group-hover:shadow-blue-500/30">
@@ -2921,7 +3007,7 @@ export default function EntrySheet({
                     Create New Sheet
                   </h4>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
-                    Add logged ledger to /{activeFolder.name}
+                    Add logged ledger to /{activeFolder?.name || 'Volume'}
                   </p>
                 </div>
               </motion.div>
@@ -3007,7 +3093,7 @@ export default function EntrySheet({
 
                         {/* Folder destination selector */}
                         <select
-                          value={activeFolder.id}
+                          value={activeFolder?.id || ''}
                           onChange={(e) => {
                             const destId = e.target.value;
                             const newMap = { ...sheetFolderMap, [sh.id]: destId };
@@ -5632,6 +5718,11 @@ export default function EntrySheet({
                       const newFolders = folders.map(f => f.id === settingsFolderId ? { ...f, name: cleanName, connectedMonthId: editConnectedMonthId } : f);
                       setFolders(newFolders);
                       saveFoldersToDb(newFolders);
+
+                      const nextFolderMonthMap = { ...folderMonthMap, [settingsFolderId!]: editConnectedMonthId };
+                      setFolderMonthMap(nextFolderMonthMap);
+                      saveFolderMonthMapToDb(nextFolderMonthMap);
+
                       toast.success("Folder settings saved successfully!");
                       setSettingsFolderId(null);
                     }}
