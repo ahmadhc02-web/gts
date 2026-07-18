@@ -129,7 +129,7 @@ const mappings: Record<string, Record<string, string>> = {
     folderId: 'folder_id'
   },
   branding_config: {
-    id: 'config_id',
+    id: 'config_type',
     projectName: 'project_name',
     accentColor: 'accent_color',
     secondaryColor: 'secondary_color',
@@ -293,9 +293,15 @@ function subscribeTable(
     try {
       let filter = '';
       if (dealerId && dealerId !== 'all') {
-        const hasDealerIdCol = !['branding_config', 'ledger_folders', 'ledger_sheets'].includes(tableName);
-        if (hasDealerIdCol) {
+        if (tableName === 'ledger_folders') {
+          filter = `tenant_id = "${dealerId}"`;
+        } else if (tableName === 'ledger_sheets') {
           filter = `dealer_id = "${dealerId}"`;
+        } else {
+          const hasDealerIdCol = !['branding_config'].includes(tableName);
+          if (hasDealerIdCol) {
+            filter = `dealer_id = "${dealerId}"`;
+          }
         }
       }
       const records = await pb.collection(tableName).getFullList({ filter, sort: '-created' });
@@ -1262,7 +1268,7 @@ export const pocketbaseService = {
     try {
       let currentConfig: any = null;
       try {
-        const record = await pb.collection('branding_config').getFirstListItem(`config_id = "${docId}"`);
+        const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
         if (record && record.dashboard_subtext) {
           currentConfig = JSON.parse(record.dashboard_subtext);
         }
@@ -1560,7 +1566,7 @@ export const pocketbaseService = {
       try {
         let currentConfig: any = null;
         try {
-          const record = await pb.collection('branding_config').getFirstListItem(`config_id = "${docId}"`);
+          const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
           if (record && record.dashboard_subtext) {
             currentConfig = JSON.parse(record.dashboard_subtext);
           }
@@ -1611,12 +1617,12 @@ export const pocketbaseService = {
       const cleanConfig = sanitize(config);
       localStorage.setItem(`gts_config_${tenantId}`, JSON.stringify(cleanConfig));
       const payload = {
-        config_id: docId,
+        config_type: docId,
         dashboard_subtext: JSON.stringify(cleanConfig),
         updated_at: Date.now(),
         updated_by: authorName
       };
-      await upsertPB('branding_config', 'config_id', docId, payload);
+      await upsertPB('branding_config', 'config_type', docId, payload);
       await pocketbaseService.syncAppConfig(config, tenantId);
       
       await pocketbaseService.createNotification({
@@ -1634,7 +1640,7 @@ export const pocketbaseService = {
   subscribeBranding: (callback: (branding: BrandingConfig | null) => void) => {
     const fetchBranding = async () => {
       try {
-        const record = await pb.collection('branding_config').getFirstListItem(`config_id = "branding"`);
+        const record = await pb.collection('branding_config').getFirstListItem(`config_type = "branding"`);
         if (record) {
           callback(fromDb('branding_config', record));
         } else {
@@ -1646,7 +1652,7 @@ export const pocketbaseService = {
     };
     fetchBranding();
     pb.collection('branding_config').subscribe('*', (e) => {
-      if (e.record.config_id === 'branding') fetchBranding();
+      if (e.record.config_type === 'branding') fetchBranding();
     }).catch(() => {});
     
     return () => {
@@ -1659,7 +1665,7 @@ export const pocketbaseService = {
       const cleanBranding = sanitize(branding);
       localStorage.setItem('gts_branding_v3', JSON.stringify(cleanBranding));
       const dbRow = toDb('branding_config', cleanBranding);
-      await upsertPB('branding_config', 'config_id', 'branding', dbRow);
+      await upsertPB('branding_config', 'config_type', 'branding', dbRow);
       
       await pocketbaseService.createNotification({
         type: 'config_updated',
@@ -1980,7 +1986,7 @@ export const pocketbaseService = {
 
       try {
         const docs = await pb.collection('branding_config').getFullList({
-          filter: `config_id ~ "billing_month_"`
+          filter: `config_type ~ "billing_month_"`
         });
         for (const doc of docs) {
           if (doc.dashboard_subtext) {
@@ -2222,7 +2228,7 @@ export const pocketbaseService = {
   subscribeTranslations: (callback: (translations: any) => void) => {
     const fetchTranslations = async () => {
       try {
-        const record = await pb.collection('branding_config').getFirstListItem('config_id = "translations"');
+        const record = await pb.collection('branding_config').getFirstListItem('config_type = "translations"');
         if (record && record.dashboard_subtext) {
           callback(JSON.parse(record.dashboard_subtext));
         } else {
@@ -2234,7 +2240,7 @@ export const pocketbaseService = {
     };
     fetchTranslations();
     pb.collection('branding_config').subscribe('*', (e) => {
-      if (e.record.config_id === 'translations') fetchTranslations();
+      if (e.record.config_type === 'translations') fetchTranslations();
     }).catch(() => {});
     return () => {
       pb.collection('branding_config').unsubscribe('*').catch(() => {});
@@ -2244,11 +2250,11 @@ export const pocketbaseService = {
   updateTranslations: async (translations: any) => {
     try {
       const payload = {
-        config_id: 'translations',
+        config_type: 'translations',
         dashboard_subtext: JSON.stringify(translations),
         updated_at: Date.now()
       };
-      await upsertPB('branding_config', 'config_id', 'translations', payload);
+      await upsertPB('branding_config', 'config_type', 'translations', payload);
     } catch (e) {
       console.error("PB: updateTranslations error:", e);
     }
@@ -2259,6 +2265,7 @@ export const pocketbaseService = {
     return subscribeTable('ledger_folders', callback, (row) => ({
       id: row.folder_id || row.id,
       name: row.name,
+      connectedMonthId: row.connected_month_id || row.connectedMonthId || '',
       createdAt: row.created ? new Date(row.created).getTime() : Date.now()
     }), dealerId);
   },
@@ -2267,7 +2274,7 @@ export const pocketbaseService = {
     const docId = `ledger_sheet_map_${dealerId}`;
     const fetchMap = async () => {
       try {
-        const record = await pb.collection('branding_config').getFirstListItem(`config_id = "${docId}"`);
+        const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
         const map = record.dashboard_subtext ? JSON.parse(record.dashboard_subtext) : {};
         callback(map);
       } catch (e) {
@@ -2277,7 +2284,7 @@ export const pocketbaseService = {
     fetchMap();
     
     const promise = pb.collection('branding_config').subscribe('*', (e) => {
-      if (e.record.config_id === docId) {
+      if (e.record.config_type === docId) {
         try {
           const map = e.record.dashboard_subtext ? JSON.parse(e.record.dashboard_subtext) : {};
           callback(map);
@@ -2294,7 +2301,7 @@ export const pocketbaseService = {
     const docId = `folder_month_map_${dealerId}`;
     const fetchMap = async () => {
       try {
-        const record = await pb.collection('branding_config').getFirstListItem(`config_id = "${docId}"`);
+        const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
         const map = record.dashboard_subtext ? JSON.parse(record.dashboard_subtext) : {};
         callback(map);
       } catch (e) {
@@ -2304,7 +2311,7 @@ export const pocketbaseService = {
     fetchMap();
 
     const promise = pb.collection('branding_config').subscribe('*', (e) => {
-      if (e.record.config_id === docId) {
+      if (e.record.config_type === docId) {
         try {
           const map = e.record.dashboard_subtext ? JSON.parse(e.record.dashboard_subtext) : {};
           callback(map);
@@ -2321,10 +2328,10 @@ export const pocketbaseService = {
     try {
       const docId = `folder_month_map_${tenantId}`;
       const payload = {
-        config_id: docId,
+        config_type: docId,
         dashboard_subtext: JSON.stringify(map)
       };
-      await upsertPB('branding_config', 'config_id', docId, payload);
+      await upsertPB('branding_config', 'config_type', docId, payload);
     } catch (e) {
       console.error("PB: updateFolderMonthMap error:", e);
     }
@@ -2341,36 +2348,148 @@ export const pocketbaseService = {
     }
   },
 
-  saveLedgerFolders: async (map: any, tenantId: string = 'main') => {
+  saveLedgerFolders: async (folders: any[], tenantId: string = 'main') => {
     try {
       const existing = await pb.collection('ledger_folders').getFullList({ filter: `tenant_id = "${tenantId}"` });
+      const existingMap = new Map(existing.map(ex => [ex.folder_id, ex]));
+
+      // Create or update
+      for (const f of folders) {
+        const folderId = f.id;
+        const name = f.name;
+        const connectedMonthId = f.connectedMonthId || '';
+        const existRecord = existingMap.get(folderId);
+
+        if (existRecord) {
+          const hasChanged = existRecord.name !== name || (existRecord.connected_month_id || '') !== connectedMonthId;
+          if (hasChanged) {
+            await pb.collection('ledger_folders').update(existRecord.id, {
+              name,
+              connected_month_id: connectedMonthId
+            }).catch(() => {});
+          }
+        } else {
+          await pb.collection('ledger_folders').create({
+            folder_id: folderId,
+            name,
+            connected_month_id: connectedMonthId,
+            tenant_id: tenantId
+          }).catch(() => {});
+        }
+      }
+
+      // Delete folders no longer in the state
+      const folderIds = new Set(folders.map(f => f.id));
       for (const ex of existing) {
-        await pb.collection('ledger_folders').delete(ex.id).catch(() => {});
+        if (!folderIds.has(ex.folder_id)) {
+          await pb.collection('ledger_folders').delete(ex.id).catch(() => {});
+        }
       }
-      for (const key in map) {
-        await pb.collection('ledger_folders').create({ folder_id: key, name: map[key], tenant_id: tenantId }).catch(() => {});
-      }
-    } catch (e) {}
+    } catch (e) {
+      console.error("PB: saveLedgerFolders error:", e);
+    }
   },
 
   updateLedgerFolders: async (folders: any[], tenantId: string = 'main') => {
-    const map: any = {};
-    folders.forEach(f => {
-      map[f.id] = f.name;
-    });
-    await pocketbaseService.saveLedgerFolders(map, tenantId);
+    await pocketbaseService.saveLedgerFolders(folders, tenantId);
   },
 
   updateLedgerSheetFolderMap: async (map: any, tenantId: string = 'main') => {
     try {
       const docId = `ledger_sheet_map_${tenantId}`;
       const payload = {
-        config_id: docId,
+        config_type: docId,
         dashboard_subtext: JSON.stringify(map)
       };
-      await upsertPB('branding_config', 'config_id', docId, payload);
+      await upsertPB('branding_config', 'config_type', docId, payload);
     } catch (e) {
       console.error("PB: updateLedgerSheetFolderMap error:", e);
+    }
+  },
+
+  // --- Google Sheet Links (Durable Persistence for Folder & Sheet Mappings) ---
+  saveGoogleSheetLink: async (tenantId: string, folderId: string, sheetId: string) => {
+    try {
+      // 1. Try writing to google_sheet_links collection if it exists
+      try {
+        const payload = {
+          tenant_id: tenantId,
+          user_id: tenantId,
+          folder_id: folderId,
+          sheet_id: sheetId
+        };
+        let existingId: string | null = null;
+        try {
+          const record = await pb.collection('google_sheet_links').getFirstListItem(`tenant_id = "${tenantId}" && folder_id = "${folderId}"`);
+          if (record) existingId = record.id;
+        } catch (e) {
+          try {
+            const record = await pb.collection('google_sheet_links').getFirstListItem(`user_id = "${tenantId}" && folder_id = "${folderId}"`);
+            if (record) existingId = record.id;
+          } catch (e2) {}
+        }
+
+        if (existingId) {
+          await pb.collection('google_sheet_links').update(existingId, payload);
+        } else {
+          await pb.collection('google_sheet_links').create(payload);
+        }
+      } catch (err) {
+        console.warn("PocketBase: 'google_sheet_links' collection not found/available, falling back to branding_config", err);
+      }
+
+      // 2. Fallback / parallel write to folder_month_map in branding_config for total reliability
+      const docId = `folder_month_map_${tenantId}`;
+      let currentMap: Record<string, string> = {};
+      try {
+        const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
+        currentMap = record.dashboard_subtext ? JSON.parse(record.dashboard_subtext) : {};
+      } catch (e) {}
+
+      currentMap[folderId] = sheetId;
+
+      const payload = {
+        config_type: docId,
+        dashboard_subtext: JSON.stringify(currentMap)
+      };
+      await upsertPB('branding_config', 'config_type', docId, payload);
+    } catch (e) {
+      console.error("PB: saveGoogleSheetLink error:", e);
+    }
+  },
+
+  getGoogleSheetLinks: async (tenantId: string) => {
+    try {
+      try {
+        const records = await pb.collection('google_sheet_links').getFullList({
+          filter: `tenant_id = "${tenantId}" || user_id = "${tenantId}"`
+        });
+        if (records && records.length > 0) {
+          return records.map(r => ({
+            tenantId: r.tenant_id || r.user_id,
+            userId: r.user_id || r.tenant_id,
+            folderId: r.folder_id,
+            sheetId: r.sheet_id
+          }));
+        }
+      } catch (err) {}
+
+      const docId = `folder_month_map_${tenantId}`;
+      try {
+        const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
+        const map = record.dashboard_subtext ? JSON.parse(record.dashboard_subtext) : {};
+        return Object.entries(map).map(([folderId, sheetId]) => ({
+          tenantId,
+          userId: tenantId,
+          folderId,
+          sheetId: sheetId as string
+        }));
+      } catch (e) {
+        return [];
+      }
+    } catch (e) {
+      console.error("PB: getGoogleSheetLinks error:", e);
+      return [];
     }
   },
 

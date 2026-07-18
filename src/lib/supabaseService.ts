@@ -449,7 +449,7 @@ export async function extractFirebaseCollections(onProgress?: (colName: string, 
 
   // Handle single doc configurations
   try {
-    const branding = await pb.collection('branding_config').getFirstListItem('config_id = "branding"');
+    const branding = await pb.collection('branding_config').getFirstListItem('config_type = "branding"');
     if (branding) {
       result.branding = branding;
     }

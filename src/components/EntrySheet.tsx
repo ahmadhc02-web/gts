@@ -301,8 +301,15 @@ export default function EntrySheet({
   };
 
   const saveFolderMonthMapToDb = async (newMap: Record<string, string>) => {
-    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
+    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined) || 'main';
     await pocketbaseService.updateFolderMonthMap(newMap, scopeId);
+
+    // Also persist individual links to the google_sheet_links schema helper
+    for (const [folderId, sheetId] of Object.entries(newMap)) {
+      if (sheetId) {
+        await pocketbaseService.saveGoogleSheetLink(scopeId, folderId, sheetId).catch(console.error);
+      }
+    }
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
     localStorage.setItem(`gts_ledger_folder_months_${originalScopeId}`, JSON.stringify(newMap));
@@ -354,7 +361,9 @@ export default function EntrySheet({
     const newFolders = folders.filter(f => f.id !== folderId);
     
     // Get list of sheets associated with this folder to store in Recycle Bin
-    const associatedSheetIds = Object.keys(sheetFolderMap).filter(sheetId => sheetFolderMap[sheetId] === folderId);
+    const associatedSheetIds = ledgerHistory
+      .filter(sh => sh.folderId === folderId || sheetFolderMap[sh.id] === folderId)
+      .map(sh => sh.id);
     
     // Safely unmap sheets inside this folder locally
     const nextMap = { ...sheetFolderMap };
@@ -1430,10 +1439,10 @@ export default function EntrySheet({
           continue; // skip completely empty pages
         }
 
-        const isCurrentlyLoadedSheet = (i === activeSheetIdx) && loadedSheetId;
-        const targetFolderId = isCurrentlyLoadedSheet 
-          ? (sheetFolderMap[loadedSheetId] || openedFolderId || '') 
-          : (openedFolderId || '');
+         const isCurrentlyLoadedSheet = (i === activeSheetIdx) && loadedSheetId;
+         const targetFolderId = isCurrentlyLoadedSheet 
+           ? (sheetFolderMap[loadedSheetId] || sh.folderId || openedFolderId || '') 
+           : (sh.folderId || openedFolderId || '');
 
         const sheetPayload = {
           id: isCurrentlyLoadedSheet ? loadedSheetId : undefined,
@@ -1532,7 +1541,7 @@ export default function EntrySheet({
           if (savedDoc.id && targetFolderId) {
             const updated = { ...sheetFolderMap };
             updated[savedDoc.id] = targetFolderId;
-            if (!isCurrentlyLoadedSheet && loadedSheetId) {
+            if (loadedSheetId && loadedSheetId !== savedDoc.id) {
               delete updated[loadedSheetId];
             }
             setSheetFolderMap(updated);
@@ -2054,10 +2063,12 @@ export default function EntrySheet({
     if (isLocked) return;
 
     const currentSheetId = sheets[activeSheetIdx]?.id;
-    const currentFolderId = sheetFolderMap[currentSheetId];
+    const currentFolderId = currentSheetId 
+      ? (sheetFolderMap[currentSheetId] || ledgerHistory.find(sh => sh.id === currentSheetId)?.folderId) 
+      : undefined;
 
     if (currentFolderId) {
-      const folderSheets = ledgerHistory.filter(sh => sheetFolderMap[sh.id] === currentFolderId);
+      const folderSheets = ledgerHistory.filter(sh => sh.folderId === currentFolderId || sheetFolderMap[sh.id] === currentFolderId);
       let duplicateFound = false;
       let dupLocation = "";
 
@@ -2195,7 +2206,7 @@ export default function EntrySheet({
   const renderUserLedger = () => {
     let filteredSheets = ledgerHistory;
     if (ledgerSelectedFolder !== 'all') {
-      filteredSheets = ledgerHistory.filter(sh => sheetFolderMap[sh.id] === ledgerSelectedFolder);
+      filteredSheets = ledgerHistory.filter(sh => sh.folderId === ledgerSelectedFolder || sheetFolderMap[sh.id] === ledgerSelectedFolder);
     }
 
     const keyword = ledgerSearchUser.toLowerCase().trim();
@@ -2203,7 +2214,7 @@ export default function EntrySheet({
 
     if (keyword) {
       filteredSheets.forEach(sh => {
-        const folderId = sheetFolderMap[sh.id];
+        const folderId = sh.folderId || sheetFolderMap[sh.id];
         const folder = folders.find(f => f.id === folderId);
         const folderName = folder ? folder.name : 'Uncategorized';
 
@@ -2471,7 +2482,7 @@ export default function EntrySheet({
     };
 
     // Group sheets into folders based on sheetFolderMap
-    let uncategorizedSheets = ledgerHistory.filter(sh => !sheetFolderMap[sh.id]);
+    let uncategorizedSheets = ledgerHistory.filter(sh => !sh.folderId && !sheetFolderMap[sh.id]);
 
     uncategorizedSheets.sort((a, b) => {
       if (folderSortOption === 'a-to-z') {
@@ -2536,7 +2547,7 @@ export default function EntrySheet({
 
     const activeFolder = folders.find(f => f.id === openedFolderId);
     let openedFolderSheets = activeFolder 
-      ? ledgerHistory.filter(sh => sheetFolderMap[sh.id] === activeFolder.id && doesMatchSearch(sh)) 
+      ? ledgerHistory.filter(sh => (sh.folderId === activeFolder.id || sheetFolderMap[sh.id] === activeFolder.id) && doesMatchSearch(sh)) 
       : [];
 
     openedFolderSheets.sort((a, b) => {
@@ -2739,7 +2750,7 @@ export default function EntrySheet({
                 return (
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
                     {sortedFolders.map((folder) => {
-                      const folderSheets = ledgerHistory.filter(sh => sheetFolderMap[sh.id] === folder.id && doesMatchSearch(sh));
+                      const folderSheets = ledgerHistory.filter(sh => (sh.folderId === folder.id || sheetFolderMap[sh.id] === folder.id) && doesMatchSearch(sh));
                       return (
                         <motion.div
                           key={folder.id}
@@ -2821,6 +2832,18 @@ export default function EntrySheet({
                             
                             {/* Modern Badge for amount or sheets */}
                             <div className="mt-1 flex flex-col gap-0.5 items-center justify-center">
+                              {(() => {
+                                const connId = folderMonthMap[folder.id] || folder.connectedMonthId;
+                                if (connId) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/40 px-2 py-0.5 rounded-full select-none mb-1 border border-blue-100 dark:border-blue-900/30">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse shrink-0" />
+                                      {connId}
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
                               {folderSheets.length > 0 ? (
                                 <>
                                   {(() => {
@@ -5473,8 +5496,9 @@ export default function EntrySheet({
                     {userSearchResults.map((res: any, idx) => {
                       const sh = res.sheet;
                       const matchedRows = res.matchedRows;
-                      const folderName = sheetFolderMap[sh.id] 
-                        ? (folders.find(f => f.id === sheetFolderMap[sh.id])?.name || "Uncategorized")
+                      const targetFolderId = sh.folderId || sheetFolderMap[sh.id];
+                      const folderName = targetFolderId 
+                        ? (folders.find(f => f.id === targetFolderId)?.name || "Uncategorized")
                         : "Uncategorized";
 
                       return (
