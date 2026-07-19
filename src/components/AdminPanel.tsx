@@ -21,7 +21,6 @@ import FiberLoading from './FiberLoading';
 import EntrySheet from './EntrySheet';
 import ReceiptManager from './ReceiptManager';
 import BatchPrintModal from './BatchPrintModal';
-import { extractFirebaseCollections, generateSupabaseMigrationSQL, pushCollectionsToSupabase, getSupabaseClient } from '../lib/supabaseService';
 import { getAvatarUrl } from '../utils/avatar';
 
 interface AdminPanelProps {
@@ -359,14 +358,6 @@ export default function AdminPanel({
     }
   };
 
-  // --- Supabase Client Integration and live Migration Console state ---
-  const [supabaseUrl, setSupabaseUrl] = useState(() => localStorage.getItem('gts_supabase_url') || '');
-  const [supabaseServiceKey, setSupabaseServiceKey] = useState(() => localStorage.getItem('gts_supabase_service_key') || '');
-  const [isExportingSql, setIsExportingSql] = useState(false);
-  const [isMigratingLive, setIsMigratingLive] = useState(false);
-  const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
-  const [migratedStatusSummary, setMigratedStatusSummary] = useState<{ col: string; count: number }[]>([]);
-
   const handleGenerateLocalBackup = async () => {
     setIsGeneratingBackup(true);
     try {
@@ -494,112 +485,6 @@ export default function AdminPanel({
     }
   };
 
-  const handleDownloadSupabaseSQL = async () => {
-    setIsExportingSql(true);
-    const toastId = toast.loading("Compiling Supabase SQL Migration Package...");
-    try {
-      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Starting extraction of Firebase Firestore collections...`]);
-      const data = await extractFirebaseCollections((col, count) => {
-        if (count === -1) {
-          setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Querying collection: ${col}...`]);
-        } else {
-          setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Extracted ${count} records from schema collection: ${col}.`]);
-        }
-      });
-
-      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Structuring SQL tables and security constraints...`]);
-      const sqlContent = generateSupabaseMigrationSQL(data);
-      
-      const blob = new Blob([sqlContent], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `supabase_migration_${new Date().toISOString().slice(0, 10)}.sql`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Successfully exported and triggered browser download!`]);
-      toast.success("SQL migration file created successfully!", {
-        id: toastId,
-        description: "Copy-paste this file directly in Supabase SQL Editor."
-      });
-    } catch (err: any) {
-      console.error(err);
-      setMigrationLogs(prev => [...prev, `[ERROR] SQL generation failed: ${err.message || err}`]);
-      toast.error("SQL Extraction Failed", {
-        id: toastId,
-        description: getCleanErrorMessage(err)
-      });
-    } finally {
-      setIsExportingSql(false);
-    }
-  };
-
-  const handleLiveSupabaseMigration = async () => {
-    if (!supabaseUrl || !supabaseServiceKey) {
-      toast.error("Required parameter missing", {
-        description: "Please specify both Supabase URL & Service Role key."
-      });
-      return;
-    }
-
-    // Save fields in cache
-    localStorage.setItem('gts_supabase_url', supabaseUrl);
-    localStorage.setItem('gts_supabase_service_key', supabaseServiceKey);
-
-    setIsMigratingLive(true);
-    setMigrationLogs([]);
-    const toastId = toast.loading("Executing live Supabase synchronization...");
-
-    try {
-      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Instantiating Supabase client object...`]);
-      const client = getSupabaseClient({ url: supabaseUrl, serviceKey: supabaseServiceKey });
-      if (!client) {
-        throw new Error("Unable to construct Supabase Client instance.");
-      }
-
-      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Fetching all document data from Firestore collections...`]);
-      const data = await extractFirebaseCollections((col, count) => {
-        if (count === -1) {
-          setMigrationLogs(prev => [...prev, `[INFO] Parsing Firebase records in: ${col}`]);
-        } else {
-          setMigrationLogs(prev => [...prev, `[INFO] Completed: fetched ${count} records from ${col}`]);
-        }
-      });
-
-      setMigrationLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Initializing live Supabase REST API bulk write pipeline...`]);
-      
-      await pushCollectionsToSupabase(client, data, (msg, status) => {
-        const time = new Date().toLocaleTimeString();
-        if (status === 'success') {
-          setMigrationLogs(prev => [...prev, `[SUCCESS ${time}] ${msg}`]);
-        } else if (status === 'error') {
-          setMigrationLogs(prev => [...prev, `[ERROR ${time}] ${msg}`]);
-        } else {
-          setMigrationLogs(prev => [...prev, `[${time}] ${msg}`]);
-        }
-      });
-
-      toast.success("Supabase live direct sync successfully executed!", {
-        id: toastId,
-        description: "Check your Supabase console to view your imported datasets."
-      });
-    } catch (err: any) {
-      console.error(err);
-      const errMsg = getCleanErrorMessage(err);
-      setMigrationLogs(prev => [...prev, `[FATAL] Direct update failed: ${errMsg}`]);
-      toast.error("Migration Aborted", {
-        id: toastId,
-        description: errMsg
-      });
-    } finally {
-      setIsMigratingLive(false);
-    }
-  };
-
-
   // Filter state controlled by status tiles
   const [forcedStatus, setForcedStatus] = useState<ComplaintStatus | 'all'>('all');
   const [forcedPriority, setForcedPriority] = useState<ComplaintPriority | 'all'>('all');
@@ -608,6 +493,7 @@ export default function AdminPanel({
   // --- Advanced Enterprise Billing & Recovery Module states ---
   const [masterClients, setMasterClients] = useState<any[]>([]);
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
+  const lastLocalEditTime = React.useRef<Record<string, number>>({});
   const [currentMonthId, setCurrentMonthId] = useState<string>('');
   const [isConfiguringNewMonth, setIsConfiguringNewMonth] = useState(false);
   const [isDeleteSheetModalOpen, setIsDeleteSheetModalOpen] = useState(false);
@@ -1040,11 +926,11 @@ export default function AdminPanel({
         setMasterClients(prev => prev.filter(c => c.id !== payload.old.id));
       }
     };
-    window.addEventListener('supabase-clients-updated', handleClientsUpdated);
-    window.addEventListener('supabase-clients-updated-incremental', handleIncrementalUpdate);
+    window.addEventListener('pocketbase-clients-updated', handleClientsUpdated);
+    window.addEventListener('pocketbase-clients-updated-incremental', handleIncrementalUpdate);
     return () => {
-      window.removeEventListener('supabase-clients-updated', handleClientsUpdated);
-      window.removeEventListener('supabase-clients-updated-incremental', handleIncrementalUpdate);
+      window.removeEventListener('pocketbase-clients-updated', handleClientsUpdated);
+      window.removeEventListener('pocketbase-clients-updated-incremental', handleIncrementalUpdate);
     };
   }, []);
 
@@ -1082,7 +968,26 @@ export default function AdminPanel({
         // Sort newest first by parsing e.g. "MAY-26" or using epoch createdAt
         return (b.createdAt || 0) - (a.createdAt || 0);
       });
-      setBillingMonths(sorted);
+      
+      setBillingMonths(prev => {
+        const now = Date.now();
+        return sorted.map(incomingMonth => {
+          const lastEdit = lastLocalEditTime.current[incomingMonth.id];
+          // Protect for up to 15 seconds to give database background sync plenty of time to finish
+          if (lastEdit && (now - lastEdit < 15000)) {
+            const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
+            if (currentLocalMonth) {
+              console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (last edited ${now - lastEdit}ms ago)`);
+              return {
+                ...incomingMonth,
+                rows: currentLocalMonth.rows
+              };
+            }
+          }
+          return incomingMonth;
+        });
+      });
+
       setCurrentMonthId(prev => {
         if (!prev && sorted.length > 0) {
           return sorted[0].id;
@@ -1263,6 +1168,9 @@ export default function AdminPanel({
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
+      if (monthId) {
+        lastLocalEditTime.current[monthId] = Date.now();
+      }
       setBillingMonths(prev => {
         // Prevent duplicate if somehow triggered twice
         if (prev.some(m => m.id === monthId)) return prev;
@@ -1402,6 +1310,9 @@ export default function AdminPanel({
       });
 
       // INSTANT UI UPDATE
+      if (currentMonthId) {
+        lastLocalEditTime.current[currentMonthId] = Date.now();
+      }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: existingRows } : m));
 
       toast.success("USER LIST RECHECKED PERFECTLY!", {
@@ -1426,6 +1337,10 @@ export default function AdminPanel({
     }
     const activeDoc = billingMonths.find(m => m.id === currentMonthId);
     if (!activeDoc) return;
+
+    if (currentMonthId) {
+      lastLocalEditTime.current[currentMonthId] = Date.now();
+    }
 
     try {
       const updatedRows = [...(activeDoc.rows || [])];
@@ -1486,6 +1401,71 @@ export default function AdminPanel({
     }
   };
 
+  const handleResetAllCRToZero = async () => {
+    if (!isBillingUnlocked) {
+      toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to perform bulk actions." });
+      return;
+    }
+    if (!currentMonthId) {
+      toast.error("Please select a recovery sheet first.");
+      return;
+    }
+    const activeDoc = billingMonths.find(m => m.id === currentMonthId);
+    if (!activeDoc || !activeDoc.rows || activeDoc.rows.length === 0) {
+      toast.error("No rows found in this recovery sheet.");
+      return;
+    }
+
+    const message = `⚠️ WARNING: RESET ALL CR AMOUNTS TO 0\n\nAre you absolutely sure you want to set the CR (Credit/Recovery) amount to 0 for ALL ${activeDoc.rows.length} rows in the "${currentMonthId}" recovery sheet?\n\nThis will instantly update the screen and update the database. This action is irreversible!`;
+    if (!window.confirm(message)) return;
+
+    if (currentMonthId) {
+      lastLocalEditTime.current[currentMonthId] = Date.now();
+    }
+
+    const toastId = toast.loading("Resetting all CR amounts to 0...");
+
+    try {
+      const updatedRows = activeDoc.rows.map((row: any) => {
+        const updatedRow = { ...row };
+        
+        // Reset CR to 0
+        updatedRow.cr = 0;
+        updatedRow._originalCr = 0;
+        
+        // Recalculate totalAmount
+        const base = parseFloat(updatedRow.baseAmount) || 0;
+        updatedRow.totalAmount = base;
+
+        // Recalculate payment status
+        const received = parseFloat(updatedRow.paymentReceived) || 0;
+        const total = parseFloat(updatedRow.totalAmount) || 0;
+        
+        if (updatedRow.paymentStatus !== 'tdc' && updatedRow.paymentStatus !== 'dc') {
+          if (received === 0) {
+            updatedRow.paymentStatus = 'unpaid';
+          } else if (received >= total) {
+            updatedRow.paymentStatus = 'paid';
+          } else {
+            updatedRow.paymentStatus = 'partial';
+          }
+        }
+        return updatedRow;
+      });
+
+      // 1. Update local state instantly
+      setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
+
+      // 2. Persist to database
+      await pocketbaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId);
+
+      toast.success(`Success! All CR amounts in "${currentMonthId}" sheet have been reset to 0.`, { id: toastId });
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to reset CR amounts", { id: toastId, description: getCleanErrorMessage(err) });
+    }
+  };
+
   const handleDeleteBillingRow = async (rowIndex: number) => {
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete rows from billing sheets." });
@@ -1501,6 +1481,9 @@ export default function AdminPanel({
       const [deletedRow] = updatedRows.splice(rowIndex, 1);
       
       // Update local state instantly
+      if (currentMonthId) {
+        lastLocalEditTime.current[currentMonthId] = Date.now();
+      }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
       
       // Save billing row to Recycle Bin
@@ -1574,6 +1557,9 @@ export default function AdminPanel({
       updatedRows.splice(globalRowIdx, 1);
 
       // Local state update immediately
+      if (currentMonthId) {
+        lastLocalEditTime.current[currentMonthId] = Date.now();
+      }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
 
       // Remove from active Billing Month in DB
@@ -2217,6 +2203,9 @@ export default function AdminPanel({
       const finalRows = [...updatedRows, ...newRows];
       
       // Update local state instantly
+      if (currentMonthId) {
+        lastLocalEditTime.current[currentMonthId] = Date.now();
+      }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: finalRows } : m));
       
       // Persist in background silently
@@ -4476,122 +4465,6 @@ export default function AdminPanel({
               </div>
             </div>
 
-            {/* Supabase Link & Live Migration Console */}
-            <div className={cn("p-8 sm:p-12 mt-6", getCardStyle(branding.cardStyle))}>
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-8 pb-8 border-b border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-5">
-                  <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500">
-                    <CloudUpload size={32} />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-100">Supabase Migration & Link</h3>
-                    <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">Direct Browser Database Switcher Matrix</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <button
-                    type="button"
-                    onClick={handleDownloadSupabaseSQL}
-                    disabled={isExportingSql || isMigratingLive}
-                    className="inline-flex items-center justify-center gap-2.5 px-6 py-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 disabled:opacity-50 shadow-sm"
-                  >
-                    {isExportingSql ? 'Generating SQL...' : 'Download Supabase SQL Script'}
-                    <HardDriveDownload size={14} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                <div className="space-y-6">
-                  <h4 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-blue-500">
-                    <Info size={16} />
-                    Live Browser Migration
-                  </h4>
-                  <p className="text-slate-500 dark:text-slate-400 font-medium text-sm leading-relaxed">
-                    By entering your Supabase API credentials below, our frontend migration engine will fetch all current collections directly and sync/upload them automatically to your PostgreSQL public schema in parallel batches.
-                  </p>
-
-                  <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl space-y-2">
-                    <h5 className="text-[11px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
-                      <Zap size={12} className="text-amber-400" />
-                      Automatic Bypass Setup
-                    </h5>
-                    <p className="text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">
-                      The generated SQL script provisions tables and temporarily activates relaxed Row Level Security (RLS) bypass rules so your frontend can communicate with Supabase seamlessly without requiring server proxies.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Supabase Project URL
-                    </label>
-                    <input
-                      type="text"
-                      value={supabaseUrl}
-                      onChange={(e) => setSupabaseUrl(e.target.value)}
-                      placeholder="https://your-project.supabase.co"
-                      style={{ color: 'inherit' }}
-                      className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all placeholder:text-slate-400"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      Supabase Service Role API Key (service_role)
-                    </label>
-                    <input
-                      type="password"
-                      value={supabaseServiceKey}
-                      onChange={(e) => setSupabaseServiceKey(e.target.value)}
-                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                      style={{ color: 'inherit' }}
-                      className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all placeholder:text-slate-400"
-                    />
-                    <p className="text-[9px] font-semibold text-slate-400/85">
-                      💡 Use the <strong className="text-slate-500 dark:text-slate-300">service_role</strong> secret API key instead of anon key to bypass Postgres rate limits/write constraints.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleLiveSupabaseMigration}
-                    disabled={isMigratingLive || isExportingSql || !supabaseUrl || !supabaseServiceKey}
-                    className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-lg shadow-blue-500/10 active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {isMigratingLive ? 'Synchronizing Datasets...' : 'EXECUTE DIRECT API MIGRATION'}
-                    <Zap size={14} className="text-amber-400 animate-pulse" />
-                  </button>
-                </div>
-              </div>
-
-              {migrationLogs.length > 0 && (
-                <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      Migration Console Terminal Logs
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setMigrationLogs([])}
-                      className="text-[9px] font-black uppercase tracking-widest text-rose-500 shrink-0 hover:underline cursor-pointer"
-                    >
-                      Clear Logs
-                    </button>
-                  </div>
-                  <div className="font-mono text-[11px] text-emerald-400 bg-slate-950 p-5 rounded-xl max-h-60 overflow-y-auto space-y-1 border border-slate-900 shadow-inner scrollbar-thin">
-                    {migrationLogs.map((log, index) => (
-                      <div key={index} className="leading-relaxed whitespace-pre-wrap font-mono">
-                        {log}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         )}
 
@@ -6383,130 +6256,13 @@ export default function AdminPanel({
                                   {isRestoringBackup ? 'Rewriting Database...' : 'CONFIRM & RESTORE FULL SYSTEM'}
                                   <CheckCircle size={14} />
                                 </button>
-                              </div>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-
-                      {/* Supabase Link & Live Migration Console */}
-                      <div className={cn("p-8 sm:p-12 mt-6", getCardStyle(branding.cardStyle))}>
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-8 pb-8 border-b border-slate-100 dark:border-slate-800">
-                          <div className="flex items-center gap-5">
-                            <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500">
-                              <CloudUpload size={32} />
-                            </div>
-                            <div>
-                              <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-100">Supabase Migration & Link</h3>
-                              <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">Direct Browser Database Switcher Matrix</p>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col sm:flex-row gap-3">
-                            <button
-                              type="button"
-                              onClick={handleDownloadSupabaseSQL}
-                              disabled={isExportingSql || isMigratingLive}
-                              className="inline-flex items-center justify-center gap-2.5 px-6 py-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 disabled:opacity-50 shadow-sm border-none cursor-pointer"
-                            >
-                              {isExportingSql ? 'Generating SQL...' : 'Download Supabase SQL Script'}
-                              <HardDriveDownload size={14} />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                          <div className="space-y-6">
-                            <h4 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-blue-500">
-                              <Info size={16} />
-                              Live Browser Migration
-                            </h4>
-                            <p className="text-slate-500 dark:text-slate-400 font-medium text-sm leading-relaxed">
-                              By entering your Supabase API credentials below, our frontend migration engine will fetch all current collections directly and sync/upload them automatically to your PostgreSQL public schema in parallel batches.
-                            </p>
-
-                            <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl space-y-2">
-                              <h5 className="text-[11px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5 font-bold">
-                                <Zap size={12} className="text-amber-400" />
-                                Automatic Bypass Setup
-                              </h5>
-                              <p className="text-[11px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">
-                                The generated SQL script provisions tables and temporarily activates relaxed Row Level Security (RLS) bypass rules so your frontend can communicate with Supabase seamlessly without requiring server proxies.
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                Supabase Project URL
-                              </label>
-                              <input
-                                type="text"
-                                value={supabaseUrl}
-                                onChange={(e) => setSupabaseUrl(e.target.value)}
-                                placeholder="https://your-project.supabase.co"
-                                style={{ color: 'inherit' }}
-                                className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all placeholder:text-slate-400"
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                Supabase Service Role API Key (service_role)
-                              </label>
-                              <input
-                                type="password"
-                                value={supabaseServiceKey}
-                                onChange={(e) => setSupabaseServiceKey(e.target.value)}
-                                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                                style={{ color: 'inherit' }}
-                                className="w-full px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-mono text-xs focus:ring-1 focus:ring-brand-accent focus:border-brand-accent transition-all placeholder:text-slate-400"
-                              />
-                              <p className="text-[9px] font-semibold text-slate-400/85">
-                                💡 Use the <strong className="text-slate-500 dark:text-slate-300 font-bold">service_role</strong> secret API key instead of anon key to bypass Postgres rate limits/write constraints.
-                              </p>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={handleLiveSupabaseMigration}
-                              disabled={isMigratingLive || isExportingSql || !supabaseUrl || !supabaseServiceKey}
-                              className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-lg shadow-blue-500/10 active:scale-95 disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer border-none"
-                            >
-                              {isMigratingLive ? 'Synchronizing Datasets...' : 'EXECUTE DIRECT API MIGRATION'}
-                              <Zap size={14} className="text-amber-400 animate-pulse" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {migrationLogs.length > 0 && (
-                          <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                                Migration Console Terminal Logs
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setMigrationLogs([])}
-                                className="text-[9px] font-black uppercase tracking-widest text-rose-500 shrink-0 hover:underline cursor-pointer bg-transparent border-none font-bold"
-                              >
-                                Clear Logs
-                              </button>
-                            </div>
-                            <div className="font-mono text-[11px] text-emerald-400 bg-slate-950 p-5 rounded-xl max-h-60 overflow-y-auto space-y-1 border border-slate-900 shadow-inner scrollbar-thin">
-                              {migrationLogs.map((log, index) => (
-                                <div key={index} className="leading-relaxed whitespace-pre-wrap font-mono">
-                                  {log}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
 
                   {/* Subview 7: Security & Audio Matrix settings_info */}
                   {mypcOpenedFile === 'settings_info' && (
@@ -7777,6 +7533,21 @@ export default function AdminPanel({
                           <option key={areaName} value={areaName}>{areaName}</option>
                         ))}
                       </select>
+
+                      <button
+                        type="button"
+                        onClick={handleResetAllCRToZero}
+                        className={cn(
+                          "px-3 py-2 border rounded-xl font-bold uppercase tracking-wider text-[11px] transition-all flex items-center gap-1.5 shadow-sm shrink-0",
+                          isBillingUnlocked 
+                            ? "bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/40 cursor-pointer"
+                            : "bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-60"
+                        )}
+                        title={isBillingUnlocked ? "Set CR amount to 0 for all rows in this sheet" : "🔒 Unlock billing to reset all CR"}
+                      >
+                        <RotateCcw size={13} className={cn(!isBillingUnlocked && "text-slate-400")} />
+                        <span>Reset CR to 0</span>
+                      </button>
                     </div>
                   </div>
 
@@ -8679,6 +8450,8 @@ export default function AdminPanel({
         isBillingUnlocked={isBillingUnlocked}
         appConfig={appConfig}
         billingMonths={billingMonths}
+        setBillingMonths={setBillingMonths}
+        lastLocalEditTime={lastLocalEditTime}
         initialShowUserLedger={entrySheetOpenWithUserLedger}
       />
 

@@ -567,22 +567,32 @@ export const pocketbaseService = {
   async saveConfigItems(collection: string, items: string[], tenantId: string = 'main') {
     try {
       const existing = await pb.collection(collection).getFullList({ filter: `tenant_id = "${tenantId}"` });
-      for (const ex of existing) {
-        await pb.collection(collection).delete(ex.id).catch(() => {});
+      const existingValues = existing.map(r => r.value);
+      
+      const toDelete = existing.filter(ex => !items.includes(ex.value));
+      const toCreate = items.filter(item => !existingValues.includes(item));
+
+      // Perform deletions and creations in parallel
+      await Promise.all([
+        ...toDelete.map(ex => pb.collection(collection).delete(ex.id).catch(() => {})),
+        ...toCreate.map(item => pb.collection(collection).create({ value: item, label: item, tenant_id: tenantId }).catch(() => {}))
+      ]);
+    } catch (e: any) {
+      if (e.message && e.message.includes('Missing collection context')) {
+        console.warn(`PB: Collection "${collection}" does not exist. Relying on JSON configuration fallback in branding_config.`);
+      } else {
+        console.error(`PB: Failed to save to ${collection}`, e);
       }
-      for (const item of items) {
-        await pb.collection(collection).create({ value: item, label: item, tenant_id: tenantId }).catch(() => {});
-      }
-    } catch (e) {
-      console.error(`PB: Failed to save to ${collection}`, e);
     }
   },
 
   async syncAppConfig(config: any, tenantId: string = 'main') {
-    if (config.categories) await this.saveConfigItems('categories_config', config.categories, tenantId);
-    if (config.statuses) await this.saveConfigItems('statuses_config', config.statuses, tenantId);
-    if (config.priorities) await this.saveConfigItems('priority_config', config.priorities, tenantId);
-    if (config.zones) await this.saveConfigItems('zone_config', config.zones, tenantId);
+    const promises: Promise<any>[] = [];
+    if (config.categories) promises.push(this.saveConfigItems('categories_config', config.categories, tenantId));
+    if (config.statuses) promises.push(this.saveConfigItems('statuses_config', config.statuses, tenantId));
+    if (config.priorities) promises.push(this.saveConfigItems('priority_config', config.priorities, tenantId));
+    if (config.zones) promises.push(this.saveConfigItems('zone_config', config.zones, tenantId));
+    await Promise.all(promises);
   },
 
   // --- BILLING CONFIG & RECOVERY SHEETS ---
@@ -723,7 +733,47 @@ export const pocketbaseService = {
     await this.saveBillingMonth(monthId, rows, createdBy, dealerId || 'main');
   },
 
+  _saveBillingMonthTimers: {} as Record<string, any>,
+  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string }>,
+
   async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main') {
+    const key = `${monthId}_${dealerId}`;
+    if (!this._saveBillingMonthLatestRows) {
+      this._saveBillingMonthLatestRows = {};
+    }
+    this._saveBillingMonthLatestRows[key] = { rows, updatedBy };
+
+    if (!this._saveBillingMonthTimers) {
+      this._saveBillingMonthTimers = {};
+    }
+
+    // Debounce the actual save to the cloud database by 1 second.
+    // This provides instant UI feedback to the user on the page, while ensuring
+    // that rapid sequential edits do not cause overlapping database locks or network congestion.
+    return new Promise<void>((resolve, reject) => {
+      if (this._saveBillingMonthTimers[key]) {
+        clearTimeout(this._saveBillingMonthTimers[key]);
+      }
+
+      this._saveBillingMonthTimers[key] = setTimeout(async () => {
+        try {
+          const latest = this._saveBillingMonthLatestRows[key];
+          if (latest) {
+            delete this._saveBillingMonthLatestRows[key];
+            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId);
+          }
+          resolve();
+        } catch (err) {
+          console.error("PB: Debounced save failed:", err);
+          reject(err);
+        } finally {
+          delete this._saveBillingMonthTimers[key];
+        }
+      }, 1000);
+    });
+  },
+
+  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main') {
     const logEntry = this.addSyncLog('billing_months', 'sync', 'pending', `Month: ${monthId}, Dealer: ${dealerId}, Rows count: ${rows.length}`);
     try {
       const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
@@ -763,8 +813,12 @@ export const pocketbaseService = {
         this.saveSyncLogsLocally();
       }
 
-      // Always sync rows to billing_rows and users_data
-      await this.syncBillingRows(monthId, dealerId, rows);
+      // Always sync rows to billing_rows and users_data asynchronously (non-blocking)
+      this.syncBillingRows(monthId, dealerId, rows).then(() => {
+        console.log("PB: Background sync of billing_rows completed successfully.");
+      }).catch((syncErr) => {
+        console.error("PB: Background sync of billing_rows failed:", syncErr);
+      });
     } catch (e: any) {
       console.error("PB: Failed to save billing month", e);
       logEntry.status = 'failed';
@@ -940,7 +994,7 @@ export const pocketbaseService = {
       let billingRowsErrors: string[] = [];
 
       const runInBatches = async (items: any[], op: (item: any) => Promise<void>) => {
-        const batchSize = 20;
+        const batchSize = 50;
         for (let i = 0; i < items.length; i += batchSize) {
           const batch = items.slice(i, i + batchSize);
           try {
@@ -1285,10 +1339,10 @@ export const pocketbaseService = {
           pocketbaseService.getPriorities(tenantId),
           pocketbaseService.getZones(tenantId)
         ]);
-        currentConfig.categories = cat;
-        if (stat.length) currentConfig.statuses = stat;
-        if (prio.length) currentConfig.priorities = prio;
-        if (zone.length) currentConfig.zones = zone;
+        if (cat && cat.length) currentConfig.categories = cat;
+        if (stat && stat.length) currentConfig.statuses = stat;
+        if (prio && prio.length) currentConfig.priorities = prio;
+        if (zone && zone.length) currentConfig.zones = zone;
       } catch (e) {}
 
       return currentConfig;
@@ -1562,6 +1616,7 @@ export const pocketbaseService = {
 
   subscribeConfig: (callback: (config: any) => void, tenantId: string = 'main') => {
     const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
+    
     const fetchConfig = async () => {
       try {
         let currentConfig: any = null;
@@ -1589,10 +1644,10 @@ export const pocketbaseService = {
             pocketbaseService.getPriorities(tenantId),
             pocketbaseService.getZones(tenantId)
           ]);
-          currentConfig.categories = cat;
-          if (stat.length) currentConfig.statuses = stat;
-          if (prio.length) currentConfig.priorities = prio;
-          if (zone.length) currentConfig.zones = zone;
+          if (cat && cat.length) currentConfig.categories = cat;
+          if (stat && stat.length) currentConfig.statuses = stat;
+          if (prio && prio.length) currentConfig.priorities = prio;
+          if (zone && zone.length) currentConfig.zones = zone;
         } catch (e) {}
 
         callback(currentConfig);
@@ -1600,14 +1655,32 @@ export const pocketbaseService = {
         callback(null);
       }
     };
+
+    let debounceTimeout: any = null;
+    const debouncedFetchConfig = () => {
+      if (debounceTimeout) clearTimeout(debounceTimeout);
+      debounceTimeout = setTimeout(() => {
+        fetchConfig();
+      }, 100);
+    };
     
+    // Initial direct fetch
     fetchConfig();
-    pb.collection('branding_config').subscribe('*', () => fetchConfig()).catch(() => {});
-    pb.collection('categories_config').subscribe('*', () => fetchConfig()).catch(() => {});
+    
+    // Subscribe to all config-related collections in real-time
+    pb.collection('branding_config').subscribe('*', debouncedFetchConfig).catch(() => {});
+    pb.collection('categories_config').subscribe('*', debouncedFetchConfig).catch(() => {});
+    pb.collection('statuses_config').subscribe('*', debouncedFetchConfig).catch(() => {});
+    pb.collection('priority_config').subscribe('*', debouncedFetchConfig).catch(() => {});
+    pb.collection('zone_config').subscribe('*', debouncedFetchConfig).catch(() => {});
     
     return () => {
+      if (debounceTimeout) clearTimeout(debounceTimeout);
       pb.collection('branding_config').unsubscribe('*').catch(() => {});
       pb.collection('categories_config').unsubscribe('*').catch(() => {});
+      pb.collection('statuses_config').unsubscribe('*').catch(() => {});
+      pb.collection('priority_config').unsubscribe('*').catch(() => {});
+      pb.collection('zone_config').unsubscribe('*').catch(() => {});
     };
   },
 
@@ -2177,6 +2250,7 @@ export const pocketbaseService = {
 
   // --- Billing Months ---
   subscribeBillingMonths: (callback: (months: any[]) => void, dealerId?: string) => {
+    let debounceTimer: any = null;
     const fetchBillingMonths = async () => {
       try {
         const data = await pocketbaseService.getBillingMonths(dealerId || 'main');
@@ -2186,12 +2260,21 @@ export const pocketbaseService = {
       }
     };
 
+    const triggerFetch = () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(() => {
+        fetchBillingMonths();
+      }, 1000); // 1-second debounce to absorb rapid successive updates
+    };
+
     fetchBillingMonths();
 
     // Subscribe to billing_rows to get real-time updates when billing records change
     try {
       pb.collection('billing_rows').subscribe('*', () => {
-        fetchBillingMonths();
+        triggerFetch();
       }).catch((e) => {
         console.warn("PB: billing_rows subscription error", e);
       });
@@ -2200,7 +2283,7 @@ export const pocketbaseService = {
     // Subscribe to users_data to get real-time updates when billing records change
     try {
       pb.collection('users_data').subscribe('*', () => {
-        fetchBillingMonths();
+        triggerFetch();
       }).catch((e) => {
         console.warn("PB: users_data subscription error", e);
       });
@@ -2209,13 +2292,16 @@ export const pocketbaseService = {
     // Also subscribe to billing_months as fallback
     try {
       pb.collection('billing_months').subscribe('*', () => {
-        fetchBillingMonths();
+        triggerFetch();
       }).catch((e) => {
         console.warn("PB: billing_months subscription error", e);
       });
     } catch (err) {}
 
     return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
       try {
         pb.collection('billing_rows').unsubscribe('*').catch(() => {});
         pb.collection('users_data').unsubscribe('*').catch(() => {});
@@ -2262,16 +2348,18 @@ export const pocketbaseService = {
 
   // --- Ledger Folders ---
   subscribeLedgerFolders: (callback: (folders: any[]) => void, dealerId?: string) => {
+    const resolvedId = dealerId || 'main';
     return subscribeTable('ledger_folders', callback, (row) => ({
       id: row.folder_id || row.id,
       name: row.name,
       connectedMonthId: row.connected_month_id || row.connectedMonthId || '',
       createdAt: row.created ? new Date(row.created).getTime() : Date.now()
-    }), dealerId);
+    }), resolvedId);
   },
 
-  subscribeLedgerSheetFolderMap: (callback: (map: any) => void, dealerId: string = 'main') => {
-    const docId = `ledger_sheet_map_${dealerId}`;
+  subscribeLedgerSheetFolderMap: (callback: (map: any) => void, dealerId?: string) => {
+    const resolvedId = dealerId || 'main';
+    const docId = `ledger_sheet_map_${resolvedId}`;
     const fetchMap = async () => {
       try {
         const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
@@ -2297,8 +2385,9 @@ export const pocketbaseService = {
     };
   },
 
-  subscribeFolderMonthMap: (callback: (map: any) => void, dealerId: string = 'main') => {
-    const docId = `folder_month_map_${dealerId}`;
+  subscribeFolderMonthMap: (callback: (map: any) => void, dealerId?: string) => {
+    const resolvedId = dealerId || 'main';
+    const docId = `folder_month_map_${resolvedId}`;
     const fetchMap = async () => {
       try {
         const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
@@ -2324,9 +2413,10 @@ export const pocketbaseService = {
     };
   },
 
-  updateFolderMonthMap: async (map: any, tenantId: string = 'main') => {
+  updateFolderMonthMap: async (map: any, tenantId?: string) => {
+    const resolvedId = tenantId || 'main';
     try {
-      const docId = `folder_month_map_${tenantId}`;
+      const docId = `folder_month_map_${resolvedId}`;
       const payload = {
         config_type: docId,
         dashboard_subtext: JSON.stringify(map)
@@ -2337,9 +2427,10 @@ export const pocketbaseService = {
     }
   },
 
-  getLedgerFolders: async (tenantId: string = 'main') => {
+  getLedgerFolders: async (tenantId?: string) => {
+    const resolvedId = tenantId || 'main';
     try {
-      const records = await pb.collection('ledger_folders').getFullList({ filter: `tenant_id = "${tenantId}"` });
+      const records = await pb.collection('ledger_folders').getFullList({ filter: `tenant_id = "${resolvedId}"` });
       const map: any = {};
       records.forEach((r: any) => { map[r.folder_id] = r.name; });
       return map;
@@ -2348,9 +2439,10 @@ export const pocketbaseService = {
     }
   },
 
-  saveLedgerFolders: async (folders: any[], tenantId: string = 'main') => {
+  saveLedgerFolders: async (folders: any[], tenantId?: string) => {
+    const resolvedId = tenantId || 'main';
     try {
-      const existing = await pb.collection('ledger_folders').getFullList({ filter: `tenant_id = "${tenantId}"` });
+      const existing = await pb.collection('ledger_folders').getFullList({ filter: `tenant_id = "${resolvedId}"` });
       const existingMap = new Map(existing.map(ex => [ex.folder_id, ex]));
 
       // Create or update
@@ -2373,7 +2465,7 @@ export const pocketbaseService = {
             folder_id: folderId,
             name,
             connected_month_id: connectedMonthId,
-            tenant_id: tenantId
+            tenant_id: resolvedId
           }).catch(() => {});
         }
       }
@@ -2390,13 +2482,15 @@ export const pocketbaseService = {
     }
   },
 
-  updateLedgerFolders: async (folders: any[], tenantId: string = 'main') => {
-    await pocketbaseService.saveLedgerFolders(folders, tenantId);
+  updateLedgerFolders: async (folders: any[], tenantId?: string) => {
+    const resolvedId = tenantId || 'main';
+    await pocketbaseService.saveLedgerFolders(folders, resolvedId);
   },
 
-  updateLedgerSheetFolderMap: async (map: any, tenantId: string = 'main') => {
+  updateLedgerSheetFolderMap: async (map: any, tenantId?: string) => {
+    const resolvedId = tenantId || 'main';
     try {
-      const docId = `ledger_sheet_map_${tenantId}`;
+      const docId = `ledger_sheet_map_${resolvedId}`;
       const payload = {
         config_type: docId,
         dashboard_subtext: JSON.stringify(map)
@@ -2511,19 +2605,21 @@ export const pocketbaseService = {
   },
 
   subscribeLedgerSheets: (callback: (sheets: any[]) => void, dealerId?: string) => {
+    const resolvedId = dealerId || 'main';
     return subscribeTable('ledger_sheets', callback, (r: any) => {
       const item = fromDb('ledger_sheets', r);
       item.id = r.id;
       item.createdAt = r.created_at || new Date(r.created).getTime();
       item.updatedAt = new Date(r.updated).getTime();
       return item;
-    }, dealerId);
+    }, resolvedId);
   },
 
-  saveLedgerSheet: async (sheet: any, tenantId: string = 'main') => {
+  saveLedgerSheet: async (sheet: any, tenantId?: string) => {
+    const resolvedId = tenantId || 'main';
     try {
       const dbRow = toDb('ledger_sheets', sheet);
-      dbRow.dealer_id = tenantId;
+      dbRow.dealer_id = resolvedId;
 
       if (!dbRow.created_at) {
         dbRow.created_at = Date.now();

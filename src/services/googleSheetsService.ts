@@ -1,7 +1,7 @@
 // src/services/googleSheetsService.ts
 import { safeStringify } from '../lib/utils';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
-import { supabase } from '../../supabaseClient';
+import { pb } from '../lib/pocketbase';
 
 const getApiUrl = (endpoint: string): string => {
   const host = window.location.hostname;
@@ -59,43 +59,38 @@ try {
 export const googleSheetsService = {
   syncConfigToFirestore: async (updates: any) => {
     try {
-      const { data, error: fetchErr } = await supabase
-        .from('branding_config')
-        .select('*')
-        .eq('id', 'google_sheets')
-        .maybeSingle();
-
       let existing = {};
-      if (!fetchErr && data && data.dashboard_subtext) {
-        try {
-          existing = JSON.parse(data.dashboard_subtext);
-        } catch (e) {}
-      }
+      try {
+        const record = await pb.collection('branding_config').getFirstListItem('config_type = "google_sheets"');
+        if (record && record.dashboard_subtext) {
+          existing = JSON.parse(record.dashboard_subtext);
+        }
+      } catch (e) {}
 
       const merged = { ...existing, ...updates, updatedAt: Date.now() };
 
       const payload = {
-        id: 'google_sheets',
+        config_type: 'google_sheets',
         dashboard_subtext: JSON.stringify(merged),
         updated_at: Date.now()
       };
 
-      await supabase.from('branding_config').upsert(payload);
+      try {
+        const record = await pb.collection('branding_config').getFirstListItem('config_type = "google_sheets"');
+        await pb.collection('branding_config').update(record.id, payload);
+      } catch (e) {
+        await pb.collection('branding_config').create(payload);
+      }
     } catch (e) {
-      console.warn("Failed syncing Google Sheets config to Supabase:", e);
+      console.warn("Failed syncing Google Sheets config to PocketBase:", e);
     }
   },
 
   loadConfigFromFirestore: async () => {
     try {
-      const { data, error } = await supabase
-        .from('branding_config')
-        .select('*')
-        .eq('id', 'google_sheets')
-        .maybeSingle();
-
-      if (!error && data && data.dashboard_subtext) {
-        const parsed = JSON.parse(data.dashboard_subtext);
+      const record = await pb.collection('branding_config').getFirstListItem('config_type = "google_sheets"');
+      if (record && record.dashboard_subtext) {
+        const parsed = JSON.parse(record.dashboard_subtext);
         if (parsed.tokens) {
           configCache.tokens = parsed.tokens;
           safeLocalStorage.setItem(TOKEN_KEY, safeStringify(parsed.tokens));
@@ -116,7 +111,7 @@ export const googleSheetsService = {
         return parsed;
       }
     } catch (e) {
-      console.warn("Failed loading Google Sheets config from Supabase:", e);
+      console.warn("Failed loading Google Sheets config from PocketBase:", e);
     }
     return null;
   },
@@ -124,14 +119,9 @@ export const googleSheetsService = {
   subscribeGoogleSheetsConfig: (callback: (data: any) => void) => {
     const fetchConfig = async () => {
       try {
-        const { data, error } = await supabase
-          .from('branding_config')
-          .select('*')
-          .eq('id', 'google_sheets')
-          .maybeSingle();
-
-        if (!error && data && data.dashboard_subtext) {
-          const parsed = JSON.parse(data.dashboard_subtext);
+        const record = await pb.collection('branding_config').getFirstListItem('config_type = "google_sheets"');
+        if (record && record.dashboard_subtext) {
+          const parsed = JSON.parse(record.dashboard_subtext);
           
           if (parsed.tokens) {
             configCache.tokens = parsed.tokens;
@@ -171,24 +161,25 @@ export const googleSheetsService = {
           callback(null);
         }
       } catch (e) {
-        console.warn("Failed loading Supabase inside subscription:", e);
+        console.warn("Failed loading PocketBase config inside subscription:", e);
       }
     };
 
     fetchConfig();
 
-    const channelId = `google_sheets_config_realtime_${Math.random().toString(36).substring(2, 11)}`;
-    console.log(`[Realtime] Opening channel ${channelId} for google_sheets config`);
-    const channel = supabase
-      .channel(channelId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.google_sheets' }, () => {
+    console.log(`[Realtime] Subscribing to PocketBase branding_config for google_sheets changes`);
+    
+    pb.collection('branding_config').subscribe('*', (e) => {
+      if (e.record && e.record.config_type === 'google_sheets') {
         fetchConfig();
-      })
-      .subscribe();
+      }
+    }).catch((err) => {
+      console.warn("Failed subscribing to PocketBase branding_config realtime updates:", err);
+    });
 
     return () => {
-      console.log(`[Realtime] Closing channel ${channelId}`);
-      supabase.removeChannel(channel);
+      console.log(`[Realtime] Unsubscribing from PocketBase branding_config`);
+      pb.collection('branding_config').unsubscribe('*').catch(() => {});
     };
   },
 
@@ -303,37 +294,32 @@ export const googleSheetsService = {
           console.warn("Standard popup blocked or failed:", popupErr);
         }
 
-        // Active Supabase realtime synchronization listener so that even if the popup was opened in Chrome/Brave/Edge or externally,
-        // we detect the new tokens written to Supabase immediately!
-        let unsubSupabase = () => {};
+        // Active PocketBase realtime synchronization listener so that even if the popup was opened in Chrome/Brave/Edge or externally,
+        // we detect the new tokens written to PocketBase immediately!
+        let unsubPocketBase = () => {};
         try {
-          const channelId = `google_sheets_auth_realtime_${Math.random().toString(36).substring(2, 11)}`;
-          console.log(`[Realtime] Opening channel ${channelId} for google_sheets auth polling`);
-          const channel = supabase
-            .channel(channelId)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config', filter: 'id=eq.google_sheets' }, (payload) => {
-              const dataRow = payload.new as any;
-              if (dataRow && dataRow.dashboard_subtext) {
-                try {
-                  const data = JSON.parse(dataRow.dashboard_subtext);
-                  if (data && data.tokens && data.updatedAt && data.updatedAt >= startTime - 15000) {
-                    console.log("googleSheetsService: Detected fresh tokens written to Supabase in real-time!");
-                    googleSheetsService.saveTokens(data.tokens);
-                    cleanup();
-                    try { if (popup && !popup.closed) popup.close(); } catch (e) {}
-                    resolve(data.tokens);
-                  }
-                } catch (pe) {}
-              }
-            })
-            .subscribe();
+          console.log(`[Realtime] Subscribing to PocketBase branding_config for google_sheets auth polling`);
+          pb.collection('branding_config').subscribe('*', (e) => {
+            if (e.record && e.record.config_type === 'google_sheets' && e.record.dashboard_subtext) {
+              try {
+                const data = JSON.parse(e.record.dashboard_subtext);
+                if (data && data.tokens && data.updatedAt && data.updatedAt >= startTime - 15000) {
+                  console.log("googleSheetsService: Detected fresh tokens written to PocketBase in real-time!");
+                  googleSheetsService.saveTokens(data.tokens);
+                  cleanup();
+                  try { if (popup && !popup.closed) popup.close(); } catch (err) {}
+                  resolve(data.tokens);
+                }
+              } catch (pe) {}
+            }
+          }).catch(() => {});
 
-          unsubSupabase = () => {
-            console.log(`[Realtime] Closing channel ${channelId}`);
-            supabase.removeChannel(channel);
+          unsubPocketBase = () => {
+            console.log(`[Realtime] Unsubscribing from PocketBase branding_config auth polling`);
+            pb.collection('branding_config').unsubscribe('*').catch(() => {});
           };
         } catch (fsErr) {
-          console.warn("Could not register live Supabase oauth listener fallback:", fsErr);
+          console.warn("Could not register live PocketBase oauth listener fallback:", fsErr);
         }
 
         const messageHandler = (event: MessageEvent) => {
@@ -363,7 +349,7 @@ export const googleSheetsService = {
           } catch (e) {}
 
           if (popup && popup.closed) {
-            // Wait 2 more seconds in case Supabase pushes the fresh tokens or directTokensStr is arriving
+            // Wait 2 more seconds in case PocketBase pushes the fresh tokens or directTokensStr is arriving
             setTimeout(() => {
               try {
                 const directTokensStr = safeLocalStorage.getItem('gts_sync_google_tokens_direct');
@@ -383,7 +369,7 @@ export const googleSheetsService = {
         const cleanup = () => {
           window.removeEventListener('message', messageHandler);
           clearInterval(checkTimer);
-          unsubSupabase();
+          unsubPocketBase();
         };
 
         window.addEventListener('message', messageHandler);

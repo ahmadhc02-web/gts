@@ -24,6 +24,8 @@ interface EntrySheetProps {
   appConfig?: any;
   billingMonths?: any[];
   initialShowUserLedger?: boolean;
+  setBillingMonths?: React.Dispatch<React.SetStateAction<any[]>>;
+  lastLocalEditTime?: React.MutableRefObject<Record<string, number>>;
 }
 
 interface Table1Row {
@@ -55,7 +57,9 @@ export default function EntrySheet({
   isBillingUnlocked,
   appConfig,
   billingMonths = [],
-  initialShowUserLedger = false
+  initialShowUserLedger = false,
+  setBillingMonths,
+  lastLocalEditTime
 }: EntrySheetProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
@@ -410,7 +414,7 @@ export default function EntrySheet({
 
       toast.success(`📁 Folder "${folderToDelete.name}" moved to Recycle Bin!`);
     } catch (error: any) {
-      console.error("Supabase Delete Error:", error);
+      console.error("PocketBase Delete Error:", error);
       
       // Rollback UI state and localStorage upon failure to prevent inconsistent states
       setFolders(previousFolders);
@@ -418,7 +422,7 @@ export default function EntrySheet({
       localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(previousFolders));
       localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(previousMap));
 
-      toast.error(`Database Error: Failed to delete folder. Remind: Please check your Supabase RLS (Row Level Security) policies on the 'branding_config' table to allow updates!`, {
+      toast.error(`Database Error: Failed to delete folder. Please check your PocketBase connection or permission rules!`, {
         id: `folder-delete-error-${folderId}`,
         duration: 8000
       });
@@ -1380,6 +1384,7 @@ export default function EntrySheet({
       });
       return;
     }
+    const allSyncedUsersSummary: string[] = [];
     try {
       // Build finalized synced list of sheets
       const currentSyncSheets = [...sheets];
@@ -1552,110 +1557,172 @@ export default function EntrySheet({
           const targetMonthId = targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined;
 
           if (targetMonthId) {
-            let targetMonthRows: any[] = [];
-            try {
-              // Fetch directly from database for instant and 100% reliable real-time updates
-              targetMonthRows = await pocketbaseService.getBillingMonthRowsDirect(targetMonthId, activeDealerId || 'main');
-            } catch (err) {
-              console.warn("Failed to fetch billing month rows directly:", err);
-            }
+            const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
+            let targetMonthRows: any[] = targetMonthDoc?.rows || [];
 
             if (targetMonthRows.length === 0) {
-              const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
-              targetMonthRows = targetMonthDoc?.rows || [];
+              try {
+                // Fallback to direct database query only if not in state
+                targetMonthRows = await pocketbaseService.getBillingMonthRowsDirect(targetMonthId, activeDealerId || 'main');
+              } catch (err) {
+                console.warn("Failed to fetch billing month rows directly:", err);
+              }
             }
             
-            if (targetMonthRows.length > 0) {
-              try {
-                const updatedBillingRows = [...targetMonthRows];
-                let updatedCount = 0;
+            try {
+              const updatedBillingRows = [...targetMonthRows];
+              let updatedCount = 0;
 
-                sheetPayload.table1Rows.forEach((r) => {
-                  const hasId = r.cId && r.cId.trim();
-                  const hasName = r.name && r.name.trim();
-                  if (!hasId && !hasName) return; // skip empty rows
+              sheetPayload.table1Rows.forEach((r) => {
+                const hasId = r.cId && r.cId.trim();
+                const hasName = r.name && r.name.trim();
+                if (!hasId && !hasName) return; // skip empty rows
 
-                  let matchedIdx = -1;
+                let matchedIdx = -1;
 
-                  // 1. Match using precise metadata from suggestions
-                  if (r.clientId || r.clientUsername) {
-                    const searchClientId = (r.clientId || '').trim().toLowerCase();
-                    const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
-                    matchedIdx = updatedBillingRows.findIndex((br: any) => 
-                      (searchClientId && br.clientId && br.clientId.trim().toLowerCase() === searchClientId) ||
-                      (searchClientUsername && br.username && br.username.trim().toLowerCase() === searchClientUsername)
-                    );
-                  }
-
-                  // 2. Fallback to typed matching by ID or Username
-                  if (matchedIdx === -1 && hasId) {
-                    const searchId = r.cId.trim().toLowerCase();
-                    matchedIdx = updatedBillingRows.findIndex((br: any) => 
-                      (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
-                      (br.username && br.username.trim().toLowerCase() === searchId)
-                    );
-                  }
-
-                  // 3. Last fallback: match by Name
-                  if (matchedIdx === -1 && hasName) {
-                    const searchName = r.name.trim().toLowerCase();
-                    matchedIdx = updatedBillingRows.findIndex((br: any) => 
-                      br.name && br.name.trim().toLowerCase() === searchName
-                    );
-                  }
-
-                  if (matchedIdx !== -1) {
-                    const amountVal = Number(r.amount) || 0;
-                    const amountStr = String(r.amount).toUpperCase();
-                    const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL'].includes(amountStr);
-                    const row = updatedBillingRows[matchedIdx];
-                    
-                    // Do not automatically add payments to TDC or DC users
-                    if (row.paymentStatus === 'tdc' || row.paymentStatus === 'dc') {
-                      return;
-                    }
-
-                    const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
-                    const base = parseFloat(row.baseAmount || 0);
-
-                    // Keep original CR and totalAmount intact, just record payment
-                    const totalAmount = base + savedOrigCr;
-                    let finalStatus = 'partial';
-                    
-                    if (isStatusString) {
-                      finalStatus = amountStr.toLowerCase();
-                    } else if (r.status) {
-                      finalStatus = r.status;
-                    } else if (amountVal === 0) {
-                      finalStatus = 'unpaid';
-                    } else if (amountVal >= totalAmount) {
-                      finalStatus = 'paid';
-                    }
-
-                    updatedBillingRows[matchedIdx] = {
-                      ...row,
-                      _originalCr: savedOrigCr,
-                      cr: savedOrigCr, // Do not destructively modify CR
-                      totalAmount: totalAmount, // Do not destructively modify totalAmount
-                      paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
-                      paymentStatus: finalStatus
-                    };
-                    updatedCount++;
-                  }
-                });
-
-                if (updatedCount > 0) {
-                  totalUpdatedBillingCount += updatedCount;
-                  await pocketbaseService.saveBillingMonth(
-                    targetMonthId, 
-                    updatedBillingRows, 
-                    currentUser.username || 'admin',
-                    activeDealerId
+                // 1. Match using precise metadata from suggestions
+                if (r.clientId || r.clientUsername) {
+                  const searchClientId = (r.clientId || '').trim().toLowerCase();
+                  const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
+                  matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                    (searchClientId && br.clientId && br.clientId.trim().toLowerCase() === searchClientId) ||
+                    (searchClientUsername && br.username && br.username.trim().toLowerCase() === searchClientUsername)
                   );
                 }
-              } catch (billingErr: any) {
-                console.error("Failed to auto-update billing status for sheet index:", i, billingErr);
+
+                // 2. Fallback to typed matching by ID or Username
+                if (matchedIdx === -1 && hasId) {
+                  const searchId = r.cId.trim().toLowerCase();
+                  matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                    (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
+                    (br.username && br.username.trim().toLowerCase() === searchId)
+                  );
+                }
+
+                // 3. Last fallback: match by Name
+                if (matchedIdx === -1 && hasName) {
+                  const searchName = r.name.trim().toLowerCase();
+                  matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                    br.name && br.name.trim().toLowerCase() === searchName
+                  );
+                }
+
+                const amountVal = Number(r.amount) || 0;
+                const amountStr = String(r.amount).toUpperCase();
+                const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL'].includes(amountStr);
+
+                if (matchedIdx !== -1) {
+                  const row = updatedBillingRows[matchedIdx];
+
+                  const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
+                  const base = parseFloat(row.baseAmount || 0);
+
+                  // Keep original CR and totalAmount intact, just record payment
+                  const totalAmount = base + savedOrigCr;
+                  let finalStatus = 'partial';
+                  
+                  if (isStatusString) {
+                    finalStatus = amountStr.toLowerCase();
+                  } else if (r.status) {
+                    finalStatus = r.status;
+                  } else if (amountVal === 0) {
+                    finalStatus = 'unpaid';
+                  } else if (amountVal >= totalAmount) {
+                    finalStatus = 'paid';
+                  }
+
+                  updatedBillingRows[matchedIdx] = {
+                    ...row,
+                    _originalCr: savedOrigCr,
+                    cr: savedOrigCr, // Do not destructively modify CR
+                    totalAmount: totalAmount, // Do not destructively modify totalAmount
+                    paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
+                    paymentStatus: finalStatus
+                  };
+                  updatedCount++;
+
+                  const pName = row.name || r.name;
+                  const pUser = row.username || r.clientUsername || r.cId || '';
+                  const detailStr = isStatusString ? finalStatus.toUpperCase() : `PKR ${amountVal.toLocaleString()}`;
+                  allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr}`);
+                } else {
+                  // NEW USER ADDED: Not present in the billing month rows yet, append them!
+                  const client = clients.find((c: any) => 
+                    (r.clientId && c.id === r.clientId) ||
+                    (r.clientUsername && c.username?.toLowerCase() === r.clientUsername.toLowerCase()) ||
+                    (r.cId && (c.id === r.cId || c.username?.toLowerCase() === r.cId.toLowerCase())) ||
+                    (r.name && c.name?.toLowerCase() === r.name.toLowerCase())
+                  );
+
+                  const baseAmount = client ? (Number(client.baseAmount) || 0) : amountVal;
+                  const cr = client ? (Number(client.cr) || 0) : 0;
+                  const totalAmount = baseAmount + cr;
+                  
+                  let finalStatus = 'partial';
+                  if (isStatusString) {
+                    finalStatus = amountStr.toLowerCase();
+                  } else if (r.status) {
+                    finalStatus = r.status;
+                  } else if (amountVal === 0) {
+                    finalStatus = 'unpaid';
+                  } else if (amountVal >= totalAmount) {
+                    finalStatus = 'paid';
+                  }
+
+                  const newRow = {
+                    id: client?.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                    clientId: client?.id || r.cId || '',
+                    name: client?.name || r.name || 'Unknown',
+                    username: client?.username || r.clientUsername || r.cId || '',
+                    mobileNumber: client?.mobileNumber || '',
+                    area: client?.area || r.area || area || '',
+                    rt: client?.rt || '',
+                    baseAmount: baseAmount,
+                    cr: cr,
+                    totalAmount: totalAmount,
+                    billingDay: client?.billingDay || '5',
+                    paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
+                    paymentStatus: finalStatus,
+                    comments: r.comments || '',
+                    serNam: client?.serNam || '',
+                    pkgDetails: client?.pkgDetails || '',
+                    connectionDate: client?.connectionDate || '',
+                    devicePrice: client?.devicePrice || '',
+                    abl: client?.abl || '',
+                    network: client?.network || ''
+                  };
+                  updatedBillingRows.push(newRow);
+                  updatedCount++;
+
+                  const pName = newRow.name;
+                  const pUser = newRow.username || r.cId || '';
+                  const detailStr = isStatusString ? finalStatus.toUpperCase() : `PKR ${amountVal.toLocaleString()}`;
+                  allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr} (Added to Sheet)`);
+                }
+              });
+
+              if (updatedCount > 0) {
+                totalUpdatedBillingCount += updatedCount;
+
+                // INSTANT STATE SYNCHRONIZATION FOR CONNECTED RECOVERY SHEET
+                if (setBillingMonths) {
+                  if (lastLocalEditTime && lastLocalEditTime.current) {
+                    lastLocalEditTime.current[targetMonthId] = Date.now();
+                  }
+                  setBillingMonths(prev => 
+                    prev.map(m => m.id === targetMonthId ? { ...m, rows: updatedBillingRows } : m)
+                  );
+                }
+
+                await pocketbaseService.saveBillingMonth(
+                  targetMonthId, 
+                  updatedBillingRows, 
+                  currentUser.username || 'admin',
+                  activeDealerId
+                );
               }
+            } catch (billingErr: any) {
+              console.error("Failed to auto-update billing status for sheet index:", i, billingErr);
             }
           }
         }
@@ -1663,7 +1730,22 @@ export default function EntrySheet({
 
       if (anySaved) {
         toast.success(loadedSheetId ? "Ledger page updated successfully!" : "Ledger sheet compile successfully saved!");
-        if (totalUpdatedBillingCount > 0) {
+        
+        if (allSyncedUsersSummary.length > 0) {
+          toast.success("🎯 Connected Recovery Sheet Synced!", {
+            description: (
+              <div className="mt-1.5 space-y-1 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                <p className="font-extrabold text-emerald-600 dark:text-emerald-400">Successfully synced recovery entries for {allSyncedUsersSummary.length} user(s):</p>
+                <ul className="list-disc pl-3 max-h-32 overflow-y-auto space-y-0.5">
+                  {allSyncedUsersSummary.map((summary, idx) => (
+                    <li key={idx} className="font-mono">{summary}</li>
+                  ))}
+                </ul>
+              </div>
+            ),
+            duration: 8000
+          });
+        } else if (totalUpdatedBillingCount > 0) {
           toast.success(`Automatically updated ${totalUpdatedBillingCount} subscriber(s) designated recovery amounts in ${currentMonthId}!`);
         }
         

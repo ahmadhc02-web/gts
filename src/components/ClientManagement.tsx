@@ -145,11 +145,11 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         setClients(prev => prev.filter(c => c.id !== payload.old.id));
       }
     };
-    window.addEventListener('supabase-clients-updated', handleClientsUpdated);
-    window.addEventListener('supabase-clients-updated-incremental', handleIncrementalUpdate);
+    window.addEventListener('pocketbase-clients-updated', handleClientsUpdated);
+    window.addEventListener('pocketbase-clients-updated-incremental', handleIncrementalUpdate);
     return () => {
-      window.removeEventListener('supabase-clients-updated', handleClientsUpdated);
-      window.removeEventListener('supabase-clients-updated-incremental', handleIncrementalUpdate);
+      window.removeEventListener('pocketbase-clients-updated', handleClientsUpdated);
+      window.removeEventListener('pocketbase-clients-updated-incremental', handleIncrementalUpdate);
     };
   }, []);
 

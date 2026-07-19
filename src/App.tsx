@@ -14,7 +14,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import { safeStringify, processScheduledComplaints } from './lib/utils';
 import FiberLoading from './components/FiberLoading';
 import ServiceMonitor from './components/ServiceMonitor';
-import { supabase } from '../supabaseClient';
 import { Clock } from 'lucide-react';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -671,7 +670,7 @@ export default function App() {
       }
     };
 
-    // Completely bypass Firebase Auth in favor of direct Supabase loading
+    // Completely bypass Firebase Auth in favor of direct PocketBase loading
     const startBypass = async () => {
       const mockUserAuth = { uid: 'local_anon_user' };
       setPbUser(mockUserAuth);
@@ -773,7 +772,7 @@ export default function App() {
       console.log("[PocketBase Realtime Sync] Fetching updated clients...");
       const data = await pocketbaseService.getClients(tenantId);
       // Dispatch custom window event to trigger updates across ClientManagement and AdminPanel components
-      window.dispatchEvent(new CustomEvent('supabase-clients-updated', { detail: data }));
+      window.dispatchEvent(new CustomEvent('pocketbase-clients-updated', { detail: data }));
     } catch (e) {
       console.error("[PocketBase Realtime Sync] fetchClients failed:", e);
     }
@@ -798,7 +797,7 @@ export default function App() {
         });
       }
     } catch (e) {
-      console.error("[Supabase Realtime Sync] fetchBrandingConfig failed:", e);
+      console.error("[PocketBase Realtime Sync] fetchBrandingConfig failed:", e);
     }
   };
 
