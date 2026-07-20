@@ -1419,6 +1419,7 @@ export default function EntrySheet({
       let totalUpdatedBillingCount = 0;
 
       let lastSavedId: string | null = null;
+      const accumulatedBillingMonths: Record<string, any[]> = {};
 
       for (let i = 0; i < currentSyncSheets.length; i++) {
         const sh = currentSyncSheets[i];
@@ -1554,11 +1555,15 @@ export default function EntrySheet({
           }
 
           const folderObj = folders.find(f => f.id === targetFolderId);
-          const targetMonthId = targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined;
+          const targetMonthId = (targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined) || currentMonthId;
 
           if (targetMonthId) {
-            const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
-            let targetMonthRows: any[] = targetMonthDoc?.rows || [];
+            let targetMonthRows: any[] = accumulatedBillingMonths[targetMonthId] || [];
+            
+            if (targetMonthRows.length === 0) {
+              const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
+              targetMonthRows = targetMonthDoc?.rows || [];
+            }
 
             if (targetMonthRows.length === 0) {
               try {
@@ -1567,6 +1572,49 @@ export default function EntrySheet({
               } catch (err) {
                 console.warn("Failed to fetch billing month rows directly:", err);
               }
+            }
+
+            if (targetMonthRows.length === 0 && clients && clients.length > 0) {
+              // Construct default rows from clients to prevent deleting other rows in syncBillingRows
+              targetMonthRows = clients.map((c: any) => {
+                let cleanBase = 1000;
+                if (c.pkgDetails) {
+                  const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
+                  if (digitsMatch && digitsMatch.length > 0) {
+                    cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
+                  } else {
+                    const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
+                    if (lowDigits && lowDigits.length >= 3) {
+                      cleanBase = parseInt(lowDigits, 10);
+                    }
+                  }
+                }
+                return {
+                  id: c.id,
+                  clientId: c.id,
+                  name: c.name,
+                  username: c.username,
+                  mobileNumber: c.mobileNumber || c.number || '',
+                  area: c.area || '',
+                  rt: c.rt || '',
+                  baseAmount: cleanBase,
+                  cr: Number(c.cr) || 0,
+                  totalAmount: cleanBase + (Number(c.cr) || 0),
+                  billingDay: '5',
+                  paymentReceived: 0,
+                  paymentStatus: 'unpaid',
+                  comments: '',
+                  occ: '',
+                  serNam: '',
+                  pkgDetails: c.pkgDetails || '',
+                  sag: '',
+                  lai: '',
+                  connectionDate: '',
+                  devicePrice: 0,
+                  abl: 0,
+                  network: ''
+                };
+              });
             }
             
             try {
@@ -1700,31 +1748,58 @@ export default function EntrySheet({
                   allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr} (Added to Sheet)`);
                 }
               });
-
               if (updatedCount > 0) {
                 totalUpdatedBillingCount += updatedCount;
-
-                // INSTANT STATE SYNCHRONIZATION FOR CONNECTED RECOVERY SHEET
-                if (setBillingMonths) {
-                  if (lastLocalEditTime && lastLocalEditTime.current) {
-                    lastLocalEditTime.current[targetMonthId] = Date.now();
-                  }
-                  setBillingMonths(prev => 
-                    prev.map(m => m.id === targetMonthId ? { ...m, rows: updatedBillingRows } : m)
-                  );
-                }
-
-                await pocketbaseService.saveBillingMonth(
-                  targetMonthId, 
-                  updatedBillingRows, 
-                  currentUser.username || 'admin',
-                  activeDealerId
-                );
+                // Store in accumulator map so multiple sheets don't overwrite each other
+                accumulatedBillingMonths[targetMonthId] = updatedBillingRows;
               }
             } catch (billingErr: any) {
               console.error("Failed to auto-update billing status for sheet index:", i, billingErr);
             }
           }
+        }
+      }
+
+      // After the loop, persist all accumulated billing months
+      for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
+        if (setBillingMonths) {
+          if (lastLocalEditTime && lastLocalEditTime.current) {
+            lastLocalEditTime.current[monthId] = Date.now();
+          }
+          
+          setBillingMonths(prev => {
+            const activeDocIndex = prev.findIndex(m => m.id === monthId);
+            if (activeDocIndex === -1) return prev;
+            
+            const activeDoc = prev[activeDocIndex];
+            const prevRows = activeDoc.rows || [];
+            
+            // Merge accumulatedRows into prevRows so we don't lose concurrent changes
+            const mergedRows = [...prevRows];
+            for (const accRow of accumulatedRows) {
+               const idx = mergedRows.findIndex(r => (r.clientId && r.clientId === accRow.clientId) || (r.username && r.username.toLowerCase() === accRow.username?.toLowerCase()));
+               if (idx !== -1) {
+                 mergedRows[idx] = accRow; // overwrite with A4 edit
+               } else {
+                 mergedRows.push(accRow);
+               }
+            }
+            
+            const newPrev = [...prev];
+            newPrev[activeDocIndex] = { ...activeDoc, rows: mergedRows };
+            
+            pocketbaseService.saveBillingMonth(
+              monthId, 
+              mergedRows, 
+              currentUser.username || 'admin',
+              activeDealerId,
+              true
+            ).catch(err => {
+              console.warn("Failed to save billing month background sync:", err);
+            });
+            
+            return newPrev;
+          });
         }
       }
 
@@ -2128,6 +2203,7 @@ export default function EntrySheet({
 
     updated[index] = {
       ...updated[index],
+      cId: client.username || '',
       name: client.name || '',
       amount: amount,
       originalAmount: amount,

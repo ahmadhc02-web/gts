@@ -157,6 +157,12 @@ function toDb(table: string, obj: any): any {
   const result: any = {};
   for (const [clientKey, dbKey] of Object.entries(tableMapping)) {
     if (obj[clientKey] !== undefined) {
+      if (table === 'users' && clientKey === 'password' && (!obj[clientKey] || String(obj[clientKey]).trim() === '')) {
+        continue;
+      }
+      if (table === 'users' && clientKey === 'email' && (!obj[clientKey] || String(obj[clientKey]).trim() === '')) {
+        continue;
+      }
       if (table === 'complaints' && clientKey === 'reviews') {
         result[dbKey] = Array.isArray(obj[clientKey]) ? JSON.stringify(obj[clientKey]) : obj[clientKey];
       } else {
@@ -392,8 +398,12 @@ async function upsertPB(collectionName: string, idField: string, idValue: string
       }
       return await pb.collection(collectionName).create(payload);
     }
-  } catch (e) {
-    console.error(`upsertPB error for ${collectionName}:`, e);
+  } catch (e: any) {
+    let details = '';
+    if (e.data && typeof e.data === 'object') {
+      details = ` (Details: ${JSON.stringify(e.data)})`;
+    }
+    console.error(`upsertPB error for ${collectionName}:${details}`, e);
     throw e;
   }
 }
@@ -736,7 +746,7 @@ export const pocketbaseService = {
   _saveBillingMonthTimers: {} as Record<string, any>,
   _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string }>,
 
-  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main') {
+  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false) {
     const key = `${monthId}_${dealerId}`;
     if (!this._saveBillingMonthLatestRows) {
       this._saveBillingMonthLatestRows = {};
@@ -745,6 +755,19 @@ export const pocketbaseService = {
 
     if (!this._saveBillingMonthTimers) {
       this._saveBillingMonthTimers = {};
+    }
+
+    if (forceImmediate) {
+      if (this._saveBillingMonthTimers[key]) {
+        clearTimeout(this._saveBillingMonthTimers[key]);
+        delete this._saveBillingMonthTimers[key];
+      }
+      const latest = this._saveBillingMonthLatestRows[key];
+      if (latest) {
+        delete this._saveBillingMonthLatestRows[key];
+        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId);
+      }
+      return;
     }
 
     // Debounce the actual save to the cloud database by 1 second.
@@ -813,12 +836,9 @@ export const pocketbaseService = {
         this.saveSyncLogsLocally();
       }
 
-      // Always sync rows to billing_rows and users_data asynchronously (non-blocking)
-      this.syncBillingRows(monthId, dealerId, rows).then(() => {
-        console.log("PB: Background sync of billing_rows completed successfully.");
-      }).catch((syncErr) => {
-        console.error("PB: Background sync of billing_rows failed:", syncErr);
-      });
+      // Sync rows to billing_rows (fully await to ensure absolute persistence before returning)
+      await this.syncBillingRows(monthId, dealerId, rows);
+      console.log("PB: Sync of billing_rows completed successfully.");
     } catch (e: any) {
       console.error("PB: Failed to save billing month", e);
       logEntry.status = 'failed';
@@ -917,33 +937,45 @@ export const pocketbaseService = {
       }
 
       // Map rows to PocketBase format
-      const mappedRows = rows.map(r => ({
-        month_id: monthId,
-        dealer_id: dealerId,
-        client_id: r.clientId || r.id || '',
-        name: r.name || '',
-        username: r.username || '',
-        mobile_number: r.mobileNumber || r.mobile || '',
-        area: r.area || '',
-        rt: r.rt || '',
-        base_amount: Number(r.baseAmount) || Number(r.amount) || 0,
-        cr: Number(r.cr) || 0,
-        total_amount: Number(r.totalAmount) || Number(r.total_amount) || 0,
-        billing_day: r.billingDay || '5',
-        payment_received: Number(r.paymentReceived) || Number(r.payment_received) || 0,
-        payment_status: r.paymentStatus || 'unpaid',
-        comments: r.comments || '',
-        occ: r.occ || '',
-        ser_nam: r.serNam || r.ser_nam || '',
-        pkg_details: r.pkgDetails || r.pkg_details || '',
-        sag: r.sag || '',
-        lai: r.lai || '',
-        connection_date: r.connectionDate || r.connection_date || '',
-        device_price: r.devicePrice || r.device_price || '',
-        abl: r.abl || '',
-        network: r.network || '',
-        updated_at: Date.now()
-      }));
+      const rawMappedRows = rows.map(r => {
+        const rowId = r.clientId || r.id || `gen_${Math.random().toString(36).substring(2, 11)}`;
+        return {
+          month_id: monthId,
+          dealer_id: dealerId,
+          client_id: rowId,
+          name: r.name || '',
+          username: r.username || '',
+          mobile_number: r.mobileNumber || r.mobile || '',
+          area: r.area || '',
+          rt: r.rt || '',
+          base_amount: Number(r.baseAmount) || Number(r.amount) || 0,
+          cr: Number(r.cr) || 0,
+          total_amount: Number(r.totalAmount) || Number(r.total_amount) || 0,
+          billing_day: r.billingDay || '5',
+          payment_received: Number(r.paymentReceived) || Number(r.payment_received) || 0,
+          payment_status: r.paymentStatus || 'unpaid',
+          comments: r.comments || '',
+          occ: r.occ || '',
+          ser_nam: r.serNam || r.ser_nam || '',
+          pkg_details: r.pkgDetails || r.pkg_details || '',
+          sag: r.sag || '',
+          lai: r.lai || '',
+          connection_date: r.connectionDate || r.connection_date || '',
+          device_price: (r.devicePrice !== undefined && r.devicePrice !== null && r.devicePrice !== '') ? Number(r.devicePrice) : ((r.device_price !== undefined && r.device_price !== null && r.device_price !== '') ? Number(r.device_price) : 0),
+          abl: (r.abl !== undefined && r.abl !== null && r.abl !== '') ? Number(r.abl) : 0,
+          network: r.network || '',
+          updated_at: Date.now()
+        };
+      });
+
+      // Deduplicate by client_id to prevent duplicate database constraints
+      const uniqueMappedRowsMap = new Map<string, any>();
+      for (const row of rawMappedRows) {
+        if (row.client_id) {
+          uniqueMappedRowsMap.set(row.client_id, row);
+        }
+      }
+      const mappedRows = Array.from(uniqueMappedRowsMap.values());
 
       const existingMap = new Map();
       existingRows.forEach(r => existingMap.set(r.client_id, r));
@@ -978,8 +1010,8 @@ export const pocketbaseService = {
             ext.sag !== newRow.sag ||
             ext.lai !== newRow.lai ||
             ext.connection_date !== newRow.connection_date ||
-            ext.device_price !== newRow.device_price ||
-            ext.abl !== newRow.abl ||
+            Number(ext.device_price) !== Number(newRow.device_price) ||
+            Number(ext.abl) !== Number(newRow.abl) ||
             ext.network !== newRow.network;
             
           if (isChanged) {
@@ -988,7 +1020,13 @@ export const pocketbaseService = {
         }
       }
 
-      const deletes = existingRows.filter(r => !keptIds.has(r.client_id)).map(r => r.id);
+      // Safeguard against destructive deletes from partial syncs (e.g., saving a single page of an A4 sheet)
+      let deletes: string[] = [];
+      if (existingRows.length > 30 && rows.length < existingRows.length * 0.4) {
+        console.warn(`[SyncBillingRows] Safeguard triggered: incoming rows count (${rows.length}) is suspiciously low compared to existing rows (${existingRows.length}). Skipping deletes to protect against data loss.`);
+      } else {
+        deletes = existingRows.filter(r => !keptIds.has(r.client_id)).map(r => r.id);
+      }
 
       let billingRowsSuccessCount = existingRows.length - deletes.length + creates.length;
       let billingRowsErrors: string[] = [];
@@ -999,8 +1037,12 @@ export const pocketbaseService = {
           const batch = items.slice(i, i + batchSize);
           try {
             await Promise.all(batch.map(item => op(item).catch((err) => {
-              billingRowsErrors.push(err.message || String(err));
-              console.error(`PB: Failed operation in billing_rows:`, err.message);
+              let errorMsg = err.message || String(err);
+              if (err.data && typeof err.data === 'object') {
+                errorMsg += ` (Details: ${JSON.stringify(err.data)})`;
+              }
+              billingRowsErrors.push(errorMsg);
+              console.error(`PB: Failed operation in billing_rows:`, errorMsg, err);
             })));
           } catch (batchErr: any) {
             billingRowsErrors.push(batchErr.message || String(batchErr));
@@ -1238,7 +1280,8 @@ export const pocketbaseService = {
 
   updateUserStatus: async (uid: string, status: UserProfile['status'], authorName: string) => {
     try {
-      await upsertPB('users', 'uid', uid, { status });
+      const dbRow = toDb('users', { status });
+      await upsertPB('users', 'uid', uid, dbRow);
       await pocketbaseService.createNotification({
         type: 'user_updated',
         message: `Identity status updated to ${status?.toUpperCase()} for UID: ${uid}`,
@@ -1286,7 +1329,8 @@ export const pocketbaseService = {
 
   updateUserPassword: async (uid: string, username: string, newPass: string, authorName: string) => {
     try {
-      await upsertPB('users', 'uid', uid, { password: newPass });
+      const dbRow = toDb('users', { password: newPass });
+      await upsertPB('users', 'uid', uid, dbRow);
       await pocketbaseService.createNotification({
         type: 'user_updated',
         message: `Security credentials updated for user: ${username}`,
@@ -1313,7 +1357,8 @@ export const pocketbaseService = {
 
   updateUserPresence: async (uid: string) => {
     try {
-      await upsertPB('users', 'uid', uid, { last_active: Date.now() });
+      const dbRow = toDb('users', { lastActive: Date.now() });
+      await upsertPB('users', 'uid', uid, dbRow);
     } catch (error) {}
   },
 

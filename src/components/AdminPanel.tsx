@@ -1335,65 +1335,70 @@ export default function AdminPanel({
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to edit billing information." });
       return;
     }
-    const activeDoc = billingMonths.find(m => m.id === currentMonthId);
-    if (!activeDoc) return;
 
     if (currentMonthId) {
       lastLocalEditTime.current[currentMonthId] = Date.now();
     }
 
     try {
-      const updatedRows = [...(activeDoc.rows || [])];
-      const targetRow = { ...updatedRows[rowIndex] };
-
-      targetRow[field] = val;
-
-      if (field === 'cr') {
-        const crVal = parseFloat(val) || 0;
-        targetRow._originalCr = crVal;
-        targetRow.cr = crVal;
-        const base = parseFloat(targetRow.baseAmount) || 0;
-        targetRow.totalAmount = base + crVal;
-      } else if (field === 'baseAmount') {
-        const baseVal = parseFloat(val) || 0;
-        const crVal = parseFloat(targetRow.cr) || 0;
-        targetRow.totalAmount = baseVal + crVal;
-      } else if (field === 'paymentReceived') {
-        // Keep original CR and totalAmount intact, just record payment
-        const received = parseFloat(val) || 0;
-        targetRow.paymentReceived = received;
-      } else if (field === 'paymentStatus') {
-        if (val === 'tdc' || val === 'dc') {
-          targetRow.baseAmount = 0;
-          const crVal = parseFloat(targetRow.cr) || 0;
-          targetRow.totalAmount = crVal;
-        }
-      }
-
-      // Automatically calculate payment status
-      if (field === 'paymentReceived' || field === 'baseAmount' || field === 'cr') {
-        const received = parseFloat(targetRow.paymentReceived) || 0;
-        const total = parseFloat(targetRow.totalAmount) || 0;
+      setBillingMonths(prev => {
+        const activeDocIndex = prev.findIndex(m => m.id === currentMonthId);
+        if (activeDocIndex === -1) return prev;
         
-        if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
-          if (received === 0) {
-            targetRow.paymentStatus = 'unpaid';
-          } else if (received >= total) {
-            targetRow.paymentStatus = 'paid';
-          } else {
-            targetRow.paymentStatus = 'partial';
+        const activeDoc = prev[activeDocIndex];
+        const updatedRows = [...(activeDoc.rows || [])];
+        if (!updatedRows[rowIndex]) return prev;
+
+        const targetRow = { ...updatedRows[rowIndex] };
+        targetRow[field] = val;
+
+        if (field === 'cr') {
+          const crVal = parseFloat(val) || 0;
+          targetRow._originalCr = crVal;
+          targetRow.cr = crVal;
+          const base = parseFloat(targetRow.baseAmount) || 0;
+          targetRow.totalAmount = base + crVal;
+        } else if (field === 'baseAmount') {
+          const baseVal = parseFloat(val) || 0;
+          const crVal = parseFloat(targetRow.cr) || 0;
+          targetRow.totalAmount = baseVal + crVal;
+        } else if (field === 'paymentReceived') {
+          const received = parseFloat(val) || 0;
+          targetRow.paymentReceived = received;
+        } else if (field === 'paymentStatus') {
+          if (val === 'tdc' || val === 'dc') {
+            targetRow.baseAmount = 0;
+            const crVal = parseFloat(targetRow.cr) || 0;
+            targetRow.totalAmount = crVal;
           }
         }
-      }
 
-      updatedRows[rowIndex] = targetRow;
-      // 1. Update local state immediately for instant UI feedback and snappy response
-      setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
+        if (field === 'paymentReceived' || field === 'baseAmount' || field === 'cr') {
+          const received = parseFloat(targetRow.paymentReceived) || 0;
+          const total = parseFloat(targetRow.totalAmount) || 0;
+          
+          if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
+            if (received === 0) {
+              targetRow.paymentStatus = 'unpaid';
+            } else if (received >= total) {
+              targetRow.paymentStatus = 'paid';
+            } else {
+              targetRow.paymentStatus = 'partial';
+            }
+          }
+        }
 
-      // 2. Persist permanently in PocketBase in background
-      pocketbaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
-         console.error("Failed to persist billing cell edit:", err);
-         toast.error("Cell auto-save issue", { description: "Changes may not have synced to cloud." });
+        updatedRows[rowIndex] = targetRow;
+        const newPrev = [...prev];
+        newPrev[activeDocIndex] = { ...activeDoc, rows: updatedRows };
+        
+        // Persist permanently in PocketBase in background using latest
+        pocketbaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
+           console.error("Failed to persist billing cell edit:", err);
+           toast.error("Cell auto-save issue", { description: "Changes may not have synced to cloud." });
+        });
+        
+        return newPrev;
       });
     } catch (err: any) {
       console.error(err);
@@ -2124,7 +2129,32 @@ export default function AdminPanel({
     const masterUsernames = new Set(dbClients.map(c => c.username?.toLowerCase().trim()).filter(Boolean));
     
     const existingRows = activeMonthDoc.rows || [];
-    const existingKeys = new Set(existingRows.map((r: any) => r.username ? `u_${r.username?.toLowerCase().trim()}` : (r.clientId ? `i_${r.clientId}` : null)).filter(Boolean));
+
+    // Check for clients that were deleted
+    let hasRemovals = false;
+    const filteredRows = existingRows.filter((row: any) => {
+      // Safeguard: Never automatically delete a row if it has an active payment or custom payment status (paid, partial, dc, tdc, comments)
+      if (Number(row.paymentReceived) > 0 || (row.paymentStatus && row.paymentStatus !== 'unpaid') || (row.comments && row.comments.trim() !== '')) {
+        return true;
+      }
+
+      const rowClientId = row.clientId || row.id;
+      // Do not delete new rows that haven't been linked or saved yet
+      if (rowClientId && !String(rowClientId).startsWith('new_row_')) {
+        if (!masterClientIds.has(rowClientId)) {
+          hasRemovals = true;
+          return false;
+        }
+      } else if (row.username) {
+        if (!masterUsernames.has(row.username?.toLowerCase().trim())) {
+          hasRemovals = true;
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const existingKeys = new Set(filteredRows.map((r: any) => r.username ? `u_${r.username?.toLowerCase().trim()}` : (r.clientId ? `i_${r.clientId}` : null)).filter(Boolean));
     
     const missingClients = dbClients.filter(c => {
       if (!c) return false;
@@ -2133,7 +2163,7 @@ export default function AdminPanel({
     });
     
     let hasUpdates = false;
-    const updatedRows = [...existingRows];
+    const updatedRows = [...filteredRows];
     
     // Check for profile updates in existing rows
     for (let i = 0; i < updatedRows.length; i++) {
@@ -2147,7 +2177,6 @@ export default function AdminPanel({
         if (row.pkgDetails !== match.pkgDetails) { 
           row.pkgDetails = match.pkgDetails;
           changed = true;
-          // Optionally update baseAmount if we want, but usually we don't overwrite manual edits to baseAmount automatically unless we do the parse:
           // We will just update the pkgDetails text so it shows correctly in Recovery Rows
         }
         if (changed) {
@@ -2157,8 +2186,8 @@ export default function AdminPanel({
       }
     }
 
-    if (missingClients.length > 0 || hasUpdates) {
-      console.log(`[Billing Auto-Sync] Adding ${missingClients.length} missing clients, Updating existing. Sheet ${currentMonthId}`);
+    if (missingClients.length > 0 || hasUpdates || hasRemovals) {
+      console.log(`[Billing Auto-Sync] Adding ${missingClients.length} missing, Removing ${hasRemovals ? 'some' : '0'} deleted, Updating. Sheet ${currentMonthId}`);
       
       const newRows = missingClients.map((c: any) => {
         let cleanBase = 1000;
@@ -2210,7 +2239,7 @@ export default function AdminPanel({
       
       // Persist in background silently
       pocketbaseService.saveBillingMonth(currentMonthId, finalRows, currentUser?.username || 'admin', activeDealerId).catch(err => {
-         console.warn("Background auto-sync for missing clients failed:", err);
+         console.warn("Background auto-sync for missing/deleted clients failed:", err);
       });
     }
   }, [masterClients, currentMonthId, activeDealerId]); // Only trigger when masterClients changes or month changes
