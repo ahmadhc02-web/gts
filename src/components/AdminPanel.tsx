@@ -206,9 +206,14 @@ export default function AdminPanel({
     return recycleItems.filter(item => {
       if (!recycleSearchTerm) return true;
       const term = recycleSearchTerm.toLowerCase();
-      return item.message?.toLowerCase().includes(term) || 
-             item.author_name?.toLowerCase().includes(term) ||
-             item.details?.originalTable?.toLowerCase().includes(term);
+      const tableName = (item.table_name || '').toLowerCase();
+      const author = (item.author_name || '').toLowerCase();
+      let recordLabel = '';
+      try {
+        const extra = JSON.parse(item.extra_data || '{}');
+        recordLabel = (extra.customerName || extra.name || extra.clientName || '').toLowerCase();
+      } catch (e) {}
+      return tableName.includes(term) || author.includes(term) || recordLabel.includes(term);
     });
   }, [recycleItems, recycleSearchTerm]);
 
@@ -245,9 +250,8 @@ export default function AdminPanel({
         console.error("Cleanup old items error:", err);
       }
 
-      const unsubscribe = pocketbaseService.subscribeNotifications((data) => {
-        const items = data.filter(n => n.type === 'recycle_bin');
-        setRecycleItems(items);
+      const unsubscribe = pocketbaseService.subscribeRecycleBin((data) => {
+        setRecycleItems(data);
         setIsRecycleLoading(false);
       }, currentUser.role !== 'super_admin' ? currentUser.dealerId : undefined);
 
@@ -1633,10 +1637,10 @@ export default function AdminPanel({
   const stats = [
     { label: branding.tabNames?.total_registry || 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: branding.tabNames?.pending_requests || 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.new_connection_pending || 'New Connection', value: complaints.filter(c => c.category === 'New Connection' && c.status === 'pending').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
+    { label: branding.tabNames?.new_connection_pending || 'New Connection', value: complaints.filter(c => c.category?.toLowerCase() === 'new connection' && c.status === 'pending').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
     { label: branding.tabNames?.in_operation || 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => c.status === 'complete' && c.category !== 'New Connection').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.connection_complete || 'Connection Complete', value: complaints.filter(c => c.category === 'New Connection' && c.status === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
+    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => c.status === 'complete' && c.category?.toLowerCase() !== 'new connection').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
+    { label: branding.tabNames?.connection_complete || 'Connection Complete', value: complaints.filter(c => c.category?.toLowerCase() === 'new connection' && c.status === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
   ];
 
   const handleTileClick = (filter: any) => {
@@ -2171,11 +2175,11 @@ export default function AdminPanel({
       const match = dbClients.find(c => c.id === row.clientId || (c.username && c.username.toLowerCase() === row.username?.toLowerCase()));
       if (match) {
         let changed = false;
-        if (row.name !== match.name) { row.name = match.name; changed = true; }
-        if (row.mobileNumber !== (match.mobileNumber || match.number || '')) { row.mobileNumber = match.mobileNumber || match.number || ''; changed = true; }
-        if (row.area !== match.area) { row.area = match.area; changed = true; }
-        if (row.pkgDetails !== match.pkgDetails) { 
-          row.pkgDetails = match.pkgDetails;
+        if ((row.name || '') !== (match.name || '')) { row.name = match.name || ''; changed = true; }
+        if ((row.mobileNumber || '') !== (match.mobileNumber || match.number || '')) { row.mobileNumber = match.mobileNumber || match.number || ''; changed = true; }
+        if ((row.area || '') !== (match.area || '')) { row.area = match.area || ''; changed = true; }
+        if ((row.pkgDetails || '') !== (match.pkgDetails || '')) { 
+          row.pkgDetails = match.pkgDetails || '';
           changed = true;
           // We will just update the pkgDetails text so it shows correctly in Recovery Rows
         }
@@ -4628,9 +4632,12 @@ export default function AdminPanel({
                   <div className="space-y-4 relative">
                     <AnimatePresence mode="popLayout">
                       {filteredRecycleItems.map((item) => {
-                        const details = item.details || {};
+                        const extraParsed = (() => {
+                          try { return JSON.parse(item.extra_data || '{}'); } catch (e) { return {}; }
+                        })();
+                        const details = extraParsed.originalData ? extraParsed.originalData : extraParsed;
                         const isExpanded = expandedRecycleItem === item.id;
-                        const deletedAt = details.deletedAt || item.created_at;
+                        const deletedAt = item.deleted_at || Date.parse(item.created);
                         const relativeTime = (() => {
                           const diff = Date.now() - deletedAt;
                           const mins = Math.floor(diff / 60000);
@@ -4673,10 +4680,13 @@ export default function AdminPanel({
                                 </div>
                                 <div className="space-y-1">
                                   <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest font-mono bg-slate-100 dark:bg-slate-900 text-slate-500">
-                                    {details.originalTable || 'Unknown'}
+                                    {item.table_name || 'Unknown'}
                                   </span>
                                   <h4 className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight leading-none mt-1">
-                                    {item.message || "Deleted entry"}
+                                    {(() => {
+    const title = details.customerName || details.name || details.clientName || details.domain || `Record ${item.record_id}`;
+    return `Deleted ${item.table_name} entry: "${title}"`;
+  })()}
                                   </h4>
                                   <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                                     <span className="flex items-center gap-1">
@@ -4728,8 +4738,8 @@ export default function AdminPanel({
                                   <div className="space-y-2">
                                     <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Database Entry Metadata</h5>
                                     <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 space-y-1 text-[11px]">
-                                      <div><span className="font-bold text-slate-500">ORIGINAL TABLE:</span> {details.originalTable}</div>
-                                      <div><span className="font-bold text-slate-500">ORIGINAL ID:</span> {details.originalId}</div>
+                                      <div><span className="font-bold text-slate-500">ORIGINAL TABLE:</span> {item.table_name}</div>
+                                      <div><span className="font-bold text-slate-500">ORIGINAL ID:</span> {item.record_id}</div>
                                       <div><span className="font-bold text-slate-500">DEALER SCOPE:</span> {item.dealer_id}</div>
                                       <div><span className="font-bold text-slate-500">DELETED AT:</span> {new Date(deletedAt).toLocaleString()}</div>
                                     </div>
@@ -4749,7 +4759,7 @@ export default function AdminPanel({
                                 <div className="space-y-2">
                                   <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payload Snapshot</h5>
                                   <pre className="p-4 rounded-xl bg-slate-950 text-emerald-400 text-[10.5px] leading-relaxed border border-slate-900 overflow-x-auto font-mono max-h-64 scrollbar-thin">
-                                    {JSON.stringify(details.originalData, null, 2)}
+                                    {JSON.stringify(details, null, 2)}
                                   </pre>
                                 </div>
 

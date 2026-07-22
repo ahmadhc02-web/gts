@@ -1357,8 +1357,10 @@ export const pocketbaseService = {
 
   updateUserPresence: async (uid: string) => {
     try {
-      const dbRow = toDb('users', { lastActive: Date.now() });
-      await upsertPB('users', 'uid', uid, dbRow);
+      const record = await pb.collection('users').getFirstListItem(`uid = "${uid}"`);
+      if (record) {
+        await pb.collection('users').update(record.id, { last_active: Date.now() });
+      }
     } catch (error) {}
   },
 
@@ -1533,29 +1535,34 @@ export const pocketbaseService = {
     return false;
   },
 
-  deleteComplaint: async (id: string, customerName: string, authorName: string) => {
+  deleteComplaint: async (id: string, customerName: string, authorName: string, dealerId: string = 'main') => {
     try {
-      try {
-        await pocketbaseService.saveToRecycleBin('complaints', id, authorName);
-      } catch (err) {}
-      
       let recordId = '';
+      let recordData = null;
       try {
         const record = await pb.collection('complaints').getOne(id);
         recordId = record.id;
+        recordData = record;
       } catch (e) {
         try {
           const record = await pb.collection('complaints').getFirstListItem(`complaint_id = "${id}"`);
           recordId = record.id;
+          recordData = record;
         } catch (e2) {
           try {
             const record = await pb.collection('complaints').getFirstListItem(`id = "${id}"`);
             recordId = record.id;
+            recordData = record;
           } catch (e3) {}
         }
       }
 
       if (recordId) {
+        if (recordData) {
+          try {
+            await pocketbaseService.saveToRecycleBin('complaints', id, authorName, dealerId, recordData);
+          } catch (err) {}
+        }
         await pb.collection('complaints').delete(recordId);
       } else {
         throw new Error(`Complaint record not found for ID: ${id}`);
@@ -1590,14 +1597,31 @@ export const pocketbaseService = {
       });
     } catch (error) {
       console.error('PB: updateComplaintStatus error:', error);
+      throw error;
     }
   },
 
-  updateComplaintRemarks: async (id: string, remarks: string, customerName: string, authorName: string, authorId: string) => {
+  updateComplaint: async (id: string, data: any, customerName: string, authorName: string) => {
+    try {
+      const dbRow = toDb('complaints', { ...data, updatedAt: Date.now() });
+      await upsertPB('complaints', 'complaint_id', id, dbRow);
+      
+      await pocketbaseService.createNotification({
+        type: 'complaint_updated',
+        message: `Complaint details updated for "${data.customerName}"`,
+        authorName
+      });
+    } catch (error) {
+      console.error('PB: updateComplaint error:', error);
+      throw error;
+    }
+  },
+
+  updateComplaintRemarks: async (id: string, customerName: string, remarks: string, authorName: string, authorId: string) => {
     try {
       const updateData = { 
         remarks, 
-        remarkAuthorId: authorId, 
+        remarkAuthorId: authorId,
         remarkAuthorName: authorName,
         updatedAt: Date.now() 
       };
@@ -1606,425 +1630,256 @@ export const pocketbaseService = {
       
       await pocketbaseService.createNotification({
         type: 'complaint_updated',
-        message: `Protocol remarks revised for "${customerName}"`,
+        message: `Remarks updated for "${customerName}": ${remarks}`,
         authorName
       });
     } catch (error) {
       console.error('PB: updateComplaintRemarks error:', error);
+      throw error;
     }
   },
 
-  updateComplaint: async (id: string, data: Partial<Complaint>, customerName: string, authorName: string) => {
+  syncOfflineComplaints: async (complaints: any[], authorName: string) => {
     try {
-      const dbRow = toDb('complaints', data);
-      await upsertPB('complaints', 'complaint_id', id, dbRow);
+      if (!pb.authStore.isValid) return;
+      
+      for (const complaint of complaints) {
+        const { id, ...data } = complaint;
+        if (!id || String(id).startsWith('temp_')) {
+          const dbRow = toDb('complaints', data);
+          await pb.collection('complaints').create(dbRow);
+        } else {
+          const dbRow = toDb('complaints', data);
+          await upsertPB('complaints', 'complaint_id', id, dbRow);
+        }
+      }
       
       await pocketbaseService.createNotification({
-        type: 'complaint_updated',
-        message: `Registry modified: Data revised for "${customerName}"`,
+        type: 'complaint_created',
+        message: `Synced ${complaints.length} offline registries`,
         authorName
       });
     } catch (error) {
-      console.error('PB: updateComplaint error:', error);
+      console.error('PB: syncOfflineComplaints error:', error);
     }
   },
 
-  saveComplaint: async (complaint: Complaint, dealerId: string = 'main') => {
+  
+
+  
+  
+  
+  subscribeBranding: (callback: (config: any) => void) => {
+    return subscribeTable(
+      'branding_config',
+      (configs) => {
+        if (configs.length > 0) {
+          callback(configs[0]);
+        }
+      },
+      (row) => row
+    );
+  },
+
+  subscribeConfig: (callback: (config: any) => void, dealerId?: string) => {
+    return subscribeTable(
+      'app_config',
+      (configs) => {
+        if (configs.length > 0) callback(configs[0]);
+        else callback(null);
+      },
+      (row) => row,
+      dealerId
+    );
+  },
+
+  updateConfig: async (config: any, authorName: string, dealerId: string) => {
     try {
-      const dbRow = toDb('complaints', complaint);
-      await upsertPB('complaints', 'complaint_id', complaint.id, dbRow);
-    } catch (error) {
-      console.error('PB: saveComplaint error:', error);
+      const configType = dealerId === 'main' ? 'main' : `tenant_${dealerId}`;
+      const dbRow = { ...config, config_type: configType, dealer_id: dealerId };
+      await upsertPB('app_config', 'config_type', configType, dbRow);
+    } catch (e) {
+      console.error('updateConfig error:', e);
     }
   },
 
-  subscribeComplaints: (callback: (complaints: Complaint[]) => void, dealerId?: string) => {
+
+  subscribeGroups: (callback: (groups: any[]) => void, dealerId?: string) => {
+    return subscribeTable(
+      'chat_groups',
+      callback,
+      (row) => ({
+        id: row.id,
+        name: row.name,
+        createdBy: row.created_by,
+        dealerId: row.dealer_id,
+        members: row.members ? JSON.parse(row.members) : []
+      }),
+      dealerId
+    );
+  },
+
+  subscribeComplaints: (callback: (complaints: any[]) => void, dealerId?: string) => {
     return subscribeTable(
       'complaints',
-      (complaints) => {
-        callback(complaints.sort((a, b) => b.createdAt - a.createdAt));
-      },
+      callback,
       (row) => fromDb('complaints', row),
       dealerId
     );
   },
 
-  // --- Settings / Config ---
-  getSettings: async () => {
+  getClients: async (dealerId?: string) => {
     try {
-      const data = await pocketbaseService.getAppConfig();
-      return data;
-    } catch (error) {
-      return null;
-    }
-  },
-
-  subscribeConfig: (callback: (config: any) => void, tenantId: string = 'main') => {
-    const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
-    
-    const fetchConfig = async () => {
-      try {
-        let currentConfig: any = null;
-        try {
-          const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
-          if (record && record.dashboard_subtext) {
-            currentConfig = JSON.parse(record.dashboard_subtext);
-          }
-        } catch (e) {}
-        
-        if (!currentConfig) {
-          const cached = localStorage.getItem(`gts_config_${tenantId}`);
-          if (cached) {
-            try { currentConfig = JSON.parse(cached); } catch (e) {}
-          }
-        }
-        if (!currentConfig) {
-          currentConfig = {};
-        }
-
-        try {
-          const [cat, stat, prio, zone] = await Promise.all([
-            pocketbaseService.getCategories(tenantId),
-            pocketbaseService.getStatuses(tenantId),
-            pocketbaseService.getPriorities(tenantId),
-            pocketbaseService.getZones(tenantId)
-          ]);
-          if (cat && cat.length) currentConfig.categories = cat;
-          if (stat && stat.length) currentConfig.statuses = stat;
-          if (prio && prio.length) currentConfig.priorities = prio;
-          if (zone && zone.length) currentConfig.zones = zone;
-        } catch (e) {}
-
-        callback(currentConfig);
-      } catch (e) {
-        callback(null);
-      }
-    };
-
-    let debounceTimeout: any = null;
-    const debouncedFetchConfig = () => {
-      if (debounceTimeout) clearTimeout(debounceTimeout);
-      debounceTimeout = setTimeout(() => {
-        fetchConfig();
-      }, 100);
-    };
-    
-    // Initial direct fetch
-    fetchConfig();
-    
-    // Subscribe to all config-related collections in real-time
-    pb.collection('branding_config').subscribe('*', debouncedFetchConfig).catch(() => {});
-    pb.collection('categories_config').subscribe('*', debouncedFetchConfig).catch(() => {});
-    pb.collection('statuses_config').subscribe('*', debouncedFetchConfig).catch(() => {});
-    pb.collection('priority_config').subscribe('*', debouncedFetchConfig).catch(() => {});
-    pb.collection('zone_config').subscribe('*', debouncedFetchConfig).catch(() => {});
-    
-    return () => {
-      if (debounceTimeout) clearTimeout(debounceTimeout);
-      pb.collection('branding_config').unsubscribe('*').catch(() => {});
-      pb.collection('categories_config').unsubscribe('*').catch(() => {});
-      pb.collection('statuses_config').unsubscribe('*').catch(() => {});
-      pb.collection('priority_config').unsubscribe('*').catch(() => {});
-      pb.collection('zone_config').unsubscribe('*').catch(() => {});
-    };
-  },
-
-  updateConfig: async (config: any, authorName: string, tenantId: string = 'main') => {
-    const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
-    try {
-      const cleanConfig = sanitize(config);
-      localStorage.setItem(`gts_config_${tenantId}`, JSON.stringify(cleanConfig));
-      const payload = {
-        config_type: docId,
-        dashboard_subtext: JSON.stringify(cleanConfig),
-        updated_at: Date.now(),
-        updated_by: authorName
-      };
-      await upsertPB('branding_config', 'config_type', docId, payload);
-      await pocketbaseService.syncAppConfig(config, tenantId);
-      
-      await pocketbaseService.createNotification({
-        type: 'config_updated',
-        message: `System matrix configuration updated`,
-        authorName,
-        dealerId: tenantId === 'main' ? undefined : tenantId
-      });
-    } catch (error) {
-      console.error("PB: updateConfig error:", error);
-    }
-  },
-
-  // --- Branding ---
-  subscribeBranding: (callback: (branding: BrandingConfig | null) => void) => {
-    const fetchBranding = async () => {
-      try {
-        const record = await pb.collection('branding_config').getFirstListItem(`config_type = "branding"`);
-        if (record) {
-          callback(fromDb('branding_config', record));
-        } else {
-          callback(null);
-        }
-      } catch (e) {
-        callback(null);
-      }
-    };
-    fetchBranding();
-    pb.collection('branding_config').subscribe('*', (e) => {
-      if (e.record.config_type === 'branding') fetchBranding();
-    }).catch(() => {});
-    
-    return () => {
-      pb.collection('branding_config').unsubscribe('*').catch(() => {});
-    };
-  },
-
-  updateBranding: async (branding: BrandingConfig, authorName: string) => {
-    try {
-      const cleanBranding = sanitize(branding);
-      localStorage.setItem('gts_branding_v3', JSON.stringify(cleanBranding));
-      const dbRow = toDb('branding_config', cleanBranding);
-      await upsertPB('branding_config', 'config_type', 'branding', dbRow);
-      
-      await pocketbaseService.createNotification({
-        type: 'config_updated',
-        message: `Visual grid updated with premium design patterns`,
-        authorName
-      });
-    } catch (error) {
-      console.error('PB: updateBranding error:', error);
-    }
-  },
-
-  // --- Chat and Messages ---
-  sendMessage: async (sender: UserProfile, text: string, replyTo?: ChatMessage['replyTo'], recipientId?: string, isGroup?: boolean): Promise<ChatMessage> => {
-    const id = `msg_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-    const tenantId = pocketbaseService.getTenantId(sender);
-    const clientMsg: ChatMessage = {
-      id,
-      senderId: sender.uid,
-      senderName: sender.fullName || sender.username,
-      text,
-      type: 'text',
-      recipientId: recipientId || '',
-      isGroup: !!isGroup,
-      replyTo: replyTo || null,
-      createdAt: Date.now(),
-      seenBy: {
-        [sender.uid]: {
-          username: sender.username || sender.fullName || 'User',
-          time: Date.now()
-        }
-      },
-      dealerId: tenantId
-    };
-    try {
-      const dbRow = toDb('chat_messages', clientMsg);
-      await pb.collection('chat_messages').create(dbRow);
-      return clientMsg;
-    } catch (error) {
-      console.error('PB: sendMessage error:', error);
-      throw error;
-    }
-  },
-
-  sendVoiceMessage: async (sender: UserProfile, audioBase64: string, duration: number, replyTo?: ChatMessage['replyTo'], recipientId?: string, isGroup?: boolean): Promise<ChatMessage> => {
-    const id = `msg_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-    const tenantId = pocketbaseService.getTenantId(sender);
-    const clientMsg: ChatMessage = {
-      id,
-      senderId: sender.uid,
-      senderName: sender.fullName || sender.username,
-      text: '🎤 Voice Note',
-      audioUrl: audioBase64,
-      type: 'voice',
-      recipientId: recipientId || '',
-      isGroup: !!isGroup,
-      duration,
-      replyTo: replyTo || null,
-      createdAt: Date.now(),
-      seenBy: {
-        [sender.uid]: {
-          username: sender.username || sender.fullName || 'User',
-          time: Date.now()
-        }
-      },
-      dealerId: tenantId
-    };
-    try {
-      const dbRow = toDb('chat_messages', clientMsg);
-      await pb.collection('chat_messages').create(dbRow);
-      return clientMsg;
-    } catch (error) {
-      console.error('PB: sendVoiceMessage error:', error);
-      throw error;
-    }
-  },
-
-  createGroup: async (name: string, members: string[], creator: UserProfile): Promise<ChatGroup> => {
-    const id = `group_${Math.random().toString(36).substr(2, 9)}`;
-    const tenantId = pocketbaseService.getTenantId(creator);
-    const clientGroup: ChatGroup = {
-      id,
-      name,
-      members,
-      createdBy: creator.uid,
-      createdAt: Date.now(),
-      dealerId: tenantId
-    };
-    try {
-      const dbRow = toDb('chat_groups', clientGroup);
-      await pb.collection('chat_groups').create(dbRow);
-      return clientGroup;
-    } catch (error) {
-      console.error('PB: createGroup error:', error);
-      throw error;
-    }
-  },
-
-  markAsSeen: async (messageId: string, uid: string, name: string) => {
-    try {
-      let record;
-      try {
-        record = await pb.collection('chat_messages').getFirstListItem(`message_id = "${messageId}"`);
-      } catch (e) {
-        record = await pb.collection('chat_messages').getFirstListItem(`id = "${messageId}"`);
-      }
-      const existingSeen = record.seen_by || [];
-      if (!existingSeen.includes(uid)) {
-        await pb.collection('chat_messages').update(record.id, {
-          seen_by: [...existingSeen, uid]
-        });
-      }
-    } catch (e) {}
-  },
-
-  deleteMessage: async (messageId: string) => {
-    try {
-      let record;
-      try {
-        record = await pb.collection('chat_messages').getFirstListItem(`message_id = "${messageId}"`);
-      } catch (e) {
-        record = await pb.collection('chat_messages').getFirstListItem(`id = "${messageId}"`);
-      }
-      await pb.collection('chat_messages').delete(record.id);
-    } catch (e) {}
-  },
-
-  clearAllMessages: async (dealerId?: string) => {
-    try {
-      const filter = dealerId ? `dealer_id = "${dealerId}"` : '';
-      const records = await pb.collection('chat_messages').getFullList({ filter });
-      for (const r of records) {
-        await pb.collection('chat_messages').delete(r.id).catch(() => {});
-      }
-    } catch (error) {
-      console.error('PB: clearAllMessages error:', error);
-    }
-  },
-
-  deleteGroup: async (groupId: string): Promise<void> => {
-    try {
-      let record;
-      try {
-        record = await pb.collection('chat_groups').getFirstListItem(`group_id = "${groupId}"`);
-      } catch (e) {
-        record = await pb.collection('chat_groups').getFirstListItem(`id = "${groupId}"`);
-      }
-      await pb.collection('chat_groups').delete(record.id);
-    } catch (e) {}
-  },
-
-  clearMessagesByScope: async (userId: string, scopeId: string, isGroup: boolean) => {
-    try {
-      let filter = '';
-      if (isGroup) {
-        filter = `recipient_id = "${scopeId}" && is_group = true`;
-      } else {
-        filter = `((sender_id = "${userId}" && recipient_id = "${scopeId}") || (sender_id = "${scopeId}" && recipient_id = "${userId}")) && is_group = false`;
-      }
-      const records = await pb.collection('chat_messages').getFullList({ filter });
-      for (const r of records) {
-        await pb.collection('chat_messages').delete(r.id).catch(() => {});
-      }
-    } catch (e) {
-      console.error('PB: clearMessagesByScope error:', e);
-    }
-  },
-
-  subscribeGroups: (callback: (groups: ChatGroup[]) => void, dealerId?: string) => {
-    return subscribeTable('chat_groups', callback, (row) => fromDb('chat_groups', row), dealerId);
-  },
-
-  subscribeMessages: (callback: (messages: ChatMessage[]) => void, dealerId?: string) => {
-    return subscribeTable('chat_messages', callback, (row) => fromDb('chat_messages', row), dealerId);
-  },
-
-  // --- Clients ---
-  getClients: async (dealerId?: string): Promise<Client[]> => {
-    try {
-      let filter = '';
-      if (dealerId && dealerId !== 'all') {
-        filter = `dealer_id = "${dealerId}"`;
-      }
+      const filter = dealerId && dealerId !== 'main' ? `dealer_id = "${dealerId}"` : '';
       const records = await pb.collection('clients').getFullList({ filter });
-      return records.map(row => fromDb('clients', row)).sort((a, b) => b.createdAt - a.createdAt);
+      return records;
     } catch (error) {
       return [];
     }
   },
 
-  createClient: async (data: Omit<Client, 'id' | 'createdAt'>, authorName: string, dealerId: string = 'main'): Promise<Client> => {
-    const clientClient: any = {
-      ...data,
-      createdAt: Date.now(),
-      createdBy: authorName,
+  subscribeMessages: (callback: (msgs: any[]) => void, dealerId?: string) => {
+    return subscribeTable(
+      'chat_messages',
+      callback,
+      (row) => ({
+        id: row.id,
+        senderId: row.sender_id,
+        senderName: row.sender_name,
+        receiverId: row.receiver_id,
+        groupId: row.group_id,
+        content: row.content,
+        timestamp: row.created,
+        seenBy: row.seen_by ? JSON.parse(row.seen_by) : [],
+        type: row.type || 'text',
+        audioUrl: row.audio_url || undefined
+      }),
       dealerId
-    };
+    );
+  },
+
+  saveComplaint: async (complaint: any, authorName: string) => {
     try {
-      const dbRow = toDb('clients', clientClient);
-      const createdRecord = await pb.collection('clients').create(dbRow);
-      const persistedClient = fromDb('clients', createdRecord);
+      const dbRow = toDb('complaints', complaint);
+      const record = await pb.collection('complaints').create(dbRow);
+      return { id: record.id, ...complaint };
+    } catch (error) {
+      console.error('PB: saveComplaint error:', error);
+      throw error;
+    }
+  },
+
+  
+  sendMessage: async (currentUser: any, text: string, replyData: any, recipientId?: string, isGroupChat?: boolean) => {
+    try {
+      await pb.collection('chat_messages').create({
+        sender_id: currentUser.uid,
+        sender_name: currentUser.fullName || currentUser.username,
+        receiver_id: isGroupChat ? '' : (recipientId || 'global'),
+        group_id: isGroupChat ? (recipientId || '') : '',
+        content: text,
+        type: 'text',
+        seen_by: JSON.stringify([currentUser.uid]),
+        reply_to: replyData ? JSON.stringify(replyData) : ''
+      });
+    } catch (error) {
+      console.error('PB: sendMessage error:', error);
+    }
+  },
+
+  sendVoiceMessage: async (currentUser: any, base64: string, duration: number, replyData: any, recipientId?: string, isGroupChat?: boolean) => {
+    try {
+      // Decode base64 to blob if needed, but here we can just save it as text/base64 in a long text field, 
+      // or assuming we can just push it directly depending on schema. 
+      // We will just store it in audio_url as base64 string for this fix, 
+      // since the signature takes base64.
+      await pb.collection('chat_messages').create({
+        sender_id: currentUser.uid,
+        sender_name: currentUser.fullName || currentUser.username,
+        receiver_id: isGroupChat ? '' : (recipientId || 'global'),
+        group_id: isGroupChat ? (recipientId || '') : '',
+        content: `Voice message (${duration}s)`,
+        type: 'voice',
+        audio_url: base64,
+        seen_by: JSON.stringify([currentUser.uid]),
+        reply_to: replyData ? JSON.stringify(replyData) : ''
+      });
+    } catch (error) {
+      console.error('PB: sendVoiceMessage error:', error);
+    }
+  },
+
+
+  deleteMessage: async (msgId: string) => {
+    try {
+      await pb.collection('chat_messages').delete(msgId);
+    } catch (error) {
+      console.error('PB: deleteMessage error:', error);
+    }
+  },
+
+
+  subscribeClients: (callback: (clients: any[]) => void, dealerId?: string) => {
+    return subscribeTable(
+      'clients',
+      (clients) => {
+        let filtered = clients;
+        if (dealerId && dealerId !== 'main') {
+          filtered = filtered.filter((n: any) => n.dealer_id === dealerId || n.dealerId === dealerId);
+        }
+        callback(filtered);
+      },
+      (row) => row,
+      dealerId
+    );
+  },
+
+  createClient: async (data: any, authorName: string, dealerId: string = 'main') => {
+    try {
+      const dbRow = toDb('clients', data);
+      dbRow.dealer_id = dealerId;
+      const record = await pb.collection('clients').create(dbRow);
       
       await pocketbaseService.createNotification({
         type: 'client_added',
-        message: `New subscriber registered: "${data.name}" added by ${authorName}`,
-        authorName,
-        dealerId
+        message: `Client directory established for "${data.name}"`,
+        authorName
       });
-      return persistedClient;
+      return { id: record.id, ...data };
     } catch (error) {
       console.error('PB: createClient error:', error);
       throw error;
     }
   },
 
-  updateClient: async (id: string, data: Partial<Client>, clientName: string, authorName: string) => {
+  updateClient: async (id: string, updatedData: any, clientName: string, authorName: string) => {
     try {
-      const dbRow = toDb('clients', data);
+      const dbRow = toDb('clients', updatedData);
       await upsertPB('clients', 'client_id', id, dbRow);
+      
       await pocketbaseService.createNotification({
         type: 'client_updated',
-        message: `Client details updated: "${clientName}" revised by ${authorName}`,
+        message: `Client directory updated for "${clientName}"`,
         authorName
       });
     } catch (error) {
       console.error('PB: updateClient error:', error);
+      throw error;
     }
   },
 
-  updateClientComplaints: async (originalUsername: string, updatedData: any) => {
+  
+  updateClientComplaints: async (clientName: string, updatedData: any) => {
     try {
-      const filter = `customer_username = "${originalUsername}"`;
-      const records = await pb.collection('complaints').getFullList({ filter });
-      for (const r of records) {
-        await pb.collection('complaints').update(r.id, {
-          customer_name: updatedData.name,
-          customer_username: updatedData.username,
-          phone_number: updatedData.number || updatedData.mobileNumber || r.phone_number,
-          pkg_details: updatedData.pkgDetails || r.pkg_details,
-          user_nearby: updatedData.userNearby || r.user_nearby,
-          panel_details: updatedData.panelDetails || r.panel_details,
-          area: updatedData.area || r.area
+      const records = await pb.collection('complaints').getFullList({
+        filter: `customerName = "${clientName}"`
+      });
+      
+      for (const record of records) {
+        await pb.collection('complaints').update(record.id, {
+          number: updatedData.number || record.number,
+          address: updatedData.address || record.address,
+          area: updatedData.area || record.area
         }).catch(() => {});
       }
     } catch (e) {
@@ -2032,166 +1887,192 @@ export const pocketbaseService = {
     }
   },
 
-  deleteClient: async (id: string, clientName: string, authorName: string) => {
+  updateBranding: async (branding: any, authorName: string) => {
     try {
-      try {
-        await pocketbaseService.saveToRecycleBin('clients', id, authorName);
-      } catch (err) {}
-
-      let recordId = '';
-      try {
-        const record = await pb.collection('clients').getOne(id);
-        recordId = record.id;
-      } catch (e) {
-        try {
-          const record = await pb.collection('clients').getFirstListItem(`client_id = "${id}"`);
-          recordId = record.id;
-        } catch (e2) {
-          try {
-            const record = await pb.collection('clients').getFirstListItem(`id = "${id}"`);
-            recordId = record.id;
-          } catch (e3) {}
-        }
-      }
-
-      if (recordId) {
-        await pb.collection('clients').delete(recordId);
-      }
-
-      // Delete from billing_months collection
-      try {
-        const months = await pb.collection('billing_months').getFullList();
-        for (const m of months) {
-          const rows = m.rows_data;
-          if (Array.isArray(rows)) {
-            const initialLen = rows.length;
-            const filteredRows = rows.filter((r: any) => r.clientId !== id && r.id !== id);
-            if (filteredRows.length < initialLen) {
-              await pb.collection('billing_months').update(m.id, {
-                rows_data: filteredRows,
-                updated_by: authorName || 'admin'
-              });
-            }
-          }
-        }
-      } catch (err: any) {
-        console.warn("PB: Failed to delete client rows from billing_months:", err.message);
-      }
-
-      // Delete from billing_rows collection
-      try {
-        const rows = await pb.collection('billing_rows').getFullList({
-          filter: `client_id = "${id}"`
-        });
-        for (const r of rows) {
-          await pb.collection('billing_rows').delete(r.id).catch(() => {});
-        }
-      } catch (err: any) {
-        console.warn("PB: Failed to delete from billing_rows:", err.message);
-      }
-
-      // Delete from users_data collection
-      try {
-        const uds = await pb.collection('users_data').getFullList({
-          filter: `client_id = "${id}"`
-        });
-        for (const u of uds) {
-          await pb.collection('users_data').delete(u.id).catch(() => {});
-        }
-      } catch (err: any) {
-        console.warn("PB: Failed to delete from users_data:", err.message);
-      }
-
-      try {
-        const docs = await pb.collection('branding_config').getFullList({
-          filter: `config_type ~ "billing_month_"`
-        });
-        for (const doc of docs) {
-          if (doc.dashboard_subtext) {
-            try {
-              let rows = JSON.parse(doc.dashboard_subtext);
-              if (Array.isArray(rows)) {
-                const initialLength = rows.length;
-                const filteredRows = rows.filter((r: any) => r.clientId !== id && r.id !== id);
-                if (filteredRows.length < initialLength) {
-                  await pb.collection('branding_config').update(doc.id, {
-                    dashboard_subtext: JSON.stringify(filteredRows),
-                    updated_at: Date.now(),
-                    updated_by: authorName || 'admin'
-                  });
-                }
-              }
-            } catch (err) {}
-          }
-        }
-      } catch (e) {}
-
-      try {
-        const sheets = await pb.collection('ledger_sheets').getFullList();
-        for (const sh of sheets) {
-          let updated = false;
-          let table1 = sh.table1_rows;
-          let table2 = sh.table2_rows;
-          if (typeof table1 === 'string') {
-            try { table1 = JSON.parse(table1); } catch (e) {}
-          }
-          if (typeof table2 === 'string') {
-            try { table2 = JSON.parse(table2); } catch (e) {}
-          }
-          if (Array.isArray(table1)) {
-            const initialLen = table1.length;
-            table1 = table1.filter((r: any) => r.clientId !== id && r.id !== id);
-            if (table1.length < initialLen) updated = true;
-          }
-          if (Array.isArray(table2)) {
-            const initialLen = table2.length;
-            table2 = table2.filter((r: any) => r.clientId !== id && r.id !== id);
-            if (table2.length < initialLen) updated = true;
-          }
-          if (updated) {
-            await pb.collection('ledger_sheets').update(sh.id, {
-              table1_rows: JSON.stringify(table1),
-              table2_rows: JSON.stringify(table2)
-            });
-          }
-        }
-      } catch (e) {}
-
+      const dbRow = {
+        config_type: 'branding',
+        dashboard_title: branding.dashboardTitle,
+        dashboard_subtext: branding.dashboardSubtext,
+        theme_color: branding.themeColor,
+        logo_url: branding.logoUrl,
+        icon_type: branding.iconType,
+        custom_icon_url: branding.customIconUrl,
+        sidebar_color: branding.sidebarColor,
+        background_style: branding.backgroundStyle,
+        card_style: branding.cardStyle,
+        font_family: branding.fontFamily,
+        chart_style: branding.chartStyle,
+        button_style: branding.buttonStyle,
+        primary_color_hsl: branding.primaryColorHsl,
+        accent_color_hsl: branding.accentColorHsl,
+        dark_mode_preference: branding.darkModePreference
+      };
+      await upsertPB('branding_config', 'config_type', 'branding', dbRow);
+      
       await pocketbaseService.createNotification({
-        type: 'client_deleted',
-        message: `Client record removed: "${clientName}" purged from database completely`,
+        type: 'config_updated',
+        message: 'System branding architecture reconfigured',
         authorName
       });
     } catch (error) {
-      console.error('PB: deleteClient error:', error);
+      console.error('PB: updateBranding error:', error);
+      throw error;
     }
   },
 
-  subscribeClients: (callback: (clients: Client[]) => void, dealerId?: string) => {
-    return subscribeTable('clients', callback, (row) => fromDb('clients', row), dealerId);
-  },
-
-  // --- Service Monitor ---
-  createMonitorTarget: async (domain: string, creator: UserProfile, label?: string, lat?: number, lng?: number): Promise<MonitorTarget> => {
-    const tenantId = pocketbaseService.getTenantId(creator);
-    const newTarget: any = {
-      domain,
-      createdBy: creator.uid,
-      createdAt: Date.now(),
-      dealerId: tenantId,
-      ...(label ? { label } : {}),
-      ...(lat !== undefined ? { lat } : {}),
-      ...(lng !== undefined ? { lng } : {})
-    };
+  createMonitorTarget: async (domain: string, user: any, label: string, lat?: number, lng?: number) => {
     try {
-      const dbRow = toDb('monitor_targets', newTarget);
-      const createdRecord = await pb.collection('monitor_targets').create(dbRow);
-      return fromDb('monitor_targets', createdRecord);
+      const dealerId = user.role !== 'super_admin' ? user.dealerId : 'main';
+      const record = await pb.collection('monitor_targets').create({
+        domain,
+        created_by: user.fullName || user.username,
+        dealer_id: dealerId || 'main',
+        label,
+        lat: lat || 0,
+        lng: lng || 0
+      });
+      return {
+        id: record.id,
+        domain: record.domain,
+        createdBy: record.created_by,
+        dealerId: record.dealer_id,
+        label: record.label,
+        lat: record.lat,
+        lng: record.lng
+      };
     } catch (error) {
       console.error('PB: createMonitorTarget error:', error);
       throw error;
     }
   },
+
+  createGroup: async (name: string, members: string[], currentUser: any) => {
+    try {
+      const dealerId = currentUser.role !== 'super_admin' ? currentUser.dealerId : 'main';
+      const record = await pb.collection('chat_groups').create({
+        name,
+        created_by: currentUser.uid,
+        dealer_id: dealerId || 'main',
+        members: JSON.stringify(members)
+      });
+      return {
+        id: record.id,
+        name: record.name,
+        createdBy: record.created_by,
+        dealerId: record.dealer_id,
+        members: JSON.parse(record.members)
+      };
+    } catch (error) {
+      console.error('PB: createGroup error:', error);
+      throw error;
+    }
+  },
+
+  deleteGroup: async (groupId: string) => {
+    try {
+      await pb.collection('chat_groups').delete(groupId);
+    } catch (error) {
+      console.error('PB: deleteGroup error:', error);
+      throw error;
+    }
+  },
+
+  clearMessagesByScope: async (userId: string, scopeId: string, isGroup: boolean) => {
+    try {
+      const filter = isGroup 
+        ? `group_id = "${scopeId}"`
+        : `(sender_id = "${userId}" && receiver_id = "${scopeId}") || (sender_id = "${scopeId}" && receiver_id = "${userId}")`;
+      
+      const records = await pb.collection('chat_messages').getFullList({ filter });
+      for (const record of records) {
+        await pb.collection('chat_messages').delete(record.id).catch(() => {});
+      }
+    } catch (error) {
+      console.error('PB: clearMessagesByScope error:', error);
+    }
+  },
+
+  markAsSeen: async (messageId: string, userId: string, userName: string) => {
+    try {
+      const record = await pb.collection('chat_messages').getOne(messageId);
+      const seenBy = record.seen_by ? JSON.parse(record.seen_by) : [];
+      if (!seenBy.includes(userId)) {
+        seenBy.push(userId);
+        await pb.collection('chat_messages').update(messageId, {
+          seen_by: JSON.stringify(seenBy)
+        });
+      }
+    } catch (error) {
+      console.error('PB: markAsSeen error:', error);
+    }
+  },
+
+  deleteClient: async (id: string, clientName: string, authorName: string, dealerId: string = 'main') => {
+    try {
+      let recordId = '';
+      let recordData = null;
+      try {
+        const record = await pb.collection('clients').getOne(id);
+        recordId = record.id;
+        recordData = record;
+      } catch (e) {
+        try {
+          const record = await pb.collection('clients').getFirstListItem(`client_id = "${id}"`);
+          recordId = record.id;
+          recordData = record;
+        } catch (e2) {
+          try {
+            const record = await pb.collection('clients').getFirstListItem(`id = "${id}"`);
+            recordId = record.id;
+            recordData = record;
+          } catch (e3) {}
+        }
+      }
+
+      if (recordId) {
+        if (recordData) {
+          try {
+            await pocketbaseService.saveToRecycleBin('clients', id, authorName, dealerId, recordData);
+          } catch (err) {}
+        }
+        await pb.collection('clients').delete(recordId);
+      } else {
+        throw new Error(`Client record not found for ID: ${id}`);
+      }
+
+      await pocketbaseService.createNotification({
+        type: 'client_deleted',
+        message: `Client deleted: "${clientName}"`,
+        authorName
+      });
+    } catch (error) {
+      console.error('PB: deleteClient error:', error);
+      throw error;
+    }
+  },
+
+  // --- Network Monitor DB endpoints ---
+  
+  getMonitorTargets: async (dealerId?: string): Promise<MonitorTarget[]> => {
+    try {
+      const filter = dealerId ? `(dealerId = "${dealerId}" || dealer_id = "${dealerId}")` : `dealer_id = "main"`;
+      const records = await pb.collection('monitor_targets').getFullList({ filter });
+      return records.map((r: any) => ({
+        id: r.id,
+        domain: r.domain,
+        createdBy: r.created_by,
+        createdAt: r.created,
+        dealerId: r.dealer_id,
+        lat: r.lat,
+        lng: r.lng,
+        label: r.label
+      }));
+    } catch (error) {
+      return [];
+    }
+  },
+
+  
 
   deleteMonitorTarget: async (id: string): Promise<void> => {
     try {
@@ -2296,9 +2177,11 @@ export const pocketbaseService = {
   // --- Billing Months ---
   subscribeBillingMonths: (callback: (months: any[]) => void, dealerId?: string) => {
     let debounceTimer: any = null;
+    let cachedMonths: any[] = [];
     const fetchBillingMonths = async () => {
       try {
         const data = await pocketbaseService.getBillingMonths(dealerId || 'main');
+        cachedMonths = data;
         callback(data);
       } catch (e) {
         callback([]);
@@ -2318,7 +2201,64 @@ export const pocketbaseService = {
 
     // Subscribe to billing_rows to get real-time updates when billing records change
     try {
-      pb.collection('billing_rows').subscribe('*', () => {
+      pb.collection('billing_rows').subscribe('*', (e) => {
+        if (e.record && e.record.month_id && cachedMonths.length > 0) {
+          const row = e.record;
+          const mappedRow = {
+            id: row.client_id || row.id,
+            clientId: row.client_id || row.id,
+            name: row.name || '',
+            username: row.username || '',
+            mobileNumber: row.mobile_number || '',
+            area: row.area || '',
+            rt: row.rt || '',
+            baseAmount: Number(row.base_amount) || Number(row.base_amount === 0 ? 0 : (row.amount || 0)) || 0,
+            cr: Number(row.cr) || 0,
+            totalAmount: Number(row.total_amount) || 0,
+            billingDay: row.billing_day || '5',
+            paymentReceived: Number(row.payment_received) || 0,
+            paymentStatus: row.payment_status || 'unpaid',
+            comments: row.comments || '',
+            occ: row.occ || '',
+            serNam: row.ser_nam || '',
+            pkgDetails: row.pkg_details || '',
+            sag: row.sag || '',
+            lai: row.lai || '',
+            connectionDate: row.connection_date || '',
+            devicePrice: row.device_price || '',
+            abl: row.abl || '',
+            network: row.network || ''
+          };
+          
+          let updated = false;
+          const newMonths = cachedMonths.map(m => {
+            if (m.id === row.month_id) {
+              const newRows = [...(m.rows || [])];
+              const idx = newRows.findIndex(r => r.clientId === mappedRow.clientId);
+              if (e.action === 'delete') {
+                if (idx !== -1) {
+                  newRows.splice(idx, 1);
+                  updated = true;
+                }
+              } else {
+                if (idx !== -1) {
+                  newRows[idx] = mappedRow;
+                  updated = true;
+                } else {
+                  newRows.push(mappedRow);
+                  updated = true;
+                }
+              }
+              return { ...m, rows: newRows };
+            }
+            return m;
+          });
+          
+          if (updated) {
+            cachedMonths = newMonths;
+            callback(JSON.parse(JSON.stringify(newMonths)));
+          }
+        }
         triggerFetch();
       }).catch((e) => {
         console.warn("PB: billing_rows subscription error", e);
@@ -2731,10 +2671,20 @@ export const pocketbaseService = {
     }
   },
 
-  deleteLedgerSheet: async (sheetId: string, tenantId: string = 'main') => {
+  deleteLedgerSheet: async (sheetId: string, authorName: string, tenantId: string = 'main') => {
     try {
       const isPbId = typeof sheetId === 'string' && /^[a-z0-9]{15}$/.test(sheetId);
       if (isPbId) {
+        let recordData = null;
+        try {
+          recordData = await pb.collection('ledger_sheets').getOne(sheetId);
+        } catch (e) {}
+
+        if (recordData) {
+          try {
+            await pocketbaseService.saveToRecycleBin('ledger_sheets', sheetId, authorName, tenantId, recordData);
+          } catch (err) {}
+        }
         await pb.collection('ledger_sheets').delete(sheetId);
       }
     } catch (e) {
@@ -2756,11 +2706,72 @@ export const pocketbaseService = {
     } catch (e) {}
   },
   
-  restoreFromRecycleBin: async (recycleBinItemId: string) => {},
+  restoreFromRecycleBin: async (recycleBinItemId: string) => {
+    try {
+      const recycleRecord = await pb.collection('recycle_bin').getOne(recycleBinItemId);
+      if (!recycleRecord || !recycleRecord.extra_data) {
+        throw new Error("No extra data found to restore.");
+      }
+      
+      const extraParsed = JSON.parse(recycleRecord.extra_data);
+      const isFolder = recycleRecord.table_name === 'ledger_folder';
+      
+      if (isFolder) {
+        const folder = extraParsed.originalData;
+        const tenantId = extraParsed.dealerId || recycleRecord.dealer_id || 'main';
+        
+        // Fetch current folders
+        const docId = `ledger_folders_${tenantId}`;
+        let currentFolders = [];
+        try {
+          const res = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`);
+          if (res && res.dashboard_subtext) {
+            currentFolders = JSON.parse(res.dashboard_subtext);
+          }
+        } catch (e) {}
+        
+        currentFolders.push(folder);
+        await pocketbaseService.saveLedgerFolders(currentFolders, tenantId);
+        
+      } else {
+        const data = extraParsed.originalData ? extraParsed.originalData : extraParsed;
+        const tableName = recycleRecord.table_name;
+        
+        try {
+          await pb.collection(tableName).create(data);
+        } catch (err) {
+          const { id, created, updated, collectionId, collectionName, ...rest } = data;
+          await pb.collection(tableName).create({ id, ...rest });
+        }
+      }
+      
+      // Clean up from recycle bin
+      await pb.collection('recycle_bin').delete(recycleBinItemId);
+      return true;
+    } catch (e) {
+      console.error("PB: restoreFromRecycleBin error:", e);
+      throw e;
+    }
+  },
   permanentlyDeleteFromRecycleBin: async (recycleBinItemId: string) => {
     try {
       await pb.collection('recycle_bin').delete(recycleBinItemId);
     } catch (e) {}
   },
-  cleanOldRecycleBinItems: async () => {}
+  cleanOldRecycleBinItems: async () => {},
+
+  subscribeRecycleBin: (callback: (items: any[]) => void, dealerId?: string) => {
+    return subscribeTable(
+      'recycle_bin',
+      (items) => {
+        let filtered = items;
+        if (dealerId && dealerId !== 'main') {
+          filtered = filtered.filter((n: any) => n.dealer_id === dealerId || n.dealerId === dealerId);
+        }
+        filtered.sort((a, b) => b.deleted_at - a.deleted_at);
+        callback(filtered);
+      },
+      (row) => row, dealerId
+    );
+  }
 };

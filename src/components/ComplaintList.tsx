@@ -206,6 +206,9 @@ export default function ComplaintList({
         if (statusFilter === 'scheduled') {
           return c.status === 'scheduled';
         }
+        if (statusFilter === 'hold') {
+          return effStatus.toLowerCase() === 'hold';
+        }
         return effStatus === statusFilter;
       });
     }
@@ -217,7 +220,11 @@ export default function ComplaintList({
 
     // Category filter
     if (categoryFilter !== 'all') {
-      filtered = filtered.filter(c => c.category === categoryFilter);
+      if (categoryFilter.toLowerCase() === 'new connection') {
+        filtered = filtered.filter(c => c.category?.toLowerCase() === 'new connection');
+      } else {
+        filtered = filtered.filter(c => c.category === categoryFilter);
+      }
     }
 
     // Zone filter
@@ -278,9 +285,9 @@ export default function ComplaintList({
           valB = priorityWeight[b.priority || 'Low'] || 0;
           break;
         case 'status':
-          const statusWeight = { 'pending': 1, 'in process': 2, 'scheduled': 3, 'important': 4, 'complete': 5 };
-          valA = statusWeight[getEffectiveStatus(a, now)] || 0;
-          valB = statusWeight[getEffectiveStatus(b, now)] || 0;
+          const statusWeight: Record<string, number> = { 'pending': 1, 'in process': 2, 'scheduled': 3, 'hold': 4, 'important': 5, 'complete': 6 };
+          valA = statusWeight[getEffectiveStatus(a, now).toLowerCase()] || 0;
+          valB = statusWeight[getEffectiveStatus(b, now).toLowerCase()] || 0;
           break;
         case 'category':
           valA = (a.category || '').toLowerCase();
@@ -913,6 +920,17 @@ export default function ComplaintList({
               >
                 Scheduled
               </button>
+              <button
+                onClick={() => setStatusFilter('hold')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                  statusFilter === 'hold'
+                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-330"
+                )}
+              >
+                Hold
+              </button>
             </div>
 
             {/* EXPORT consolidated dropdown */}
@@ -1175,13 +1193,15 @@ export default function ComplaintList({
                       onClick={() => setSelectedComplaint(complaint)}
                       className={cn(
                         "group hover:scale-[1.002] active:scale-[0.999] hover:shadow-[0_4px_24px_rgba(0,0,0,0.02)] dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.25)] border-y border-slate-100/50 dark:border-slate-800/40 transition-all duration-300 cursor-pointer relative",
-                        getEffectiveStatus(complaint, now) === 'complete' 
+                        getEffectiveStatus(complaint, now).toLowerCase() === 'complete' 
                           ? 'bg-emerald-500/[0.005] dark:bg-slate-950/20 hover:bg-emerald-500/[0.02] dark:hover:bg-emerald-500/[0.03]' 
-                          : getEffectiveStatus(complaint, now) === 'in process'
+                          : getEffectiveStatus(complaint, now).toLowerCase() === 'in process'
                             ? 'bg-blue-500/[0.005] dark:bg-slate-950/20 hover:bg-blue-500/[0.02] dark:hover:bg-blue-500/[0.03]'
-                            : getEffectiveStatus(complaint, now) === 'scheduled'
+                            : getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled'
                               ? 'bg-purple-500/[0.005] dark:bg-slate-950/20 hover:bg-purple-500/[0.02] dark:hover:bg-purple-500/[0.03]'
-                              : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.015] dark:hover:bg-slate-500/[0.025]'
+                              : getEffectiveStatus(complaint, now).toLowerCase() === 'hold'
+                                ? 'bg-rose-500/[0.005] dark:bg-slate-950/20 hover:bg-rose-500/[0.02] dark:hover:bg-rose-500/[0.03]'
+                                : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.015] dark:hover:bg-slate-500/[0.025]'
                       )}
                     >
                       {/* CLIENT & CONTACT */}
@@ -1189,9 +1209,10 @@ export default function ComplaintList({
                         {/* Interactive Status Indicator bar */}
                         <div className={cn(
                           "absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-md transition-all duration-300 group-hover:w-1.5",
-                          getEffectiveStatus(complaint, now) === 'complete' ? 'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]' :
-                          getEffectiveStatus(complaint, now) === 'in process' ? 'bg-blue-500 shadow-[2px_0_10px_rgba(59,130,246,0.4)]' :
-                          getEffectiveStatus(complaint, now) === 'scheduled' ? 'bg-purple-500 shadow-[2px_0_10px_rgba(168,85,247,0.4)]' :
+                          getEffectiveStatus(complaint, now).toLowerCase() === 'complete' ? 'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]' :
+                          getEffectiveStatus(complaint, now).toLowerCase() === 'in process' ? 'bg-blue-500 shadow-[2px_0_10px_rgba(59,130,246,0.4)]' :
+                          getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled' ? 'bg-purple-500 shadow-[2px_0_10px_rgba(168,85,247,0.4)]' :
+                          getEffectiveStatus(complaint, now).toLowerCase() === 'hold' ? 'bg-rose-500 shadow-[2px_0_10px_rgba(244,63,94,0.4)]' :
                           'bg-amber-500 shadow-[2px_0_10px_rgba(245,158,11,0.4)]'
                         )} />
                         
@@ -1291,19 +1312,22 @@ export default function ComplaintList({
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               "flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]",
-                              getEffectiveStatus(complaint, now) === 'complete' 
+                              getEffectiveStatus(complaint, now).toLowerCase() === 'complete' 
                                 ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400' 
-                                : getEffectiveStatus(complaint, now) === 'in process'
+                                : getEffectiveStatus(complaint, now).toLowerCase() === 'in process'
                                 ? 'bg-blue-500/10 text-blue-600 border-blue-500/25 dark:text-blue-400'
-                                : getEffectiveStatus(complaint, now) === 'scheduled'
+                                : getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled'
                                 ? 'bg-purple-500/10 text-purple-600 border-purple-500/25 dark:text-purple-400'
+                                : getEffectiveStatus(complaint, now).toLowerCase() === 'hold'
+                                ? 'bg-rose-500/10 text-rose-600 border-rose-500/25 dark:text-rose-400'
                                 : 'bg-amber-500/10 text-amber-600 border-amber-500/25 dark:text-amber-400'
                             )}>
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full",
-                                getEffectiveStatus(complaint, now) === 'complete' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
-                                getEffectiveStatus(complaint, now) === 'in process' ? 'bg-blue-500 shadow-[0_0_6px_#3b82f6]' : 
-                                getEffectiveStatus(complaint, now) === 'scheduled' ? 'bg-purple-500 shadow-[0_0_6px_#a855f7]' : 
+                                getEffectiveStatus(complaint, now).toLowerCase() === 'complete' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
+                                getEffectiveStatus(complaint, now).toLowerCase() === 'in process' ? 'bg-blue-500 shadow-[0_0_6px_#3b82f6]' : 
+                                getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled' ? 'bg-purple-500 shadow-[0_0_6px_#a855f7]' : 
+                                getEffectiveStatus(complaint, now).toLowerCase() === 'hold' ? 'bg-rose-500 shadow-[0_0_6px_#f43f5e]' : 
                                 'bg-amber-500 shadow-[0_0_6px_#f59e0b]'
                               )} />
                               <span>{getEffectiveStatus(complaint, now)}</span>
