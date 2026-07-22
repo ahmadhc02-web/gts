@@ -317,9 +317,11 @@ export default function Layout({
         editProfilePicture,
         editEmail
       );
+      toast.success("Profile & picture updated successfully!");
       setIsProfileOpen(false);
     } catch (error) {
       console.error("Profile update failed:", error);
+      toast.error("Failed to update profile.");
     } finally {
       setIsUpdatingProfile(false);
     }
@@ -544,7 +546,6 @@ export default function Layout({
                 { id: 'map', label: 'Network Map', icon: MapIcon },
                 { id: 'monitor', label: 'Service Monitor', icon: Activity },
                 { id: 'settings', label: 'Security', icon: Shield },
-                { id: 'sync_status', label: 'Sync Status', icon: RefreshCw, roles: ['super_admin', 'admin', 'dealer'] },
                 { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
                 { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
                 { id: 'chat', label: 'AI Help', icon: Sparkles }

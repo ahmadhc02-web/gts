@@ -432,28 +432,56 @@ async function startServer() {
             .replace(/\s+/g, "")
         : "") || "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";
 
-      // 1. Fetch user from Supabase if possible
+      // 1. Fetch user from PocketBase first, then Supabase, then Firestore
       let foundUser: any = null;
+
+      // Try PocketBase
       try {
-        const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users?select=*`, {
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          },
-        });
-        const users = await resUser.json();
-        if (users && Array.isArray(users)) {
-          foundUser = users.find(
-            (u: any) =>
-              String(u.username || "").toLowerCase() ===
-              username.trim().toLowerCase(),
+        const pbRes = await fetch(
+          `http://167.233.41.7:8090/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
+        );
+        if (pbRes.ok) {
+          const pbData = await pbRes.json();
+          if (pbData && pbData.items && pbData.items.length > 0) {
+            const u = pbData.items[0];
+            foundUser = {
+              id: u.id,
+              uid: u.uid || u.id,
+              username: u.username,
+              email: u.email,
+              fullName: u.full_name || u.fullName || u.username,
+              source: "pocketbase"
+            };
+            console.log(`Server: Found user in PocketBase for reset OTP: ${u.username} (${u.email})`);
+          }
+        }
+      } catch (pbErr) {
+        console.warn("Server: PocketBase user search failed:", pbErr);
+      }
+
+      // Try Supabase if not found in PocketBase
+      if (!foundUser) {
+        try {
+          const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users?select=*`, {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+          });
+          const users = await resUser.json();
+          if (users && Array.isArray(users)) {
+            foundUser = users.find(
+              (u: any) =>
+                String(u.username || "").toLowerCase() ===
+                username.trim().toLowerCase(),
+            );
+          }
+        } catch (suErr) {
+          console.warn(
+            "Server: Supabase user check failed, falling back to Firestore:",
+            suErr,
           );
         }
-      } catch (suErr) {
-        console.warn(
-          "Server: Supabase user check failed, falling back to Firestore:",
-          suErr,
-        );
       }
 
       const db = await getFirestoreOnServer();
@@ -802,10 +830,42 @@ async function startServer() {
           .json({ error: "Passcode verification mismatch." });
       }
 
-      // 2. Locate user and Update in Supabase fallback if exists
+      // 2. Locate user and Update in PocketBase, Supabase, and Firestore
       let foundUser: any = null;
-      let patchedInSupabase = false;
+      let patchedInPocketBase = false;
 
+      // Update in PocketBase
+      try {
+        const pbRes = await fetch(
+          `http://167.233.41.7:8090/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
+        );
+        if (pbRes.ok) {
+          const pbData = await pbRes.json();
+          if (pbData && pbData.items && pbData.items.length > 0) {
+            for (const pbRec of pbData.items) {
+              const patchRes = await fetch(
+                `http://167.233.41.7:8090/api/collections/users/records/${pbRec.id}`,
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ password: newPassword }),
+                }
+              );
+              if (patchRes.ok) {
+                patchedInPocketBase = true;
+                foundUser = pbRec;
+                console.log(
+                  `Server: Passcode reset correctly applied to PocketBase layer for ${pbRec.username}`
+                );
+              }
+            }
+          }
+        }
+      } catch (pbErr) {
+        console.warn("Server: PocketBase password patch failed:", pbErr);
+      }
+
+      let patchedInSupabase = false;
       const rawUrl = process.env.SUPABASE_URL;
       const rawKey = process.env.SUPABASE_ANON_KEY;
       const SUPABASE_URL =
@@ -831,10 +891,10 @@ async function startServer() {
         );
         const suRes = await suPatch.json();
         if (suRes && Array.isArray(suRes) && suRes.length > 0) {
-          foundUser = suRes[0];
+          if (!foundUser) foundUser = suRes[0];
           patchedInSupabase = true;
           console.log(
-            `Server: Passcode reset correctly applied to Supabase layer for ${foundUser.username}`,
+            `Server: Passcode reset correctly applied to Supabase layer for ${username}`,
           );
         }
       } catch (suErr) {

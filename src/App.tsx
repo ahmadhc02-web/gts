@@ -1351,15 +1351,15 @@ export default function App() {
       // Optimistic state update
       setComplaints(prev => prev.filter(c => c.id !== id));
 
-      await pocketbaseService.deleteComplaint(id, customerName, user.fullName || user.username);
-      toast.success('Complaint deleted successfully!');
+      await pocketbaseService.deleteComplaint(id, customerName, user.fullName || user.username, complaint);
+      toast.success('Complaint moved to Recycle Bin!');
 
       // Log deletion activity in Operational Logs
       if (complaint) {
         const deletionLog = { 
           ...complaint, 
-          status: 'PURGED/DELETED', 
-          description: `ALERT: Record permanently removed from central database by ${user.username}` 
+          status: 'RECYCLED/DELETED', 
+          description: `ALERT: Record moved to Recycle Bin by ${user.username}` 
         };
         try {
           if (navigator.onLine) {
@@ -1584,6 +1584,14 @@ export default function App() {
         ...(profilePicture !== undefined && { profilePicture }),
         ...(email !== undefined && { email: email.trim() })
       } as any;
+
+      if (profilePicture !== undefined) {
+        try {
+          const storedPics = JSON.parse(safeLocalStorage.getItem('gts_profile_pictures') || '{}');
+          storedPics[uid] = profilePicture;
+          safeLocalStorage.setItem('gts_profile_pictures', safeStringify(storedPics));
+        } catch (e) {}
+      }
 
       // Optimistic UI update
       setUsers(prev => prev.map(u => u.uid === uid ? updatedUserObj : u));

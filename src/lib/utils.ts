@@ -11,7 +11,8 @@ export function processScheduledComplaints(complaintsList: Complaint[]): Complai
   const currentTime = Date.now();
   return complaintsList
     .filter(c => {
-      if (c.scheduledAt) {
+      const normStatus = (c.status || '').toString().trim().toLowerCase();
+      if (normStatus === 'scheduled' && c.scheduledAt) {
         const hoursRemaining = (c.scheduledAt - currentTime) / (1000 * 60 * 60);
         // If scheduled date is in future and more than 12 hours away, hide completely
         return hoursRemaining <= 12;
@@ -19,7 +20,8 @@ export function processScheduledComplaints(complaintsList: Complaint[]): Complai
       return true;
     })
     .map(c => {
-      if (c.scheduledAt) {
+      const normStatus = (c.status || '').toString().trim().toLowerCase();
+      if (normStatus === 'scheduled' && c.scheduledAt) {
         const hoursRemaining = (c.scheduledAt - currentTime) / (1000 * 60 * 60);
         if (hoursRemaining <= 12) {
           return {

@@ -1,10 +1,19 @@
-export const DEFAULT_CATEGORIES: string[] = [];
+export const DEFAULT_CATEGORIES: string[] = [
+  'Speed Issue',
+  'No Internet',
+  'Wire Damage',
+  'Router / ONT Problem',
+  'High Ping / Packet Loss',
+  'Billing Issue',
+  'Other'
+];
 
 export const DEFAULT_STATUSES = ['pending', 'in process', 'scheduled', 'complete', 'important'];
 
 export const DEFAULT_PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
 
 export const DEFAULT_ZONES = [
+  'TB',
   'Model Town',
   'Gulberg',
   'Satellite Town',

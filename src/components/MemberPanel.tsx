@@ -128,13 +128,24 @@ export default function MemberPanel({
     window.addEventListener('admin-nav', handleAdminNav as EventListener);
     return () => window.removeEventListener('admin-nav', handleAdminNav as EventListener);
   }, [setActiveTab]);
+  const isPendingStatus = (s?: string) => {
+    if (!s) return false;
+    const lower = s.trim().toLowerCase();
+    return lower === 'pending' || lower === 'pending request' || lower === 'pending requests' || lower === 'active';
+  };
+
+  const isNewConnectionCat = (cat?: string) => {
+    if (!cat) return false;
+    return cat.trim().toLowerCase() === 'new connection';
+  };
+
   const stats = [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Global volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
-    { label: 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
-    { label: 'New Connection', value: complaints.filter(c => c.category?.toLowerCase() === 'new connection' && c.status === 'pending').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
-    { label: 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Tasks currently under execution by on-site field technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
-    { label: 'Finalized', value: complaints.filter(c => c.status === 'complete' && c.category?.toLowerCase() !== 'new connection').length, tooltip: 'Service successfully restored and verified from the enterprise logs.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
-    { label: 'Connection Complete', value: complaints.filter(c => c.category?.toLowerCase() === 'new connection' && c.status === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
+    { label: 'Pending Requests', value: complaints.filter(c => isPendingStatus(c.status)).length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
+    { label: 'New Connection', value: complaints.filter(c => isNewConnectionCat(c.category) && isPendingStatus(c.status)).length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
+    { label: 'In Operation', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'in process' || (c.status || '').toString().trim().toLowerCase() === 'in_process').length, tooltip: 'Tasks currently under execution by on-site field technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
+    { label: 'Finalized', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'complete' && !isNewConnectionCat(c.category)).length, tooltip: 'Service successfully restored and verified from the enterprise logs.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
+    { label: 'Connection Complete', value: complaints.filter(c => isNewConnectionCat(c.category) && (c.status || '').toString().trim().toLowerCase() === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
   ];
 
   const handleTileClick = (filter: any) => {

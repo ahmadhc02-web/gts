@@ -326,11 +326,12 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
   const handleDelete = async (id: string, clientName: string) => {
     try {
+      const clientObj = clients.find(c => c.id === id);
       // Optimistic update
       setClients(prev => prev.filter(c => c.id !== id));
       
-      await pocketbaseService.deleteClient(id, clientName, currentUserName);
-      toast.success('Record purged from primary database');
+      await pocketbaseService.deleteClient(id, clientName, currentUserName, clientObj);
+      toast.success('Client record moved to Recycle Bin!');
       setDeletingId(null);
     } catch (error) {
       toast.error('Purge operation failed');

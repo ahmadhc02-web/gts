@@ -1954,7 +1954,7 @@ export default function EntrySheet({
     setActiveView('editor');
   };
 
-  // Delete a single historical card from Firestore registry logs
+  // Delete a single historical card from registry logs
   const handleDeleteHistorySheet = async (sheetId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid loading the sheet on card click
     
@@ -1965,12 +1965,16 @@ export default function EntrySheet({
       return;
     }
 
-    const confirmDel = window.confirm("Are you sure you want to delete this historical ledger card?");
+    const confirmDel = window.confirm("Are you sure you want to move this historical ledger sheet card to Recycle Bin?");
     if (!confirmDel) return;
 
     try {
-      await pocketbaseService.deleteLedgerSheet(sheetId);
-      toast.success("Ledger card deleted successfully.");
+      const sheetObj = ledgerHistory.find(s => s.id === sheetId);
+      const author = currentUser?.fullName || currentUser?.username || 'admin';
+      const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined) || 'main';
+
+      await pocketbaseService.deleteLedgerSheet(sheetId, author, scopeId, sheetObj);
+      toast.success("Ledger card moved to Recycle Bin!");
       if (loadedSheetId === sheetId) {
         resetToBlank();
         setLoadedSheetId(null);
@@ -2058,10 +2062,11 @@ export default function EntrySheet({
 
     try {
       const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-      toast.loading("Purging all monthly cards from Firebase registry...", { id: "terminate-proc" });
-      await pocketbaseService.terminateAllLedgerSheets(tenantId);
+      const author = currentUser?.fullName || currentUser?.username || 'admin';
+      toast.loading("Moving all monthly cards to Recycle Bin...", { id: "terminate-proc" });
+      await pocketbaseService.terminateAllLedgerSheets(tenantId, author);
       toast.dismiss("terminate-proc");
-      toast.success("Month terminated cleanly! Sheet cards starting fresh.");
+      toast.success("Month terminated cleanly! Sheet cards moved to Recycle Bin.");
       resetToBlank();
       setLoadedSheetId(null);
     } catch (e: any) {
@@ -2081,10 +2086,11 @@ export default function EntrySheet({
     try {
       if (deleteHistory) {
         const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-        toast.loading("Purging all registered monthly sheets...", { id: "reset-all-proc" });
-        await pocketbaseService.terminateAllLedgerSheets(tenantId);
+        const author = currentUser?.fullName || currentUser?.username || 'admin';
+        toast.loading("Moving registered monthly sheets to Recycle Bin...", { id: "reset-all-proc" });
+        await pocketbaseService.terminateAllLedgerSheets(tenantId, author);
         toast.dismiss("reset-all-proc");
-        toast.success("Active workspace reset and all registered sheet history purged successfully!");
+        toast.success("Active workspace reset and registered sheet history moved to Recycle Bin!");
       } else {
         toast.success("Active workspace fields reset successfully!");
       }

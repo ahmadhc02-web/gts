@@ -32,13 +32,14 @@ interface ComplaintListProps {
 }
 
 const getEffectiveStatus = (c: Complaint, currentTime: number = Date.now()): ComplaintStatus => {
-  if (c.status === 'scheduled' && c.scheduledAt) {
+  const norm = (c.status || '').toString().trim().toLowerCase();
+  if (norm === 'scheduled' && c.scheduledAt) {
     const TWELVE_HOURS = 12 * 60 * 60 * 1000;
     if (c.scheduledAt - currentTime <= TWELVE_HOURS) {
       return 'pending';
     }
   }
-  return c.status;
+  return c.status || 'pending';
 };
 
 export default function ComplaintList({ 
@@ -198,38 +199,43 @@ export default function ComplaintList({
     
     // Status filter
     if (statusFilter !== 'all') {
+      const normFilter = statusFilter.trim().toLowerCase();
       filtered = filtered.filter(c => {
         const effStatus = getEffectiveStatus(c, now);
-        if (statusFilter === 'pending') {
-          return effStatus === 'pending';
+        const normEff = (effStatus || '').toString().trim().toLowerCase();
+
+        if (normFilter === 'pending') {
+          return normEff === 'pending' || normEff === 'pending request' || normEff === 'pending requests' || normEff === 'active';
         }
-        if (statusFilter === 'scheduled') {
-          return c.status === 'scheduled';
+        if (normFilter === 'scheduled') {
+          return (c.status || '').toString().trim().toLowerCase() === 'scheduled';
         }
-        if (statusFilter === 'hold') {
-          return effStatus.toLowerCase() === 'hold';
+        if (normFilter === 'hold') {
+          return normEff === 'hold';
         }
-        return effStatus === statusFilter;
+        if (normFilter === 'in process' || normFilter === 'in_process') {
+          return normEff === 'in process' || normEff === 'in_process';
+        }
+        return normEff === normFilter;
       });
     }
 
     // Priority filter
     if (priorityFilter !== 'all') {
-      filtered = filtered.filter(c => c.priority === priorityFilter);
+      const normPriorityFilter = priorityFilter.trim().toLowerCase();
+      filtered = filtered.filter(c => (c.priority || '').toString().trim().toLowerCase() === normPriorityFilter);
     }
 
     // Category filter
     if (categoryFilter !== 'all') {
-      if (categoryFilter.toLowerCase() === 'new connection') {
-        filtered = filtered.filter(c => c.category?.toLowerCase() === 'new connection');
-      } else {
-        filtered = filtered.filter(c => c.category === categoryFilter);
-      }
+      const normCatFilter = categoryFilter.trim().toLowerCase();
+      filtered = filtered.filter(c => (c.category || '').toString().trim().toLowerCase() === normCatFilter);
     }
 
     // Zone filter
     if (zoneFilter !== 'all') {
-      filtered = filtered.filter(c => c.area === zoneFilter);
+      const normZoneFilter = zoneFilter.trim().toLowerCase();
+      filtered = filtered.filter(c => (c.area || '').toString().trim().toLowerCase() === normZoneFilter);
     }
 
     // Date filters

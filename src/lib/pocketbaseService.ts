@@ -217,6 +217,17 @@ export function fromDb(table: string, obj: any): any {
     }
   }
 
+  if (table === 'users') {
+    if (!result.profilePicture || String(result.profilePicture).trim() === '') {
+      try {
+        const storedPics = JSON.parse(localStorage.getItem('gts_profile_pictures') || '{}');
+        if (result.uid && storedPics[result.uid]) {
+          result.profilePicture = storedPics[result.uid];
+        }
+      } catch (e) {}
+    }
+  }
+
   if (table === 'chat_messages') {
     const rawSeen = obj.seen_by || [];
     const seenByRecord: Record<string, { username: string; time: number }> = {};
@@ -1343,6 +1354,13 @@ export const pocketbaseService = {
 
   updateUser: async (uid: string, data: Partial<UserProfile>, authorName: string) => {
     try {
+      if (data.profilePicture !== undefined) {
+        try {
+          const storedPics = JSON.parse(localStorage.getItem('gts_profile_pictures') || '{}');
+          storedPics[uid] = data.profilePicture;
+          localStorage.setItem('gts_profile_pictures', JSON.stringify(storedPics));
+        } catch (e) {}
+      }
       const dbRow = toDb('users', { ...data, uid });
       await upsertPB('users', 'uid', uid, dbRow);
       await pocketbaseService.createNotification({
@@ -1535,11 +1553,54 @@ export const pocketbaseService = {
     return false;
   },
 
-  deleteComplaint: async (id: string, customerName: string, authorName: string) => {
+  deleteComplaint: async (id: string, customerName: string, authorName: string, fullComplaintData?: Complaint) => {
     try {
+      let complaintData = fullComplaintData;
+      if (!complaintData) {
+        try {
+          const record = await pb.collection('complaints').getOne(id);
+          complaintData = fromDb('complaints', record);
+        } catch (e) {
+          try {
+            const record = await pb.collection('complaints').getFirstListItem(`complaint_id = "${id}"`);
+            complaintData = fromDb('complaints', record);
+          } catch (e2) {
+            try {
+              const record = await pb.collection('complaints').getFirstListItem(`id = "${id}"`);
+              complaintData = fromDb('complaints', record);
+            } catch (e3) {}
+          }
+        }
+      }
+
+      if (!complaintData) {
+        complaintData = {
+          id,
+          memberId: 'system',
+          memberName: authorName,
+          customerName: customerName || id,
+          customerUsername: '',
+          area: '',
+          description: 'Deleted complaint',
+          number: '',
+          status: 'pending',
+          category: 'Speed Issue',
+          priority: 'Medium',
+          createdAt: Date.now()
+        };
+      }
+
       try {
-        await pocketbaseService.saveToRecycleBin('complaints', id, authorName);
-      } catch (err) {}
+        await pocketbaseService.saveToRecycleBin(
+          'complaints',
+          id,
+          authorName,
+          complaintData.dealerId || 'main',
+          complaintData
+        );
+      } catch (err) {
+        console.warn('saveToRecycleBin failed during complaint delete:', err);
+      }
       
       let recordId = '';
       try {
@@ -1565,7 +1626,7 @@ export const pocketbaseService = {
 
       await pocketbaseService.createNotification({
         type: 'complaint_deleted',
-        message: `Registry removed: "${customerName}" protocol terminated`,
+        message: `Registry removed: "${customerName}" moved to Recycle Bin`,
         authorName
       });
     } catch (error) {
@@ -2034,11 +2095,50 @@ export const pocketbaseService = {
     }
   },
 
-  deleteClient: async (id: string, clientName: string, authorName: string) => {
+  deleteClient: async (id: string, clientName: string, authorName: string, fullClientData?: Client) => {
     try {
+      let clientData = fullClientData;
+      if (!clientData) {
+        try {
+          const record = await pb.collection('clients').getOne(id);
+          clientData = fromDb('clients', record);
+        } catch (e) {
+          try {
+            const record = await pb.collection('clients').getFirstListItem(`client_id = "${id}"`);
+            clientData = fromDb('clients', record);
+          } catch (e2) {
+            try {
+              const record = await pb.collection('clients').getFirstListItem(`id = "${id}"`);
+              clientData = fromDb('clients', record);
+            } catch (e3) {}
+          }
+        }
+      }
+
+      if (!clientData) {
+        clientData = {
+          id,
+          name: clientName || id,
+          username: '',
+          number: '',
+          mobileNumber: '',
+          seriesNumber: '',
+          area: '',
+          createdAt: Date.now()
+        } as any;
+      }
+
       try {
-        await pocketbaseService.saveToRecycleBin('clients', id, authorName);
-      } catch (err) {}
+        await pocketbaseService.saveToRecycleBin(
+          'clients',
+          id,
+          authorName,
+          (clientData as any).dealerId || 'main',
+          clientData
+        );
+      } catch (err) {
+        console.warn('saveToRecycleBin failed during client delete:', err);
+      }
 
       let recordId = '';
       try {
@@ -2161,7 +2261,7 @@ export const pocketbaseService = {
 
       await pocketbaseService.createNotification({
         type: 'client_deleted',
-        message: `Client record removed: "${clientName}" purged from database completely`,
+        message: `Client record moved to Recycle Bin: "${clientName}"`,
         authorName
       });
     } catch (error) {
@@ -2781,10 +2881,14 @@ export const pocketbaseService = {
     }
   },
 
-  terminateAllLedgerSheets: async (tenantId: string = 'main') => {
+  terminateAllLedgerSheets: async (tenantId: string = 'main', authorName: string = 'admin') => {
     try {
       const records = await pb.collection('ledger_sheets').getFullList({ filter: `dealer_id = "${tenantId}"` });
       for (const r of records) {
+        const item = fromDb('ledger_sheets', r);
+        try {
+          await pocketbaseService.saveToRecycleBin('ledger_sheets', r.id, authorName, tenantId, item);
+        } catch (e) {}
         await pb.collection('ledger_sheets').delete(r.id).catch(() => {});
       }
     } catch (e) {
@@ -2792,11 +2896,45 @@ export const pocketbaseService = {
     }
   },
 
-  deleteLedgerSheet: async (sheetId: string, tenantId: string = 'main') => {
+  deleteLedgerSheet: async (sheetId: string, authorName: string = 'admin', tenantId: string = 'main', fullSheetData?: any) => {
     try {
+      let sheetData = fullSheetData;
+      if (!sheetData) {
+        try {
+          const record = await pb.collection('ledger_sheets').getOne(sheetId);
+          sheetData = fromDb('ledger_sheets', record);
+        } catch (e) {
+          try {
+            const record = await pb.collection('ledger_sheets').getFirstListItem(`id = "${sheetId}"`);
+            sheetData = fromDb('ledger_sheets', record);
+          } catch (e2) {}
+        }
+      }
+
+      if (sheetData) {
+        try {
+          await pocketbaseService.saveToRecycleBin(
+            'ledger_sheets',
+            sheetId,
+            authorName,
+            tenantId,
+            sheetData
+          );
+        } catch (err) {
+          console.warn('saveToRecycleBin failed during ledger_sheet delete:', err);
+        }
+      }
+
       const isPbId = typeof sheetId === 'string' && /^[a-z0-9]{15}$/.test(sheetId);
       if (isPbId) {
         await pb.collection('ledger_sheets').delete(sheetId);
+      } else {
+        try {
+          const record = await pb.collection('ledger_sheets').getFirstListItem(`id = "${sheetId}"`);
+          if (record) {
+            await pb.collection('ledger_sheets').delete(record.id);
+          }
+        } catch (e) {}
       }
     } catch (e) {
       console.error("PB: deleteLedgerSheet error:", e);
@@ -2806,22 +2944,161 @@ export const pocketbaseService = {
   // --- Recycle Bin ---
   saveToRecycleBin: async (tableName: string, recordId: string, authorName: string, dealerId?: string, extraData?: any) => {
     try {
-      await pb.collection('recycle_bin').create({
-        table_name: tableName,
-        record_id: recordId,
+      // 1. Try writing to recycle_bin collection if it exists
+      try {
+        await pb.collection('recycle_bin').create({
+          table_name: tableName,
+          record_id: recordId,
+          author_name: authorName || 'admin',
+          dealer_id: dealerId || 'main',
+          deleted_at: Date.now(),
+          extra_data: extraData ? JSON.stringify(extraData) : ''
+        });
+      } catch (e) {}
+
+      // 2. Create a notification entry with type 'recycle_bin' so AdminPanel realtime subscription detects it
+      await pb.collection('notifications').create({
+        type: 'recycle_bin',
+        message: `Deleted Record: ${extraData?.customerName || extraData?.name || extraData?.recOfficer || recordId}`,
         author_name: authorName || 'admin',
         dealer_id: dealerId || 'main',
-        deleted_at: Date.now(),
-        extra_data: extraData ? JSON.stringify(extraData) : ''
+        created_at: Date.now(),
+        is_read: false,
+        details: {
+          originalTable: tableName,
+          originalId: recordId,
+          deletedAt: Date.now(),
+          data: extraData
+        }
       });
-    } catch (e) {}
+    } catch (e) {
+      console.error('saveToRecycleBin error:', e);
+    }
   },
   
-  restoreFromRecycleBin: async (recycleBinItemId: string) => {},
+  restoreFromRecycleBin: async (recycleBinItemId: string) => {
+    try {
+      let record = null;
+      try {
+        record = await pb.collection('notifications').getOne(recycleBinItemId);
+      } catch (e) {
+        try {
+          record = await pb.collection('notifications').getFirstListItem(`notification_id = "${recycleBinItemId}"`);
+        } catch (e2) {}
+      }
+
+      if (!record) {
+        throw new Error('Recycle bin record not found.');
+      }
+
+      let details = record.details;
+      if (typeof details === 'string') {
+        try {
+          details = JSON.parse(details);
+        } catch (err) {}
+      }
+
+      const originalTable = details?.originalTable || 'complaints';
+      const itemData = details?.data;
+
+      if (!itemData) {
+        throw new Error('Original item data missing from recycle bin entry.');
+      }
+
+      // Re-create the item in the original collection
+      if (originalTable === 'complaints') {
+        const dbRow = toDb('complaints', itemData);
+        await pb.collection('complaints').create(dbRow);
+      } else if (originalTable === 'clients') {
+        const dbRow = toDb('clients', itemData);
+        await pb.collection('clients').create(dbRow);
+      } else if (originalTable === 'ledger_folder') {
+        const folderData = itemData.originalData || itemData;
+        const tenantId = itemData.dealerId || record.dealer_id || 'main';
+        const currentFolders = await pocketbaseService.getLedgerFolders(tenantId);
+        if (!currentFolders.some((f: any) => f.id === folderData.id)) {
+          await pocketbaseService.updateLedgerFolders([...currentFolders, folderData], tenantId);
+        }
+      } else if (originalTable === 'ledger_sheets') {
+        const dbRow = toDb('ledger_sheets', itemData);
+        await pb.collection('ledger_sheets').create(dbRow);
+      } else {
+        const dbRow = toDb(originalTable, itemData);
+        await pb.collection(originalTable).create(dbRow);
+      }
+
+      // Remove the recycle_bin notification entry
+      await pb.collection('notifications').delete(record.id);
+
+      // Try deleting from recycle_bin table if exists
+      try {
+        const rbRecord = await pb.collection('recycle_bin').getFirstListItem(`record_id = "${details.originalId || recycleBinItemId}"`);
+        if (rbRecord) await pb.collection('recycle_bin').delete(rbRecord.id);
+      } catch (e) {}
+
+      // Create notification
+      await pocketbaseService.createNotification({
+        type: 'complaint_created',
+        message: `Restored record from Recycle Bin: ${itemData.customerName || itemData.name || details.originalId}`,
+        authorName: record.author_name || 'admin',
+        dealerId: record.dealer_id || 'main'
+      });
+    } catch (error) {
+      console.error('PB: restoreFromRecycleBin error:', error);
+      throw error;
+    }
+  },
+
   permanentlyDeleteFromRecycleBin: async (recycleBinItemId: string) => {
     try {
-      await pb.collection('recycle_bin').delete(recycleBinItemId);
-    } catch (e) {}
+      let record = null;
+      try {
+        record = await pb.collection('notifications').getOne(recycleBinItemId);
+      } catch (e) {
+        try {
+          record = await pb.collection('notifications').getFirstListItem(`notification_id = "${recycleBinItemId}"`);
+        } catch (e2) {}
+      }
+
+      if (record) {
+        let details = record.details;
+        if (typeof details === 'string') {
+          try { details = JSON.parse(details); } catch (e) {}
+        }
+        await pb.collection('notifications').delete(record.id);
+
+        if (details?.originalId) {
+          try {
+            const rbRecord = await pb.collection('recycle_bin').getFirstListItem(`record_id = "${details.originalId}"`);
+            if (rbRecord) await pb.collection('recycle_bin').delete(rbRecord.id);
+          } catch (e) {}
+        }
+      } else {
+        try {
+          await pb.collection('notifications').delete(recycleBinItemId);
+        } catch (e) {}
+        try {
+          await pb.collection('recycle_bin').delete(recycleBinItemId);
+        } catch (e) {}
+      }
+    } catch (e) {
+      console.error('PB: permanentlyDeleteFromRecycleBin error:', e);
+    }
   },
-  cleanOldRecycleBinItems: async () => {}
+
+  cleanOldRecycleBinItems: async () => {
+    try {
+      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+      const cutoff = Date.now() - THIRTY_DAYS;
+      const records = await pb.collection('notifications').getFullList({
+        filter: `type = "recycle_bin"`
+      });
+      for (const r of records) {
+        const created = r.created_at || new Date(r.created).getTime();
+        if (created < cutoff) {
+          await pb.collection('notifications').delete(r.id).catch(() => {});
+        }
+      }
+    } catch (e) {}
+  }
 };

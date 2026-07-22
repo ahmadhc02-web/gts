@@ -21,6 +21,7 @@ import FiberLoading from './FiberLoading';
 import EntrySheet from './EntrySheet';
 import ReceiptManager from './ReceiptManager';
 import BatchPrintModal from './BatchPrintModal';
+import WhatsAppConnect, { getWhatsAppSession, getWhatsAppTemplate } from './WhatsAppConnect';
 import { getAvatarUrl } from '../utils/avatar';
 
 interface AdminPanelProps {
@@ -103,9 +104,9 @@ export default function AdminPanel({
   activeTab: activeTabProp,
   onNavigate: onNavigateProp
 }: AdminPanelProps) {
-  const [localActiveTab, setLocalActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing'>('complaints');
+  const [localActiveTab, setLocalActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing' | 'mypc'>('complaints');
   const activeTab = activeTabProp !== undefined ? activeTabProp as any : localActiveTab;
-  const setActiveTab = (tabId: 'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing') => {
+  const setActiveTab = (tabId: 'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing' | 'mypc') => {
     if (onNavigateProp) {
       onNavigateProp(tabId);
     } else {
@@ -727,7 +728,7 @@ export default function AdminPanel({
 
   const [isEditingMypc, setIsEditingMypc] = useState(false);
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
-  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | null>(null);
+  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'whatsapp_connect' | null>(null);
   const [activePortalId, setActivePortalId] = useState<string | null>(null);
   const [isAddingNewPortal, setIsAddingNewPortal] = useState(false);
   
@@ -1518,6 +1519,52 @@ export default function AdminPanel({
     }
   };
 
+  const handleSendWhatsAppMessage = (rowRef: any) => {
+    const session = getWhatsAppSession();
+    if (!session.isConnected) {
+      toast.error("WhatsApp is not connected!", {
+        description: "Please open MY PC -> 'Connect with WhatsApp' to scan the QR code and link your device.",
+        action: {
+          label: 'Connect Now',
+          onClick: () => {
+            setActiveTab('mypc');
+            setMypcOpenedFile('whatsapp_connect' as any);
+          }
+        }
+      });
+      return;
+    }
+
+    let phone = (rowRef.mobileNumber || '').toString().trim();
+    if (!phone) {
+      toast.error("No mobile number found for subscriber", {
+        description: `Please enter a valid mobile number for ${rowRef.name || rowRef.username} first.`
+      });
+      return;
+    }
+
+    let cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = '92' + cleanPhone.substring(1);
+    } else if (!cleanPhone.startsWith('92') && cleanPhone.length === 10) {
+      cleanPhone = '92' + cleanPhone;
+    }
+
+    const template = getWhatsAppTemplate();
+    const finalMsg = template
+      .replace(/{name}/g, rowRef.name || rowRef.username || 'Subscriber')
+      .replace(/{username}/g, rowRef.username || '')
+      .replace(/{mobile}/g, rowRef.mobileNumber || '')
+      .replace(/{amount}/g, (rowRef.totalAmount || rowRef.baseAmount || 0).toLocaleString())
+      .replace(/{due_date}/g, rowRef.billingDay ? `${rowRef.billingDay}th` : '5th')
+      .replace(/{package}/g, rowRef.pkgDetails || 'Internet Package')
+      .replace(/{status}/g, (rowRef.paymentStatus || 'unpaid').toUpperCase());
+
+    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`;
+    window.open(waUrl, '_blank');
+    toast.success(`WhatsApp message opened for ${rowRef.name || rowRef.username}!`);
+  };
+
   const handlePermanentDeleteSubscriber = async (rowRef: any, globalRowIdx: number) => {
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete subscribers." });
@@ -1630,13 +1677,24 @@ export default function AdminPanel({
     }
   };
 
+  const isPendingStatus = (s?: string) => {
+    if (!s) return false;
+    const lower = s.trim().toLowerCase();
+    return lower === 'pending' || lower === 'pending request' || lower === 'pending requests' || lower === 'active';
+  };
+
+  const isNewConnectionCat = (cat?: string) => {
+    if (!cat) return false;
+    return cat.trim().toLowerCase() === 'new connection';
+  };
+
   const stats = [
     { label: branding.tabNames?.total_registry || 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.pending_requests || 'Pending Requests', value: complaints.filter(c => c.status === 'pending').length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.new_connection_pending || 'New Connection', value: complaints.filter(c => c.category?.toLowerCase() === 'new connection' && c.status === 'pending').length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
-    { label: branding.tabNames?.in_operation || 'In Operation', value: complaints.filter(c => c.status === 'in process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => c.status === 'complete' && c.category?.toLowerCase() !== 'new connection').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.connection_complete || 'Connection Complete', value: complaints.filter(c => c.category?.toLowerCase() === 'new connection' && c.status === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
+    { label: branding.tabNames?.pending_requests || 'Pending Requests', value: complaints.filter(c => isPendingStatus(c.status)).length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
+    { label: branding.tabNames?.new_connection_pending || 'New Connection', value: complaints.filter(c => isNewConnectionCat(c.category) && isPendingStatus(c.status)).length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
+    { label: branding.tabNames?.in_operation || 'In Operation', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'in process' || (c.status || '').toString().trim().toLowerCase() === 'in_process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
+    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'complete' && !isNewConnectionCat(c.category)).length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
+    { label: branding.tabNames?.connection_complete || 'Connection Complete', value: complaints.filter(c => isNewConnectionCat(c.category) && (c.status || '').toString().trim().toLowerCase() === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
   ];
 
   const handleTileClick = (filter: any) => {
@@ -4873,6 +4931,7 @@ export default function AdminPanel({
             {!mypcOpenedFile && (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 max-w-7xl mx-auto pt-2 pb-8">
                 {[
+                  { id: 'whatsapp_connect', icon: MessageSquare, title: 'Connect with WhatsApp', desc: 'Scan QR code & configure automated billing messages' },
                   { id: 'nodes_view', icon: Flame, title: 'Active Nodes', desc: 'Monitor dynamic hotspots' },
                   ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_data_view', icon: BarChart3, title: 'Dealers Data', desc: 'Audit dealer network metrics' }] : []),
                   { id: 'submit_view', icon: PlusSquare, title: branding?.tabNames?.submit || 'Complain Reg', desc: 'File fresh customer logs' },
@@ -4921,6 +4980,7 @@ export default function AdminPanel({
                       <span className="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
                         Running Frame: {
+                          mypcOpenedFile === 'whatsapp_connect' ? 'WhatsApp Connect & Automated Billing Gateway' :
                           mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
                           mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
                           mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
@@ -6849,6 +6909,11 @@ export default function AdminPanel({
                       branding={branding}
                     />
                   )}
+
+                  {/* Subview 15: WhatsApp Connect & Gateway */}
+                  {mypcOpenedFile === 'whatsapp_connect' && (
+                    <WhatsAppConnect onClose={() => setMypcOpenedFile(null)} />
+                  )}
                 </div>
               </div>
             )}
@@ -7925,6 +7990,16 @@ export default function AdminPanel({
                                   <div className="flex items-center justify-center gap-1.5">
                                     <button
                                       type="button"
+                                      onClick={() => handleSendWhatsAppMessage(rowRef)}
+                                      className="p-1 px-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded flex items-center gap-1 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm"
+                                      title="Send WhatsApp Billing Message"
+                                    >
+                                      <MessageSquare size={12} />
+                                      <span>Send</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
                                       disabled={!isBillingUnlocked}
                                       onClick={() => handleDeleteBillingRow(globalRowIdx)}
                                       className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded transition-colors disabled:opacity-45 "
@@ -8144,7 +8219,21 @@ export default function AdminPanel({
                           <div className="grid grid-cols-2 gap-2 text-[11px] mb-2 font-sans">
                             {/* Mobile Number */}
                             <div className="space-y-0.5">
-                              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Mobile No</span>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Mobile No</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendWhatsAppMessage(rowRef);
+                                  }}
+                                  className="px-1.5 py-0.5 text-[8px] font-black uppercase text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded flex items-center gap-1 hover:bg-emerald-100 transition-colors cursor-pointer"
+                                  title="Send WhatsApp Message"
+                                >
+                                  <MessageSquare size={9} />
+                                  <span>Send</span>
+                                </button>
+                              </div>
                               <input
                                 type="text"
                                 defaultValue={rowRef.mobileNumber}

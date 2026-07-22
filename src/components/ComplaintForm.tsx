@@ -32,17 +32,41 @@ interface ComplaintFormProps {
 
 export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentUser, branding, compact = false }: ComplaintFormProps) {
   const customNames = branding.customNames || {};
+  const getDefaultZone = (zones?: string[]) => {
+    if (!zones || zones.length === 0) return 'TB';
+    const match = zones.find(z => z.toUpperCase() === 'TB');
+    return match || zones[0] || 'TB';
+  };
+
   const [customerName, setCustomerName] = useState('');
   const [customerUsername, setCustomerUsername] = useState('');
-  const [area, setArea] = useState('');
+  const [area, setArea] = useState(() => getDefaultZone(appConfig?.zones));
   const [description, setDescription] = useState('');
   const [number, setNumber] = useState('');
   const [pkgDetails, setPkgDetails] = useState('');
   const [userNearby, setUserNearby] = useState('');
   const [panelDetails, setPanelDetails] = useState('');
-  const [status, setStatus] = useState<ComplaintStatus>('');
-  const [category, setCategory] = useState<ComplaintCategory>('');
-  const [priority, setPriority] = useState<ComplaintPriority>('');
+  const getDefaultStatus = (statuses?: string[]) => {
+    if (!statuses || statuses.length === 0) return 'pending';
+    const match = statuses.find(s => s.toLowerCase() === 'pending');
+    return match || statuses[0] || 'pending';
+  };
+
+  const getDefaultPriority = (priorities?: string[]) => {
+    if (!priorities || priorities.length === 0) return 'Medium';
+    const match = priorities.find(p => p.toLowerCase() === 'medium');
+    return match || priorities[0] || 'Medium';
+  };
+
+  const getDefaultCategory = (categories?: string[]) => {
+    if (!categories || categories.length === 0) return 'Speed Issue';
+    const match = categories.find(c => c.toLowerCase() === 'speed issue');
+    return match || categories[0] || 'Speed Issue';
+  };
+
+  const [status, setStatus] = useState<ComplaintStatus>(() => getDefaultStatus(appConfig?.statuses));
+  const [category, setCategory] = useState<ComplaintCategory>(() => getDefaultCategory(appConfig?.categories));
+  const [priority, setPriority] = useState<ComplaintPriority>(() => getDefaultPriority(appConfig?.priorities));
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
   
@@ -94,10 +118,10 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
   }, [currentUser]);
 
   useEffect(() => {
-    if (appConfig.categories.length > 0 && !category) setCategory(appConfig.categories[0]);
-    if (appConfig.statuses.length > 0 && !status) setStatus(appConfig.statuses[0]);
-    if (appConfig.priorities.length > 0 && !priority) setPriority(appConfig.priorities[0]);
-    if (appConfig.zones && appConfig.zones.length > 0 && !area) setArea(appConfig.zones[0]);
+    if (!category) setCategory(getDefaultCategory(appConfig.categories));
+    if (!status) setStatus(getDefaultStatus(appConfig.statuses));
+    if (!priority) setPriority(getDefaultPriority(appConfig.priorities));
+    if (!area) setArea(getDefaultZone(appConfig.zones));
   }, [appConfig]);
 
   // Manual selection area based on username keywords (called only during typing)
@@ -136,15 +160,15 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
     const formData = { 
       customerName: customerName.toUpperCase(), 
       customerUsername: customerUsername.toUpperCase(),
-      area: area || (appConfig.zones?.[0] || ''), 
+      area: area || getDefaultZone(appConfig.zones), 
       description: description.toUpperCase(), 
       number: number.toUpperCase(),
       pkgDetails: pkgDetails.toUpperCase(),
       userNearby: userNearby.toUpperCase(),
       panelDetails: panelDetails.toUpperCase(),
-      status: status || appConfig.statuses[0],
-      category: category || appConfig.categories[0],
-      priority: priority || appConfig.priorities[0],
+      status: status || getDefaultStatus(appConfig.statuses),
+      category: category || getDefaultCategory(appConfig.categories),
+      priority: priority || getDefaultPriority(appConfig.priorities),
       scheduledAt: isScheduled && scheduleDate ? new Date(scheduleDate).getTime() : undefined
     };
 
@@ -167,15 +191,15 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
     // Reset form
     setCustomerName('');
     setCustomerUsername('');
-    setArea(appConfig.zones?.[0] || '');
+    setArea(getDefaultZone(appConfig.zones));
     setDescription('');
     setNumber('');
     setPkgDetails('');
     setUserNearby('');
     setPanelDetails('');
-    setStatus(appConfig.statuses[0]);
-    setCategory(appConfig.categories[0]);
-    setPriority(appConfig.priorities[0]);
+    setStatus(getDefaultStatus(appConfig.statuses));
+    setCategory(getDefaultCategory(appConfig.categories));
+    setPriority(getDefaultPriority(appConfig.priorities));
     setIsScheduled(false);
     setScheduleDate('');
   };
@@ -311,9 +335,16 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 className={cn(compactInputClasses, "appearance-none pr-8 cursor-pointer")}
                 required
               >
-                {appConfig.zones?.map((zone, i) => (
-                  <option key={`zone-${i}`} value={zone}>{zone.toUpperCase()}</option>
-                ))}
+                {(!appConfig.zones || appConfig.zones.length === 0) ? (
+                  <option value="TB">TB</option>
+                ) : (
+                  appConfig.zones.map((zone, i) => (
+                    <option key={`zone-${i}`} value={zone}>{zone.toUpperCase()}</option>
+                  ))
+                )}
+                {appConfig.zones && appConfig.zones.length > 0 && !appConfig.zones.some(z => z.toUpperCase() === 'TB') && (
+                  <option value="TB">TB</option>
+                )}
               </select>
               <MapPin size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
               <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none transition-transform duration-300 group-focus-within/field:rotate-180" />
@@ -384,12 +415,16 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
                 className={cn(compactInputClasses, "appearance-none pr-8 cursor-pointer")}
               >
-                {appConfig.categories.length === 0 && (
-                  <option value="" disabled>No Categories Available</option>
+                {(!appConfig.categories || appConfig.categories.length === 0) ? (
+                  <option value="Speed Issue">SPEED ISSUE</option>
+                ) : (
+                  appConfig.categories.map((cat, i) => (
+                    <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
+                  ))
                 )}
-                {appConfig.categories.map((cat, i) => (
-                  <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
-                ))}
+                {appConfig.categories && appConfig.categories.length > 0 && !appConfig.categories.some(c => c.toLowerCase() === 'speed issue') && (
+                  <option value="Speed Issue">SPEED ISSUE</option>
+                )}
               </select>
               <Info size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
               <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none transition-transform duration-300 group-focus-within/field:rotate-180" />
@@ -661,9 +696,16 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                     className={cn(inputClasses, "appearance-none cursor-pointer")}
                     required
                   >
-                    {appConfig.zones?.map((zone, i) => (
-                      <option key={`zone-${i}`} value={zone}>{zone.toUpperCase()}</option>
-                    ))}
+                    {(!appConfig.zones || appConfig.zones.length === 0) ? (
+                      <option value="TB">TB</option>
+                    ) : (
+                      appConfig.zones.map((zone, i) => (
+                        <option key={`zone-${i}`} value={zone}>{zone.toUpperCase()}</option>
+                      ))
+                    )}
+                    {appConfig.zones && appConfig.zones.length > 0 && !appConfig.zones.some(z => z.toUpperCase() === 'TB') && (
+                      <option value="TB">TB</option>
+                    )}
                   </select>
                 </div>
               </motion.div>
@@ -725,12 +767,16 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                     onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
                     className={cn(inputClasses, "appearance-none cursor-pointer")}
                   >
-                    {appConfig.categories.length === 0 && (
-                      <option value="" disabled>No Categories Available</option>
+                    {(!appConfig.categories || appConfig.categories.length === 0) ? (
+                      <option value="Speed Issue">SPEED ISSUE</option>
+                    ) : (
+                      appConfig.categories.map((cat, i) => (
+                        <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
+                      ))
                     )}
-                    {appConfig.categories.map((cat, i) => (
-                      <option key={`cat-${i}`} value={cat}>{cat.toUpperCase()}</option>
-                    ))}
+                    {appConfig.categories && appConfig.categories.length > 0 && !appConfig.categories.some(c => c.toLowerCase() === 'speed issue') && (
+                      <option value="Speed Issue">SPEED ISSUE</option>
+                    )}
                   </select>
                 </div>
               </motion.div>
