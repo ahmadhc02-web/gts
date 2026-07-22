@@ -206,14 +206,9 @@ export default function AdminPanel({
     return recycleItems.filter(item => {
       if (!recycleSearchTerm) return true;
       const term = recycleSearchTerm.toLowerCase();
-      const tableName = (item.table_name || '').toLowerCase();
-      const author = (item.author_name || '').toLowerCase();
-      let recordLabel = '';
-      try {
-        const extra = JSON.parse(item.extra_data || '{}');
-        recordLabel = (extra.customerName || extra.name || extra.clientName || '').toLowerCase();
-      } catch (e) {}
-      return tableName.includes(term) || author.includes(term) || recordLabel.includes(term);
+      return item.message?.toLowerCase().includes(term) || 
+             item.author_name?.toLowerCase().includes(term) ||
+             item.details?.originalTable?.toLowerCase().includes(term);
     });
   }, [recycleItems, recycleSearchTerm]);
 
@@ -250,8 +245,9 @@ export default function AdminPanel({
         console.error("Cleanup old items error:", err);
       }
 
-      const unsubscribe = pocketbaseService.subscribeRecycleBin((data) => {
-        setRecycleItems(data);
+      const unsubscribe = pocketbaseService.subscribeNotifications((data) => {
+        const items = data.filter(n => n.type === 'recycle_bin');
+        setRecycleItems(items);
         setIsRecycleLoading(false);
       }, currentUser.role !== 'super_admin' ? currentUser.dealerId : undefined);
 
@@ -4632,12 +4628,9 @@ export default function AdminPanel({
                   <div className="space-y-4 relative">
                     <AnimatePresence mode="popLayout">
                       {filteredRecycleItems.map((item) => {
-                        const extraParsed = (() => {
-                          try { return JSON.parse(item.extra_data || '{}'); } catch (e) { return {}; }
-                        })();
-                        const details = extraParsed.originalData ? extraParsed.originalData : extraParsed;
+                        const details = item.details || {};
                         const isExpanded = expandedRecycleItem === item.id;
-                        const deletedAt = item.deleted_at || Date.parse(item.created);
+                        const deletedAt = details.deletedAt || item.created_at;
                         const relativeTime = (() => {
                           const diff = Date.now() - deletedAt;
                           const mins = Math.floor(diff / 60000);
@@ -4680,13 +4673,10 @@ export default function AdminPanel({
                                 </div>
                                 <div className="space-y-1">
                                   <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest font-mono bg-slate-100 dark:bg-slate-900 text-slate-500">
-                                    {item.table_name || 'Unknown'}
+                                    {details.originalTable || 'Unknown'}
                                   </span>
                                   <h4 className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight leading-none mt-1">
-                                    {(() => {
-    const title = details.customerName || details.name || details.clientName || details.domain || `Record ${item.record_id}`;
-    return `Deleted ${item.table_name} entry: "${title}"`;
-  })()}
+                                    {item.message || "Deleted entry"}
                                   </h4>
                                   <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                                     <span className="flex items-center gap-1">
@@ -4738,8 +4728,8 @@ export default function AdminPanel({
                                   <div className="space-y-2">
                                     <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Database Entry Metadata</h5>
                                     <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 space-y-1 text-[11px]">
-                                      <div><span className="font-bold text-slate-500">ORIGINAL TABLE:</span> {item.table_name}</div>
-                                      <div><span className="font-bold text-slate-500">ORIGINAL ID:</span> {item.record_id}</div>
+                                      <div><span className="font-bold text-slate-500">ORIGINAL TABLE:</span> {details.originalTable}</div>
+                                      <div><span className="font-bold text-slate-500">ORIGINAL ID:</span> {details.originalId}</div>
                                       <div><span className="font-bold text-slate-500">DEALER SCOPE:</span> {item.dealer_id}</div>
                                       <div><span className="font-bold text-slate-500">DELETED AT:</span> {new Date(deletedAt).toLocaleString()}</div>
                                     </div>
@@ -4759,7 +4749,7 @@ export default function AdminPanel({
                                 <div className="space-y-2">
                                   <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Payload Snapshot</h5>
                                   <pre className="p-4 rounded-xl bg-slate-950 text-emerald-400 text-[10.5px] leading-relaxed border border-slate-900 overflow-x-auto font-mono max-h-64 scrollbar-thin">
-                                    {JSON.stringify(details, null, 2)}
+                                    {JSON.stringify(details.originalData, null, 2)}
                                   </pre>
                                 </div>
 

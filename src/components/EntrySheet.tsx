@@ -1969,8 +1969,7 @@ export default function EntrySheet({
     if (!confirmDel) return;
 
     try {
-      const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-      await pocketbaseService.deleteLedgerSheet(sheetId, currentUser?.username || currentUser?.fullName || 'admin', scopeId || 'main');
+      await pocketbaseService.deleteLedgerSheet(sheetId);
       toast.success("Ledger card deleted successfully.");
       if (loadedSheetId === sheetId) {
         resetToBlank();
