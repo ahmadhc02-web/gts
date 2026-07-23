@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { MessageSquare, QrCode, LogOut, CheckCircle2, ShieldCheck, RefreshCw, Send, Sparkles, Copy, Smartphone, Phone, AlertCircle, ExternalLink, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import QRCode from 'qrcode';
+import { io, Socket } from 'socket.io-client';
 
 export interface WhatsAppSession {
   isConnected: boolean;
@@ -14,28 +15,19 @@ export interface WhatsAppSession {
 export const DEFAULT_WHATSAPP_TEMPLATE = 
   "Dear {name} ({username}), your WiFi ISP bill for package {package} is PKR {amount}. Due Date: {due_date}. Please pay to avoid disconnection. Thank you!";
 
+// In-memory cache for session from socket
+let globalSession: WhatsAppSession = {
+  isConnected: false,
+  phone: '',
+  deviceName: 'GTS ISP WhatsApp Gateway'
+};
+
 export const getWhatsAppSession = (): WhatsAppSession => {
-  try {
-    const saved = localStorage.getItem('gts_whatsapp_session');
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error("Error reading whatsapp session:", e);
-  }
-  return {
-    isConnected: false,
-    phone: '',
-    deviceName: 'GTS ISP WhatsApp Gateway'
-  };
+  return globalSession;
 };
 
 export const saveWhatsAppSession = (session: WhatsAppSession) => {
-  try {
-    localStorage.setItem('gts_whatsapp_session', JSON.stringify(session));
-  } catch (e) {
-    console.error("Error saving whatsapp session:", e);
-  }
+  globalSession = session;
 };
 
 export const getWhatsAppTemplate = (): string => {
@@ -66,42 +58,86 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
   const [session, setSession] = useState<WhatsAppSession>(getWhatsAppSession());
   const [template, setTemplate] = useState<string>(getWhatsAppTemplate());
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
-  const [phoneInput, setPhoneInput] = useState<string>('03001234567');
-  const [qrCodeNonce, setQrCodeNonce] = useState<number>(Date.now());
+  
+  const [qrCodeData, setQrCodeData] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const [testMobile, setTestMobile] = useState<string>('03001234567');
+  const [testMobile, setTestMobile] = useState<string>('');
+  
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [dailyCount, setDailyCount] = useState<number>(0);
+  // const DAILY_LIMIT = Infinity;
 
-  // Format clean phone number
-  const cleanPhone = phoneInput.replace(/[^0-9]/g, '');
-  const formattedPhone = cleanPhone.startsWith('0') 
-    ? `92${cleanPhone.substring(1)}` 
-    : (cleanPhone.startsWith('92') ? cleanPhone : `92${cleanPhone}`);
-
-  // Pairing URI for WhatsApp QR Code
-  const pairingUri = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(`GTS_ISP_PAIRING_REQUEST_${qrCodeNonce}`)}`;
-
-  // Generate Real QR Code Data URL using 'qrcode' package
   useEffect(() => {
-    QRCode.toDataURL(pairingUri, {
-      width: 320,
-      margin: 2,
-      color: {
-        dark: '#090d16',
-        light: '#ffffff'
-      },
-      errorCorrectionLevel: 'H'
-    })
-      .then((url) => {
-        setQrDataUrl(url);
+    // Initialize Socket.io connection
+    const newSocket = io();
+    setSocket(newSocket);
+
+    newSocket.on('connect', () => {
+      console.log("Connected to WebSocket for WhatsApp status");
+    });
+
+    newSocket.on('whatsapp_status', (data) => {
+      console.log("Status update:", data);
+      if (data.dailyCount !== undefined) {
+        setDailyCount(data.dailyCount);
+      }
+      
+      if (data.state === 'CONNECTED') {
+        const newSess = {
+          isConnected: true,
+          phone: 'Connected Gateway',
+          deviceName: 'GTS ISP Web Node (Multi-Device)',
+          connectedAt: new Date().toLocaleString()
+        };
+        setSession(newSess);
+        saveWhatsAppSession(newSess);
+        setQrCodeData(null);
+        setIsConnecting(false);
+      } else if (data.state === 'DISCONNECTED') {
+        const newSess = {
+          isConnected: false,
+          phone: '',
+          deviceName: 'GTS ISP WhatsApp Gateway'
+        };
+        setSession(newSess);
+        saveWhatsAppSession(newSess);
+        setQrCodeData(null);
+        setIsConnecting(false);
+      } else if (data.state === 'INITIALIZING') {
+        setIsConnecting(true);
+      } else if (data.state === 'QR_READY') {
+        setIsConnecting(false);
+        if (data.qr) {
+          setQrCodeData(data.qr);
+        }
+      }
+    });
+
+    // Check status on mount
+    fetch('/api/whatsapp/status').then(r => r.json()).then(data => {
+       if(data.dailyCount !== undefined) setDailyCount(data.dailyCount);
+    }).catch(() => {});
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, []);
+
+  // Generate Real QR Code Data URL using 'qrcode' package when qrCodeData is received
+  useEffect(() => {
+    if (qrCodeData) {
+      QRCode.toDataURL(qrCodeData, {
+        width: 320,
+        margin: 2,
+        color: { dark: '#090d16', light: '#ffffff' },
+        errorCorrectionLevel: 'H'
       })
-      .catch((err) => {
-        console.error("Failed to generate QR code data URL:", err);
-      });
-  }, [phoneInput, qrCodeNonce, formattedPhone]);
-
-  useEffect(() => {
-    saveWhatsAppSession(session);
-  }, [session]);
+      .then((url) => setQrDataUrl(url))
+      .catch((err) => console.error("Failed to generate QR code data URL:", err));
+    } else {
+      setQrDataUrl('');
+    }
+  }, [qrCodeData]);
 
   const handleSaveTemplate = () => {
     saveWhatsAppTemplate(template);
@@ -115,44 +151,21 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
   };
 
   const handleConnectWhatsApp = () => {
-    if (!phoneInput || phoneInput.trim().length < 8) {
-      toast.error("Please enter a valid WhatsApp mobile number first.");
-      return;
+    if (socket) {
+      setIsConnecting(true);
+      socket.emit("whatsapp_connect");
+      toast.info("Initializing WhatsApp Gateway... Please wait for QR code.");
     }
-    setIsConnecting(true);
-    toast.info("Pairing WhatsApp Gateway Device...");
-
-    setTimeout(() => {
-      const displayPhone = formattedPhone.startsWith('92') 
-        ? `+92 ${formattedPhone.substring(2)}` 
-        : `+${formattedPhone}`;
-
-      const newSession: WhatsAppSession = {
-        isConnected: true,
-        phone: displayPhone,
-        deviceName: 'GTS ISP Web Node (Multi-Device)',
-        connectedAt: new Date().toLocaleString()
-      };
-      setSession(newSession);
-      saveWhatsAppSession(newSession);
-      setIsConnecting(false);
-      toast.success(`WhatsApp Connected Permanently to ${displayPhone}!`);
-    }, 1200);
   };
 
   const [showConfirmDisconnect, setShowConfirmDisconnect] = useState<boolean>(false);
 
   const confirmAndDisconnect = () => {
-    const newSession: WhatsAppSession = {
-      isConnected: false,
-      phone: '',
-      deviceName: 'GTS ISP WhatsApp Gateway'
-    };
-    setSession(newSession);
-    saveWhatsAppSession(newSession);
-    setQrCodeNonce(Date.now());
+    if (socket) {
+      socket.emit("whatsapp_disconnect");
+    }
     setShowConfirmDisconnect(false);
-    toast.success("WhatsApp disconnected successfully. Device unpaired!");
+    toast.success("Sending disconnect signal to gateway...");
   };
 
   const handleDisconnect = () => {
@@ -172,68 +185,38 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
     .replace(/{package}/g, '10 Mbps Fiber Gold')
     .replace(/{status}/g, 'UNPAID');
 
-  const handleTestSend = () => {
+  const handleTestSend = async () => {
     if (!session.isConnected) {
-      toast.error("Please connect WhatsApp first by scanning the QR code or clicking Pair Device!");
+      toast.error("Please connect WhatsApp first by scanning the QR code!");
       return;
     }
-    let target = testMobile.replace(/[^0-9]/g, '');
-    if (target.startsWith('0')) target = '92' + target.substring(1);
-    if (!target) {
+    
+    if (!testMobile) {
       toast.error("Please enter a test mobile number.");
       return;
     }
-    const testUrl = `https://wa.me/${target}?text=${encodeURIComponent(sampleRenderedMsg)}`;
-    window.open(testUrl, '_blank');
-    toast.success("Opening WhatsApp test message send window...");
+    
+    toast.info("Queueing test message...", { description: "Applying safe delay..." });
+    
+    try {
+      const res = await fetch("/api/whatsapp/send", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({ phone: testMobile, message: sampleRenderedMsg })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send test message");
+      }
+      toast.success("Test message queued successfully!");
+      if (data.count !== undefined) setDailyCount(data.count);
+    } catch (e: any) {
+      toast.error("Failed to send", { description: e.message });
+    }
   };
 
   return (
     <div className="space-y-6 animate-fade-in max-w-5xl mx-auto pb-12 font-sans">
-      {/* HEADER BAR WITH DISCONNECT IN TOP RIGHT CORNER */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="flex items-center gap-4 z-10">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 shadow-inner">
-            <MessageSquare size={28} strokeWidth={2.5} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                WhatsApp Connect & Billing Gateway
-              </h2>
-              {session.isConnected ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Connected Permanently
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  Disconnected
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-              Scan the real QR code to pair your WhatsApp account once. It remains connected permanently until manually disconnected.
-            </p>
-          </div>
-        </div>
-
-        {/* TOP RIGHT CORNER DISCONNECT BUTTON */}
-        {session.isConnected && (
-          <div className="z-10 flex items-center gap-2 self-end md:self-auto">
-            <button
-              onClick={handleDisconnect}
-              className="px-4 py-2.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-sm hover:shadow transition-all active:scale-95"
-              title="Disconnect WhatsApp Device"
-            >
-              <LogOut size={16} />
-              <span>Disconnect</span>
-            </button>
-          </div>
-        )}
-      </div>
-
       {/* SECTION 1: REAL WHATSAPP QR CODE & CONNECT PANEL */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm">
         {!session.isConnected ? (
@@ -243,85 +226,63 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
               <div className="space-y-1">
                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <Zap size={12} />
-                  <span>Real Multi-Device Web QR Pairing</span>
+                  <span>Secure Web QR Pairing</span>
                 </span>
                 <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                  Scan Real QR Code To Connect
+                  Connect Official Gateway
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                  Scan the dynamic QR code on the right with your phone camera or WhatsApp Linked Devices scanner to link your ISP gateway.
+                  Initialize the engine to request a live, secure QR code directly from WhatsApp. This session is saved on the server securely so it reconnects automatically.
                 </p>
               </div>
 
               <div className="space-y-3 bg-slate-50 dark:bg-slate-950/50 p-4 rounded-2xl border border-slate-150 dark:border-slate-800/80">
                 <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
-                    1
-                  </div>
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">1</div>
                   <p className="text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                    Open <span className="font-black text-emerald-600 dark:text-emerald-400">WhatsApp</span> on your phone.
+                    Click <strong>Initialize Gateway</strong> below to generate a fresh QR code.
                   </p>
                 </div>
                 <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
-                    2
-                  </div>
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">2</div>
                   <p className="text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                    Go to <span className="font-black text-slate-900 dark:text-white">Settings ⚙ / Menu ⋮</span> → <span className="font-black text-emerald-600 dark:text-emerald-400">Linked Devices</span>.
+                    Open <span className="font-black text-emerald-600 dark:text-emerald-400">WhatsApp</span> on your phone and go to <strong>Linked Devices</strong>.
                   </p>
                 </div>
                 <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
-                    3
-                  </div>
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5">3</div>
                   <p className="text-xs text-slate-700 dark:text-slate-300 font-semibold">
-                    Tap <span className="font-black text-slate-900 dark:text-white">Link a Device</span> and scan the generated QR Code.
+                    Scan the generated QR Code to safely establish the server session.
                   </p>
                 </div>
               </div>
 
-              {/* Phone Pairing Box */}
-              <div className="pt-2 space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-                  Your WhatsApp Gateway Mobile Number:
-                </label>
-                <div className="flex items-center gap-2 max-w-md">
-                  <div className="relative flex-1">
-                    <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                    <input
-                      type="text"
-                      value={phoneInput}
-                      onChange={(e) => setPhoneInput(e.target.value)}
-                      placeholder="e.g. 03001234567"
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs font-black text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500/30"
-                    />
-                  </div>
+              {/* Action */}
+              <div className="pt-2">
                   <button
                     onClick={handleConnectWhatsApp}
                     disabled={isConnecting}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-sm hover:shadow transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-sm hover:shadow transition-all disabled:opacity-50 flex items-center gap-2"
                   >
                     {isConnecting ? (
                       <>
-                        <RefreshCw size={14} className="animate-spin" />
-                        <span>Connecting...</span>
+                        <RefreshCw size={16} className="animate-spin" />
+                        <span>Initializing Engine...</span>
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 size={14} />
-                        <span>Pair & Connect</span>
+                        <ShieldCheck size={16} />
+                        <span>Initialize Gateway & Generate QR</span>
                       </>
                     )}
                   </button>
-                </div>
               </div>
             </div>
 
             {/* Right: Real Canvas-Rendered QR Code */}
             <div className="md:col-span-5 flex flex-col items-center justify-center">
               <div className="p-5 bg-white dark:bg-slate-950 border-2 border-emerald-500/30 dark:border-emerald-500/20 rounded-3xl shadow-xl flex flex-col items-center text-center relative group">
-                {/* Real Generated QR Image */}
-                <div className="w-60 h-60 relative bg-white p-3 rounded-2xl border border-slate-200 flex items-center justify-center overflow-hidden shadow-inner">
+                <div className="w-60 h-60 relative bg-slate-50 dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-center overflow-hidden shadow-inner">
                   {qrDataUrl ? (
                     <img 
                       src={qrDataUrl} 
@@ -330,43 +291,33 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center text-slate-400 text-xs font-bold gap-2">
-                      <RefreshCw className="animate-spin text-emerald-500" size={24} />
-                      <span>Generating QR Code...</span>
+                      {isConnecting ? (
+                         <>
+                            <RefreshCw className="animate-spin text-emerald-500" size={24} />
+                            <span>Fetching live QR from WhatsApp...</span>
+                         </>
+                      ) : (
+                         <span>Click Initialize to begin</span>
+                      )}
                     </div>
                   )}
 
                   {/* Central WhatsApp Badge */}
-                  <div className="absolute inset-0 m-auto w-10 h-10 bg-emerald-500 border-2 border-white rounded-full flex items-center justify-center shadow-md pointer-events-none">
-                    <MessageSquare size={20} className="text-white fill-white" />
-                  </div>
+                  {qrDataUrl && (
+                     <div className="absolute inset-0 m-auto w-10 h-10 bg-emerald-500 border-2 border-white rounded-full flex items-center justify-center shadow-md pointer-events-none">
+                       <MessageSquare size={20} className="text-white fill-white" />
+                     </div>
+                  )}
                 </div>
 
-                <div className="mt-3 space-y-1.5 w-full">
-                  <div className="text-[11px] font-black uppercase text-slate-800 dark:text-slate-200 tracking-wider flex items-center justify-center gap-1">
-                    <QrCode size={13} className="text-emerald-500" />
-                    <span>Real WhatsApp Scanner QR Code</span>
+                {qrDataUrl && (
+                  <div className="mt-3 space-y-1.5 w-full">
+                    <div className="text-[11px] font-black uppercase text-slate-800 dark:text-slate-200 tracking-wider flex items-center justify-center gap-1">
+                      <QrCode size={13} className="text-emerald-500" />
+                      <span>Scan to Connect</span>
+                    </div>
                   </div>
-                  
-                  <div className="flex items-center justify-center gap-3 pt-1">
-                    <button
-                      onClick={() => setQrCodeNonce(Date.now())}
-                      className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <RefreshCw size={11} />
-                      <span>Refresh Code</span>
-                    </button>
-                    <span className="text-slate-300 dark:text-slate-700">•</span>
-                    <a
-                      href={pairingUri}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                    >
-                      <ExternalLink size={11} />
-                      <span>Direct Web Link</span>
-                    </a>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -388,26 +339,32 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
                     {session.phone}
                   </h3>
                   <p className="text-xs text-slate-600 dark:text-slate-300 font-medium mt-0.5">
-                    Device: <span className="font-bold">{session.deviceName}</span> • Paired since {session.connectedAt || 'Active'}
+                    Device: <span className="font-bold">{session.deviceName}</span> • Server session active.
                   </p>
                 </div>
               </div>
 
-              {/* TOP CORNER / BOX DISCONNECT BUTTON */}
-              <button
-                onClick={handleDisconnect}
-                className="px-5 py-2.5 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-slate-200 dark:border-slate-800 hover:border-rose-300 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-all shadow-sm"
-              >
-                <LogOut size={16} />
-                <span>Disconnect</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3.5 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60 shadow-sm">
+                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Daily Sent:</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">{dailyCount}</span>
+                </div>
+                <button
+                  onClick={handleDisconnect}
+                  className="px-4 py-2.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-sm hover:shadow transition-all active:scale-95"
+                  title="Disconnect WhatsApp Device"
+                >
+                  <LogOut size={16} />
+                  <span>Disconnect</span>
+                </button>
+              </div>
             </div>
 
-            <div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-center justify-between gap-4">
+            <div className="bg-emerald-50 dark:bg-emerald-950/20 p-4 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="text-emerald-500 shrink-0" size={18} />
-                <span className="font-medium">
-                  WhatsApp is fully linked! In <strong className="text-slate-900 dark:text-white">Billing Mod</strong>, click <strong className="text-emerald-600 dark:text-emerald-400">Send</strong> next to any client row to automatically send the bill using the custom text below.
+                <span className="font-medium text-slate-700 dark:text-slate-300 text-sm">
+                  Gateway Engine Active! Safe queue mode is enabled. Click <strong className="text-emerald-600 dark:text-emerald-400">Send</strong> in Billing Mod to push messages to queue.
                 </span>
               </div>
             </div>
@@ -415,7 +372,7 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
         )}
       </div>
 
-      {/* SECTION 2: CUSTOMIZABLE WHATSAPP MESSAGE TEXT BOX (Directly below QR code/connection) */}
+      {/* SECTION 2: CUSTOMIZABLE WHATSAPP MESSAGE TEXT BOX */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
@@ -426,16 +383,15 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
               </h3>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-              Write your exact message text here. When you click <strong className="text-emerald-600 dark:text-emerald-400">Send</strong> in Billing Mod, this text is sent to the client's number with their actual details inserted.
+              Write your exact message text here. When you click <strong className="text-emerald-600 dark:text-emerald-400">Send</strong> in Billing Mod, this text is sent to the client's number.
             </p>
           </div>
-
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handleResetTemplate}
-              className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-black text-[10px] uppercase tracking-wider rounded-xl cursor-pointer transition-all"
+              className="px-4 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all"
             >
-              Reset Default
+              Reset
             </button>
             <button
               onClick={handleSaveTemplate}
@@ -454,22 +410,21 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
           </label>
           <div className="flex flex-wrap gap-2">
             {[
-              { tag: '{name}', label: 'Client Name' },
-              { tag: '{username}', label: 'PPPoE Username' },
-              { tag: '{mobile}', label: 'Mobile Number' },
-              { tag: '{amount}', label: 'Bill Amount' },
-              { tag: '{due_date}', label: 'Due Date' },
-              { tag: '{package}', label: 'Package Plan' },
-              { tag: '{status}', label: 'Payment Status' }
-            ].map(item => (
+              { id: '{name}', label: 'Full Name' },
+              { id: '{username}', label: 'Username' },
+              { id: '{mobile}', label: 'Mobile No' },
+              { id: '{amount}', label: 'Bill Amount' },
+              { id: '{due_date}', label: 'Due Date' },
+              { id: '{package}', label: 'Package Name' },
+              { id: '{status}', label: 'Status' }
+            ].map(tag => (
               <button
-                key={item.tag}
-                onClick={() => insertVariableTag(item.tag)}
-                className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1"
-                title={`Click to add ${item.label}`}
+                key={tag.id}
+                onClick={() => insertVariableTag(tag.id)}
+                className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-700 hover:border-emerald-200 rounded-lg text-[10px] font-bold tracking-wide transition-all cursor-pointer flex items-center gap-1"
               >
-                <span>+</span>
-                <span>{item.tag}</span>
+                <span className="font-mono">{tag.id}</span>
+                <span className="opacity-50">· {tag.label}</span>
               </button>
             ))}
           </div>
@@ -491,7 +446,6 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
 
         {/* Live Preview & Direct Test Send */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-          {/* Left Chat Preview */}
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
               Live Preview (As Seen by Client):
@@ -506,14 +460,13 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
             </div>
           </div>
 
-          {/* Right Direct Test Sender */}
           <div className="space-y-2 bg-slate-50 dark:bg-slate-950/50 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block mb-1">
                 Test Send Custom Message
               </span>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed mb-3">
-                Send a sample message to your own WhatsApp number to verify layout and text formatting.
+                Send a sample message to your own WhatsApp number to verify layout and text formatting. Will be queued safely.
               </p>
               <div className="space-y-1">
                 <label className="text-[9px] font-black uppercase text-slate-400">
@@ -534,12 +487,45 @@ export default function WhatsAppConnect({ onClose }: WhatsAppConnectProps) {
               className="mt-4 w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-sm transition-all flex items-center justify-center gap-2"
             >
               <Send size={14} />
-              <span>Send Test Message via WhatsApp</span>
+              <span>Send Test Message via Server</span>
             </button>
           </div>
         </div>
       </div>
+
+      {showConfirmDisconnect && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-200 dark:border-slate-800"
+          >
+            <div className="w-16 h-16 rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle size={32} />
+            </div>
+            <h3 className="text-xl font-black text-center text-slate-900 dark:text-white mb-2">
+              Disconnect Gateway?
+            </h3>
+            <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-6 font-medium">
+              Are you sure you want to log out the server session? You will need to scan a new QR code to reconnect.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmDisconnect(false)}
+                className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-black text-xs uppercase tracking-wider rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAndDisconnect}
+                className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-sm transition-all"
+              >
+                Disconnect
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
-

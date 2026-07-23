@@ -729,6 +729,44 @@ export default function AdminPanel({
   const [isEditingMypc, setIsEditingMypc] = useState(false);
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
   const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'whatsapp_connect' | null>(null);
+
+  // Sync running frame state to Layout header
+  useEffect(() => {
+    if (mypcOpenedFile) {
+      const title = mypcOpenedFile === 'whatsapp_connect' ? 'WhatsApp Connect & Automated Billing Gateway' :
+                    mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
+                    mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
+                    mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
+                    mypcOpenedFile === 'login_profiles' ? 'Active System Roles & Authentication Overview' :
+                    mypcOpenedFile === 'system_config' ? 'Real-Time Tenant Parameters configuration' :
+                    mypcOpenedFile === 'dealers_view' ? 'Authorized Dealers Setup Protocol' :
+                    mypcOpenedFile === 'branding_panel' ? 'Theme Style & System Signage Configuration' :
+                    mypcOpenedFile === 'settings_info' ? 'System Audio-Voice Matrix & Security' :
+                    mypcOpenedFile === 'complaints_view' ? 'Real-Time Operational Support Request Console' :
+                    mypcOpenedFile === 'nodes_view' ? 'Diagnostic Active Nodes & Hotspot Index' :
+                    mypcOpenedFile === 'dealers_data_view' ? 'Dealers Network Intelligence Audit Matrix' :
+                    mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
+                    mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
+                    'Cloud Sheets Sync Nodes Proxy';
+
+      window.dispatchEvent(new CustomEvent('gts-running-frame-changed', {
+        detail: { appFile: mypcOpenedFile, frameTitle: title }
+      }));
+    } else {
+      window.dispatchEvent(new CustomEvent('gts-running-frame-changed', { detail: null }));
+    }
+  }, [mypcOpenedFile]);
+
+  // Listen for close application trigger from top header
+  useEffect(() => {
+    const handleCloseMyPCFile = () => {
+      setMypcOpenedFile(null);
+    };
+    window.addEventListener('gts-close-mypc-file', handleCloseMyPCFile);
+    return () => {
+      window.removeEventListener('gts-close-mypc-file', handleCloseMyPCFile);
+    };
+  }, []);
   const [activePortalId, setActivePortalId] = useState<string | null>(null);
   const [isAddingNewPortal, setIsAddingNewPortal] = useState(false);
   
@@ -1519,7 +1557,7 @@ export default function AdminPanel({
     }
   };
 
-  const handleSendWhatsAppMessage = (rowRef: any) => {
+  const handleSendWhatsAppMessage = async (rowRef: any) => {
     const session = getWhatsAppSession();
     if (!session.isConnected) {
       toast.error("WhatsApp is not connected!", {
@@ -1560,9 +1598,22 @@ export default function AdminPanel({
       .replace(/{package}/g, rowRef.pkgDetails || 'Internet Package')
       .replace(/{status}/g, (rowRef.paymentStatus || 'unpaid').toUpperCase());
 
-    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`;
-    window.open(waUrl, '_blank');
-    toast.success(`WhatsApp message opened for ${rowRef.name || rowRef.username}!`);
+    toast.info(`Queuing message to ${rowRef.name || rowRef.username}...`, { description: 'Applying safe delay...' });
+    
+    try {
+      const res = await fetch("/api/whatsapp/send", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({ phone: cleanPhone, message: finalMsg })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send message");
+      }
+      toast.success(`Message queued securely for ${rowRef.name || rowRef.username}!`);
+    } catch (e: any) {
+      toast.error("Failed to send message", { description: e.message });
+    }
   };
 
   const handlePermanentDeleteSubscriber = async (rowRef: any, globalRowIdx: number) => {
@@ -4968,39 +5019,6 @@ export default function AdminPanel({
             )}
             {mypcOpenedFile && (
               <div className="space-y-6 animate-fade-in text-left">
-                <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-900 px-5 py-4 rounded-2xl border border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setMypcOpenedFile(null)}
-                      className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 dark:border-slate-800 cursor-pointer shadow-sm transition-all"
-                    >
-                      ◀ Close Application
-                    </button>
-                    <div>
-                      <span className="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
-                        Running Frame: {
-                          mypcOpenedFile === 'whatsapp_connect' ? 'WhatsApp Connect & Automated Billing Gateway' :
-                          mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
-                          mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
-                          mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
-                          mypcOpenedFile === 'login_profiles' ? 'Active System Roles & Authentication Overview' :
-                          mypcOpenedFile === 'system_config' ? 'Real-Time Tenant Parameters configuration' :
-                          mypcOpenedFile === 'dealers_view' ? 'Authorized Dealers Setup Protocol' :
-                          mypcOpenedFile === 'branding_panel' ? 'Theme Style & System Signage Configuration' :
-                          mypcOpenedFile === 'settings_info' ? 'System Audio-Voice Matrix & Security' :
-                          mypcOpenedFile === 'complaints_view' ? 'Real-Time Operational Support Request Console' :
-                          mypcOpenedFile === 'nodes_view' ? 'Diagnostic Active Nodes & Hotspot Index' :
-                          mypcOpenedFile === 'dealers_data_view' ? 'Dealers Network Intelligence Audit Matrix' :
-                          mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
-                          mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
-                          'Cloud Sheets Sync Nodes Proxy'
-                        }
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="p-1 min-h-[420px]">
                   {/* Subview 1: Client Infrastructure Directory */}
                   {mypcOpenedFile === 'user_details' && (

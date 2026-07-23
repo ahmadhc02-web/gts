@@ -1,3 +1,7 @@
+import http from "http";
+import { Server as SocketIOServer } from "socket.io";
+import whatsappPkg from "whatsapp-web.js";
+const { Client, LocalAuth } = whatsappPkg;
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -36,6 +40,316 @@ const localOtpStore = new Map<string, MemoryOTP>();
 
 async function startServer() {
   const app = express();
+  app.use(cors());
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
+
+  const httpServer = http.createServer(app);
+  const io = new SocketIOServer(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  // ----------------------------------------------------
+  // WhatsApp Integration with persistent connection & auto-reconnect
+  // ----------------------------------------------------
+  let whatsappClient = null;
+  let whatsappState = "DISCONNECTED"; // DISCONNECTED, INITIALIZING, QR_READY, CONNECTED
+  let currentQr = null;
+  let isExplicitLogout = false;
+  let autoReconnectTimer = null;
+  let keepAliveInterval = null;
+  
+  // Rate limiting & Daily Limits
+  let dailyMessagesCount = 0;
+  let lastResetDate = new Date().toDateString();
+  const DAILY_LIMIT = Infinity;
+  
+  // Message Queue
+  const messageQueue = [];
+  let isQueueProcessing = false;
+  
+  // Track recently sent numbers to prevent duplicates (5 mins)
+  const recentlySent = new Map();
+
+  function scheduleAutoReconnect(delayMs = 5000) {
+    if (isExplicitLogout) return;
+    if (autoReconnectTimer) clearTimeout(autoReconnectTimer);
+    console.log(`[WhatsApp Permanent Sync] Scheduling automatic reconnection attempt in ${delayMs / 1000}s...`);
+    autoReconnectTimer = setTimeout(() => {
+      autoReconnectTimer = null;
+      if (!whatsappClient && !isExplicitLogout) {
+        initializeWhatsApp();
+      }
+    }, delayMs);
+  }
+
+  function checkDailyLimitReset() {
+    const today = new Date().toDateString();
+    if (today !== lastResetDate) {
+      dailyMessagesCount = 0;
+      lastResetDate = today;
+    }
+  }
+
+    let lastMessageSentAt = 0;
+
+  async function processQueue() {
+    if (isQueueProcessing || messageQueue.length === 0) return;
+    isQueueProcessing = true;
+    
+    while (messageQueue.length > 0) {
+      const { phone, message, resolve, reject } = messageQueue[0];
+      
+      if (!whatsappClient || whatsappState !== "CONNECTED") {
+        reject(new Error("WhatsApp client not connected."));
+        messageQueue.shift();
+        continue;
+      }
+      
+      const now = Date.now();
+      const timeSinceLast = now - lastMessageSentAt;
+      const requiredDelay = 30000; // 30 seconds delay between messages
+      
+      if (lastMessageSentAt > 0 && timeSinceLast < requiredDelay) {
+        const waitTime = requiredDelay - timeSinceLast;
+        console.log(`Waiting ${waitTime}ms before sending to ${phone}...`);
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+      
+      try {
+        await whatsappClient.sendMessage(phone, message);
+        dailyMessagesCount++;
+        lastMessageSentAt = Date.now();
+        resolve({ success: true, count: dailyMessagesCount });
+        console.log(`Message sent to ${phone}`);
+      } catch (err) {
+        console.error("Failed to send message:", err);
+        reject(err);
+      }
+      
+      messageQueue.shift(); // Remove processed item
+    }
+    
+    isQueueProcessing = false;
+  }
+
+  function initializeWhatsApp() {
+    if (whatsappClient) return;
+    
+    // Clean up Puppeteer lock files to prevent "browser already running" error
+    try {
+      const lockPath = path.join(process.cwd(), 'auth_info', 'session', 'SingletonLock');
+      const cookiePath = path.join(process.cwd(), 'auth_info', 'session', 'SingletonCookie');
+      try { fs.unlinkSync(lockPath); } catch (e) {}
+      try { fs.unlinkSync(cookiePath); } catch (e) {}
+    } catch (e) {
+      console.warn("Could not clean up Singleton files:", e.message);
+    }
+
+    isExplicitLogout = false;
+    if (autoReconnectTimer) {
+      clearTimeout(autoReconnectTimer);
+      autoReconnectTimer = null;
+    }
+
+    whatsappState = "INITIALIZING";
+    io.emit("whatsapp_status", { state: whatsappState });
+    
+    whatsappClient = new Client({
+      authStrategy: new LocalAuth({ dataPath: './auth_info' }),
+      takeoverOnConflict: true,
+      takeoverTimeoutMs: 0,
+      puppeteer: {
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-gpu',
+        ]
+      }
+    });
+
+    whatsappClient.on('qr', (qr) => {
+      whatsappState = "QR_READY";
+      currentQr = qr;
+      io.emit("whatsapp_status", { state: whatsappState, qr });
+    });
+
+    whatsappClient.on('ready', () => {
+      whatsappState = "CONNECTED";
+      currentQr = null;
+      io.emit("whatsapp_status", { state: whatsappState });
+      console.log("WhatsApp Web Client is permanently synced & ready!");
+    });
+
+    whatsappClient.on('disconnected', (reason) => {
+      console.log("WhatsApp disconnected:", reason);
+      whatsappState = "DISCONNECTED";
+      currentQr = null;
+      io.emit("whatsapp_status", { state: whatsappState });
+      try { whatsappClient?.destroy(); } catch (e) {}
+      whatsappClient = null;
+
+      if (!isExplicitLogout) {
+        console.log("Unexpected WhatsApp disconnect. Auto-reconnecting in 5s...");
+        scheduleAutoReconnect(5000);
+      }
+    });
+
+    whatsappClient.on('auth_failure', (msg) => {
+      console.error("WhatsApp auth failure:", msg);
+      whatsappState = "DISCONNECTED";
+      currentQr = null;
+      io.emit("whatsapp_status", { state: whatsappState, error: msg });
+      try { whatsappClient?.destroy(); } catch (e) {}
+      whatsappClient = null;
+
+      if (!isExplicitLogout) {
+        console.log("Auth failure encountered. Retrying connection in 10s...");
+        scheduleAutoReconnect(10000);
+      }
+    });
+
+    whatsappClient.initialize().catch(err => {
+      console.error("WhatsApp initialization error:", err);
+      whatsappState = "DISCONNECTED";
+      try { whatsappClient?.destroy(); } catch (e) {}
+      whatsappClient = null;
+
+      if (!isExplicitLogout) {
+        scheduleAutoReconnect(8000);
+      }
+    });
+
+    // Start Keep-Alive monitor if not already running
+    if (!keepAliveInterval) {
+      keepAliveInterval = setInterval(async () => {
+        if (isExplicitLogout) return;
+
+        if (whatsappState === "CONNECTED" && whatsappClient) {
+          try {
+            const state = await whatsappClient.getState();
+            if (state !== "CONNECTED" && state !== "PAIRING") {
+              console.warn(`[WhatsApp Monitor] State altered (${state}). Restarting client...`);
+              try { whatsappClient.destroy(); } catch (e) {}
+              whatsappClient = null;
+              whatsappState = "DISCONNECTED";
+              io.emit("whatsapp_status", { state: whatsappState });
+              scheduleAutoReconnect(3000);
+            }
+          } catch (err: any) {
+            console.warn("[WhatsApp Monitor] Heartbeat warning:", err?.message || err);
+          }
+        } else if (whatsappState === "DISCONNECTED" && !whatsappClient && !isExplicitLogout) {
+          // If disconnected unexpectedly, ensure auto-reconnect is scheduled
+          scheduleAutoReconnect(5000);
+        }
+      }, 45000);
+    }
+  }
+
+  // Socket for status/QR updates
+  io.on("connection", (socket) => {
+    socket.emit("whatsapp_status", { state: whatsappState, qr: currentQr, dailyCount: dailyMessagesCount });
+    
+    socket.on("whatsapp_connect", () => {
+      isExplicitLogout = false;
+      if (!whatsappClient) {
+        initializeWhatsApp();
+      } else {
+        socket.emit("whatsapp_status", { state: whatsappState, qr: currentQr });
+      }
+    });
+
+    socket.on("whatsapp_disconnect", async () => {
+      isExplicitLogout = true;
+      if (autoReconnectTimer) {
+        clearTimeout(autoReconnectTimer);
+        autoReconnectTimer = null;
+      }
+      if (whatsappClient) {
+        try {
+          await whatsappClient.logout();
+        } catch(e) {}
+        try {
+          await whatsappClient.destroy();
+        } catch(e) {}
+        whatsappState = "DISCONNECTED";
+        currentQr = null;
+        whatsappClient = null;
+        io.emit("whatsapp_status", { state: whatsappState });
+      }
+    });
+  });
+
+  // REST API for checking status
+  app.get("/api/whatsapp/status", (req, res) => {
+    checkDailyLimitReset();
+    res.json({
+      state: whatsappState,
+      dailyCount: dailyMessagesCount,
+      dailyLimit: DAILY_LIMIT
+    });
+  });
+
+  // REST API for sending message
+  app.post("/api/whatsapp/send", async (req, res) => {
+    try {
+      const { phone, message } = req.body;
+      if (!phone || !message) {
+        return res.status(400).json({ error: "Phone and message required." });
+      }
+
+      if (whatsappState !== "CONNECTED") {
+        return res.status(400).json({ error: "WhatsApp is not connected." });
+      }
+
+      
+
+      // Formatting phone
+      let target = phone.replace(/[^0-9]/g, '');
+      if (target.startsWith('0')) target = '92' + target.substring(1);
+      if (!target.startsWith('92')) target = '92' + target;
+      target = target + "@c.us";
+
+      // Check duplicate within 5 mins
+      
+
+      // Push to queue and respond immediately
+      messageQueue.push({
+        phone: target,
+        message,
+        resolve: () => {}, // dummy
+        reject: (err) => console.error("Queue error:", err)
+      });
+      
+      if (!isQueueProcessing) {
+        processQueue();
+      }
+      
+      return res.json({ success: true, status: "queued", count: dailyMessagesCount });
+
+    } catch(err) {
+      res.status(500).json({ error: err.message || String(err) });
+    }
+  });
+
+  // Auto-initialize on server start if we want, or leave it to UI trigger.
+  // Actually, let's auto-initialize so it reconnects on server restart if there's an active session
+  setTimeout(() => {
+     if (fs.existsSync('./auth_info')) {
+        initializeWhatsApp();
+     }
+  }, 5000);
+
   const PORT = 3000;
 
   // Robust CORS Middleware supporting Hugging Face, Netlify, and other external frontends
@@ -68,9 +382,6 @@ async function startServer() {
       },
     })
   );
-
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
 
   // --- Secure Iframe Proxy Tunnel Bypass Endpoint ---
   app.get("/api/proxy-tunnel", async (req, res) => {
@@ -2992,7 +3303,7 @@ System instructions:
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

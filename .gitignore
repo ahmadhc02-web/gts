@@ -4,3 +4,5 @@ coverage/
 *.log
 .env*
 !.env.example
+auth_info
+dist
