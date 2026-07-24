@@ -21,7 +21,6 @@ import FiberLoading from './FiberLoading';
 import EntrySheet from './EntrySheet';
 import ReceiptManager from './ReceiptManager';
 import BatchPrintModal from './BatchPrintModal';
-import WhatsAppConnect, { getWhatsAppSession, getWhatsAppTemplate } from './WhatsAppConnect';
 import { getAvatarUrl } from '../utils/avatar';
 
 interface AdminPanelProps {
@@ -104,9 +103,9 @@ export default function AdminPanel({
   activeTab: activeTabProp,
   onNavigate: onNavigateProp
 }: AdminPanelProps) {
-  const [localActiveTab, setLocalActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing' | 'mypc'>('complaints');
+  const [localActiveTab, setLocalActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing'>('complaints');
   const activeTab = activeTabProp !== undefined ? activeTabProp as any : localActiveTab;
-  const setActiveTab = (tabId: 'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing' | 'mypc') => {
+  const setActiveTab = (tabId: 'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing') => {
     if (onNavigateProp) {
       onNavigateProp(tabId);
     } else {
@@ -728,45 +727,7 @@ export default function AdminPanel({
 
   const [isEditingMypc, setIsEditingMypc] = useState(false);
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
-  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'whatsapp_connect' | null>(null);
-
-  // Sync running frame state to Layout header
-  useEffect(() => {
-    if (mypcOpenedFile) {
-      const title = mypcOpenedFile === 'whatsapp_connect' ? 'WhatsApp Connect & Automated Billing Gateway' :
-                    mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
-                    mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
-                    mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
-                    mypcOpenedFile === 'login_profiles' ? 'Active System Roles & Authentication Overview' :
-                    mypcOpenedFile === 'system_config' ? 'Real-Time Tenant Parameters configuration' :
-                    mypcOpenedFile === 'dealers_view' ? 'Authorized Dealers Setup Protocol' :
-                    mypcOpenedFile === 'branding_panel' ? 'Theme Style & System Signage Configuration' :
-                    mypcOpenedFile === 'settings_info' ? 'System Audio-Voice Matrix & Security' :
-                    mypcOpenedFile === 'complaints_view' ? 'Real-Time Operational Support Request Console' :
-                    mypcOpenedFile === 'nodes_view' ? 'Diagnostic Active Nodes & Hotspot Index' :
-                    mypcOpenedFile === 'dealers_data_view' ? 'Dealers Network Intelligence Audit Matrix' :
-                    mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
-                    mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
-                    'Cloud Sheets Sync Nodes Proxy';
-
-      window.dispatchEvent(new CustomEvent('gts-running-frame-changed', {
-        detail: { appFile: mypcOpenedFile, frameTitle: title }
-      }));
-    } else {
-      window.dispatchEvent(new CustomEvent('gts-running-frame-changed', { detail: null }));
-    }
-  }, [mypcOpenedFile]);
-
-  // Listen for close application trigger from top header
-  useEffect(() => {
-    const handleCloseMyPCFile = () => {
-      setMypcOpenedFile(null);
-    };
-    window.addEventListener('gts-close-mypc-file', handleCloseMyPCFile);
-    return () => {
-      window.removeEventListener('gts-close-mypc-file', handleCloseMyPCFile);
-    };
-  }, []);
+  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | null>(null);
   const [activePortalId, setActivePortalId] = useState<string | null>(null);
   const [isAddingNewPortal, setIsAddingNewPortal] = useState(false);
   
@@ -1554,65 +1515,6 @@ export default function AdminPanel({
     } catch (err: any) {
       console.error(err);
       toast.error("Failed to remove row", { description: getCleanErrorMessage(err) });
-    }
-  };
-
-  const handleSendWhatsAppMessage = async (rowRef: any) => {
-    const session = getWhatsAppSession();
-    if (!session.isConnected) {
-      toast.error("WhatsApp is not connected!", {
-        description: "Please open MY PC -> 'Connect with WhatsApp' to scan the QR code and link your device.",
-        action: {
-          label: 'Connect Now',
-          onClick: () => {
-            setActiveTab('mypc');
-            setMypcOpenedFile('whatsapp_connect' as any);
-          }
-        }
-      });
-      return;
-    }
-
-    let phone = (rowRef.mobileNumber || '').toString().trim();
-    if (!phone) {
-      toast.error("No mobile number found for subscriber", {
-        description: `Please enter a valid mobile number for ${rowRef.name || rowRef.username} first.`
-      });
-      return;
-    }
-
-    let cleanPhone = phone.replace(/[^0-9]/g, '');
-    if (cleanPhone.startsWith('0')) {
-      cleanPhone = '92' + cleanPhone.substring(1);
-    } else if (!cleanPhone.startsWith('92') && cleanPhone.length === 10) {
-      cleanPhone = '92' + cleanPhone;
-    }
-
-    const template = getWhatsAppTemplate();
-    const finalMsg = template
-      .replace(/{name}/g, rowRef.name || rowRef.username || 'Subscriber')
-      .replace(/{username}/g, rowRef.username || '')
-      .replace(/{mobile}/g, rowRef.mobileNumber || '')
-      .replace(/{amount}/g, (rowRef.totalAmount || rowRef.baseAmount || 0).toLocaleString())
-      .replace(/{due_date}/g, rowRef.billingDay ? `${rowRef.billingDay}th` : '5th')
-      .replace(/{package}/g, rowRef.pkgDetails || 'Internet Package')
-      .replace(/{status}/g, (rowRef.paymentStatus || 'unpaid').toUpperCase());
-
-    toast.info(`Queuing message to ${rowRef.name || rowRef.username}...`, { description: 'Applying safe delay...' });
-    
-    try {
-      const res = await fetch("/api/whatsapp/send", {
-         method: "POST",
-         headers: { "Content-Type": "application/json" },
-         body: JSON.stringify({ phone: cleanPhone, message: finalMsg })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to send message");
-      }
-      toast.success(`Message queued securely for ${rowRef.name || rowRef.username}!`);
-    } catch (e: any) {
-      toast.error("Failed to send message", { description: e.message });
     }
   };
 
@@ -4982,7 +4884,6 @@ export default function AdminPanel({
             {!mypcOpenedFile && (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 max-w-7xl mx-auto pt-2 pb-8">
                 {[
-                  { id: 'whatsapp_connect', icon: MessageSquare, title: 'Connect with WhatsApp', desc: 'Scan QR code & configure automated billing messages' },
                   { id: 'nodes_view', icon: Flame, title: 'Active Nodes', desc: 'Monitor dynamic hotspots' },
                   ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_data_view', icon: BarChart3, title: 'Dealers Data', desc: 'Audit dealer network metrics' }] : []),
                   { id: 'submit_view', icon: PlusSquare, title: branding?.tabNames?.submit || 'Complain Reg', desc: 'File fresh customer logs' },
@@ -5019,6 +4920,38 @@ export default function AdminPanel({
             )}
             {mypcOpenedFile && (
               <div className="space-y-6 animate-fade-in text-left">
+                <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-900 px-5 py-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setMypcOpenedFile(null)}
+                      className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 dark:border-slate-800 cursor-pointer shadow-sm transition-all"
+                    >
+                      ◀ Close Application
+                    </button>
+                    <div>
+                      <span className="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+                        Running Frame: {
+                          mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
+                          mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
+                          mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
+                          mypcOpenedFile === 'login_profiles' ? 'Active System Roles & Authentication Overview' :
+                          mypcOpenedFile === 'system_config' ? 'Real-Time Tenant Parameters configuration' :
+                          mypcOpenedFile === 'dealers_view' ? 'Authorized Dealers Setup Protocol' :
+                          mypcOpenedFile === 'branding_panel' ? 'Theme Style & System Signage Configuration' :
+                          mypcOpenedFile === 'settings_info' ? 'System Audio-Voice Matrix & Security' :
+                          mypcOpenedFile === 'complaints_view' ? 'Real-Time Operational Support Request Console' :
+                          mypcOpenedFile === 'nodes_view' ? 'Diagnostic Active Nodes & Hotspot Index' :
+                          mypcOpenedFile === 'dealers_data_view' ? 'Dealers Network Intelligence Audit Matrix' :
+                          mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
+                          mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
+                          'Cloud Sheets Sync Nodes Proxy'
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="p-1 min-h-[420px]">
                   {/* Subview 1: Client Infrastructure Directory */}
                   {mypcOpenedFile === 'user_details' && (
@@ -6927,11 +6860,6 @@ export default function AdminPanel({
                       branding={branding}
                     />
                   )}
-
-                  {/* Subview 15: WhatsApp Connect & Gateway */}
-                  {mypcOpenedFile === 'whatsapp_connect' && (
-                    <WhatsAppConnect onClose={() => setMypcOpenedFile(null)} />
-                  )}
                 </div>
               </div>
             )}
@@ -8008,16 +7936,6 @@ export default function AdminPanel({
                                   <div className="flex items-center justify-center gap-1.5">
                                     <button
                                       type="button"
-                                      onClick={() => handleSendWhatsAppMessage(rowRef)}
-                                      className="p-1 px-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded flex items-center gap-1 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-sm"
-                                      title="Send WhatsApp Billing Message"
-                                    >
-                                      <MessageSquare size={12} />
-                                      <span>Send</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
                                       disabled={!isBillingUnlocked}
                                       onClick={() => handleDeleteBillingRow(globalRowIdx)}
                                       className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded transition-colors disabled:opacity-45 "
@@ -8237,21 +8155,7 @@ export default function AdminPanel({
                           <div className="grid grid-cols-2 gap-2 text-[11px] mb-2 font-sans">
                             {/* Mobile Number */}
                             <div className="space-y-0.5">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Mobile No</span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSendWhatsAppMessage(rowRef);
-                                  }}
-                                  className="px-1.5 py-0.5 text-[8px] font-black uppercase text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded flex items-center gap-1 hover:bg-emerald-100 transition-colors cursor-pointer"
-                                  title="Send WhatsApp Message"
-                                >
-                                  <MessageSquare size={9} />
-                                  <span>Send</span>
-                                </button>
-                              </div>
+                              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Mobile No</span>
                               <input
                                 type="text"
                                 defaultValue={rowRef.mobileNumber}

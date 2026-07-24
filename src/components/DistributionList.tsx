@@ -110,7 +110,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
            <div className="w-full flex items-center relative h-full rounded-2xl overflow-hidden p-5">
                 {data.length > 0 ? (
                   <div className="flex flex-col w-full h-full justify-between">
-                    <div className="flex-1 w-full relative min-h-[220px] flex items-center justify-center">
+                    <div className="flex-1 w-full relative flex items-center justify-center">
                       {/* Centered Label with elegant concentric double border layout matching photo */}
                       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[84px] h-[84px] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center pointer-events-none z-10 shadow-[inner_0_2px_4px_rgba(0,0,0,0.06),0_12px_24px_-6px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 transition-colors">
                         <div className="w-[72px] h-[72px] rounded-full border border-dashed border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-center">
@@ -120,7 +120,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                         </div>
                       </div>
   
-                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={180}>
+                      <ResponsiveContainer width="100%" height="100%">
                         <PieChart margin={{ top: 0, right: 30, left: 30, bottom: 0 }}>
                           <defs>
                              <filter id="pieShadow" x="-10%" y="-10%" width="120%" height="120%">

@@ -182,30 +182,6 @@ export default function Layout({
     };
   }, []);
 
-  // Listen to running frame changes broadcast from AdminPanel (MY PC opened files like WhatsApp Connect)
-  const [runningFrame, setRunningFrame] = useState<{ appFile: string; frameTitle: string } | null>(null);
-
-  useEffect(() => {
-    const handleRunningFrameChanged = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail) {
-        setRunningFrame(customEvent.detail);
-      } else {
-        setRunningFrame(null);
-      }
-    };
-    window.addEventListener('gts-running-frame-changed', handleRunningFrameChanged);
-    return () => {
-      window.removeEventListener('gts-running-frame-changed', handleRunningFrameChanged);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (activeTab !== 'mypc' && runningFrame) {
-      setRunningFrame(null);
-    }
-  }, [activeTab]);
-
   // Automatically close sidebar if clicked anywhere outside of the sidebar on the viewport
   useEffect(() => {
     if (!isSidebarOpen) return;
@@ -1208,93 +1184,9 @@ export default function Layout({
       )}>
         <div className={cn(
           "max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:pr-8 lg:pl-6 flex items-center justify-between transition-all duration-300",
-          runningFrame ? "h-16" : activeTab === 'billing' ? "h-auto min-h-16 py-3.5 md:py-0 md:h-16 flex-wrap md:flex-nowrap gap-3" : "h-16"
+          activeTab === 'billing' ? "h-auto min-h-16 py-3.5 md:py-0 md:h-16 flex-wrap md:flex-nowrap gap-3" : "h-16"
         )}>
-          {runningFrame ? (
-            <div className="flex items-center justify-between w-full gap-3 py-1">
-              {/* Left Side: Sidebar trigger + Close App Button + Frame Title */}
-              <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-                {user && (
-                  <motion.button 
-                    id="sidebar-toggle-btn"
-                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    className={cn(
-                      "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden -ml-2 sm:ml-0 lg:hidden shrink-0",
-                      isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500"
-                    )}
-                  >
-                    <div className="flex items-center justify-center p-2">
-                      {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-                    </div>
-                  </motion.button>
-                )}
-
-                <motion.button
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => window.dispatchEvent(new CustomEvent('gts-close-mypc-file'))}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-800 text-[10px] font-black uppercase tracking-wider cursor-pointer shadow-sm shrink-0 transition-all"
-                >
-                  <ChevronLeft size={14} className="text-slate-500 shrink-0" />
-                  <span>◀ Close Application</span>
-                </motion.button>
-
-                <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                  <span className="relative flex h-2.5 w-2.5 shrink-0">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500" />
-                  </span>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-[8px] font-extrabold uppercase tracking-widest text-blue-600 dark:text-blue-400 leading-none mb-0.5">
-                      Running Frame
-                    </span>
-                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-100 truncate leading-none">
-                      {runningFrame.frameTitle}
-                    </h3>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Side: Quick Action Icons */}
-              <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-                {user && (
-                  <div className="flex items-center gap-2 h-9">
-                    <button
-                      onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                      className={cn(
-                        "w-9 h-9 rounded-full border flex items-center justify-center relative transition-all bg-white dark:bg-slate-900 shadow-sm cursor-pointer hover:scale-105 active:scale-95",
-                        alertAuthorized 
-                          ? "border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10"
-                          : "border-slate-200 dark:border-slate-800 text-amber-500 bg-amber-500/5 hover:bg-amber-500/10"
-                      )}
-                      title={alertAuthorized ? (isAudioMuted ? "Alert History (Muted)" : "Alert History") : "Alert Restricted"}
-                    >
-                      {isAudioMuted && alertAuthorized ? (
-                        <BellOff size={15} />
-                      ) : (
-                        <Bell size={15} className={!alertAuthorized ? "opacity-60" : ""} />
-                      )}
-                      {notifications.length > 0 && (
-                        <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                {/* Theme Switcher Button */}
-                <button
-                  onClick={handleThemeToggle}
-                  className="w-9 h-9 rounded-full border border-slate-200/80 dark:border-slate-800 flex items-center justify-center bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:scale-105 active:scale-95 transition-all shadow-sm cursor-pointer"
-                  title="Toggle Light/Dark Theme"
-                >
-                  {theme === 'dark' ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-slate-600" />}
-                </button>
-              </div>
-            </div>
-          ) : activeTab === 'billing' ? (
+          {activeTab === 'billing' ? (
             <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-3 md:gap-4">
               {/* Left Side: Title & Monthly Sheets button */}
               <div className="flex items-center gap-2 sm:gap-4 ml-0 justify-between md:justify-start w-full md:w-auto">
@@ -2105,62 +1997,33 @@ export default function Layout({
       {/* Footer */}
       {user && (
       <footer className={cn(
-        "relative pt-4 pb-4 sm:pt-6 sm:pb-5 border-t border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950 overflow-hidden select-none",
+        "py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950",
         user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
       )}>
-        <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center">
+        <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col items-center">
+             <div className="relative group mb-3 sm:mb-4">
+                <div className="absolute -inset-1 bg-gradient-to-r from-brand-accent to-blue-500 rounded-lg blur opacity-25 group-hover:opacity-50 transition" />
+                <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950 flex items-center justify-center shadow-xl border border-white/10 overflow-hidden">
+                  <span className="text-white font-black text-base sm:text-xl tracking-tighter italic leading-none drop-shadow-md">G<span className="text-brand-accent">TS</span></span>
+                </div>
+             </div>
+             <p className="text-[8px] sm:text-[10px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-[0.2em] sm:tracking-[0.3em] mb-1">
+               {brandingText}
+             </p>
+             <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">ISP Management Pro</h4>
+          </div>
           
-          {/* Main Animated Display Banner with Fluid Scalable Outlined "Green Tech Services" */}
-          <div className="relative w-full flex items-center justify-center my-1 overflow-hidden py-2 sm:py-5">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.96 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="w-full text-center font-serif pointer-events-none select-none px-1 flex justify-center items-center"
-            >
-              <span 
-                className="font-extrabold text-transparent transition-all uppercase tracking-normal sm:tracking-wider whitespace-nowrap block text-center"
-                style={{
-                  fontSize: 'clamp(1.1rem, 6.4vw, 7.2rem)',
-                  lineHeight: '1',
-                  WebkitTextStroke: theme === 'dark' ? 'clamp(1px, 0.15vw, 2px) #475569' : 'clamp(1px, 0.15vw, 2px) #94a3b8',
-                  filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.05))'
-                }}
-              >
-                Green Tech Services
-              </span>
-            </motion.div>
-          </div>
+          <div className="h-px w-6 sm:w-8 bg-slate-200 dark:bg-slate-800 mx-auto my-6 sm:my-8" />
 
-          {/* Bottom Info Row with GTS Logo, Copyright & ISP Management Pro */}
-          <div className="w-full pt-3 sm:pt-4 flex flex-col md:flex-row items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-900/60 mt-1">
-            
-            {/* GTS Logo + Copyright Info */}
-            <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-start">
-              <div className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-950 border border-slate-800 shadow-sm flex items-center justify-center overflow-hidden shrink-0">
-                <span className="text-white font-black text-[10px] sm:text-xs tracking-tighter italic leading-none">
-                  G<span className="text-blue-500">TS</span>
-                </span>
-              </div>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-semibold text-center md:text-left">
-                © {new Date().getFullYear()} Green Tech Services Operations. Enterprise Edition.
-              </p>
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6 max-w-4xl mx-auto">
+            <p className="text-[9px] sm:text-[11px] text-slate-400 dark:text-slate-500 font-medium text-center md:text-left">
+              © {new Date().getFullYear()} Green Tech Services Operations. <br className="xs:hidden" /> Enterprise Edition.
+            </p>
+            <div className="inline-flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-[8px] sm:text-[10px] uppercase font-bold tracking-widest text-slate-400 cursor-default">
+              Powered by Green Net
             </div>
-
-            {/* ISP Management Pro + Powered By */}
-            <div className="flex items-center gap-2.5 flex-wrap justify-center">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 shadow-2xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                ISP Management Pro
-              </div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 text-[8px] sm:text-[9px] uppercase font-extrabold tracking-widest text-slate-500 dark:text-slate-400 bg-slate-50/80 dark:bg-slate-900/80 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-default">
-                POWERED BY GREEN NET
-              </div>
-            </div>
-
           </div>
-
         </div>
       </footer>
       )}

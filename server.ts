@@ -1,7 +1,3 @@
-import http from "http";
-import { Server as SocketIOServer } from "socket.io";
-import whatsappPkg from "whatsapp-web.js";
-const { Client, LocalAuth } = whatsappPkg;
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -40,424 +36,6 @@ const localOtpStore = new Map<string, MemoryOTP>();
 
 async function startServer() {
   const app = express();
-  app.use(cors());
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
-
-  // Serve static files from public folder
-  app.use(express.static(path.join(process.cwd(), "public")));
-
-  // Manifest endpoint handler to prevent HTML fallbacks and syntax errors
-  app.get(["/manifest.json", "/manifest.webmanifest"], (req, res) => {
-    const manifestPath = path.join(process.cwd(), "public", "manifest.json");
-    if (fs.existsSync(manifestPath)) {
-      res.setHeader("Content-Type", "application/manifest+json");
-      res.sendFile(manifestPath);
-    } else {
-      res.setHeader("Content-Type", "application/json");
-      res.json({
-        name: "GTS Operational Registry",
-        short_name: "GTS System",
-        description: "Secure Operational Protocol Registry for GTS Teams",
-        theme_color: "#2563eb",
-        background_color: "#0f172a",
-        display: "standalone"
-      });
-    }
-  });
-
-  const httpServer = http.createServer(app);
-  const io = new SocketIOServer(httpServer, {
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
-    }
-  });
-
-  // ----------------------------------------------------
-  // WhatsApp Integration with persistent connection & auto-reconnect
-  // ----------------------------------------------------
-  let whatsappClient = null;
-  let whatsappState = "DISCONNECTED"; // DISCONNECTED, INITIALIZING, QR_READY, CONNECTED
-  let currentQr = null;
-  let isExplicitLogout = false;
-  let autoReconnectTimer = null;
-  let keepAliveInterval = null;
-  
-  // Rate limiting & Daily Limits
-  let dailyMessagesCount = 0;
-  let lastResetDate = new Date().toDateString();
-  const DAILY_LIMIT = Infinity;
-  
-  // Message Queue
-  const messageQueue = [];
-  let isQueueProcessing = false;
-  
-  // Track recently sent numbers to prevent duplicates (5 mins)
-  const recentlySent = new Map();
-
-  function scheduleAutoReconnect(delayMs = 5000) {
-    if (isExplicitLogout) return;
-    if (autoReconnectTimer) clearTimeout(autoReconnectTimer);
-    console.log(`[WhatsApp Permanent Sync] Scheduling automatic reconnection attempt in ${delayMs / 1000}s...`);
-    autoReconnectTimer = setTimeout(() => {
-      autoReconnectTimer = null;
-      if (!whatsappClient && !isExplicitLogout) {
-        initializeWhatsApp();
-      }
-    }, delayMs);
-  }
-
-  function checkDailyLimitReset() {
-    const today = new Date().toDateString();
-    if (today !== lastResetDate) {
-      dailyMessagesCount = 0;
-      lastResetDate = today;
-    }
-  }
-
-    let lastMessageSentAt = 0;
-
-  async function processQueue() {
-    if (isQueueProcessing || messageQueue.length === 0) return;
-    isQueueProcessing = true;
-    
-    while (messageQueue.length > 0) {
-      const { phone, message, resolve, reject } = messageQueue[0];
-      
-      if (whatsappState !== "CONNECTED") {
-        reject(new Error("WhatsApp client not connected."));
-        messageQueue.shift();
-        continue;
-      }
-      
-      const now = Date.now();
-      const timeSinceLast = now - lastMessageSentAt;
-      const requiredDelay = 2000; // 2 seconds delay between messages in queue
-      
-      if (lastMessageSentAt > 0 && timeSinceLast < requiredDelay) {
-        const waitTime = requiredDelay - timeSinceLast;
-        await new Promise(r => setTimeout(r, waitTime));
-      }
-      
-      try {
-        if (whatsappClient) {
-          await whatsappClient.sendMessage(phone, message);
-        } else {
-          // Cloud fallback mode - simulate dispatch cleanly
-          console.log(`[Cloud WhatsApp Gateway] Dispatched message to ${phone}: "${message.substring(0, 30)}..."`);
-        }
-        dailyMessagesCount++;
-        lastMessageSentAt = Date.now();
-        resolve({ success: true, count: dailyMessagesCount });
-        console.log(`Message successfully sent to ${phone}`);
-      } catch (err) {
-        console.error("Failed to send message:", err);
-        reject(err);
-      }
-      
-      messageQueue.shift(); // Remove processed item
-    }
-    
-    isQueueProcessing = false;
-  }
-
-  function initializeWhatsApp() {
-    if (whatsappClient) return;
-    
-    // Clean up Puppeteer lock files to prevent "browser already running" error
-    try {
-      const lockPath = path.join(process.cwd(), 'auth_info', 'session', 'SingletonLock');
-      const cookiePath = path.join(process.cwd(), 'auth_info', 'session', 'SingletonCookie');
-      try { fs.unlinkSync(lockPath); } catch (e) {}
-      try { fs.unlinkSync(cookiePath); } catch (e) {}
-    } catch (e) {
-      console.warn("Could not clean up Singleton files:", e.message);
-    }
-
-    isExplicitLogout = false;
-    if (autoReconnectTimer) {
-      clearTimeout(autoReconnectTimer);
-      autoReconnectTimer = null;
-    }
-
-    whatsappState = "INITIALIZING";
-    io.emit("whatsapp_status", { state: whatsappState });
-    
-    whatsappClient = new Client({
-      authStrategy: new LocalAuth({ dataPath: './auth_info' }),
-      takeoverOnConflict: true,
-      takeoverTimeoutMs: 0,
-      puppeteer: {
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-gpu',
-        ]
-      }
-    });
-
-    whatsappClient.on('qr', (qr) => {
-      whatsappState = "QR_READY";
-      currentQr = qr;
-      io.emit("whatsapp_status", { state: whatsappState, qr });
-    });
-
-    whatsappClient.on('ready', () => {
-      whatsappState = "CONNECTED";
-      currentQr = null;
-      
-      const sessionInfo = {
-        isConnected: true,
-        phone: whatsappClient.info?.wid?.user ? `+${whatsappClient.info.wid.user}` : 'Connected Gateway',
-        deviceName: whatsappClient.info?.pushname || 'GTS ISP Web Node (Multi-Device)',
-        connectedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      try {
-        fs.writeFileSync(path.join(process.cwd(), 'whatsapp_session_db.json'), JSON.stringify(sessionInfo, null, 2));
-      } catch (e) {
-        console.error("Failed to persist whatsapp session DB:", e);
-      }
-
-      io.emit("whatsapp_status", { state: whatsappState, session: sessionInfo });
-      console.log("WhatsApp Web Client is permanently synced & saved to DB!");
-    });
-
-    whatsappClient.on('disconnected', (reason) => {
-      console.log("WhatsApp disconnected:", reason);
-      whatsappState = "DISCONNECTED";
-      currentQr = null;
-      
-      try {
-        fs.writeFileSync(path.join(process.cwd(), 'whatsapp_session_db.json'), JSON.stringify({ isConnected: false, disconnectedAt: new Date().toISOString() }, null, 2));
-      } catch (e) {}
-
-      io.emit("whatsapp_status", { state: whatsappState });
-      try { whatsappClient?.destroy(); } catch (e) {}
-      whatsappClient = null;
-
-      if (!isExplicitLogout) {
-        console.log("Unexpected WhatsApp disconnect. Auto-reconnecting in 5s...");
-        scheduleAutoReconnect(5000);
-      }
-    });
-
-    whatsappClient.on('auth_failure', (msg) => {
-      console.error("WhatsApp auth failure:", msg);
-      whatsappState = "DISCONNECTED";
-      currentQr = null;
-      io.emit("whatsapp_status", { state: whatsappState, error: msg });
-      try { whatsappClient?.destroy(); } catch (e) {}
-      whatsappClient = null;
-
-      if (!isExplicitLogout) {
-        console.log("Auth failure encountered. Retrying connection in 10s...");
-        scheduleAutoReconnect(10000);
-      }
-    });
-
-    whatsappClient.initialize().catch(err => {
-      console.warn("[WhatsApp Gateway] Cloud sandbox puppeteer notice:", err?.message || err);
-      try { whatsappClient?.destroy(); } catch (e) {}
-      whatsappClient = null;
-
-      // Check if persistent session database exists
-      let savedSession = null;
-      try {
-        const dbPath = path.join(process.cwd(), 'whatsapp_session_db.json');
-        if (fs.existsSync(dbPath)) {
-          savedSession = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
-        }
-      } catch(e) {}
-
-      if (savedSession && savedSession.isConnected !== false) {
-        whatsappState = "CONNECTED";
-        currentQr = null;
-        io.emit("whatsapp_status", { state: whatsappState, session: savedSession });
-        console.log("[WhatsApp Gateway] Loaded permanent session from DB.");
-      } else {
-        whatsappState = "QR_READY";
-        currentQr = "2@GTS_CLOUD_GATEWAY_NODE_" + Date.now();
-        io.emit("whatsapp_status", { state: whatsappState, qr: currentQr });
-      }
-    });
-
-    // Start Keep-Alive monitor if not already running
-    if (!keepAliveInterval) {
-      keepAliveInterval = setInterval(async () => {
-        if (isExplicitLogout) return;
-
-        if (whatsappState === "CONNECTED" && whatsappClient) {
-          try {
-            const state = await whatsappClient.getState();
-            if (state !== "CONNECTED" && state !== "PAIRING") {
-              console.warn(`[WhatsApp Monitor] State altered (${state}). Restarting client...`);
-              try { whatsappClient.destroy(); } catch (e) {}
-              whatsappClient = null;
-              whatsappState = "DISCONNECTED";
-              io.emit("whatsapp_status", { state: whatsappState });
-            }
-          } catch (err: any) {
-            console.warn("[WhatsApp Monitor] Heartbeat warning:", err?.message || err);
-          }
-        }
-      }, 45000);
-    }
-  }
-
-  // Automatically initialize WhatsApp on boot if session exists or to prepare engine
-  try {
-    const dbPath = path.join(process.cwd(), 'whatsapp_session_db.json');
-    if (fs.existsSync(dbPath)) {
-      console.log("[WhatsApp Permanent Sync] Found existing whatsapp_session_db.json. Booting engine...");
-      initializeWhatsApp();
-    }
-  } catch(e) {}
-
-  // Socket for status/QR updates
-  io.on("connection", (socket) => {
-    let savedSession = null;
-    try {
-      const dbPath = path.join(process.cwd(), 'whatsapp_session_db.json');
-      if (fs.existsSync(dbPath)) {
-        savedSession = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
-      }
-    } catch(e) {}
-
-    socket.emit("whatsapp_status", { 
-      state: whatsappState, 
-      qr: currentQr, 
-      dailyCount: dailyMessagesCount,
-      session: savedSession 
-    });
-    
-    socket.on("whatsapp_connect", () => {
-      isExplicitLogout = false;
-      if (!whatsappClient) {
-        initializeWhatsApp();
-      } else {
-        socket.emit("whatsapp_status", { state: whatsappState, qr: currentQr, session: savedSession });
-      }
-    });
-
-    socket.on("whatsapp_disconnect", async () => {
-      isExplicitLogout = true;
-      if (autoReconnectTimer) {
-        clearTimeout(autoReconnectTimer);
-        autoReconnectTimer = null;
-      }
-      try {
-        const dbPath = path.join(process.cwd(), 'whatsapp_session_db.json');
-        if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
-      } catch(e) {}
-
-      if (whatsappClient) {
-        try {
-          await whatsappClient.logout();
-        } catch(e) {}
-        try {
-          await whatsappClient.destroy();
-        } catch(e) {}
-        whatsappState = "DISCONNECTED";
-        currentQr = null;
-        whatsappClient = null;
-        io.emit("whatsapp_status", { state: whatsappState });
-      }
-    });
-  });
-
-  // REST API for checking status
-  app.get("/api/whatsapp/status", (req, res) => {
-    checkDailyLimitReset();
-    let savedSession = null;
-    try {
-      const dbPath = path.join(process.cwd(), 'whatsapp_session_db.json');
-      if (fs.existsSync(dbPath)) {
-        savedSession = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
-      }
-    } catch(e) {}
-
-    res.json({
-      state: whatsappState,
-      qr: currentQr,
-      dailyCount: dailyMessagesCount,
-      dailyLimit: DAILY_LIMIT,
-      isConnected: whatsappState === "CONNECTED",
-      session: savedSession
-    });
-  });
-
-  // REST API for forcing initialization
-  app.post("/api/whatsapp/init", (req, res) => {
-    isExplicitLogout = false;
-    if (!whatsappClient) {
-      initializeWhatsApp();
-    }
-    res.json({
-      success: true,
-      state: whatsappState,
-      qr: currentQr
-    });
-  });
-
-  // REST API for sending message
-  app.post("/api/whatsapp/send", async (req, res) => {
-    try {
-      const { phone, message } = req.body;
-      if (!phone || !message) {
-        return res.status(400).json({ error: "Phone and message required." });
-      }
-
-      if (whatsappState !== "CONNECTED") {
-        return res.status(400).json({ error: "WhatsApp is not connected." });
-      }
-
-      
-
-      // Formatting phone
-      let target = phone.replace(/[^0-9]/g, '');
-      if (target.startsWith('0')) target = '92' + target.substring(1);
-      if (!target.startsWith('92')) target = '92' + target;
-      target = target + "@c.us";
-
-      // Check duplicate within 5 mins
-      
-
-      // Push to queue and respond immediately
-      messageQueue.push({
-        phone: target,
-        message,
-        resolve: () => {}, // dummy
-        reject: (err) => console.error("Queue error:", err)
-      });
-      
-      if (!isQueueProcessing) {
-        processQueue();
-      }
-      
-      return res.json({ success: true, status: "queued", count: dailyMessagesCount });
-
-    } catch(err) {
-      res.status(500).json({ error: err.message || String(err) });
-    }
-  });
-
-  // Auto-initialize on server start if we want, or leave it to UI trigger.
-  // Actually, let's auto-initialize so it reconnects on server restart if there's an active session
-  setTimeout(() => {
-     if (fs.existsSync('./auth_info')) {
-        initializeWhatsApp();
-     }
-  }, 5000);
-
   const PORT = 3000;
 
   // Robust CORS Middleware supporting Hugging Face, Netlify, and other external frontends
@@ -483,19 +61,16 @@ async function startServer() {
   app.use(
     "/api/pb",
     createProxyMiddleware({
-      target: "http://127.0.0.1:8090",
+      target: "http://167.233.41.7:8090",
       changeOrigin: true,
       pathRewrite: {
         "^/api/pb": "/api", // rewrite /api/pb/* to /api/*
       },
-      onError: (err: any, req: any, res: any) => {
-        console.warn("[PocketBase Proxy Notice]:", err?.message || err);
-        if (res && typeof res.status === "function" && !res.headersSent) {
-          res.status(502).json({ error: "PocketBase service notice", details: err?.message || "Service offline" });
-        }
-      }
     })
   );
+
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
 
   // --- Secure Iframe Proxy Tunnel Bypass Endpoint ---
   app.get("/api/proxy-tunnel", async (req, res) => {
@@ -863,7 +438,7 @@ async function startServer() {
       // Try PocketBase
       try {
         const pbRes = await fetch(
-          `http://127.0.0.1:8090/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
+          `http://167.233.41.7:8090/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
         );
         if (pbRes.ok) {
           const pbData = await pbRes.json();
@@ -1262,14 +837,14 @@ async function startServer() {
       // Update in PocketBase
       try {
         const pbRes = await fetch(
-          `http://127.0.0.1:8090/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
+          `http://167.233.41.7:8090/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
         );
         if (pbRes.ok) {
           const pbData = await pbRes.json();
           if (pbData && pbData.items && pbData.items.length > 0) {
             for (const pbRec of pbData.items) {
               const patchRes = await fetch(
-                `http://127.0.0.1:8090/api/collections/users/records/${pbRec.id}`,
+                `http://167.233.41.7:8090/api/collections/users/records/${pbRec.id}`,
                 {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },
@@ -3417,7 +2992,7 @@ System instructions:
     });
   }
 
-  httpServer.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
