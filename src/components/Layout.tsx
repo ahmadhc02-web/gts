@@ -2110,78 +2110,55 @@ export default function Layout({
       )}>
         <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center">
           
-          {/* Main Animated Display Banner with Outlined "Green Net" */}
-          <div className="relative w-full flex items-center justify-center my-1 overflow-hidden py-1 sm:py-3">
-            {/* Background Outlined Text "Green Net" */}
-            <div className="w-full flex items-center justify-between text-center font-serif pointer-events-none select-none tracking-tight leading-none px-2 sm:px-8">
-              <motion.span 
-                initial={{ opacity: 0, x: -20 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.7, ease: "easeOut" }}
-                className="text-[32px] xs:text-[44px] sm:text-[64px] md:text-[84px] lg:text-[100px] xl:text-[115px] font-bold text-transparent transition-all"
-                style={{
-                  WebkitTextStroke: theme === 'dark' ? '1.5px #475569' : '1.5px #94a3b8',
-                  filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.05))'
-                }}
-              >
-                Green
-              </motion.span>
-
-              <motion.span 
-                initial={{ opacity: 0, x: 20 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.7, ease: "easeOut" }}
-                className="text-[32px] xs:text-[44px] sm:text-[64px] md:text-[84px] lg:text-[100px] xl:text-[115px] font-bold text-transparent transition-all"
-                style={{
-                  WebkitTextStroke: theme === 'dark' ? '1.5px #475569' : '1.5px #94a3b8',
-                  filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.05))'
-                }}
-              >
-                Net
-              </motion.span>
-            </div>
-
-            {/* Centered Floating Animated GTS Badge & Title */}
+          {/* Main Animated Display Banner with Fluid Scalable Outlined "Green Tech Services" */}
+          <div className="relative w-full flex items-center justify-center my-1 overflow-hidden py-2 sm:py-5">
             <motion.div 
-              initial={{ opacity: 0, scale: 0.85, y: 10 }}
-              whileInView={{ opacity: 1, scale: 1, y: 0 }}
+              initial={{ opacity: 0, scale: 0.96 }}
+              whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center text-center z-10 pointer-events-auto"
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="w-full text-center font-serif pointer-events-none select-none px-1 flex justify-center items-center"
             >
-              <motion.div 
-                animate={{ y: [0, -4, 0] }}
-                transition={{ repeat: Infinity, duration: 3.5, ease: "easeInOut" }}
-                className="relative group mb-1 cursor-pointer"
+              <span 
+                className="font-extrabold text-transparent transition-all uppercase tracking-normal sm:tracking-wider whitespace-nowrap block text-center"
+                style={{
+                  fontSize: 'clamp(1.1rem, 6.4vw, 7.2rem)',
+                  lineHeight: '1',
+                  WebkitTextStroke: theme === 'dark' ? 'clamp(1px, 0.15vw, 2px) #475569' : 'clamp(1px, 0.15vw, 2px) #94a3b8',
+                  filter: 'drop-shadow(0px 1px 3px rgba(0,0,0,0.05))'
+                }}
               >
-                <div className="absolute -inset-1.5 bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500 rounded-xl blur-sm opacity-30 group-hover:opacity-70 transition-opacity duration-300" />
-                <div className="relative w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-slate-950 border border-slate-800 shadow-lg flex items-center justify-center overflow-hidden">
-                  <span className="text-white font-black text-xs sm:text-base tracking-tighter italic leading-none drop-shadow-sm">
-                    G<span className="text-blue-500">TS</span>
-                  </span>
-                  <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-              </motion.div>
-
-              <p className="text-[7px] sm:text-[8px] text-slate-500 dark:text-slate-400 uppercase font-extrabold tracking-[0.2em] sm:tracking-[0.24em] mb-0.5 whitespace-nowrap">
-                {brandingText || 'GREEN TECH SERVICES'}
-              </p>
-              <h4 className="text-[10px] sm:text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight whitespace-nowrap">
-                ISP MANAGEMENT PRO
-              </h4>
+                Green Tech Services
+              </span>
             </motion.div>
           </div>
 
-          {/* Bottom Info Row */}
-          <div className="w-full pt-3 sm:pt-4 flex flex-col sm:flex-row items-center justify-between gap-2.5 border-t border-slate-100 dark:border-slate-900/60 mt-1">
-            <p className="text-[9px] sm:text-[10px] text-slate-400 dark:text-slate-500 font-semibold text-center sm:text-left">
-              © {new Date().getFullYear()} Green Tech Services Operations. Enterprise Edition.
-            </p>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 text-[8px] sm:text-[9px] uppercase font-extrabold tracking-widest text-slate-500 dark:text-slate-400 bg-slate-50/80 dark:bg-slate-900/80 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-default">
-              POWERED BY GREEN NET
+          {/* Bottom Info Row with GTS Logo, Copyright & ISP Management Pro */}
+          <div className="w-full pt-3 sm:pt-4 flex flex-col md:flex-row items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-900/60 mt-1">
+            
+            {/* GTS Logo + Copyright Info */}
+            <div className="flex items-center gap-2.5 flex-wrap justify-center md:justify-start">
+              <div className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-950 border border-slate-800 shadow-sm flex items-center justify-center overflow-hidden shrink-0">
+                <span className="text-white font-black text-[10px] sm:text-xs tracking-tighter italic leading-none">
+                  G<span className="text-blue-500">TS</span>
+                </span>
+              </div>
+              <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-semibold text-center md:text-left">
+                © {new Date().getFullYear()} Green Tech Services Operations. Enterprise Edition.
+              </p>
             </div>
+
+            {/* ISP Management Pro + Powered By */}
+            <div className="flex items-center gap-2.5 flex-wrap justify-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-100/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                ISP Management Pro
+              </div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 text-[8px] sm:text-[9px] uppercase font-extrabold tracking-widest text-slate-500 dark:text-slate-400 bg-slate-50/80 dark:bg-slate-900/80 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition-all cursor-default">
+                POWERED BY GREEN NET
+              </div>
+            </div>
+
           </div>
 
         </div>
