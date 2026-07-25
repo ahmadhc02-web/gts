@@ -781,9 +781,9 @@ export const pocketbaseService = {
       return;
     }
 
-    // Debounce the actual save to the cloud database by 1 second.
-    // This provides instant UI feedback to the user on the page, while ensuring
-    // that rapid sequential edits do not cause overlapping database locks or network congestion.
+    // Debounce the actual save to the cloud database by 250ms.
+    // This provides instant real-time cloud saving while ensuring
+    // that rapid sequential bulk edits do not cause overlapping database locks or network congestion.
     return new Promise<void>((resolve, reject) => {
       if (this._saveBillingMonthTimers[key]) {
         clearTimeout(this._saveBillingMonthTimers[key]);
@@ -803,7 +803,7 @@ export const pocketbaseService = {
         } finally {
           delete this._saveBillingMonthTimers[key];
         }
-      }, 1000);
+      }, 250);
     });
   },
 
@@ -947,35 +947,40 @@ export const pocketbaseService = {
         console.warn("PB: Failed to fetch from billing_rows:", err.message);
       }
 
+      const sanitizeNum = (val: any): number => {
+        if (val === undefined || val === null || val === '') return 0;
+        const num = Number(val);
+        return isNaN(num) ? 0 : num;
+      };
+
       // Map rows to PocketBase format
       const rawMappedRows = rows.map(r => {
         const rowId = r.clientId || r.id || `gen_${Math.random().toString(36).substring(2, 11)}`;
         return {
-          month_id: monthId,
-          dealer_id: dealerId,
-          client_id: rowId,
-          name: r.name || '',
-          username: r.username || '',
-          mobile_number: r.mobileNumber || r.mobile || '',
-          area: r.area || '',
-          rt: r.rt || '',
-          base_amount: Number(r.baseAmount) || Number(r.amount) || 0,
-          cr: Number(r.cr) || 0,
-          total_amount: Number(r.totalAmount) || Number(r.total_amount) || 0,
-          billing_day: r.billingDay || '5',
-          payment_received: Number(r.paymentReceived) || Number(r.payment_received) || 0,
-          payment_status: r.paymentStatus || 'unpaid',
-          comments: r.comments || '',
-          occ: r.occ || '',
-          ser_nam: r.serNam || r.ser_nam || '',
-          pkg_details: r.pkgDetails || r.pkg_details || '',
-          sag: r.sag || '',
-          lai: r.lai || '',
-          connection_date: r.connectionDate || r.connection_date || '',
-          device_price: (r.devicePrice !== undefined && r.devicePrice !== null && r.devicePrice !== '') ? Number(r.devicePrice) : ((r.device_price !== undefined && r.device_price !== null && r.device_price !== '') ? Number(r.device_price) : 0),
-          abl: (r.abl !== undefined && r.abl !== null && r.abl !== '') ? Number(r.abl) : 0,
-          network: r.network || '',
-          updated_at: Date.now()
+          month_id: String(monthId || ''),
+          dealer_id: String(dealerId || 'main'),
+          client_id: String(rowId),
+          name: String(r.name || ''),
+          username: String(r.username || ''),
+          mobile_number: String(r.mobileNumber || r.mobile || ''),
+          area: String(r.area || ''),
+          rt: String(r.rt || ''),
+          base_amount: sanitizeNum(r.baseAmount || r.amount),
+          cr: sanitizeNum(r.cr),
+          total_amount: sanitizeNum(r.totalAmount || r.total_amount),
+          billing_day: String(r.billingDay || '5'),
+          payment_received: sanitizeNum(r.paymentReceived || r.payment_received),
+          payment_status: String(r.paymentStatus || 'unpaid'),
+          comments: String(r.comments || ''),
+          occ: String(r.occ || ''),
+          ser_nam: String(r.serNam || r.ser_nam || ''),
+          pkg_details: String(r.pkgDetails || r.pkg_details || ''),
+          sag: String(r.sag || ''),
+          lai: String(r.lai || ''),
+          connection_date: String(r.connectionDate || r.connection_date || ''),
+          device_price: sanitizeNum(r.devicePrice ?? r.device_price),
+          abl: sanitizeNum(r.abl),
+          network: String(r.network || '')
         };
       });
 
@@ -1039,25 +1044,34 @@ export const pocketbaseService = {
         deletes = existingRows.filter(r => !keptIds.has(r.client_id)).map(r => r.id);
       }
 
-      let billingRowsSuccessCount = existingRows.length - deletes.length + creates.length;
       let billingRowsErrors: string[] = [];
 
       const runInBatches = async (items: any[], op: (item: any) => Promise<void>) => {
-        const batchSize = 50;
+        const batchSize = 10;
         for (let i = 0; i < items.length; i += batchSize) {
           const batch = items.slice(i, i + batchSize);
-          try {
-            await Promise.all(batch.map(item => op(item).catch((err) => {
-              let errorMsg = err.message || String(err);
-              if (err.data && typeof err.data === 'object') {
-                errorMsg += ` (Details: ${JSON.stringify(err.data)})`;
+          await Promise.all(batch.map(async (item) => {
+            let attempts = 0;
+            let success = false;
+            while (attempts < 2 && !success) {
+              attempts++;
+              try {
+                await op(item);
+                success = true;
+              } catch (err: any) {
+                if (attempts >= 2) {
+                  let errorMsg = err.message || String(err);
+                  if (err.data && typeof err.data === 'object') {
+                    errorMsg += ` (Details: ${JSON.stringify(err.data)})`;
+                  }
+                  billingRowsErrors.push(errorMsg);
+                  console.error(`PB: Failed operation in billing_rows:`, errorMsg, err);
+                } else {
+                  await new Promise(r => setTimeout(r, 150));
+                }
               }
-              billingRowsErrors.push(errorMsg);
-              console.error(`PB: Failed operation in billing_rows:`, errorMsg, err);
-            })));
-          } catch (batchErr: any) {
-            billingRowsErrors.push(batchErr.message || String(batchErr));
-          }
+            }
+          }));
         }
       };
 
@@ -1070,7 +1084,7 @@ export const pocketbaseService = {
         logRowsEntry.recordDetails = `Successfully synced changes to billing_rows. Created: ${creates.length}, Updated: ${updates.length}, Deleted: ${deletes.length}`;
       } else {
         logRowsEntry.status = 'failed';
-        logRowsEntry.recordDetails = `Synced with errors. Created: ${creates.length}, Updated: ${updates.length}, Deleted: ${deletes.length}`;
+        logRowsEntry.recordDetails = `Synced with errors (${billingRowsErrors.length}). Created: ${creates.length}, Updated: ${updates.length}, Deleted: ${deletes.length}`;
         logRowsEntry.errorMessage = `Errors: ${billingRowsErrors.slice(0, 3).join(', ')}`;
       }
 

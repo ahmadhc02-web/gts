@@ -12,6 +12,30 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 
 dotenv.config();
 
+// Allow self-signed certificates when proxying or fetching from self-hosted PocketBase servers
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
+function getCleanPocketBaseUrl(): string {
+  const raw = process.env.POCKETBASE_URL || process.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090";
+  let url = raw.trim().replace(/^['"]|['"]$/g, "");
+  // Remove trailing PocketBase admin dashboard path `/_` or trailing slashes
+  url = url.replace(/\/_*\/*$/, "").replace(/\/+$/, "");
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    url = "http://" + url;
+  }
+  // Convert https:// to http:// if targeting 167.233.41.7 or port 8090 (since PocketBase runs on plain HTTP)
+  if (url.startsWith("https://167.233.41.7") || (url.startsWith("https://") && url.includes(":8090"))) {
+    url = url.replace(/^https:\/\//, "http://");
+  }
+  // If targeting 167.233.41.7 without a port, append :8090 where PocketBase is listening
+  if (url.includes("167.233.41.7") && !url.match(/:\d+$/)) {
+    url = url + ":8090";
+  }
+  return url;
+}
+
+const POCKETBASE_URL = getCleanPocketBaseUrl();
+
 let _filename = "";
 let _dirname = "";
 try {
@@ -61,10 +85,33 @@ async function startServer() {
   app.use(
     "/api/pb",
     createProxyMiddleware({
-      target: "http://167.233.41.7:8090",
+      target: POCKETBASE_URL,
       changeOrigin: true,
+      secure: false,
+      xfwd: false, // Prevent adding x-forwarded-* headers that trigger 301 redirects
       pathRewrite: {
-        "^/api/pb": "/api", // rewrite /api/pb/* to /api/*
+        "^/api/pb": "", // PocketBase SDK calls /api/pb/api/*, so this rewrites to /api/*
+      },
+      on: {
+        proxyReq: (proxyReq: any) => {
+          try {
+            const parsedTarget = new URL(POCKETBASE_URL);
+            proxyReq.setHeader("host", parsedTarget.host);
+          } catch (e) {
+            proxyReq.setHeader("host", "167.233.41.7:8090");
+          }
+          proxyReq.removeHeader("x-forwarded-host");
+          proxyReq.removeHeader("x-forwarded-proto");
+          proxyReq.removeHeader("x-forwarded-port");
+          proxyReq.removeHeader("x-forwarded-for");
+          proxyReq.removeHeader("x-real-ip");
+        },
+        error: (err: any, req: any, res: any) => {
+          console.error("[PocketBase Proxy Error]:", err);
+          if (!res.headersSent) {
+            res.status(502).json({ error: "PocketBase Proxy Error", message: err.message });
+          }
+        },
       },
     })
   );
@@ -438,7 +485,7 @@ async function startServer() {
       // Try PocketBase
       try {
         const pbRes = await fetch(
-          `http://167.233.41.7:8090/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
+          `${POCKETBASE_URL}/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
         );
         if (pbRes.ok) {
           const pbData = await pbRes.json();
@@ -837,14 +884,14 @@ async function startServer() {
       // Update in PocketBase
       try {
         const pbRes = await fetch(
-          `http://167.233.41.7:8090/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
+          `${POCKETBASE_URL}/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
         );
         if (pbRes.ok) {
           const pbData = await pbRes.json();
           if (pbData && pbData.items && pbData.items.length > 0) {
             for (const pbRec of pbData.items) {
               const patchRes = await fetch(
-                `http://167.233.41.7:8090/api/collections/users/records/${pbRec.id}`,
+                `${POCKETBASE_URL}/api/collections/users/records/${pbRec.id}`,
                 {
                   method: "PATCH",
                   headers: { "Content-Type": "application/json" },

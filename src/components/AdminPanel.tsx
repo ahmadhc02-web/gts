@@ -1330,79 +1330,128 @@ export default function AdminPanel({
     }
   };
 
-  const handleSaveRowField = async (rowIndex: number, field: string, val: any) => {
+  const handleSaveRowField = (rowIndex: number, field: string, val: any, forceImmediate = false) => {
     if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments') {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to edit billing information." });
       return;
     }
 
-    if (currentMonthId) {
-      lastLocalEditTime.current[currentMonthId] = Date.now();
-    }
+    if (!currentMonthId) return;
+    lastLocalEditTime.current[currentMonthId] = Date.now();
 
     try {
-      setBillingMonths(prev => {
-        const activeDocIndex = prev.findIndex(m => m.id === currentMonthId);
-        if (activeDocIndex === -1) return prev;
-        
-        const activeDoc = prev[activeDocIndex];
-        const updatedRows = [...(activeDoc.rows || [])];
-        if (!updatedRows[rowIndex]) return prev;
+      const activeDocIndex = billingMonths.findIndex(m => m.id === currentMonthId);
+      if (activeDocIndex === -1) return;
 
-        const targetRow = { ...updatedRows[rowIndex] };
-        targetRow[field] = val;
+      const activeDoc = billingMonths[activeDocIndex];
+      if (!activeDoc || !activeDoc.rows || !activeDoc.rows[rowIndex]) return;
 
-        if (field === 'cr') {
-          const crVal = parseFloat(val) || 0;
-          targetRow._originalCr = crVal;
-          targetRow.cr = crVal;
-          const base = parseFloat(targetRow.baseAmount) || 0;
-          targetRow.totalAmount = base + crVal;
-        } else if (field === 'baseAmount') {
-          const baseVal = parseFloat(val) || 0;
+      const updatedRows = [...activeDoc.rows];
+      const targetRow = { ...updatedRows[rowIndex] };
+      targetRow[field] = val;
+
+      if (field === 'cr') {
+        const crVal = parseFloat(val) || 0;
+        targetRow._originalCr = crVal;
+        targetRow.cr = crVal;
+        const base = parseFloat(targetRow.baseAmount) || 0;
+        targetRow.totalAmount = base + crVal;
+      } else if (field === 'baseAmount') {
+        const baseVal = parseFloat(val) || 0;
+        const crVal = parseFloat(targetRow.cr) || 0;
+        targetRow.totalAmount = baseVal + crVal;
+      } else if (field === 'paymentReceived') {
+        const received = parseFloat(val) || 0;
+        targetRow.paymentReceived = received;
+      } else if (field === 'paymentStatus') {
+        if (val === 'tdc' || val === 'dc') {
+          targetRow.baseAmount = 0;
           const crVal = parseFloat(targetRow.cr) || 0;
-          targetRow.totalAmount = baseVal + crVal;
-        } else if (field === 'paymentReceived') {
-          const received = parseFloat(val) || 0;
-          targetRow.paymentReceived = received;
-        } else if (field === 'paymentStatus') {
-          if (val === 'tdc' || val === 'dc') {
-            targetRow.baseAmount = 0;
-            const crVal = parseFloat(targetRow.cr) || 0;
-            targetRow.totalAmount = crVal;
+          targetRow.totalAmount = crVal;
+        }
+      }
+
+      if (field === 'paymentReceived' || field === 'baseAmount' || field === 'cr') {
+        const received = parseFloat(targetRow.paymentReceived) || 0;
+        const total = parseFloat(targetRow.totalAmount) || 0;
+        
+        if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
+          if (received === 0) {
+            targetRow.paymentStatus = 'unpaid';
+          } else if (received >= total) {
+            targetRow.paymentStatus = 'paid';
+          } else {
+            targetRow.paymentStatus = 'partial';
           }
         }
+      }
 
-        if (field === 'paymentReceived' || field === 'baseAmount' || field === 'cr') {
-          const received = parseFloat(targetRow.paymentReceived) || 0;
-          const total = parseFloat(targetRow.totalAmount) || 0;
-          
-          if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
-            if (received === 0) {
-              targetRow.paymentStatus = 'unpaid';
-            } else if (received >= total) {
-              targetRow.paymentStatus = 'paid';
-            } else {
-              targetRow.paymentStatus = 'partial';
-            }
-          }
-        }
+      updatedRows[rowIndex] = targetRow;
 
-        updatedRows[rowIndex] = targetRow;
-        const newPrev = [...prev];
-        newPrev[activeDocIndex] = { ...activeDoc, rows: updatedRows };
-        
-        // Persist permanently in PocketBase in background using latest
-        pocketbaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
-           console.error("Failed to persist billing cell edit:", err);
-           toast.error("Cell auto-save issue", { description: "Changes may not have synced to cloud." });
-        });
-        
-        return newPrev;
+      // Update state instantly for real-time UI response & calculation updates
+      setBillingMonths(prev => {
+        const idx = prev.findIndex(m => m.id === currentMonthId);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next[idx] = { ...prev[idx], rows: updatedRows };
+        return next;
+      });
+
+      // Background persist in PocketBase
+      pocketbaseService.saveBillingMonth(
+        currentMonthId,
+        updatedRows,
+        currentUser?.username || 'admin',
+        activeDealerId || 'main',
+        forceImmediate
+      ).catch(err => {
+        console.error("Failed to persist billing cell edit:", err);
       });
     } catch (err: any) {
       console.error(err);
-      toast.error("Cell local edit issue", { description: getCleanErrorMessage(err) });
+    }
+  };
+
+  const handleRecoveryCellKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement>,
+    globalRowIdx: number,
+    field: string,
+    totalRows: number
+  ) => {
+    if (e.key === 'Enter' || (e.key === 'ArrowDown' && e.altKey)) {
+      e.preventDefault();
+      const targetVal = e.currentTarget.value;
+      const isNum = e.currentTarget.type === 'number';
+      const parsedVal = isNum ? (targetVal === '' ? 0 : parseFloat(targetVal) || 0) : targetVal;
+      handleSaveRowField(globalRowIdx, field, parsedVal, true);
+
+      const nextRowIdx = globalRowIdx + 1;
+      if (nextRowIdx < totalRows) {
+        const nextEl = document.getElementById(`rec_cell_${nextRowIdx}_${field}`);
+        if (nextEl) {
+          nextEl.focus();
+          if ('select' in nextEl && typeof (nextEl as any).select === 'function') {
+            (nextEl as any).select();
+          }
+        }
+      }
+    } else if (e.key === 'ArrowUp' && e.altKey) {
+      e.preventDefault();
+      const targetVal = e.currentTarget.value;
+      const isNum = e.currentTarget.type === 'number';
+      const parsedVal = isNum ? (targetVal === '' ? 0 : parseFloat(targetVal) || 0) : targetVal;
+      handleSaveRowField(globalRowIdx, field, parsedVal, true);
+
+      const prevRowIdx = globalRowIdx - 1;
+      if (prevRowIdx >= 0) {
+        const prevEl = document.getElementById(`rec_cell_${prevRowIdx}_${field}`);
+        if (prevEl) {
+          prevEl.focus();
+          if ('select' in prevEl && typeof (prevEl as any).select === 'function') {
+            (prevEl as any).select();
+          }
+        }
+      }
     }
   };
 
@@ -7686,19 +7735,20 @@ export default function AdminPanel({
                                   }
                                 }}
                               >
-                                {/* Sr */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 text-center text-black dark:text-white font-sans text-[13px] font-black">
-                                  {globalRowIdx + 1}
+                                {/* Sr# */}
+                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800 text-center select-none font-sans text-[11px]">
+                                  {localIdx + 1}
                                 </td>
-
-                                {/* Name */}
                                 <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[13.5px] font-black">
                                   <input
+                                    id={`rec_cell_${globalRowIdx}_name`}
                                     type="text"
-                                    defaultValue={rowRef.name}
+                                    value={rowRef.name || ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
-                                    className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'name', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
+                                    className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                     placeholder="Enter full name"
                                   />
                                 </td>
@@ -7706,44 +7756,56 @@ export default function AdminPanel({
                                 {/* User ID / Username */}
                                 <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[13.5px] font-black text-black dark:text-white">
                                   <input
+                                    id={`rec_cell_${globalRowIdx}_username`}
                                     type="text"
-                                    defaultValue={rowRef.username}
+                                    value={rowRef.username || ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                    className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
+                                    className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
                                 {/* Mobile */}
                                 <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[13px] font-black text-black dark:text-white">
                                   <input
+                                    id={`rec_cell_${globalRowIdx}_mobileNumber`}
                                     type="text"
-                                    defaultValue={rowRef.mobileNumber}
+                                    value={rowRef.mobileNumber || ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
-                                    className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'mobileNumber', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
+                                    className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
                                 {/* Area */}
                                 <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans">
                                   <input
+                                    id={`rec_cell_${globalRowIdx}_area`}
                                     type="text"
-                                    defaultValue={rowRef.area}
+                                    value={rowRef.area || ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
-                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'area', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value, true)}
+                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
                                 {/* RT */}
                                 <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans">
                                   <input
+                                    id={`rec_cell_${globalRowIdx}_rt`}
                                     type="text"
-                                    defaultValue={rowRef.rt}
+                                    value={rowRef.rt || ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
-                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-blue-900 dark:disabled:text-blue-300 disabled:opacity-100"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'rt', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value, true)}
+                                    className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-blue-900 dark:disabled:text-blue-300 disabled:opacity-100"
                                   />
                                 </td>
 
@@ -7752,12 +7814,14 @@ export default function AdminPanel({
                                   <div className="flex items-center justify-end font-black text-black">
                                     <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
                                     <input
+                                      id={`rec_cell_${globalRowIdx}_baseAmount`}
                                       type="number"
-                                      key={`${rowRef.clientId || rowRef.username}-baseAmount-${rowRef.baseAmount}`}
-                                      defaultValue={isTdc || isDc ? 0 : rowRef.baseAmount}
+                                      value={isTdc || isDc ? 0 : (rowRef.baseAmount ?? '')}
                                       disabled={!isBillingUnlocked}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0)}
-                                      className="w-20 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'baseAmount', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
+                                      className="w-20 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                   </div>
                                 </td>
@@ -7767,11 +7831,13 @@ export default function AdminPanel({
                                   <div className="flex items-center justify-end">
                                     <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
                                     <input
+                                      id={`rec_cell_${globalRowIdx}_cr`}
                                       type="number"
-                                      key={`${rowRef.clientId || rowRef.username}-cr-${rowRef.cr}`}
-                                      defaultValue={isDc ? 0 : rowRef.cr}
+                                      value={isDc ? 0 : (rowRef.cr ?? '')}
                                       disabled={!isBillingUnlocked}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'cr', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
                                       className={cn(
                                         "w-20 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                                         outstandingCr > 0 ? "text-rose-750 dark:text-rose-450 font-black disabled:text-rose-750 dark:disabled:text-rose-450 disabled:opacity-100" : "text-black dark:text-white font-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
@@ -7788,11 +7854,14 @@ export default function AdminPanel({
                                 {/* BD (Billing Day) */}
                                 <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-center select-all font-sans">
                                   <input
+                                    id={`rec_cell_${globalRowIdx}_billingDay`}
                                     type="text"
-                                    defaultValue={rowRef.billingDay}
+                                    value={rowRef.billingDay || ''}
                                     disabled={false}
                                     onClick={(e) => e.stopPropagation()}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'billingDay', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value, true)}
                                     className="w-12 text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
@@ -7802,11 +7871,13 @@ export default function AdminPanel({
                                   <div className="flex items-center justify-end">
                                     <span className="text-emerald-900 dark:text-emerald-400 mr-0.5 font-black text-[11px]">PKR</span>
                                     <input
+                                      id={`rec_cell_${globalRowIdx}_paymentReceived`}
                                       type="number"
-                                      key={`${rowRef.clientId || rowRef.username}-paymentReceived-${rowRef.paymentReceived}`}
-                                      defaultValue={isDc ? 0 : rowRef.paymentReceived}
+                                      value={isDc ? 0 : (rowRef.paymentReceived ?? '')}
                                       disabled={!isBillingUnlocked}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'paymentReceived', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
                                       className="w-20 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans font-black text-emerald-950 dark:text-emerald-100 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-emerald-950 dark:disabled:text-emerald-100 disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                   </div>
@@ -7841,12 +7912,15 @@ export default function AdminPanel({
                                     {/* Comments */}
                                     <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans">
                                       <input
+                                        id={`rec_cell_${globalRowIdx}_comments`}
                                         type="text"
-                                        defaultValue={rowRef.comments}
+                                        value={rowRef.comments || ''}
                                         disabled={false}
                                         onClick={(e) => e.stopPropagation()}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
-                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'comments', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value, true)}
+                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                         placeholder="Add comment..."
                                       />
                                     </td>
@@ -7854,44 +7928,56 @@ export default function AdminPanel({
                                     {/* Occupation */}
                                     <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans">
                                       <input
+                                        id={`rec_cell_${globalRowIdx}_occ`}
                                         type="text"
-                                        defaultValue={rowRef.occ}
+                                        value={rowRef.occ || ''}
                                         disabled={!isBillingUnlocked}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'occ', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value, true)}
+                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       />
                                     </td>
 
                                     {/* Serial / PPPoE Username */}
                                     <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[11px]">
                                       <input
+                                        id={`rec_cell_${globalRowIdx}_serNam`}
                                         type="text"
-                                        defaultValue={rowRef.serNam}
+                                        value={rowRef.serNam || ''}
                                         disabled={!isBillingUnlocked}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value)}
-                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black text-[12px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'serNam', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value, true)}
+                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black text-[12px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       />
                                     </td>
 
                                     {/* PKG details */}
                                     <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 text-blue-900 dark:text-blue-250 font-black font-sans">
                                       <input
+                                        id={`rec_cell_${globalRowIdx}_pkgDetails`}
                                         type="text"
-                                        defaultValue={rowRef.pkgDetails}
+                                        value={rowRef.pkgDetails || ''}
                                         disabled={!isBillingUnlocked}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
-                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-250 text-[12.5px] font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-blue-900 dark:disabled:text-blue-250 disabled:opacity-100"
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'pkgDetails', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value, true)}
+                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-250 text-[12.5px] font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-blue-900 dark:disabled:text-blue-250 disabled:opacity-100"
                                       />
                                     </td>
 
                                     {/* Connection Date */}
                                     <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans text-[11px]">
                                       <input
+                                        id={`rec_cell_${globalRowIdx}_connectionDate`}
                                         type="text"
-                                        defaultValue={rowRef.connectionDate}
+                                        value={rowRef.connectionDate || ''}
                                         disabled={!isBillingUnlocked}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
-                                        className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded text-black dark:text-white text-[12px] font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'connectionDate', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value, true)}
+                                        className="w-full text-center bg-transparent px-1 py-0.5 border-none rounded text-black dark:text-white text-[12px] font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                         placeholder="MM/DD/YY"
                                       />
                                     </td>
@@ -7899,36 +7985,46 @@ export default function AdminPanel({
                                     {/* Device Price */}
                                     <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
                                       <input
+                                        id={`rec_cell_${globalRowIdx}_devicePrice`}
                                         type="number"
-                                        defaultValue={rowRef.devicePrice}
+                                        value={rowRef.devicePrice ?? ''}
                                         disabled={!isBillingUnlocked}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0)}
-                                        className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black text-[12.5px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'devicePrice', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0, true)}
+                                        className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black text-[12.5px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                       />
                                     </td>
 
                                     {/* ABL charges */}
                                     <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
                                       <input
+                                        id={`rec_cell_${globalRowIdx}_abl`}
                                         type="number"
-                                        defaultValue={rowRef.abl}
+                                        value={rowRef.abl ?? ''}
                                         disabled={!isBillingUnlocked}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0)}
-                                        className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black text-[12.5px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'abl', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
+                                        className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black text-[12.5px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                       />
                                     </td>
 
                                     {/* Network name */}
                                     <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[11px]">
                                       <input
+                                        id={`rec_cell_${globalRowIdx}_network`}
                                         type="text"
-                                        defaultValue={rowRef.network}
+                                        value={rowRef.network || ''}
                                         disabled={!isBillingUnlocked}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value)}
-                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded text-black dark:text-white text-[12px] font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black  disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'network', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value, true)}
+                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded text-black dark:text-white text-[12px] font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       />
                                     </td>
                                   </>
+
                                 )}
 
                                 {/* Actions (Always rendered for standard and advance lists) */}
@@ -8108,9 +8204,10 @@ export default function AdminPanel({
                               <div className="min-w-0">
                                 <input
                                   type="text"
-                                  defaultValue={rowRef.name}
+                                  value={rowRef.name || ''}
                                   disabled={!isBillingUnlocked}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
                                   className="w-full bg-transparent px-1 py-0.5 border-none rounded text-xs font-black focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white truncate font-sans"
                                   placeholder="Name"
                                 />
@@ -8118,9 +8215,10 @@ export default function AdminPanel({
                                   <span className="shrink-0">ID:</span>
                                   <input
                                     type="text"
-                                    defaultValue={rowRef.username}
+                                    value={rowRef.username || ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
                                     className="bg-transparent border-none p-0 focus:ring-0 text-[10px] text-slate-600 dark:text-slate-300 font-black tracking-tight w-24 truncate font-sans"
                                   />
                                 </div>
@@ -8158,9 +8256,10 @@ export default function AdminPanel({
                               <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Mobile No</span>
                               <input
                                 type="text"
-                                defaultValue={rowRef.mobileNumber}
+                                value={rowRef.mobileNumber || ''}
                                 disabled={!isBillingUnlocked}
-                                onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
+                                onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
+                                onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
                                 className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-slate-850 rounded-lg text-[11px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-sans"
                                 placeholder="..."
                               />
@@ -8172,9 +8271,10 @@ export default function AdminPanel({
                                 <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Area</span>
                                 <input
                                   type="text"
-                                  defaultValue={rowRef.area}
+                                  value={rowRef.area || ''}
                                   disabled={!isBillingUnlocked}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value, true)}
                                   className="w-full text-center bg-slate-50/40 dark:bg-slate-950/30 px-1 py-1 border border-slate-150 dark:border-slate-850 rounded-lg text-[10px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase font-sans"
                                 />
                               </div>
@@ -8182,9 +8282,10 @@ export default function AdminPanel({
                                 <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">RT</span>
                                 <input
                                   type="text"
-                                  defaultValue={rowRef.rt}
+                                  value={rowRef.rt || ''}
                                   disabled={!isBillingUnlocked}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value, true)}
                                   className="w-full text-center bg-slate-50/40 dark:bg-slate-950/30 px-1 py-1 border border-slate-150 dark:border-slate-850 rounded-lg text-[10px] focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-300 font-black uppercase font-sans"
                                 />
                               </div>
@@ -8197,9 +8298,10 @@ export default function AdminPanel({
                                 <span className="text-[9px] text-slate-400 dark:text-slate-500 font-black mr-1 shrink-0">PKR</span>
                                 <input
                                   type="number"
-                                  defaultValue={isTdc || isDc ? 0 : rowRef.baseAmount}
+                                  value={isTdc || isDc ? 0 : (rowRef.baseAmount ?? '')}
                                   disabled={!isBillingUnlocked}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0)}
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
                                   className="w-full text-right bg-transparent border-none p-0 text-[11px] font-black focus:ring-0 text-black dark:text-white font-sans"
                                 />
                               </div>
@@ -8212,9 +8314,10 @@ export default function AdminPanel({
                                 <span className={cn("text-[9px] font-black mr-1 shrink-0", outstandingCr > 0 ? "text-rose-600" : "text-slate-400")}>PKR</span>
                                 <input
                                   type="number"
-                                  defaultValue={isDc ? 0 : rowRef.cr}
+                                  value={isDc ? 0 : (rowRef.cr ?? '')}
                                   disabled={!isBillingUnlocked}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0)}
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
                                   className={cn(
                                     "w-full text-right bg-transparent border-none p-0 text-[11px] focus:ring-0 font-sans",
                                     outstandingCr > 0 ? "text-rose-600 font-black" : "text-black dark:text-white font-black"
@@ -8230,9 +8333,10 @@ export default function AdminPanel({
                                 <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-black mr-1 shrink-0">PKR</span>
                                 <input
                                   type="number"
-                                  defaultValue={isDc ? 0 : rowRef.paymentReceived}
+                                  value={isDc ? 0 : (rowRef.paymentReceived ?? '')}
                                   disabled={!isBillingUnlocked}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0)}
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
                                   className="w-full text-right bg-transparent border-none p-0 text-[11px] font-black focus:ring-0 text-emerald-950 dark:text-emerald-100 font-sans"
                                 />
                               </div>
@@ -8244,10 +8348,11 @@ export default function AdminPanel({
                                 <span>BD Day:</span>
                                 <input
                                   type="text"
-                                  defaultValue={rowRef.billingDay}
+                                  value={rowRef.billingDay || ''}
                                   disabled={false}
                                   onClick={(e) => e.stopPropagation()}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value, true)}
                                   className="w-6 text-center bg-transparent border-none p-0 text-[9px] font-black focus:ring-0 text-black dark:text-white font-sans"
                                 />
                               </div>
