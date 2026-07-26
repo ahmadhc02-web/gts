@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield } from 'lucide-react';
+import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield, Tag, DollarSign, Calendar } from 'lucide-react';
 import { Client, UserProfile } from '../types';
 import { pocketbaseService, fromDb } from '../lib/pocketbaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
@@ -51,6 +51,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
   const [pkgDetails, setPkgDetails] = useState('');
   const [userNearby, setUserNearby] = useState('');
   const [panelDetails, setPanelDetails] = useState('');
+  const [rt, setRt] = useState('');
+  const [baseAmount, setBaseAmount] = useState<string | number>('');
+  const [billingDay, setBillingDay] = useState<string | number>('5');
   const [area, setArea] = useState(appConfig.zones[0] || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -163,6 +166,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     setPkgDetails('');
     setUserNearby('');
     setPanelDetails('');
+    setRt('');
+    setBaseAmount('');
+    setBillingDay('5');
     setArea(appConfig.zones[0] || '');
   };
 
@@ -176,6 +182,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     setPkgDetails(client.pkgDetails || '');
     setUserNearby(client.userNearby || '');
     setPanelDetails(client.panelDetails || '');
+    setRt(client.rt || '');
+    setBaseAmount(client.baseAmount ?? '');
+    setBillingDay(client.billingDay || '5');
     setArea(client.area);
     
     // Scroll to form if on mobile
@@ -241,6 +250,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           userNearby: userNearby.trim(),
           panelDetails: panelDetails.trim(),
           area: area,
+          rt: rt.trim(),
+          baseAmount: parseFloat(String(baseAmount)) || 0,
+          billingDay: String(billingDay || '5').trim()
         };
         await pocketbaseService.updateClient(editingId, updatedData, trimmedName, currentUserName);
         
@@ -287,6 +299,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           userNearby: userNearby.trim(),
           panelDetails: panelDetails.trim(),
           area: area,
+          rt: rt.trim(),
+          baseAmount: parseFloat(String(baseAmount)) || 0,
+          billingDay: String(billingDay || '5').trim(),
           createdBy: currentUserId
         };
 
@@ -530,6 +545,50 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                 </div>
               </div>
 
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className={labelClasses}>RT Option</label>
+                  <div className="relative">
+                    <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="text"
+                      value={rt}
+                      onChange={(e) => setRt(e.target.value.toUpperCase())}
+                      placeholder="RT-01"
+                      className={cn(inputClasses, "pl-9 text-xs")}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className={labelClasses}>B.Amount (Fee)</label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="number"
+                      value={baseAmount}
+                      onChange={(e) => setBaseAmount(e.target.value)}
+                      placeholder="1500"
+                      className={cn(inputClasses, "pl-9 text-xs")}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className={labelClasses}>BD (Date)</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="text"
+                      value={billingDay}
+                      onChange={(e) => setBillingDay(e.target.value)}
+                      placeholder="5"
+                      className={cn(inputClasses, "pl-9 text-xs")}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className={labelClasses}>Series No.</label>
@@ -685,11 +744,26 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-fit">
-                        <span className="text-[10px] font-black text-brand-accent uppercase tracking-tighter flex items-center gap-1.5">
-                           <Package size={10} />
-                           {client.pkgDetails || '---'}
-                        </span>
+                      <div className="flex flex-col gap-1">
+                        <div className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-fit">
+                          <span className="text-[10px] font-black text-brand-accent uppercase tracking-tighter flex items-center gap-1.5">
+                             <Package size={10} />
+                             {client.pkgDetails || '---'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {client.rt && (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 font-extrabold text-[9px] uppercase tracking-wider">
+                              RT: {client.rt}
+                            </span>
+                          )}
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-black text-[9px]">
+                            Rs. {client.baseAmount || 0}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400 font-bold text-[9px]">
+                            BD: {client.billingDay || '5'}
+                          </span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -957,6 +1031,18 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                           <div>
                             <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Service Matrix</p>
                             <p className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{viewingClient.pkgDetails || 'No Active Package'}</p>
+                          </div>
+                       </div>
+
+                       <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400">
+                             <Tag size={18} />
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">RT Code / Fee / Day</p>
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">
+                              RT: <span className="text-blue-500 font-black">{viewingClient.rt || 'NONE'}</span> | Fee: <span className="text-emerald-500 font-black">Rs. {viewingClient.baseAmount || 0}</span> | BD: <span className="text-purple-500 font-black">Day {viewingClient.billingDay || '5'}</span>
+                            </p>
                           </div>
                        </div>
 

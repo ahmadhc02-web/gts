@@ -1,3 +1,23 @@
+const isExcludedFromRecovery = (r: any) => {
+  if (!r) return false;
+  const check = (str?: string) => {
+    if (!str) return false;
+    const lower = str.trim().toLowerCase();
+    return [
+      'bank',
+      'panel balance',
+      'panel',
+      'cash hand',
+      'hand cash',
+      'cash in hand',
+      'unspecified entry',
+      'expense',
+      'expenses'
+    ].includes(lower) || lower.startsWith('bank') || lower.startsWith('panel balance') || lower.startsWith('cash hand') || lower.startsWith('hand cash');
+  };
+  return check(r.name) || check(r.username) || check(r.comments);
+};
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save } from 'lucide-react';
@@ -107,7 +127,15 @@ export default function AdminPanel({
   const activeTab = activeTabProp !== undefined ? activeTabProp as any : localActiveTab;
   
   // Unsaved changes tracking for Recovery Rows
-  const [editedRowIndices, setEditedRowIndices] = useState<Set<number>>(new Set());
+  const [editedRowIndices, _setEditedRowIndices] = useState<Set<number>>(new Set());
+  const editedRowIndicesRef = React.useRef<Set<number>>(new Set());
+  const setEditedRowIndices = (val: any) => {
+    _setEditedRowIndices(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      editedRowIndicesRef.current = next;
+      return next;
+    });
+  };
   const [isSavingRecoveryRows, setIsSavingRecoveryRows] = useState(false);
   const savedBillingSnapshotRef = React.useRef<any[]>([]);
   const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
@@ -513,17 +541,25 @@ export default function AdminPanel({
   const savingMonthIds = React.useRef<Set<string>>(new Set());
 
   
-  const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false) => {
+  const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false, changedIndices?: number[] | Set<number>) => {
     savingMonthIds.current.add(monthId);
     try {
-      await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate);
+      await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate, changedIndices);
     } finally {
       savingMonthIds.current.delete(monthId);
     }
   };
 
 
-  const [currentMonthId, setCurrentMonthId] = useState<string>('');
+  const [currentMonthId, _setCurrentMonthId] = useState<string>('');
+  const currentMonthIdRef = React.useRef<string>('');
+  const setCurrentMonthId = (val: any) => {
+    _setCurrentMonthId(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      currentMonthIdRef.current = next;
+      return next;
+    });
+  };
   const [isConfiguringNewMonth, setIsConfiguringNewMonth] = useState(false);
   const [isDeleteSheetModalOpen, setIsDeleteSheetModalOpen] = useState(false);
   const [isConfirmingPurge, setIsConfirmingPurge] = useState(false);
@@ -1000,7 +1036,7 @@ export default function AdminPanel({
       
       setBillingMonths(prev => {
         return sorted.map(incomingMonth => {
-          if (savingMonthIds.current.has(incomingMonth.id)) {
+          if (savingMonthIds.current.has(incomingMonth.id) || (incomingMonth.id === currentMonthIdRef.current && editedRowIndicesRef.current.size > 0)) {
             const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
             if (currentLocalMonth) {
               console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save in progress)`);
@@ -1368,38 +1404,41 @@ export default function AdminPanel({
 
   const handleBatchSaveRecoveryRows = async (): Promise<boolean> => {
     if (!currentMonthId || editedRowIndices.size === 0) return true;
-
-    setIsSavingRecoveryRows(true);
     try {
+      setIsSavingRecoveryRows(true);
       const activeDoc = billingMonths.find(m => m.id === currentMonthId);
-      if (!activeDoc || !activeDoc.rows) return false;
+      if (!activeDoc || !activeDoc.rows) {
+        setIsSavingRecoveryRows(false);
+        return false;
+      }
 
-      const count = editedRowIndices.size;
+      const editedIndices: number[] = Array.from(editedRowIndicesRef.current);
+      const count = editedIndices.length;
 
-      // Update saving state to prevent subscription overwrite
-      
-      // Execute full save & sync to database
+      // Save to cloud FIRST passing only edited indices for ultra-fast sync, then clear local edits state
       await saveBillingMonthTracked(
         currentMonthId,
         activeDoc.rows,
         currentUser?.username || 'admin',
         activeDealerId || 'main',
-        true
+        true,
+        editedIndices
       );
-
+      
       savedBillingSnapshotRef.current = JSON.parse(JSON.stringify(activeDoc.rows));
       setEditedRowIndices(new Set());
       
-      toast.success("Recovery Edits Saved Successfully! 🎉", {
+      toast.success("Recovery Edits Saved! 🎉", {
         description: `${count} edited row${count > 1 ? 's' : ''} saved to database.`
       });
+
+      setIsSavingRecoveryRows(false);
       return true;
     } catch (err: any) {
+      setIsSavingRecoveryRows(false);
       console.error("Failed to batch save recovery rows:", err);
       toast.error("Failed to save recovery rows", { description: getCleanErrorMessage(err) });
       return false;
-    } finally {
-      setIsSavingRecoveryRows(false);
     }
   };
 
@@ -1426,80 +1465,71 @@ export default function AdminPanel({
     if (!currentMonthId) return;
 
     try {
-      const activeDocIndex = billingMonths.findIndex(m => m.id === currentMonthId);
-      if (activeDocIndex === -1) return;
-
-      const activeDoc = billingMonths[activeDocIndex];
-      if (!activeDoc || !activeDoc.rows || !activeDoc.rows[rowIndex]) return;
-
-      const updatedRows = [...activeDoc.rows];
-      const targetRow = { ...updatedRows[rowIndex] };
-      targetRow[field] = val;
-
-      if (field === 'cr') {
-        const crVal = parseFloat(val) || 0;
-        targetRow._originalCr = crVal;
-        targetRow.cr = crVal;
-        const base = parseFloat(targetRow.baseAmount) || 0;
-        targetRow.totalAmount = base + crVal;
-      } else if (field === 'baseAmount') {
-        const baseVal = parseFloat(val) || 0;
-        const crVal = parseFloat(targetRow.cr) || 0;
-        targetRow.totalAmount = baseVal + crVal;
-      } else if (field === 'paymentReceived') {
-        const received = parseFloat(val) || 0;
-        targetRow.paymentReceived = received;
-      } else if (field === 'paymentStatus') {
-        if (val === 'tdc' || val === 'dc') {
-          targetRow.baseAmount = 0;
-          const crVal = parseFloat(targetRow.cr) || 0;
-          targetRow.totalAmount = crVal;
-        }
-      }
-
-      if (field === 'paymentReceived' || field === 'baseAmount' || field === 'cr') {
-        const received = parseFloat(targetRow.paymentReceived) || 0;
-        const total = parseFloat(targetRow.totalAmount) || 0;
-        
-        if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
-          if (received === 0) {
-            targetRow.paymentStatus = 'unpaid';
-          } else if (received >= total) {
-            targetRow.paymentStatus = 'paid';
-          } else {
-            targetRow.paymentStatus = 'partial';
-          }
-        }
-      }
-
-      updatedRows[rowIndex] = targetRow;
-
-      // Update state instantly for real-time UI response & calculation updates
       setBillingMonths(prev => {
         const idx = prev.findIndex(m => m.id === currentMonthId);
         if (idx === -1) return prev;
+        
         const next = [...prev];
-        next[idx] = { ...prev[idx], rows: updatedRows };
+        const nextRows = [...(next[idx].rows || [])];
+        if (!nextRows[rowIndex]) return prev;
+
+        if (nextRows[rowIndex][field] === val) return prev;
+
+        const targetRow = { ...nextRows[rowIndex] };
+        targetRow[field] = val;
+
+        if (field === 'cr') {
+          const crVal = parseFloat(val) || 0;
+          targetRow._originalCr = crVal;
+          targetRow.cr = crVal;
+          const base = parseFloat(targetRow.baseAmount) || 0;
+          targetRow.totalAmount = base + crVal;
+        } else if (field === 'baseAmount') {
+          const baseVal = parseFloat(val) || 0;
+          const crVal = parseFloat(targetRow.cr) || 0;
+          targetRow.totalAmount = baseVal + crVal;
+        } else if (field === 'paymentReceived') {
+          const received = parseFloat(val) || 0;
+          targetRow.paymentReceived = received;
+        } else if (field === 'paymentStatus') {
+          if (val === 'tdc' || val === 'dc') {
+            targetRow.baseAmount = 0;
+            const crVal = parseFloat(targetRow.cr) || 0;
+            targetRow.totalAmount = crVal;
+          }
+        }
+
+        if (field === 'paymentReceived' || field === 'baseAmount' || field === 'cr') {
+          const received = parseFloat(targetRow.paymentReceived) || 0;
+          const total = parseFloat(targetRow.totalAmount) || 0;
+          
+          if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
+            if (received === 0) {
+              targetRow.paymentStatus = 'unpaid';
+            } else if (received >= total) {
+              targetRow.paymentStatus = 'paid';
+            } else {
+              targetRow.paymentStatus = 'partial';
+            }
+          }
+        }
+
+        nextRows[rowIndex] = targetRow;
+        next[idx] = { ...next[idx], rows: nextRows };
+
+        if (currentMonthId) {
+          saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]).catch(()=>{});
+        }
+
         return next;
       });
 
-      // Track row index in editedRowIndices
       setEditedRowIndices(prev => {
         const next = new Set(prev);
         next.add(rowIndex);
         return next;
       });
-
-      // Background debounced persist for cell edits
-            saveBillingMonthTracked(
-        currentMonthId,
-        updatedRows,
-        currentUser?.username || 'admin',
-        activeDealerId || 'main',
-        forceImmediate
-      ).catch(err => {
-         console.warn("Background auto-save failed:", err);
-      });
+      
     } catch (err: any) {
       console.error(err);
     }
@@ -2327,7 +2357,18 @@ export default function AdminPanel({
         if ((row.pkgDetails || '') !== (match.pkgDetails || '')) { 
           row.pkgDetails = match.pkgDetails || '';
           changed = true;
-          // We will just update the pkgDetails text so it shows correctly in Recovery Rows
+        }
+        if ((row.rt || '') !== (match.rt || '')) { row.rt = match.rt || ''; changed = true; }
+        if (match.baseAmount !== undefined && match.baseAmount !== null && Number(match.baseAmount) > 0) {
+          if (Number(row.baseAmount || 0) !== Number(match.baseAmount)) {
+            row.baseAmount = Number(match.baseAmount);
+            row.totalAmount = (Number(row.baseAmount) || 0) + (Number(row.cr) || 0);
+            changed = true;
+          }
+        }
+        if (match.billingDay && String(row.billingDay || '') !== String(match.billingDay)) {
+          row.billingDay = String(match.billingDay);
+          changed = true;
         }
         if (changed) {
           updatedRows[i] = { ...row };
@@ -2340,8 +2381,8 @@ export default function AdminPanel({
       console.log(`[Billing Auto-Sync] Adding ${missingClients.length} missing, Removing ${hasRemovals ? 'some' : '0'} deleted, Updating. Sheet ${currentMonthId}`);
       
       const newRows = missingClients.map((c: any) => {
-        let cleanBase = 1000;
-        if (c.pkgDetails) {
+        let cleanBase = (c.baseAmount && Number(c.baseAmount) > 0) ? Number(c.baseAmount) : 1000;
+        if (!c.baseAmount && c.pkgDetails) {
           const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
           if (digitsMatch && digitsMatch.length > 0) {
             cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
@@ -2363,7 +2404,7 @@ export default function AdminPanel({
           baseAmount: cleanBase,
           cr: 0,
           totalAmount: cleanBase,
-          billingDay: '5',
+          billingDay: String(c.billingDay || '5'),
           paymentReceived: 0,
           paymentStatus: 'unpaid',
           comments: '',
@@ -2395,7 +2436,9 @@ export default function AdminPanel({
 
 
   const activeRows = useMemo(() => {
-    const rawRows = (activeMonthDoc?.rows || []).map((r: any, idx: number) => ({ ...r, _originalIndex: idx }));
+    const rawRows = (activeMonthDoc?.rows || [])
+      .map((r: any, idx: number) => ({ ...r, _originalIndex: idx }))
+      .filter((r: any) => !isExcludedFromRecovery(r));
     let allowedRows = rawRows;
     
     if (currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main')) {
@@ -2440,7 +2483,10 @@ export default function AdminPanel({
         row.paymentStatus?.toLowerCase().includes(query) ||
         row.serNam?.toLowerCase().includes(query);
       
-      const matchesStatus = billingStatusFilter === 'all' || row.paymentStatus === billingStatusFilter;
+      const matchesStatus = billingStatusFilter === 'all' || 
+        (billingStatusFilter === 'extra' 
+          ? (row.paymentStatus === 'extra' || row.name === 'Unspecified Entry' || (!row.clientId && !row.username && (!row.name || row.name === 'Unspecified Entry')))
+          : row.paymentStatus === billingStatusFilter);
       const matchesArea = billingAreaFilter === 'all' || row.area === billingAreaFilter;
       
       return matchesSearch && matchesStatus && matchesArea;
@@ -7743,6 +7789,7 @@ export default function AdminPanel({
                         <option value="unpaid">UNPAID</option>
                         <option value="tdc">TDC (SUSPENDED)</option>
                         <option value="dc">DC (DISCONNECTED)</option>
+                        <option value="extra">EXTRA (UNSPECIFIED / EXPENSE)</option>
                       </select>
 
                       {/* Area selector */}
@@ -7853,6 +7900,7 @@ export default function AdminPanel({
                             const isUnpaid = rowRef.paymentStatus === 'unpaid';
                             const isTdc = rowRef.paymentStatus === 'tdc';
                             const isDc = rowRef.paymentStatus === 'dc';
+                            const isExtra = rowRef.paymentStatus === 'extra' || rowRef.name === 'Unspecified Entry';
 
                             return (
                               <tr
@@ -8035,7 +8083,8 @@ export default function AdminPanel({
                                       isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30 font-black",
                                       isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600 font-black",
                                       isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black",
-                                      isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black"
+                                      isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black",
+                                      isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black"
                                     )}
                                   >
                                     <option value="unpaid">UNPAID</option>
@@ -8043,6 +8092,7 @@ export default function AdminPanel({
                                     <option value="partial">PARTIAL</option>
                                     <option value="tdc">TDC</option>
                                     <option value="dc">DC</option>
+                                    <option value="extra">EXTRA</option>
                                   </select>
                                 </td>
 
@@ -8308,6 +8358,7 @@ export default function AdminPanel({
                       const isUnpaid = rowRef.paymentStatus === 'unpaid';
                       const isTdc = rowRef.paymentStatus === 'tdc';
                       const isDc = rowRef.paymentStatus === 'dc';
+                      const isExtra = rowRef.paymentStatus === 'extra' || rowRef.name === 'Unspecified Entry';
 
                       return (
                         <motion.div 
@@ -8377,7 +8428,8 @@ export default function AdminPanel({
                                   isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-600 border-amber-200 dark:border-amber-900/30 font-black",
                                   isUnpaid && "bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 font-black",
                                   isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-250 dark:border-rose-900/50 font-black",
-                                  isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black"
+                                  isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black",
+                                  isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black"
                                 )}
                               >
                                 <option value="unpaid">UNPAID</option>
@@ -8385,6 +8437,7 @@ export default function AdminPanel({
                                 <option value="partial">PARTIAL</option>
                                 <option value="tdc">TDC</option>
                                 <option value="dc">DC</option>
+                                <option value="extra">EXTRA</option>
                               </select>
                             </div>
                           </div>
@@ -8817,7 +8870,8 @@ export default function AdminPanel({
                           selectedRecoveryRow.paymentStatus === 'partial' && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30",
                           selectedRecoveryRow.paymentStatus === 'unpaid' && "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 dark:border-slate-600",
                           selectedRecoveryRow.paymentStatus === 'tdc' && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50",
-                          selectedRecoveryRow.paymentStatus === 'dc' && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700"
+                          selectedRecoveryRow.paymentStatus === 'dc' && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700",
+                          (selectedRecoveryRow.paymentStatus === 'extra' || selectedRecoveryRow.name === 'Unspecified Entry') && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30"
                         )}>
                           {selectedRecoveryRow.paymentStatus?.toUpperCase() || 'UNPAID'}
                         </div>

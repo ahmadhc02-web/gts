@@ -227,6 +227,8 @@ export default function EntrySheet({
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState('');
   const [openedFolderId, setOpenedFolderId] = useState<string | null>(null);
   const [folderSortOption, setFolderSortOption] = useState<'a-to-z' | 'amount-high' | 'amount-low' | 'newest'>('newest');
+  const [sheetToDeleteId, setSheetToDeleteId] = useState<string | null>(null);
+  const [showTerminateMonthModal, setShowTerminateMonthModal] = useState(false);
 
   // User search popup state variables
   const [showUserSearchPopup, setShowUserSearchPopup] = useState(false);
@@ -464,7 +466,7 @@ export default function EntrySheet({
     const year = today.getFullYear();
     const formattedDate = `${day} - ${month} - ${year}`;
 
-    const newSheetId = `sheet_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newSheetId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
 
     // Set editor fields
     setLoadedSheetId(newSheetId);
@@ -479,6 +481,7 @@ export default function EntrySheet({
 
     const blankSheet = {
       id: newSheetId,
+      folderId: folderId,
       recOfficer: currentUser.fullName || currentUser.username.toUpperCase(),
       recOfficerLabel: 'REC. OFFICER',
       area: 'MAIN',
@@ -665,6 +668,37 @@ export default function EntrySheet({
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const [focusedField, setFocusedField] = useState<'cId' | 'name' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
+  const [activeInputElement, setActiveInputElement] = useState<HTMLInputElement | null>(null);
+  const [scrollTick, setScrollTick] = useState(0);
+
+  useEffect(() => {
+    if (!activeInputElement) return;
+    
+    const handleScroll = () => {
+      setScrollTick(prev => prev + 1);
+    };
+
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleScroll);
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleScroll);
+    };
+  }, [activeInputElement]);
+
+  const getDropdownStyle = () => {
+    if (!activeInputElement) return {};
+    const rect = activeInputElement.getBoundingClientRect();
+    return {
+      position: 'fixed' as const,
+      top: `${rect.bottom + 4}px`,
+      left: `${rect.left}px`,
+      width: `${Math.max(290, rect.width)}px`,
+      zIndex: 1000000,
+    };
+  };
 
   // Ledger Card Monthly History and Backup States
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
@@ -1414,17 +1448,52 @@ export default function EntrySheet({
         };
       }
 
+      // Ensure loadedSheetId is a valid 15-character PocketBase ID if not already
+      let currentLoadedId = loadedSheetId;
+      if (currentLoadedId && (currentLoadedId.startsWith('sheet_') || !/^[a-z0-9]{15}$/.test(currentLoadedId))) {
+        const generatedId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
+        
+        const nextMap = { ...sheetFolderMap };
+        if (nextMap[currentLoadedId]) {
+          nextMap[generatedId] = nextMap[currentLoadedId];
+          delete nextMap[currentLoadedId];
+        }
+        setSheetFolderMap(nextMap);
+        saveMapToDb(nextMap);
+        setLoadedSheetId(generatedId);
+        
+        if (currentSyncSheets[activeSheetIdx]) {
+          currentSyncSheets[activeSheetIdx].id = generatedId;
+        }
+        setSheets(currentSyncSheets);
+        currentLoadedId = generatedId;
+      }
+
+      // STRICTLY ENFORCE: Ensure all A4 size sheets inside the active main folder are included in currentSyncSheets
+      const activeFolderId = openedFolderId || 
+        (currentLoadedId ? sheetFolderMap[currentLoadedId] : null) || 
+        currentSyncSheets[activeSheetIdx]?.folderId || 
+        '';
+
+      if (activeFolderId) {
+        const existingIds = new Set(currentSyncSheets.map(s => s.id).filter(Boolean));
+        const historySheetsInFolder = ledgerHistory.filter(sh => 
+          (sh.folderId === activeFolderId || sheetFolderMap[sh.id] === activeFolderId) &&
+          sh.id && !existingIds.has(sh.id)
+        );
+        if (historySheetsInFolder.length > 0) {
+          currentSyncSheets.push(...historySheetsInFolder);
+        }
+      }
+
       const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-      let anySaved = false;
       let totalUpdatedBillingCount = 0;
-
-      let lastSavedId: string | null = null;
       const accumulatedBillingMonths: Record<string, any[]> = {};
+      const accumulatedChangedIndicesMap: Record<string, Set<number>> = {};
 
+      let hasAnyValidSheet = false;
       for (let i = 0; i < currentSyncSheets.length; i++) {
         const sh = currentSyncSheets[i];
-        
-        // Skip empty sheets if we have multiple sheets
         const hasT1Data = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
         const hasT2Data = (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
         const officerName = sh.recOfficer || '';
@@ -1434,7 +1503,7 @@ export default function EntrySheet({
             toast.error("Please specify a Recovery Officer name first.");
             return;
           }
-          continue; // skip empty sheet title
+          continue;
         }
         
         if (!hasT1Data && !hasT2Data) {
@@ -1442,16 +1511,42 @@ export default function EntrySheet({
             toast.error("The ledger sheet is completely empty. Please enter some records first!");
             return;
           }
-          continue; // skip completely empty pages
+          continue;
         }
 
-         const isCurrentlyLoadedSheet = (i === activeSheetIdx) && loadedSheetId;
-         const targetFolderId = isCurrentlyLoadedSheet 
-           ? (sheetFolderMap[loadedSheetId] || sh.folderId || openedFolderId || '') 
-           : (sh.folderId || openedFolderId || '');
+        hasAnyValidSheet = true;
+      }
+
+      if (!hasAnyValidSheet) {
+        toast.error("Please enter a Recovery Officer name and sheet records first!");
+        return;
+      }
+
+      // Prepare payloads for all sheets, performing local optimistic updates and sync calculations
+      const sheetPayloads: any[] = [];
+      const savedSheetsToLocal: any[] = [];
+      const updatedFolderMap = { ...sheetFolderMap };
+
+      for (let i = 0; i < currentSyncSheets.length; i++) {
+        const sh = currentSyncSheets[i];
+        
+        const hasT1Data = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT2Data = (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
+        const officerName = sh.recOfficer || '';
+        if (!officerName.trim() || (!hasT1Data && !hasT2Data)) continue;
+
+        const isCurrentlyLoadedSheet = (i === activeSheetIdx) && currentLoadedId;
+        const targetFolderId = isCurrentlyLoadedSheet 
+          ? (updatedFolderMap[currentLoadedId] || sh.folderId || openedFolderId || '') 
+          : (sh.folderId || openedFolderId || '');
+
+        let resolvedSheetId = sh.id;
+        if (!resolvedSheetId || resolvedSheetId.startsWith('sheet_') || !/^[a-z0-9]{15}$/.test(resolvedSheetId)) {
+          resolvedSheetId = isCurrentlyLoadedSheet ? currentLoadedId : Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
+        }
 
         const sheetPayload = {
-          id: isCurrentlyLoadedSheet ? loadedSheetId : undefined,
+          id: resolvedSheetId,
           folderId: targetFolderId,
           recOfficer: sh.recOfficer,
           recOfficerLabel: sh.recOfficerLabel || 'REC. OFFICER',
@@ -1486,316 +1581,319 @@ export default function EntrySheet({
           footnoteLeft: sh.footnoteLeft || 'Enterprise Ledger Dispatch System',
           footnoteRight: sh.footnoteRight || 'GENv2.5 // A4 PRINTABLE',
           dealerId: tenantId || 'main',
-          createdAt: isCurrentlyLoadedSheet ? undefined : Date.now()
+          createdAt: sh.createdAt || Date.now()
         };
 
-        toast.loading(`Saving Sheet ${i + 1} (${sh.recOfficer})...`, { id: `ledger-save-${i}` });
-        const savedDoc = await pocketbaseService.saveLedgerSheet(sheetPayload);
-        toast.dismiss(`ledger-save-${i}`);
+        sheetPayloads.push(sheetPayload);
 
-        if (savedDoc) {
-          anySaved = true;
-          if (savedDoc.id) {
-            lastSavedId = savedDoc.id;
+        const localObj = {
+          id: resolvedSheetId,
+          name: sheetPayload.recOfficer || '',
+          folderId: targetFolderId || '',
+          recOfficer: sheetPayload.recOfficer,
+          recOfficerLabel: sheetPayload.recOfficerLabel,
+          area: sheetPayload.area,
+          areaLabel: sheetPayload.areaLabel,
+          sheetDate: sheetPayload.sheetDate,
+          dateLabel: sheetPayload.dateLabel,
+          table1Rows: sheetPayload.table1Rows,
+          table2Rows: sheetPayload.table2Rows,
+          cashReceived: sheetPayload.cashReceived,
+          sign: sheetPayload.sign,
+          submitted: sheetPayload.submitted,
+          cashReceivedLabel: sheetPayload.cashReceivedLabel,
+          signLabel: sheetPayload.signLabel,
+          submittedLabel: sheetPayload.submittedLabel,
+          footnoteLeft: sheetPayload.footnoteLeft,
+          footnoteRight: sheetPayload.footnoteRight,
+          createdAt: sheetPayload.createdAt,
+          updatedAt: Date.now()
+        };
+        savedSheetsToLocal.push(localObj);
+
+        if (resolvedSheetId && targetFolderId) {
+          updatedFolderMap[resolvedSheetId] = targetFolderId;
+          if (currentLoadedId && currentLoadedId !== resolvedSheetId) {
+            delete updatedFolderMap[currentLoadedId];
           }
+        }
 
-          // Map new generated Firestore ID to sheetFolderMap
-          const targetFolderId = savedDoc.id ? (sheetFolderMap[savedDoc.id] || (loadedSheetId ? sheetFolderMap[loadedSheetId] : null) || openedFolderId) : openedFolderId;
+        const folderObj = folders.find(f => f.id === targetFolderId);
+        const targetMonthId = (targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined) || currentMonthId;
 
-          // Build local object to instantly record in local state for zero-latency website display
-          const savedSheetToLocal = {
-            id: lastSavedId || sheetPayload.id,
-            name: sheetPayload.recOfficer || '',
-            folderId: targetFolderId || '',
-            recOfficer: sheetPayload.recOfficer,
-            recOfficerLabel: sheetPayload.recOfficerLabel,
-            area: sheetPayload.area,
-            areaLabel: sheetPayload.areaLabel,
-            sheetDate: sheetPayload.sheetDate,
-            dateLabel: sheetPayload.dateLabel,
-            table1Rows: sheetPayload.table1Rows,
-            table2Rows: sheetPayload.table2Rows,
-            cashReceived: sheetPayload.cashReceived,
-            sign: sheetPayload.sign,
-            submitted: sheetPayload.submitted,
-            cashReceivedLabel: sheetPayload.cashReceivedLabel,
-            signLabel: sheetPayload.signLabel,
-            submittedLabel: sheetPayload.submittedLabel,
-            footnoteLeft: sheetPayload.footnoteLeft,
-            footnoteRight: sheetPayload.footnoteRight,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          };
-
-          setLedgerHistory(prev => {
-            const exists = prev.findIndex(sh => sh.id === savedSheetToLocal.id);
-            if (exists >= 0) {
-              const next = [...prev];
-              next[exists] = { ...next[exists], ...savedSheetToLocal };
-              return next;
-            } else {
-              return [savedSheetToLocal, ...prev];
-            }
-          });
-
-          // Sonner toast notification triggered immediately upon successful save to verify both local state and PocketBase database sync occurred perfectly.
-          toast.success("⚡ Database Synchronized Successfully!", {
-            description: `Sheet for "${sheetPayload.recOfficer}" successfully persisted in PocketBase ('ledger_sheets' collection) and registered in the website local state memory.`,
-            duration: 5000
-          });
+        if (targetMonthId) {
+          let targetMonthRows: any[] = accumulatedBillingMonths[targetMonthId] || [];
           
-          if (savedDoc.id && targetFolderId) {
-            const updated = { ...sheetFolderMap };
-            updated[savedDoc.id] = targetFolderId;
-            if (loadedSheetId && loadedSheetId !== savedDoc.id) {
-              delete updated[loadedSheetId];
-            }
-            setSheetFolderMap(updated);
-            saveMapToDb(updated);
+          if (targetMonthRows.length === 0) {
+            const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
+            targetMonthRows = targetMonthDoc?.rows || [];
           }
 
-          const folderObj = folders.find(f => f.id === targetFolderId);
-          const targetMonthId = (targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined) || currentMonthId;
-
-          if (targetMonthId) {
-            let targetMonthRows: any[] = accumulatedBillingMonths[targetMonthId] || [];
-            
-            if (targetMonthRows.length === 0) {
-              const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
-              targetMonthRows = targetMonthDoc?.rows || [];
-            }
-
-            if (targetMonthRows.length === 0) {
-              try {
-                // Fallback to direct database query only if not in state
-                targetMonthRows = await pocketbaseService.getBillingMonthRowsDirect(targetMonthId, activeDealerId || 'main');
-              } catch (err) {
-                console.warn("Failed to fetch billing month rows directly:", err);
-              }
-            }
-
-            if (targetMonthRows.length === 0 && clients && clients.length > 0) {
-              // Construct default rows from clients to prevent deleting other rows in syncBillingRows
-              targetMonthRows = clients.map((c: any) => {
-                let cleanBase = 1000;
-                if (c.pkgDetails) {
-                  const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
-                  if (digitsMatch && digitsMatch.length > 0) {
-                    cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
-                  } else {
-                    const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
-                    if (lowDigits && lowDigits.length >= 3) {
-                      cleanBase = parseInt(lowDigits, 10);
-                    }
+          if (targetMonthRows.length === 0 && clients && clients.length > 0) {
+            targetMonthRows = clients.map((c: any) => {
+              let cleanBase = 1000;
+              if (c.pkgDetails) {
+                const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
+                if (digitsMatch && digitsMatch.length > 0) {
+                  cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
+                } else {
+                  const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
+                  if (lowDigits && lowDigits.length >= 3) {
+                    cleanBase = parseInt(lowDigits, 10);
                   }
                 }
-                return {
-                  id: c.id,
-                  clientId: c.id,
-                  name: c.name,
-                  username: c.username,
-                  mobileNumber: c.mobileNumber || c.number || '',
-                  area: c.area || '',
-                  rt: c.rt || '',
-                  baseAmount: cleanBase,
-                  cr: Number(c.cr) || 0,
-                  totalAmount: cleanBase + (Number(c.cr) || 0),
-                  billingDay: '5',
-                  paymentReceived: 0,
-                  paymentStatus: 'unpaid',
-                  comments: '',
-                  occ: '',
-                  serNam: '',
-                  pkgDetails: c.pkgDetails || '',
-                  sag: '',
-                  lai: '',
-                  connectionDate: '',
-                  devicePrice: 0,
-                  abl: 0,
-                  network: ''
-                };
-              });
+              }
+              return {
+                id: c.id,
+                clientId: c.id,
+                name: c.name,
+                username: c.username,
+                mobileNumber: c.mobileNumber || c.number || '',
+                area: c.area || '',
+                rt: c.rt || '',
+                baseAmount: cleanBase,
+                cr: Number(c.cr) || 0,
+                totalAmount: cleanBase + (Number(c.cr) || 0),
+                billingDay: '5',
+                paymentReceived: 0,
+                paymentStatus: 'unpaid',
+                comments: '',
+                occ: '',
+                serNam: '',
+                pkgDetails: c.pkgDetails || '',
+                sag: '',
+                lai: '',
+                connectionDate: '',
+                devicePrice: 0,
+                abl: 0,
+                network: ''
+              };
+            });
+          }
+
+          try {
+            const isExcludedName = (nameStr?: string) => {
+              if (!nameStr) return false;
+              const lower = nameStr.trim().toLowerCase();
+              return [
+                'bank',
+                'panel balance',
+                'panel',
+                'cash hand',
+                'hand cash',
+                'cash in hand',
+                'unspecified entry',
+                'expense',
+                'expenses'
+              ].includes(lower);
+            };
+
+            const updatedBillingRows = targetMonthRows.filter((br: any) => !isExcludedName(br.name));
+
+            let updatedCount = 0;
+            if (!accumulatedChangedIndicesMap[targetMonthId]) {
+              accumulatedChangedIndicesMap[targetMonthId] = new Set<number>();
             }
-            
-            try {
-              const updatedBillingRows = [...targetMonthRows];
-              let updatedCount = 0;
 
-              sheetPayload.table1Rows.forEach((r) => {
-                const hasId = r.cId && r.cId.trim();
-                const hasName = r.name && r.name.trim();
-                if (!hasId && !hasName) return; // skip empty rows
+            const batchPaymentsMap = new Map<string, number>();
+            const allSheetRows = Array.isArray(sheetPayload.table1Rows) ? sheetPayload.table1Rows : [];
 
-                let matchedIdx = -1;
+            allSheetRows.forEach((r) => {
+              const amountVal = Number(r.amount) || 0;
+              const amountStr = String(r.amount || '').trim().toUpperCase();
+              const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr);
 
-                // 1. Match using precise metadata from suggestions
-                if (r.clientId || r.clientUsername) {
-                  const searchClientId = (r.clientId || '').trim().toLowerCase();
-                  const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
-                  matchedIdx = updatedBillingRows.findIndex((br: any) => 
-                    (searchClientId && br.clientId && br.clientId.trim().toLowerCase() === searchClientId) ||
-                    (searchClientUsername && br.username && br.username.trim().toLowerCase() === searchClientUsername)
-                  );
-                }
+              const hasId = Boolean(r.cId && String(r.cId).trim());
+              let hasName = Boolean(r.name && String(r.name).trim());
+              const hasAmount = amountVal > 0 || isStatusString;
 
-                // 2. Fallback to typed matching by ID or Username
-                if (matchedIdx === -1 && hasId) {
-                  const searchId = r.cId.trim().toLowerCase();
-                  matchedIdx = updatedBillingRows.findIndex((br: any) => 
-                    (br.clientId && br.clientId.trim().toLowerCase() === searchId) ||
-                    (br.username && br.username.trim().toLowerCase() === searchId)
-                  );
-                }
+              if (!hasId && !hasName) return;
+              if (isExcludedName(r.name)) return;
 
-                // 3. Last fallback: match by Name
-                if (matchedIdx === -1 && hasName) {
-                  const searchName = r.name.trim().toLowerCase();
-                  matchedIdx = updatedBillingRows.findIndex((br: any) => 
-                    br.name && br.name.trim().toLowerCase() === searchName
-                  );
-                }
+              let matchedIdx = -1;
 
-                const amountVal = Number(r.amount) || 0;
-                const amountStr = String(r.amount).toUpperCase();
-                const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL'].includes(amountStr);
+              if (r.clientId || r.clientUsername) {
+                const searchClientId = (r.clientId || '').trim().toLowerCase();
+                const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
+                matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                  (searchClientId && br.clientId && String(br.clientId).trim().toLowerCase() === searchClientId) ||
+                  (searchClientUsername && br.username && String(br.username).trim().toLowerCase() === searchClientUsername) ||
+                  (searchClientUsername && br.clientId && String(br.clientId).trim().toLowerCase() === searchClientUsername)
+                );
+              }
 
-                if (matchedIdx !== -1) {
-                  const row = updatedBillingRows[matchedIdx];
+              if (matchedIdx === -1 && hasId) {
+                const searchId = String(r.cId).trim().toLowerCase();
+                matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                  (br.clientId && String(br.clientId).trim().toLowerCase() === searchId) ||
+                  (br.username && String(br.username).trim().toLowerCase() === searchId) ||
+                  (br.id && String(br.id).trim().toLowerCase() === searchId)
+                );
+              }
 
-                  const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
-                  const base = parseFloat(row.baseAmount || 0);
+              if (matchedIdx === -1 && hasName) {
+                const searchName = String(r.name).trim().toLowerCase();
+                matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                  br.name && String(br.name).trim().toLowerCase() === searchName
+                );
+              }
 
-                  // Keep original CR and totalAmount intact, just record payment
-                  const totalAmount = base + savedOrigCr;
-                  let finalStatus = 'partial';
-                  
-                  if (isStatusString) {
-                    finalStatus = amountStr.toLowerCase();
-                  } else if (r.status) {
-                    finalStatus = r.status;
-                  } else if (amountVal === 0) {
+              if (matchedIdx !== -1) {
+                const row = updatedBillingRows[matchedIdx];
+                const clientKey = row.id || row.clientId || row.username || `idx_${matchedIdx}`;
+
+                const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
+                const base = parseFloat(row.baseAmount || 0);
+                const totalAmount = base + savedOrigCr;
+
+                let newPaymentReceived = 0;
+                let finalStatus = 'partial';
+
+                if (isStatusString) {
+                  finalStatus = amountStr.toLowerCase();
+                  newPaymentReceived = finalStatus === 'paid' ? totalAmount : 0;
+                } else {
+                  const prevBatchPayment = batchPaymentsMap.get(clientKey);
+                  if (prevBatchPayment !== undefined) {
+                    newPaymentReceived = prevBatchPayment + amountVal;
+                  } else {
+                    newPaymentReceived = amountVal;
+                  }
+                  batchPaymentsMap.set(clientKey, newPaymentReceived);
+
+                  if (r.status) {
+                    finalStatus = r.status.toLowerCase();
+                  } else if (row.name === 'Unspecified Entry' || r.name === 'Unspecified Entry') {
+                    finalStatus = 'extra';
+                  } else if (newPaymentReceived === 0) {
                     finalStatus = 'unpaid';
-                  } else if (amountVal >= totalAmount) {
+                  } else if (newPaymentReceived >= totalAmount) {
                     finalStatus = 'paid';
                   }
+                }
 
-                  updatedBillingRows[matchedIdx] = {
-                    ...row,
-                    _originalCr: savedOrigCr,
-                    cr: savedOrigCr, // Do not destructively modify CR
-                    totalAmount: totalAmount, // Do not destructively modify totalAmount
-                    paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
-                    paymentStatus: finalStatus
-                  };
+                const isRowChanged = (Number(row.paymentReceived) || 0) !== newPaymentReceived || 
+                                     (row.paymentStatus || 'unpaid').toLowerCase() !== finalStatus.toLowerCase();
+
+                updatedBillingRows[matchedIdx] = {
+                  ...row,
+                  _originalCr: savedOrigCr,
+                  cr: savedOrigCr,
+                  totalAmount: totalAmount,
+                  paymentReceived: newPaymentReceived,
+                  paymentStatus: finalStatus
+                };
+
+                if (isRowChanged || amountVal > 0) {
+                  accumulatedChangedIndicesMap[targetMonthId].add(matchedIdx);
                   updatedCount++;
 
                   const pName = row.name || r.name;
                   const pUser = row.username || r.clientUsername || r.cId || '';
-                  const detailStr = isStatusString ? finalStatus.toUpperCase() : `PKR ${amountVal.toLocaleString()}`;
+                  const detailStr = isStatusString ? finalStatus.toUpperCase() : `PKR ${newPaymentReceived.toLocaleString()}`;
                   allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr}`);
-                } else {
-                  // NEW USER ADDED: Not present in the billing month rows yet, append them!
-                  const client = clients.find((c: any) => 
-                    (r.clientId && c.id === r.clientId) ||
-                    (r.clientUsername && c.username?.toLowerCase() === r.clientUsername.toLowerCase()) ||
-                    (r.cId && (c.id === r.cId || c.username?.toLowerCase() === r.cId.toLowerCase())) ||
-                    (r.name && c.name?.toLowerCase() === r.name.toLowerCase())
-                  );
-
-                  const baseAmount = client ? (Number(client.baseAmount) || 0) : amountVal;
-                  const cr = client ? (Number(client.cr) || 0) : 0;
-                  const totalAmount = baseAmount + cr;
-                  
-                  let finalStatus = 'partial';
-                  if (isStatusString) {
-                    finalStatus = amountStr.toLowerCase();
-                  } else if (r.status) {
-                    finalStatus = r.status;
-                  } else if (amountVal === 0) {
-                    finalStatus = 'unpaid';
-                  } else if (amountVal >= totalAmount) {
-                    finalStatus = 'paid';
-                  }
-
-                  const newRow = {
-                    id: client?.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                    clientId: client?.id || r.cId || '',
-                    name: client?.name || r.name || 'Unknown',
-                    username: client?.username || r.clientUsername || r.cId || '',
-                    mobileNumber: client?.mobileNumber || '',
-                    area: client?.area || r.area || area || '',
-                    rt: client?.rt || '',
-                    baseAmount: baseAmount,
-                    cr: cr,
-                    totalAmount: totalAmount,
-                    billingDay: client?.billingDay || '5',
-                    paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
-                    paymentStatus: finalStatus,
-                    comments: r.comments || '',
-                    serNam: client?.serNam || '',
-                    pkgDetails: client?.pkgDetails || '',
-                    connectionDate: client?.connectionDate || '',
-                    devicePrice: client?.devicePrice || '',
-                    abl: client?.abl || '',
-                    network: client?.network || ''
-                  };
-                  updatedBillingRows.push(newRow);
-                  updatedCount++;
-
-                  const pName = newRow.name;
-                  const pUser = newRow.username || r.cId || '';
-                  const detailStr = isStatusString ? finalStatus.toUpperCase() : `PKR ${amountVal.toLocaleString()}`;
-                  allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr} (Added to Sheet)`);
                 }
-              });
-              if (updatedCount > 0) {
-                totalUpdatedBillingCount += updatedCount;
-                // Store in accumulator map so multiple sheets don't overwrite each other
-                accumulatedBillingMonths[targetMonthId] = updatedBillingRows;
+              } else {
+                const client = clients.find((c: any) => 
+                  (r.clientId && c.id === r.clientId) ||
+                  (r.clientUsername && c.username?.toLowerCase() === String(r.clientUsername).toLowerCase()) ||
+                  (r.cId && (c.id?.toLowerCase() === String(r.cId).toLowerCase() || c.username?.toLowerCase() === String(r.cId).toLowerCase())) ||
+                  (r.name && c.name?.toLowerCase() === String(r.name).toLowerCase())
+                );
+
+                if (!client) {
+                  if (!r.name && !r.cId) return;
+                } else {
+                  if (isExcludedName(client.name) || isExcludedName(client.username)) return;
+                }
+
+                const baseAmount = client ? (Number(client.baseAmount) || 0) : amountVal;
+                const cr = client ? (Number(client.cr) || 0) : 0;
+                const totalAmount = baseAmount + cr;
+                
+                let finalStatus = 'partial';
+                if (isStatusString) {
+                  finalStatus = amountStr.toLowerCase();
+                } else if (r.status) {
+                  finalStatus = r.status.toLowerCase();
+                } else if (r.name === 'Unspecified Entry' || (!r.cId && (!r.name || r.name === 'Unspecified Entry'))) {
+                  finalStatus = 'extra';
+                } else if (amountVal === 0) {
+                  finalStatus = 'unpaid';
+                } else if (amountVal >= totalAmount) {
+                  finalStatus = 'paid';
+                }
+
+                const clientKey = client?.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                const newRow = {
+                  id: clientKey,
+                  clientId: client?.id || r.cId || '',
+                  name: client?.name || r.name || 'Unknown',
+                  username: client?.username || r.clientUsername || r.cId || '',
+                  mobileNumber: client?.mobileNumber || '',
+                  area: client?.area || r.area || area || '',
+                  rt: client?.rt || '',
+                  baseAmount: baseAmount,
+                  cr: cr,
+                  totalAmount: totalAmount,
+                  billingDay: client?.billingDay || '5',
+                  paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
+                  paymentStatus: finalStatus,
+                  comments: r.comments || '',
+                  serNam: client?.serNam || '',
+                  pkgDetails: client?.pkgDetails || '',
+                  connectionDate: client?.connectionDate || '',
+                  devicePrice: client?.devicePrice || '',
+                  abl: client?.abl || '',
+                  network: client?.network || ''
+                };
+
+                batchPaymentsMap.set(clientKey, newRow.paymentReceived);
+                updatedBillingRows.push(newRow);
+                accumulatedChangedIndicesMap[targetMonthId].add(updatedBillingRows.length - 1);
+                updatedCount++;
+
+                const pName = newRow.name;
+                const pUser = newRow.username || r.cId || '';
+                const detailStr = isStatusString ? finalStatus.toUpperCase() : `PKR ${amountVal.toLocaleString()}`;
+                allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr} (Added to Sheet)`);
               }
-            } catch (billingErr: any) {
-              console.error("Failed to auto-update billing status for sheet index:", i, billingErr);
-            }
+            });
+
+            totalUpdatedBillingCount += updatedCount;
+            accumulatedBillingMonths[targetMonthId] = updatedBillingRows;
+          } catch (billingErr: any) {
+            console.error("Failed to auto-update billing status:", billingErr);
           }
         }
       }
 
-      // After the loop, persist all accumulated billing months
+      // --- INSTANT OPTIMISTIC UI STATE SYNCHRONIZATION ---
+
+      // 1. Instantly update folders organisation mapping
+      setSheetFolderMap(updatedFolderMap);
+      saveMapToDb(updatedFolderMap);
+
+      // 2. Instantly update local ledger history
+      setLedgerHistory(prev => {
+        let next = [...prev];
+        savedSheetsToLocal.forEach(localObj => {
+          const existsIdx = next.findIndex(sh => sh.id === localObj.id);
+          if (existsIdx >= 0) {
+            next[existsIdx] = { ...next[existsIdx], ...localObj };
+          } else {
+            next = [localObj, ...next];
+          }
+        });
+        return next;
+      });
+
+      // 3. Instantly update parent state billing months
       for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
-        if (savingMonthIds && savingMonthIds.current) {
-          savingMonthIds.current.add(monthId);
-        }
-
-        let finalMergedRows: any[] = [];
-
         if (setBillingMonths) {
           setBillingMonths(prev => {
             const activeDocIndex = prev.findIndex(m => m.id === monthId);
-            let prevRows: any[] = [];
-            if (activeDocIndex !== -1) {
-              prevRows = prev[activeDocIndex].rows || [];
-            } else if (billingMonths) {
-              const existingInProps = billingMonths.find(m => m.id === monthId);
-              if (existingInProps) prevRows = existingInProps.rows || [];
-            }
-
-            // Merge accumulatedRows into prevRows so we don't lose concurrent changes
-            const mergedRows = [...prevRows];
-            for (const accRow of accumulatedRows) {
-               const idx = mergedRows.findIndex(r => 
-                 (r.clientId && accRow.clientId && r.clientId === accRow.clientId) || 
-                 (r.username && accRow.username && r.username.toLowerCase() === accRow.username.toLowerCase()) ||
-                 (r.name && accRow.name && r.name.toLowerCase() === accRow.name.toLowerCase())
-               );
-               if (idx !== -1) {
-                 mergedRows[idx] = accRow; // overwrite with A4 edit
-               } else {
-                 mergedRows.push(accRow);
-               }
-            }
-
-            finalMergedRows = mergedRows;
-
+            const mergedRows = accumulatedRows;
             if (activeDocIndex !== -1) {
               const newPrev = [...prev];
               newPrev[activeDocIndex] = { ...prev[activeDocIndex], rows: mergedRows };
@@ -1804,76 +1902,96 @@ export default function EntrySheet({
               return [{ id: monthId, rows: mergedRows, createdAt: Date.now(), updatedAt: Date.now() }, ...prev];
             }
           });
-        } else {
-          finalMergedRows = accumulatedRows;
         }
+      }
 
-        // Always save merged rows directly to database automatically
-        try {
-          await pocketbaseService.saveBillingMonth(
-            monthId, 
-            finalMergedRows.length > 0 ? finalMergedRows : accumulatedRows, 
-            currentUser?.username || 'admin',
-            activeDealerId,
-            true
-          );
-        } catch (err) {
-          console.warn("Failed to save billing month background sync:", err);
-        } finally {
-          if (savingMonthIds && savingMonthIds.current) {
-            savingMonthIds.current.delete(monthId);
+      // 4. Update currently loaded sheet references in editor
+      const lastSavedId = currentLoadedId;
+      if (lastSavedId) {
+        setLoadedSheetId(lastSavedId);
+        setSheets(prev => {
+          const next = [...prev];
+          if (next[activeSheetIdx]) {
+            const savedLocal = savedSheetsToLocal.find(s => s.id === lastSavedId);
+            next[activeSheetIdx] = {
+              ...next[activeSheetIdx],
+              id: lastSavedId,
+              folderId: savedLocal?.folderId || next[activeSheetIdx].folderId || ''
+            };
           }
-        }
+          return next;
+        });
       }
 
-      if (anySaved) {
-        toast.success(loadedSheetId ? "Ledger page updated successfully!" : "Ledger sheet compile successfully saved!");
-        
-        if (allSyncedUsersSummary.length > 0) {
-          toast.success("🎯 Connected Recovery Sheet Synced!", {
-            description: (
-              <div className="mt-1.5 space-y-1 text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                <p className="font-extrabold text-emerald-600 dark:text-emerald-400">Successfully synced recovery entries for {allSyncedUsersSummary.length} user(s):</p>
-                <ul className="list-disc pl-3 max-h-32 overflow-y-auto space-y-0.5">
-                  {allSyncedUsersSummary.map((summary, idx) => (
-                    <li key={idx} className="font-mono">{summary}</li>
-                  ))}
-                </ul>
-              </div>
-            ),
-            duration: 8000
-          });
-        } else if (totalUpdatedBillingCount > 0) {
-          toast.success(`Automatically updated ${totalUpdatedBillingCount} subscriber(s) designated recovery amounts in ${currentMonthId}!`);
-        }
-        
-        // Pin the saved ID as the currently loaded sheet so subsequent edits modify this same sheet
-        if (lastSavedId) {
-          setLoadedSheetId(lastSavedId);
-          setSheets(prev => {
-            const next = [...prev];
-            if (next[activeSheetIdx]) {
-              next[activeSheetIdx] = {
-                ...next[activeSheetIdx],
-                id: lastSavedId
-              };
-            }
-            return next;
-          });
-        }
+      const activeRows = table1Rows.filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
+      setOriginalActiveRows(activeRows.map(r => ({
+        name: (r.name || '').trim(),
+        amount: Number(r.amount) || 0,
+        comments: (r.comments || '').trim()
+      })));
 
-        // Auto receipt opening has been disabled per user request.
-        const activeRows = table1Rows.filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
+      // 5. INSTANT SUCCESS NOTIFICATIONS
+      const primaryOfficerName = currentSyncSheets[0]?.recOfficer || recOfficer || 'Recovery Officer';
+      toast.success("📄 A4 Size Sheet Saved Successfully!", {
+        description: `Sheet for "${primaryOfficerName}" has been saved instantly.`,
+        duration: 4000
+      });
 
-        // Update originalActiveRows state so subsequent saves are compared against this saved point
-        setOriginalActiveRows(activeRows.map(r => ({
-          name: (r.name || '').trim(),
-          amount: Number(r.amount) || 0,
-          comments: (r.comments || '').trim()
-        })));
+      if (allSyncedUsersSummary.length > 0) {
+        toast.success("🎯 Connected Recovery Sheet Synced!", {
+          description: (
+            <div className="mt-1.5 space-y-1 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+              <p className="font-extrabold text-emerald-600 dark:text-emerald-400">Successfully updated recovery entries for {allSyncedUsersSummary.length} user(s):</p>
+              <ul className="list-disc pl-3 max-h-32 overflow-y-auto space-y-0.5 font-mono">
+                {allSyncedUsersSummary.map((summary, idx) => (
+                  <li key={idx}>{summary}</li>
+                ))}
+              </ul>
+            </div>
+          ),
+          duration: 6000
+        });
+      } else if (totalUpdatedBillingCount > 0) {
+        toast.success("🎯 Connected Recovery Sheet Synced!", {
+          description: `Updated ${totalUpdatedBillingCount} subscriber recovery amount(s) in connected recovery sheet (${currentMonthId || 'Active Month'}).`,
+          duration: 5000
+        });
+      } else {
+        toast.success("🎯 Connected Recovery Sheet Synced!", {
+          description: `All recovery entries are permanently synchronized with recovery sheet database (${currentMonthId || 'Active Month'}).`,
+          duration: 4000
+        });
       }
+
+      // 6. ASYNCHRONOUS BACKGROUND DATABASE SYNC (Zero network delay for the user!)
+      (async () => {
+        try {
+          // A. Save A4 sheets to pocketbase in background
+          for (const payload of sheetPayloads) {
+            await pocketbaseService.saveLedgerSheet(payload);
+          }
+
+          // B. Save synced billing months to pocketbase in background
+          for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
+            const changedIndices = accumulatedChangedIndicesMap[monthId] 
+              ? Array.from(accumulatedChangedIndicesMap[monthId]) 
+              : undefined;
+
+            await pocketbaseService.saveBillingMonth(
+              monthId, 
+              accumulatedRows, 
+              currentUser?.username || 'admin',
+              activeDealerId,
+              true,
+              changedIndices
+            );
+          }
+        } catch (dbError) {
+          console.error("Background DB persistence failed:", dbError);
+        }
+      })();
+
     } catch (e: any) {
-      toast.dismiss("ledger-save");
       toast.error(getCleanErrorMessage(e));
     }
   };
@@ -1944,6 +2062,7 @@ export default function EntrySheet({
     // Initialize multi-sheet view to hold this restored card
     const restoredSheet: any = {
       id: sheet.id || Math.random().toString(36).substring(7),
+      folderId: sheet.folderId || sheetFolderMap[sheet.id] || '',
       recOfficer: sheet.recOfficer || '',
       recOfficerLabel: sheet.recOfficerLabel || 'REC. OFFICER',
       area: sheet.area || 'MAIN',
@@ -1978,7 +2097,7 @@ export default function EntrySheet({
   };
 
   // Delete a single historical card from registry logs
-  const handleDeleteHistorySheet = async (sheetId: string, e: React.MouseEvent) => {
+  const handleDeleteHistorySheet = (sheetId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid loading the sheet on card click
     
     if (isLocked) {
@@ -1988,22 +2107,26 @@ export default function EntrySheet({
       return;
     }
 
-    const confirmDel = window.confirm("Are you sure you want to move this historical ledger sheet card to Recycle Bin?");
-    if (!confirmDel) return;
+    setSheetToDeleteId(sheetId);
+  };
 
+  const confirmDeleteHistorySheet = async () => {
+    if (!sheetToDeleteId) return;
     try {
-      const sheetObj = ledgerHistory.find(s => s.id === sheetId);
+      const sheetObj = ledgerHistory.find(s => s.id === sheetToDeleteId);
       const author = currentUser?.fullName || currentUser?.username || 'admin';
       const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined) || 'main';
 
-      await pocketbaseService.deleteLedgerSheet(sheetId, author, scopeId, sheetObj);
+      await pocketbaseService.deleteLedgerSheet(sheetToDeleteId, author, scopeId, sheetObj);
       toast.success("Ledger card moved to Recycle Bin!");
-      if (loadedSheetId === sheetId) {
+      if (loadedSheetId === sheetToDeleteId) {
         resetToBlank();
         setLoadedSheetId(null);
       }
     } catch (err: any) {
       toast.error(getCleanErrorMessage(err));
+    } finally {
+      setSheetToDeleteId(null);
     }
   };
 
@@ -2071,18 +2194,17 @@ export default function EntrySheet({
   };
 
   // Purge/clear all month-end sheets from Firestore to start a new month cycle afresh
-  const handleTerminateMonth = async () => {
+  const handleTerminateMonth = () => {
     if (isLocked) {
       toast.error("🔒 SYSTEM SECURED", {
         description: "Please unlock the Billing Security Shield to terminate the ongoing billing month."
       });
       return;
     }
-    const confirmReset = window.confirm(
-      "☢️ WARNING: CRITICAL RESETS TRIGGERED\n\nThis will permanently delete ALL historical sheets & card records in your database forever. Please verify you have taken a full Google spreadsheet backup first.\n\nType OK to continue."
-    );
-    if (!confirmReset) return;
+    setShowTerminateMonthModal(true);
+  };
 
+  const confirmTerminateMonth = async () => {
     try {
       const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
       const author = currentUser?.fullName || currentUser?.username || 'admin';
@@ -2095,6 +2217,8 @@ export default function EntrySheet({
     } catch (e: any) {
       toast.dismiss("terminate-proc");
       toast.error("Failed to terminate month: " + getCleanErrorMessage(e));
+    } finally {
+      setShowTerminateMonthModal(false);
     }
   };
 
@@ -2299,13 +2423,25 @@ export default function EntrySheet({
   const getFilteredSuggestions = (field: 'cId' | 'name', queryValue: string) => {
     let sourceList = [...clients];
     
-    // Build fallback list dynamically from active monthly payments if Firestore list is empty
-    if (sourceList.length === 0 && activeRows && activeRows.length > 0) {
-      const seen = new Set();
+    // Build unique set of usernames/ids already in sourceList
+    const seenUsernames = new Set(
+      sourceList.map(c => (c.username || c.id || '').toLowerCase()).filter(Boolean)
+    );
+    const seenNames = new Set(
+      sourceList.map(c => (c.name || '').toLowerCase()).filter(Boolean)
+    );
+
+    // Build fallback and augment from active monthly payments if activeRows exists
+    if (activeRows && activeRows.length > 0) {
       activeRows.forEach(r => {
-        const key = (r.username || r.clientId || r.name || '').toLowerCase();
-        if (key && !seen.has(key)) {
-          seen.add(key);
+        const usernameKey = (r.username || r.clientId || '').toLowerCase();
+        const nameKey = (r.name || '').toLowerCase();
+        
+        const alreadyExists = (usernameKey && seenUsernames.has(usernameKey)) || (nameKey && seenNames.has(nameKey));
+        
+        if (!alreadyExists && (usernameKey || nameKey)) {
+          if (usernameKey) seenUsernames.add(usernameKey);
+          if (nameKey) seenNames.add(nameKey);
           sourceList.push({
             id: r.clientId || r.username || '',
             username: r.username || r.clientId || '',
@@ -2318,11 +2454,21 @@ export default function EntrySheet({
       });
     }
 
-    if (!queryValue.trim()) {
+    // Strip leading '@' from the search query if typed
+    let q = queryValue.trim().toLowerCase();
+    if (q.startsWith('@')) {
+      q = q.substring(1);
+    }
+
+    // Detect if we should show all default suggestions:
+    // 1. If query is empty
+    // 2. If the user hasn't typed anything yet since they focused the field
+    const isShowingCurrentValue = !hasTypedSinceFocus;
+
+    if (!q || isShowingCurrentValue) {
       return sourceList.slice(0, 8);
     }
 
-    const q = queryValue.toLowerCase();
     return sourceList.filter(c => 
       (c.name && c.name.toLowerCase().includes(q)) ||
       (c.username && c.username.toLowerCase().includes(q)) ||
@@ -3096,105 +3242,7 @@ export default function EntrySheet({
               )}
             </div>
 
-            {/* Uncategorized loose sheets as high-fidelity interactive file cards */}
-            {uncategorizedSheets.length > 0 && (
-              <div className="flex flex-col gap-3 mt-4">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                    Loose Desktop Sheets
-                  </h2>
-                  <span className="text-[9px] bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md font-extrabold">
-                    {uncategorizedSheets.length} Unsorted
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {uncategorizedSheets.filter(doesMatchSearch).map((sh) => {
-                    const t1Am = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
-                    const docTotal = t1Am;
-                    const filledLines = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
-                    return (
-                      <motion.div
-                        layout
-                        key={sh.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        whileHover={{ y: -4, scale: 1.015 }}
-                        transition={{ type: "spring", stiffness: 300, damping: 22 }}
-                        className="p-4.5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/80 dark:to-slate-950/80 backdrop-blur-md border border-slate-205 dark:border-slate-850 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow-lg transition-all duration-200 group cursor-pointer"
-                        onClick={() => handleLoadHistorySheet(sh)}
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          <div className="p-3 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/20 dark:to-amber-900/10 text-amber-550 dark:text-amber-400 rounded-xl group-hover:scale-110 group-hover:from-amber-100 group-hover:to-amber-200 dark:group-hover:from-amber-900/30 dark:group-hover:to-amber-850/20 transition-all duration-300 shrink-0 shadow-sm border border-amber-200/5 shadow-amber-350/5">
-                            <FileText className="w-5 h-5 stroke-[2]" />
-                          </div>
-                          <div className="min-w-0 text-left">
-                            <p className="text-xs font-black text-slate-900 dark:text-slate-100 truncate leading-none group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-150">
-                              {sh.sheetDate || "No Date"}
-                            </p>
-                            <p className="text-[9px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-widest truncate leading-tight mt-1.5 flex flex-wrap items-center gap-1.5">
-                              <span className="font-extrabold text-slate-500 dark:text-slate-400">{sh.recOfficer || "No Officer"}</span>
-                              <span className="text-slate-300 dark:text-slate-800">•</span>
-                              <span className="text-slate-400 dark:text-slate-500 text-[8.5px]">{sh.area || "Main"}</span>
-                            </p>
-                          </div>
-                        </div>
 
-                        <div className="flex flex-col items-end gap-1.5 shrink-0 text-right">
-                          <div className="flex items-center gap-1.5">
-                            {docTotal > 0 ? (
-                              <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-550/10 dark:bg-emerald-500/5 px-2 py-0.5 rounded-lg border border-emerald-500/20">
-                                Rs. {docTotal.toLocaleString()}
-                              </span>
-                            ) : (
-                              <span className="text-[8.5px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-widest bg-slate-100 dark:bg-slate-850 px-2 py-0.5 rounded-lg border border-slate-200/50 dark:border-slate-800/50">
-                                Draft
-                              </span>
-                            )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteHistorySheet(sh.id, e);
-                              }}
-                              className="p-1 text-slate-450 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors border border-transparent hover:border-rose-100 dark:hover:border-rose-900/30"
-                              title="Delete Sheet"
-                            >
-                              <X className="w-3.5 h-3.5 stroke-[2.5]" />
-                            </button>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            <select
-                              value=""
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => {
-                                const destId = e.target.value;
-                                if (destId) {
-                                  const newMap = { ...sheetFolderMap, [sh.id]: destId };
-                                  setSheetFolderMap(newMap);
-                                  saveMapToDb(newMap);
-                                  const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-                                  pocketbaseService.saveLedgerSheet({ ...sh, folderId: destId }, scopeId).catch(console.error);
-                                  toast.success(`Organized sheet into ${folders.find(f => f.id === destId)?.name}`);
-                                }
-                              }}
-                              className="py-0.5 px-2 border border-slate-200 dark:border-slate-800/80 rounded-lg bg-white dark:bg-slate-950 text-[8.5px] font-black uppercase text-slate-500 shrink-0 cursor-pointer focus:ring-1 focus:ring-blue-500 transition-shadow outline-none"
-                            >
-                              <option value="">Sort Folder...</option>
-                              {folders.map(f => (
-                                <option key={f.id} value={f.id}>{f.name}</option>
-                              ))}
-                            </select>
-                            <span className="text-[8px] font-mono font-black text-slate-450 dark:text-slate-600 bg-slate-50 dark:bg-slate-900/50 px-1.5 py-0.5 rounded border border-slate-150 dark:border-slate-800/40">
-                              {filledLines} Lns
-                            </span>
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         ) : (
           /* ================= INSIDE OPENED DIRECTORY VIEW ================= */
@@ -3852,7 +3900,7 @@ export default function EntrySheet({
             <div 
               ref={workspaceRef}
               className={`flex-1 flex flex-col items-center bg-slate-100 dark:bg-slate-900/40 scrollbar-none relative h-full print:bg-transparent print:p-0 print:m-0 print:block print:overflow-visible print:h-auto select-none print:select-text ${
-                (zoomOption === 'fit' && !isInputFocused)
+                (zoomOption === 'fit' && !isInputFocused && focusedRowIndex === null)
                   ? 'p-2 sm:p-3 overflow-hidden justify-center' 
                   : 'p-4 sm:p-6 overflow-auto justify-start'
               }`}
@@ -4029,7 +4077,7 @@ export default function EntrySheet({
                               left: 0,
                               top: 0
                             }}
-                            className={`print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[793.7px] min-h-[1122.5px] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text ${isLocked ? 'pointer-events-none opacity-80 select-none' : ''}`}
+                            className={`print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[793.7px] min-h-[1122.5px] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text overflow-visible ${isLocked ? 'pointer-events-none opacity-80 select-none' : ''}`}
                             onFocusCapture={handlePaperFocus}
                             onBlurCapture={handlePaperBlur}
                           >
@@ -4266,7 +4314,9 @@ export default function EntrySheet({
                   return (
                     <tr 
                       key={index} 
-                      className={`border-b border-slate-405 font-mono colRow transition-all duration-250 ${
+                      className={`border-b border-slate-405 font-mono colRow transition-all duration-250 relative ${
+                        focusedRowIndex === index ? 'z-[99999]' : 'z-0'
+                      } ${
                         isSearchResultMatch 
                            ? 'bg-brand-accent/20 dark:bg-brand-accent/30 font-bold border-l-4 border-l-brand-accent' 
                           : ''
@@ -4290,7 +4340,7 @@ export default function EntrySheet({
                     {/* C. ID */}
                     <td 
                       style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-1 border-r border-black relative group/cell"
+                      className={`px-1 border-r border-black relative group/cell ${focusedRowIndex === index && focusedField === 'cId' ? 'z-[99999]' : ''}`}
                     >
                       <input
                         type="text"
@@ -4300,72 +4350,32 @@ export default function EntrySheet({
                           setSearchQuery(e.target.value);
                           setFocusedRowIndex(index);
                           setFocusedField('cId');
+                          setActiveInputElement(e.currentTarget);
+                          setHasTypedSinceFocus(true);
                         }}
-                        onFocus={() => {
+                        onFocus={(e) => {
                           setSearchQuery(row.cId);
                           setFocusedRowIndex(index);
                           setFocusedField('cId');
+                          setActiveInputElement(e.currentTarget);
+                          setHasTypedSinceFocus(false);
                         }}
                         onBlur={() => {
                           setTimeout(() => {
                             setFocusedRowIndex(null);
                             setFocusedField(null);
+                            setActiveInputElement(null);
                           }, 250);
                         }}
                         style={{ fontSize: `${tableFontSize - 0.5}px` }}
                         className="w-full min-w-0 border-none p-0 text-center text-slate-900 bg-transparent focus:bg-slate-100 font-bold tracking-tight outline-none"
                       />
-                      
-                      {focusedRowIndex === index && focusedField === 'cId' && (
-                        <div className="absolute top-[105%] left-0 w-[290px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-slate-800 shadow-2xl rounded-xl p-1.5 z-[999] max-h-56 overflow-y-auto print:hidden font-sans">
-                          <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-500 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1">
-                            Search by User ID / Name
-                          </div>
-                          {getFilteredSuggestions('cId', searchQuery).length === 0 ? (
-                            <div className="text-[10px] text-slate-400 py-2 text-center">No matches found</div>
-                          ) : (
-                            getFilteredSuggestions('cId', searchQuery).map((cObj) => {
-                              const matchingActiveRow = activeRows?.find(r => 
-                                (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
-                                (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
-                              );
-                              const isDcOrTdc = matchingActiveRow && (matchingActiveRow.paymentStatus === 'dc' || matchingActiveRow.paymentStatus === 'tdc');
-                              const outstandingStr = matchingActiveRow 
-                                ? `Outstanding: Rs. ${isDcOrTdc ? 0 : parseFloat(matchingActiveRow.totalAmount || '0') - parseFloat(matchingActiveRow.paymentReceived || '0')}`
-                                : cObj.pkgDetails || 'Active Master Customer';
-
-                              return (
-                                <button
-                                  key={cObj.id || cObj.username}
-                                  type="button"
-                                  onClick={() => handleSelectSuggestion(index, cObj)}
-                                  className="w-full flex items-center justify-between text-left px-2 sm:px-2.5 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg transition-colors group"
-                                >
-                                  <div className="flex flex-col min-w-0 pr-2">
-                                    <span className="text-[11px] font-bold text-slate-900 dark:text-slate-100 group-hover:text-white truncate">
-                                      {cObj.name}
-                                    </span>
-                                    <span className="text-[9px] text-slate-400 dark:text-slate-500 group-hover:text-white/80 font-mono truncate">
-                                      @{cObj.username || cObj.id} {cObj.area ? `• ${cObj.area}` : ''}
-                                    </span>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <span className="text-[9px] bg-slate-100 dark:bg-slate-900 group-hover:bg-white/20 text-slate-700 dark:text-slate-350 group-hover:text-white font-bold px-1.5 py-0.5 rounded font-mono">
-                                      {outstandingStr.length > 20 ? outstandingStr.substring(0, 18) + '..' : outstandingStr}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
                     </td>
  
                     {/* Name */}
                     <td 
                       style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-2 border-r border-black font-sans relative group/cell"
+                      className={`px-2 border-r border-black font-sans relative group/cell ${focusedRowIndex === index && focusedField === 'name' ? 'z-[99999]' : ''}`}
                     >
                       <div className="flex items-center justify-between gap-1 w-full">
                         <input
@@ -4376,16 +4386,21 @@ export default function EntrySheet({
                             setSearchQuery(e.target.value);
                             setFocusedRowIndex(index);
                             setFocusedField('name');
+                            setActiveInputElement(e.currentTarget);
+                            setHasTypedSinceFocus(true);
                           }}
-                          onFocus={() => {
+                          onFocus={(e) => {
                             setSearchQuery(row.name);
                             setFocusedRowIndex(index);
                             setFocusedField('name');
+                            setActiveInputElement(e.currentTarget);
+                            setHasTypedSinceFocus(false);
                           }}
                           onBlur={() => {
                             setTimeout(() => {
                               setFocusedRowIndex(null);
                               setFocusedField(null);
+                              setActiveInputElement(null);
                             }, 250);
                           }}
                           style={{ fontSize: `${tableFontSize}px` }}
@@ -4397,51 +4412,6 @@ export default function EntrySheet({
                           </span>
                         )}
                       </div>
-
-                      {focusedRowIndex === index && focusedField === 'name' && (
-                        <div className="absolute top-[105%] left-0 w-[290px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-slate-800 shadow-2xl rounded-xl p-1.5 z-[999] max-h-56 overflow-y-auto print:hidden font-sans">
-                          <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1">
-                            Search by User ID / Name
-                          </div>
-                          {getFilteredSuggestions('name', searchQuery).length === 0 ? (
-                            <div className="text-[10px] text-slate-400 py-2 text-center">No matches found</div>
-                          ) : (
-                            getFilteredSuggestions('name', searchQuery).map((cObj) => {
-                              const matchingActiveRow = activeRows?.find(r => 
-                                (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
-                                (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
-                              );
-                              const isDcOrTdc = matchingActiveRow && (matchingActiveRow.paymentStatus === 'dc' || matchingActiveRow.paymentStatus === 'tdc');
-                              const outstandingStr = matchingActiveRow 
-                                ? `Outstanding: Rs. ${isDcOrTdc ? 0 : parseFloat(matchingActiveRow.totalAmount || '0') - parseFloat(matchingActiveRow.paymentReceived || '0')}`
-                                : cObj.pkgDetails || 'Active Master Customer';
-
-                              return (
-                                <button
-                                  key={cObj.id || cObj.username}
-                                  type="button"
-                                  onClick={() => handleSelectSuggestion(index, cObj)}
-                                  className="w-full flex items-center justify-between text-left px-2 sm:px-2.5 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg transition-colors group"
-                                >
-                                  <div className="flex flex-col min-w-0 pr-2">
-                                    <span className="text-[11px] font-bold text-slate-900 dark:text-slate-100 group-hover:text-white truncate">
-                                      {cObj.name}
-                                    </span>
-                                    <span className="text-[9px] text-slate-400 dark:text-slate-500 group-hover:text-white/80 font-mono truncate">
-                                      @{cObj.username || cObj.id} {cObj.area ? `• ${cObj.area}` : ''}
-                                    </span>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <span className="text-[9px] bg-slate-100 dark:bg-slate-900 group-hover:bg-white/20 text-slate-700 dark:text-slate-350 group-hover:text-white font-bold px-1.5 py-0.5 rounded font-mono">
-                                      {outstandingStr.length > 20 ? outstandingStr.substring(0, 18) + '..' : outstandingStr}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
                     </td>
  
                     {/* Comments */}
@@ -4461,7 +4431,7 @@ export default function EntrySheet({
                     {/* Amount */}
                     <td 
                       style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-2 border-r border-black text-right relative"
+                      className={`px-2 border-r border-black text-right relative ${focusedRowIndex === index && focusedField === 'amount' ? 'z-[99999]' : ''}`}
                     >
                       <input
                         type="text"
@@ -4483,11 +4453,11 @@ export default function EntrySheet({
                       />
                       
                       {focusedRowIndex === index && focusedField === 'amount' && (
-                        <div className="absolute top-[105%] right-0 w-[120px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-slate-800 shadow-2xl rounded-xl p-1 z-[999] print:hidden font-sans">
+                        <div className="absolute top-[105%] right-0 w-[120px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-slate-800 shadow-2xl rounded-xl p-1 z-[99999] print:hidden font-sans pointer-events-auto">
                           <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1 text-left">
                             Set Status
                           </div>
-                          {['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL'].map(st => (
+                          {['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].map(st => (
                             <button
                               key={st}
                               type="button"
@@ -5848,6 +5818,138 @@ export default function EntrySheet({
             </motion.div>
           </motion.div>
         )}
+
+        {sheetToDeleteId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 15, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+            >
+              <div className="p-5 flex flex-col gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center text-rose-500 shrink-0">
+                    <Trash2 size={20} className="animate-pulse text-rose-500" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-rose-500 font-mono">
+                      DELETE RECOVERY SHEET
+                    </h4>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                      Move Card to Recycle Bin?
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 space-y-2 leading-relaxed">
+                  <p className="uppercase text-[9px] font-bold text-slate-400">
+                    Details of target card:
+                  </p>
+                  <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-1">
+                    {(() => {
+                      const itemObj = ledgerHistory.find(s => s.id === sheetToDeleteId);
+                      return (
+                        <>
+                          <p className="font-extrabold text-[#0f172a] dark:text-slate-200 uppercase text-[10px] tracking-wide">
+                            Officer: <span className="text-blue-500">{itemObj?.recOfficer || 'Unnamed'}</span>
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-bold leading-normal uppercase">
+                            Date: {itemObj?.sheetDate}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-bold leading-normal uppercase">
+                            Area: {itemObj?.area || 'MAIN'}
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-1">
+                  <button
+                    onClick={confirmDeleteHistorySheet}
+                    className="w-full py-2 px-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-md shadow-rose-550/15 border-none text-center"
+                  >
+                    🗑️ Move to Recycle Bin
+                  </button>
+
+                  <button
+                    onClick={() => setSheetToDeleteId(null)}
+                    className="w-full py-1.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-extrabold uppercase tracking-widest transition-all cursor-pointer border border-slate-200 dark:border-slate-700 text-center"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {showTerminateMonthModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: 15, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+            >
+              <div className="p-5 flex flex-col gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center text-amber-500 shrink-0">
+                    <AlertCircle size={20} className="animate-pulse text-amber-500" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-amber-500 font-mono">
+                      TERMINATE ACTIVE MONTH
+                    </h4>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
+                      Are you absolutely sure?
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 space-y-2 leading-relaxed">
+                  <p className="uppercase text-[9px] font-bold text-slate-400">
+                    This is a critical reset operation:
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-bold leading-normal uppercase">
+                    This will permanently clear and move <span className="text-rose-500 font-black">{ledgerHistory.length} sheets</span> of your current month's active records to the recycle bin. Please verify you have exported or backed up first.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-1">
+                  <button
+                    onClick={confirmTerminateMonth}
+                    className="w-full py-2 px-4 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-md shadow-amber-550/15 border-none text-center"
+                  >
+                    ☢️ Terminate & Archive Month
+                  </button>
+
+                  <button
+                    onClick={() => setShowTerminateMonthModal(false)}
+                    className="w-full py-1.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-extrabold uppercase tracking-widest transition-all cursor-pointer border border-slate-200 dark:border-slate-700 text-center"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {/* Folder Settings Popup */}
         {settingsFolderId && (
           <motion.div
@@ -6190,6 +6292,58 @@ export default function EntrySheet({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {focusedRowIndex !== null && focusedField !== null && activeInputElement && (
+        <div 
+          style={getDropdownStyle()}
+          className="fixed bg-white dark:bg-slate-950 border border-slate-350 dark:border-slate-800 shadow-2xl rounded-xl p-1.5 max-h-56 overflow-y-auto print:hidden font-sans pointer-events-auto text-slate-900 dark:text-slate-100"
+        >
+          <div className="text-[8px] font-black tracking-wider uppercase text-slate-500 dark:text-slate-400 px-2 py-1 border-b border-slate-150 dark:border-slate-800 mb-1">
+            Search by User ID / Name
+          </div>
+          {getFilteredSuggestions(focusedField, searchQuery).length === 0 ? (
+            <div className="text-[10px] text-slate-500 dark:text-slate-450 py-3 text-center font-medium">No matches found</div>
+          ) : (
+            getFilteredSuggestions(focusedField, searchQuery).map((cObj) => {
+              const matchingActiveRow = activeRows?.find(r => 
+                (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
+                (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
+              );
+              const isDcOrTdc = matchingActiveRow && (matchingActiveRow.paymentStatus === 'dc' || matchingActiveRow.paymentStatus === 'tdc');
+              const outstandingStr = matchingActiveRow 
+                ? `Outstanding: Rs. ${isDcOrTdc ? 0 : parseFloat(matchingActiveRow.totalAmount || '0') - parseFloat(matchingActiveRow.paymentReceived || '0')}`
+                : cObj.pkgDetails || 'Active Master Customer';
+
+              return (
+                <button
+                  key={cObj.id || cObj.username}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={() => handleSelectSuggestion(focusedRowIndex, cObj)}
+                  className="w-full flex items-center justify-between text-left px-2 sm:px-2.5 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg transition-colors group cursor-pointer"
+                >
+                  <div className="flex flex-col min-w-0 pr-2">
+                    <span className="text-[11px] font-bold text-slate-900 dark:text-slate-100 group-hover:text-white truncate">
+                      {cObj.name}
+                    </span>
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 group-hover:text-white/80 font-mono truncate">
+                      @{cObj.username || cObj.id} {cObj.area ? `• ${cObj.area}` : ''}
+                    </span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-[9px] bg-slate-100 dark:bg-slate-900 group-hover:bg-white/20 text-slate-700 dark:text-slate-350 group-hover:text-white font-bold px-1.5 py-0.5 rounded font-mono">
+                      {outstandingStr.length > 20 ? outstandingStr.substring(0, 18) + '..' : outstandingStr}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
     </>,
     document.body
   );

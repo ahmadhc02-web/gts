@@ -72,6 +72,9 @@ export interface Client {
   pkgDetails: string;
   userNearby: string;
   panelDetails?: string;
+  rt?: string;
+  baseAmount?: number | string;
+  billingDay?: string | number;
   createdBy: string;
   createdAt: number;
   dealerId?: string; // Multi-tenancy support

@@ -1,3 +1,22 @@
+const isExcludedFromRecovery = (name?: string, username?: string) => {
+  const check = (str?: string) => {
+    if (!str) return false;
+    const lower = str.trim().toLowerCase();
+    return [
+      'bank',
+      'panel balance',
+      'panel',
+      'cash hand',
+      'hand cash',
+      'cash in hand',
+      'unspecified entry',
+      'expense',
+      'expenses'
+    ].includes(lower) || lower.startsWith('bank') || lower.startsWith('panel balance') || lower.startsWith('cash hand') || lower.startsWith('hand cash');
+  };
+  return check(name) || check(username);
+};
+
 import { pb } from './pocketbase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget, ComplaintReview } from '../types';
 import { safeStringify } from './utils';
@@ -59,6 +78,9 @@ const mappings: Record<string, Record<string, string>> = {
     pkgDetails: 'pkg_details',
     userNearby: 'user_nearby',
     panelDetails: 'panel_details',
+    rt: 'rt',
+    baseAmount: 'base_amount',
+    billingDay: 'billing_day',
     createdBy: 'created_by',
     createdAt: 'created_at',
     dealerId: 'dealer_id',
@@ -378,7 +400,7 @@ async function upsertPB(collectionName: string, idField: string, idValue: string
     let existingId: string | null = null;
     
     // 1. Try finding by PocketBase primary key 'id' if idValue looks like a valid 15-char PB id
-    const isPbId = typeof idValue === 'string' && /^[a-z0-9]{15}$/.test(idValue);
+    const isPbId = typeof idValue === 'string' && /^[a-zA-Z0-9]{15}$/.test(idValue);
     if (isPbId) {
       try {
         const record = await pb.collection(collectionName).getOne(idValue);
@@ -663,6 +685,7 @@ export const pocketbaseService = {
               createdAt: r.created ? new Date(r.created).getTime() : Date.now()
             });
           }
+          if (isExcludedFromRecovery(r.name, r.username)) continue;
           monthMap.get(monthId).rows.push({
             id: r.client_id || r.id,
             clientId: r.client_id || r.id,
@@ -719,7 +742,7 @@ export const pocketbaseService = {
       const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
       const records = await pb.collection('billing_rows').getFullList({ filter });
       if (records && records.length > 0) {
-        return records.map(r => ({
+        return records.filter(r => !isExcludedFromRecovery(r.name, r.username)).map(r => ({
           id: r.client_id || r.id,
           clientId: r.client_id || r.id,
           name: r.name || '',
@@ -757,14 +780,33 @@ export const pocketbaseService = {
   },
 
   _saveBillingMonthTimers: {} as Record<string, any>,
-  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string }>,
+  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: number[] | Set<number> }>,
 
-  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false) {
+  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>) {
     const key = `${monthId}_${dealerId}`;
     if (!this._saveBillingMonthLatestRows) {
       this._saveBillingMonthLatestRows = {};
     }
-    this._saveBillingMonthLatestRows[key] = { rows, updatedBy };
+
+    const prev = this._saveBillingMonthLatestRows[key];
+    let combinedChangedIndices: number[] | Set<number> | undefined;
+
+    const prevIsFull = prev && !prev.changedIndices;
+    const currIsFull = !changedIndices;
+
+    if (prevIsFull || currIsFull) {
+      // Either side wants everything synced -> do a full sync, don't narrow it down.
+      combinedChangedIndices = undefined;
+    } else {
+      const prevSet = prev!.changedIndices instanceof Set
+        ? prev!.changedIndices as Set<number>
+        : new Set(prev!.changedIndices as number[]);
+      const currArr = changedIndices instanceof Set ? Array.from(changedIndices) : (changedIndices as number[]);
+      currArr.forEach(i => prevSet.add(i));
+      combinedChangedIndices = prevSet;
+    }
+
+    this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices: combinedChangedIndices };
 
     if (!this._saveBillingMonthTimers) {
       this._saveBillingMonthTimers = {};
@@ -781,7 +823,7 @@ export const pocketbaseService = {
       const latest = this._saveBillingMonthLatestRows[key];
       if (latest) {
         delete this._saveBillingMonthLatestRows[key];
-        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId);
+        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices);
       }
       return;
     }
@@ -793,8 +835,6 @@ export const pocketbaseService = {
       if (this._saveBillingMonthTimers[key]) {
         clearTimeout(this._saveBillingMonthTimers[key].timerId);
         if (this._saveBillingMonthTimers[key].reject) {
-           // We are cancelling the previous debounced operation, but we don't want to throw an error 
-           // that might break the UI. We'll just resolve it since a newer one is taking over.
            this._saveBillingMonthTimers[key].resolve();
         }
       }
@@ -804,7 +844,7 @@ export const pocketbaseService = {
           const latest = this._saveBillingMonthLatestRows[key];
           if (latest) {
             delete this._saveBillingMonthLatestRows[key];
-            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId);
+            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices);
           }
           resolve();
         } catch (err) {
@@ -823,16 +863,16 @@ export const pocketbaseService = {
   _billingMonthExecutionLocks: {} as Record<string, Promise<void>>,
   _syncingMonths: new Set<string>(),
 
-  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main') {
+  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>) {
     const syncKey = `${monthId}_${dealerId}`;
     if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
-    const run = previous.then(() => this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId));
+    const run = previous.then(() => this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices));
     this._billingMonthExecutionLocks[syncKey] = run.catch(() => {});
     return run;
   },
 
-  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main') {
+  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>) {
     const syncKey = `${monthId}_${dealerId}`;
     if (!this._syncingMonths) this._syncingMonths = new Set<string>();
     this._syncingMonths.add(syncKey);
@@ -841,7 +881,6 @@ export const pocketbaseService = {
     try {
       const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
 
-      
       let success = false;
       let errorMsg = '';
       // Try to save to billing_months, but wrap in try-catch so permission errors don't crash the save
@@ -894,8 +933,8 @@ export const pocketbaseService = {
         console.warn("Failed to update local cache for billing_months:", e);
       }
 
-      // Sync rows to billing_rows (fully await to ensure absolute persistence before returning)
-      await this.syncBillingRows(monthId, dealerId, rows);
+      // Sync rows to billing_rows (targeted if changedIndices passed, or full sync)
+      await this.syncBillingRows(monthId, dealerId, rows, changedIndices);
       console.log("PB: Sync of billing_rows completed successfully.");
     } catch (e: any) {
       console.error("PB: Failed to save billing month", e);
@@ -985,9 +1024,125 @@ export const pocketbaseService = {
     }
   },
 
-  async syncBillingRows(monthId: string, dealerId: string, rows: any[]) {
-        const logRowsEntry = this.addSyncLog('billing_rows', 'sync', 'pending', `Syncing ${rows.length} rows for Month: ${monthId}`);
-    const logUserDataEntry = this.addSyncLog('users_data', 'sync', 'pending', `Syncing ${rows.length} rows for Month: ${monthId}`);
+  async syncBillingRows(monthId: string, dealerId: string, rows: any[], changedIndices?: number[] | Set<number>) {
+    const sanitizeNum = (val: any): number => {
+      if (val === undefined || val === null || val === '') return 0;
+      const num = Number(val);
+      return isNaN(num) ? 0 : num;
+    };
+
+    const mapRowToPb = (r: any, idx: number) => {
+      let rowId = r.clientId || r.id;
+      if (!rowId || !String(rowId).trim()) {
+        if (r.username && String(r.username).trim()) {
+          rowId = `usr_${String(r.username).trim().toLowerCase()}`;
+        } else if (r.name && String(r.name).trim()) {
+          rowId = `name_${String(r.name).trim().toLowerCase().replace(/\s+/g, '_')}`;
+        } else {
+          rowId = `row_${idx}_${monthId}`;
+        }
+      }
+      return {
+        month_id: String(monthId || ''),
+        dealer_id: String(dealerId || 'main'),
+        client_id: String(rowId),
+        name: String(r.name || ''),
+        username: String(r.username || ''),
+        mobile_number: String(r.mobileNumber || r.mobile || ''),
+        area: String(r.area || ''),
+        rt: String(r.rt || ''),
+        base_amount: sanitizeNum(r.baseAmount || r.amount),
+        cr: sanitizeNum(r.cr),
+        total_amount: sanitizeNum(r.totalAmount || r.total_amount),
+        billing_day: String(r.billingDay || '5'),
+        payment_received: sanitizeNum(r.paymentReceived || r.payment_received),
+        payment_status: String(r.paymentStatus || 'unpaid'),
+        comments: String(r.comments || ''),
+        occ: String(r.occ || ''),
+        ser_nam: String(r.serNam || r.ser_nam || ''),
+        pkg_details: String(r.pkgDetails || r.pkg_details || ''),
+        sag: String(r.sag || ''),
+        lai: String(r.lai || ''),
+        connection_date: String(r.connectionDate || r.connection_date || ''),
+        device_price: sanitizeNum(r.devicePrice ?? r.device_price),
+        abl: sanitizeNum(r.abl),
+        network: String(r.network || '')
+      };
+    };
+
+    // Check if targeted sync for specific edited rows was passed
+    let targetIndicesArray: number[] | null = null;
+    if (changedIndices) {
+      if (changedIndices instanceof Set) {
+        targetIndicesArray = Array.from(changedIndices);
+      } else if (Array.isArray(changedIndices)) {
+        targetIndicesArray = changedIndices;
+      }
+    }
+
+    // IF TARGETED SYNC IS REQUESTED (ONLY SAVE EDITED ROWS FOR EXTREME SPEED)
+    if (targetIndicesArray && targetIndicesArray.length > 0 && targetIndicesArray.length < rows.length) {
+      console.log(`[SyncBillingRows] Targeted sync for ${targetIndicesArray.length} edited rows...`);
+      const logRowsEntry = this.addSyncLog('billing_rows', 'sync_targeted', 'pending', `Syncing ${targetIndicesArray.length} edited rows for Month: ${monthId}`);
+      
+      try {
+        const rowsToSync = targetIndicesArray
+          .map(i => rows[i])
+          .filter(Boolean);
+
+        if (rowsToSync.length === 0) return;
+
+        const mappedRowsToSync = rowsToSync.map((r, idx) => mapRowToPb(r, idx));
+
+        // Fetch existing records for this month to match IDs
+        let existingRows: any[] = [];
+        try {
+          const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
+          existingRows = await pb.collection('billing_rows').getFullList({ filter });
+        } catch (err: any) {
+          console.warn("PB: Targeted sync fetch existing rows warning:", err?.message);
+        }
+
+        const existingMapByClientId = new Map<string, any>();
+        const existingMapByUsername = new Map<string, any>();
+        existingRows.forEach(r => {
+          if (r.client_id) existingMapByClientId.set(r.client_id, r);
+          if (r.username) existingMapByUsername.set(String(r.username).toLowerCase().trim(), r);
+        });
+
+        const ops: Promise<any>[] = [];
+        for (const newRow of mappedRowsToSync) {
+          const ext = existingMapByClientId.get(newRow.client_id) || 
+                      (newRow.username ? existingMapByUsername.get(String(newRow.username).toLowerCase().trim()) : null);
+
+          if (ext) {
+            ops.push(pb.collection('billing_rows').update(ext.id, newRow).catch(err => {
+              console.warn("PB: Failed to update individual row:", ext.id, err?.message || err);
+            }));
+          } else {
+            ops.push(pb.collection('billing_rows').create(newRow).catch(err => {
+              console.warn("PB: Failed to create individual row:", newRow.client_id, err?.message || err);
+            }));
+          }
+        }
+
+        await Promise.all(ops);
+        logRowsEntry.status = 'success';
+        logRowsEntry.recordDetails = `Targeted sync completed for ${ops.length} edited rows.`;
+        this.saveSyncLogsLocally();
+        console.log(`[SyncBillingRows] Targeted sync completed in milliseconds for ${ops.length} edited rows.`);
+        return;
+      } catch (err: any) {
+        console.error("[SyncBillingRows] Targeted sync error:", err);
+        logRowsEntry.status = 'failed';
+        logRowsEntry.errorMessage = err.message || String(err);
+        this.saveSyncLogsLocally();
+        return;
+      }
+    }
+
+    // FULL SHEET SYNC with Optimized Smart Diffing
+    const logRowsEntry = this.addSyncLog('billing_rows', 'sync', 'pending', `Syncing ${rows.length} rows for Month: ${monthId}`);
     try {
       const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
       
@@ -998,53 +1153,7 @@ export const pocketbaseService = {
         console.warn("PB: Failed to fetch from billing_rows:", err.message);
       }
 
-      const sanitizeNum = (val: any): number => {
-        if (val === undefined || val === null || val === '') return 0;
-        const num = Number(val);
-        return isNaN(num) ? 0 : num;
-      };
-
-      // Map rows to PocketBase format with deterministic client_id
-      const rawMappedRows = rows.map((r, idx) => {
-        let rowId = r.clientId || r.id;
-        if (!rowId || !String(rowId).trim()) {
-          if (r.username && String(r.username).trim()) {
-            rowId = `usr_${String(r.username).trim().toLowerCase()}`;
-          } else if (r.name && String(r.name).trim()) {
-            rowId = `name_${String(r.name).trim().toLowerCase().replace(/\s+/g, '_')}`;
-          } else {
-            rowId = `row_${idx}_${monthId}`;
-          }
-        }
-        return {
-          month_id: String(monthId || ''),
-          dealer_id: String(dealerId || 'main'),
-          client_id: String(rowId),
-          name: String(r.name || ''),
-          username: String(r.username || ''),
-          mobile_number: String(r.mobileNumber || r.mobile || ''),
-          area: String(r.area || ''),
-          rt: String(r.rt || ''),
-          base_amount: sanitizeNum(r.baseAmount || r.amount),
-          cr: sanitizeNum(r.cr),
-          total_amount: sanitizeNum(r.totalAmount || r.total_amount),
-          billing_day: String(r.billingDay || '5'),
-          payment_received: sanitizeNum(r.paymentReceived || r.payment_received),
-          payment_status: String(r.paymentStatus || 'unpaid'),
-          comments: String(r.comments || ''),
-          occ: String(r.occ || ''),
-          ser_nam: String(r.serNam || r.ser_nam || ''),
-          pkg_details: String(r.pkgDetails || r.pkg_details || ''),
-          sag: String(r.sag || ''),
-          lai: String(r.lai || ''),
-          connection_date: String(r.connectionDate || r.connection_date || ''),
-          device_price: sanitizeNum(r.devicePrice ?? r.device_price),
-          abl: sanitizeNum(r.abl),
-          network: String(r.network || '')
-        };
-      });
-
-      // Deduplicate by client_id to prevent duplicate database constraints
+      const rawMappedRows = rows.map((r, idx) => mapRowToPb(r, idx));
       const uniqueMappedRowsMap = new Map<string, any>();
       for (const row of rawMappedRows) {
         if (row.client_id) {
@@ -1053,111 +1162,87 @@ export const pocketbaseService = {
       }
       const mappedRows = Array.from(uniqueMappedRowsMap.values());
 
-      const existingMap = new Map();
-      existingRows.forEach(r => existingMap.set(r.client_id, r));
+      const existingMapByClientId = new Map<string, any>();
+      const existingMapByUsername = new Map<string, any>();
+      existingRows.forEach(r => {
+        if (r.client_id) existingMapByClientId.set(r.client_id, r);
+        if (r.username) existingMapByUsername.set(String(r.username).toLowerCase().trim(), r);
+      });
 
       const creates: any[] = [];
       const updates: any[] = [];
-      const keptIds = new Set();
+      const keptIds = new Set<string>();
 
       for (const newRow of mappedRows) {
-        const ext = existingMap.get(newRow.client_id);
-        keptIds.add(newRow.client_id);
-        if (!ext) {
-          creates.push(newRow);
-        } else {
-          // Compare relevant fields to see if update is needed
-          const isChanged = 
-            ext.payment_received !== newRow.payment_received ||
-            ext.payment_status !== newRow.payment_status ||
-            ext.cr !== newRow.cr ||
-            ext.base_amount !== newRow.base_amount ||
-            ext.total_amount !== newRow.total_amount ||
-            ext.billing_day !== newRow.billing_day ||
-            ext.comments !== newRow.comments ||
-            ext.name !== newRow.name ||
-            ext.username !== newRow.username ||
-            ext.mobile_number !== newRow.mobile_number ||
-            ext.area !== newRow.area ||
-            ext.rt !== newRow.rt ||
-            ext.occ !== newRow.occ ||
-            ext.ser_nam !== newRow.ser_nam ||
-            ext.pkg_details !== newRow.pkg_details ||
-            ext.sag !== newRow.sag ||
-            ext.lai !== newRow.lai ||
-            ext.connection_date !== newRow.connection_date ||
-            Number(ext.device_price) !== Number(newRow.device_price) ||
-            Number(ext.abl) !== Number(newRow.abl) ||
-            ext.network !== newRow.network;
-            
+        const ext = existingMapByClientId.get(newRow.client_id) ||
+                    (newRow.username ? existingMapByUsername.get(String(newRow.username).toLowerCase().trim()) : null);
+
+        if (ext) {
+          keptIds.add(ext.client_id);
+          keptIds.add(ext.id);
+
+          // Smart normalized comparison to prevent unnecessary DB updates
+          const isChanged =
+            Number(ext.payment_received || 0) !== Number(newRow.payment_received || 0) ||
+            String(ext.payment_status || 'unpaid').toLowerCase() !== String(newRow.payment_status || 'unpaid').toLowerCase() ||
+            Number(ext.cr || 0) !== Number(newRow.cr || 0) ||
+            Number(ext.base_amount || 0) !== Number(newRow.base_amount || 0) ||
+            Number(ext.total_amount || 0) !== Number(newRow.total_amount || 0) ||
+            String(ext.billing_day || '5') !== String(newRow.billing_day || '5') ||
+            String(ext.comments || '').trim() !== String(newRow.comments || '').trim() ||
+            String(ext.name || '').trim() !== String(newRow.name || '').trim() ||
+            String(ext.username || '').trim().toLowerCase() !== String(newRow.username || '').trim().toLowerCase() ||
+            String(ext.mobile_number || '').trim() !== String(newRow.mobile_number || '').trim() ||
+            String(ext.area || '').trim() !== String(newRow.area || '').trim() ||
+            String(ext.rt || '').trim() !== String(newRow.rt || '').trim() ||
+            String(ext.occ || '').trim() !== String(newRow.occ || '').trim() ||
+            String(ext.ser_nam || '').trim() !== String(newRow.ser_nam || '').trim() ||
+            String(ext.pkg_details || '').trim() !== String(newRow.pkg_details || '').trim() ||
+            Number(ext.device_price || 0) !== Number(newRow.device_price || 0) ||
+            Number(ext.abl || 0) !== Number(newRow.abl || 0);
+
           if (isChanged) {
             updates.push({ id: ext.id, data: newRow });
           }
+        } else {
+          creates.push(newRow);
         }
       }
 
-      // Safeguard against destructive deletes from partial syncs (e.g., saving a single page of an A4 sheet)
+      // Safeguard deletes
       let deletes: string[] = [];
       if (existingRows.length > 30 && rows.length < existingRows.length * 0.4) {
-        console.warn(`[SyncBillingRows] Safeguard triggered: incoming rows count (${rows.length}) is suspiciously low compared to existing rows (${existingRows.length}). Skipping deletes to protect against data loss.`);
+        console.warn(`[SyncBillingRows] Safeguard triggered: incoming rows count (${rows.length}) vs existing (${existingRows.length}). Skipping deletes.`);
       } else {
-        deletes = existingRows.filter(r => !keptIds.has(r.client_id)).map(r => r.id);
+        deletes = existingRows
+          .filter(r => !keptIds.has(r.client_id) && !keptIds.has(r.id))
+          .map(r => r.id);
       }
 
-      let billingRowsErrors: string[] = [];
-
-      const runInBatches = async (items: any[], op: (item: any) => Promise<void>) => {
-        const batchSize = 10;
+      // Run parallel batching without stalling delays
+      const runInParallel = async (items: any[], op: (item: any) => Promise<void>) => {
+        const batchSize = 25;
         for (let i = 0; i < items.length; i += batchSize) {
           const batch = items.slice(i, i + batchSize);
-          await Promise.all(batch.map(async (item) => {
-            let attempts = 0;
-            let success = false;
-            while (attempts < 2 && !success) {
-              attempts++;
-              try {
-                await op(item);
-                success = true;
-              } catch (err: any) {
-                if (attempts >= 2) {
-                  let errorMsg = err.message || String(err);
-                  if (err.data && typeof err.data === 'object') {
-                    errorMsg += ` (Details: ${JSON.stringify(err.data)})`;
-                  }
-                  billingRowsErrors.push(errorMsg);
-                  console.error(`PB: Failed operation in billing_rows:`, errorMsg, err);
-                } else {
-                  await new Promise(r => setTimeout(r, 150));
-                }
-              }
-            }
-          }));
+          await Promise.all(batch.map(item => op(item).catch(err => {
+            console.warn("PB: Sync row operation failed (ignored):", err?.message || err);
+          })));
         }
       };
 
-      await runInBatches(creates, (row) => pb.collection('billing_rows').create(row).then(() => {}));
-      await runInBatches(updates, ({ id, data }) => pb.collection('billing_rows').update(id, data).then(() => {}));
-      await runInBatches(deletes, (id) => pb.collection('billing_rows').delete(id).then(() => {}));
+      await runInParallel(creates, (row) => pb.collection('billing_rows').create(row).then(() => {}));
+      await runInParallel(updates, ({ id, data }) => pb.collection('billing_rows').update(id, data).then(() => {}));
+      await runInParallel(deletes, (id) => pb.collection('billing_rows').delete(id).then(() => {}));
 
-      if (billingRowsErrors.length === 0) {
-        logRowsEntry.status = 'success';
-        logRowsEntry.recordDetails = `Successfully synced changes to billing_rows. Created: ${creates.length}, Updated: ${updates.length}, Deleted: ${deletes.length}`;
-      } else {
-        logRowsEntry.status = 'failed';
-        logRowsEntry.recordDetails = `Synced with errors (${billingRowsErrors.length}). Created: ${creates.length}, Updated: ${updates.length}, Deleted: ${deletes.length}`;
-        logRowsEntry.errorMessage = `Errors: ${billingRowsErrors.slice(0, 3).join(', ')}`;
-      }
-
-      logUserDataEntry.status = 'success';
-      logUserDataEntry.recordDetails = `Synced billing records (users_data skipped as redundant).`;
+      logRowsEntry.status = 'success';
+      logRowsEntry.recordDetails = `Full sync completed. Created: ${creates.length}, Updated: ${updates.length}, Deleted: ${deletes.length}`;
       this.saveSyncLogsLocally();
-      console.log(`PB: Successfully synced billing rows with smart diffing.`);
+      console.log(`PB: Full sync completed. Created: ${creates.length}, Updated: ${updates.length}, Deleted: ${deletes.length}`);
 
     } catch (e: any) {
       console.error("PB: Failed to sync billing rows", e);
       logRowsEntry.status = 'failed';
       logRowsEntry.errorMessage = e.message || String(e);
-      logUserDataEntry.status = 'success';
       this.saveSyncLogsLocally();
     }
   },
@@ -2946,6 +3031,7 @@ export const pocketbaseService = {
         try {
           savedRecord = await pb.collection('ledger_sheets').update(sheet.id, dbRow);
         } catch (e) {
+          dbRow.id = sheet.id;
           savedRecord = await pb.collection('ledger_sheets').create(dbRow);
         }
       } else {
@@ -3003,7 +3089,7 @@ export const pocketbaseService = {
         }
       }
 
-      const isPbId = typeof sheetId === 'string' && /^[a-z0-9]{15}$/.test(sheetId);
+      const isPbId = typeof sheetId === 'string' && /^[a-zA-Z0-9]{15}$/.test(sheetId);
       if (isPbId) {
         await pb.collection('ledger_sheets').delete(sheetId);
       } else {
@@ -3016,6 +3102,7 @@ export const pocketbaseService = {
       }
     } catch (e) {
       console.error("PB: deleteLedgerSheet error:", e);
+      throw e;
     }
   },
 

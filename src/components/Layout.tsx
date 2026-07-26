@@ -349,24 +349,24 @@ export default function Layout({
   }, [intervalTime, onRefresh]);
 
   const getBrandingText = () => {
-    // If global branding provides a custom name, use it as primary unless dealer overrides
-    if (branding?.projectName && branding.projectName !== "Green Tech Services") {
-      return branding.projectName;
+    if (user) {
+      // If dealer logs in, show their company name
+      if (user.role === 'dealer' && user.companyName) {
+        return user.companyName;
+      }
+      
+      // If member/admin logs in, find their dealer's company name
+      if (user.dealerId && user.dealerId !== 'main') {
+        const dealer = users.find(u => u.uid === user.dealerId && u.role === 'dealer');
+        if (dealer && dealer.companyName) {
+          return dealer.companyName;
+        }
+      }
     }
 
-    if (!user) return "Green Tech Services";
-    
-    // If dealer logs in, show their company name
-    if (user.role === 'dealer' && user.companyName) {
-      return user.companyName;
-    }
-    
-    // If member/admin logs in, find their dealer's company name
-    if (user.dealerId && user.dealerId !== 'main') {
-      const dealer = users.find(u => u.uid === user.dealerId && u.role === 'dealer');
-      if (dealer && dealer.companyName) {
-        return dealer.companyName;
-      }
+    // Fallback to global branding if no dealer-specific name
+    if (branding?.projectName && branding.projectName !== "Green Tech Services") {
+      return branding.projectName;
     }
     
     return "Green Tech Services";
@@ -2001,28 +2001,119 @@ export default function Layout({
         user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
       )}>
         <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Main Footer Graphic Box with Outlined "Green Tech Services" Text */}
-          <div className="relative w-full flex flex-col items-center justify-center min-h-[80px] sm:min-h-[110px] my-0.5">
+          {/* Main Footer Graphic Box with Outlined branding text */}
+          <div className="relative w-full flex flex-col items-center justify-center min-h-[60px] sm:min-h-[90px] my-2 overflow-visible">
             <svg
-              viewBox="0 0 1200 140"
-              className="w-full max-w-full h-auto select-none pointer-events-none opacity-85 dark:opacity-40"
+              viewBox="0 0 1200 110"
+              className="w-full max-w-4xl mx-auto h-auto select-none pointer-events-none overflow-visible"
               preserveAspectRatio="xMidYMid meet"
             >
-              <text
+              <defs>
+                {/* Frosted glass style linear gradient */}
+                <linearGradient id="gtsGlassGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="rgba(255, 255, 255, 0.95)" />
+                  <stop offset="30%" stopColor="rgba(241, 245, 249, 0.65)" />
+                  <stop offset="70%" stopColor="rgba(226, 232, 240, 0.55)" />
+                  <stop offset="100%" stopColor="rgba(203, 213, 225, 0.75)" />
+                </linearGradient>
+
+                <linearGradient id="gtsGlassDarkGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="rgba(30, 41, 59, 0.9)" />
+                  <stop offset="30%" stopColor="rgba(15, 23, 42, 0.7)" />
+                  <stop offset="70%" stopColor="rgba(2, 6, 17, 0.55)" />
+                  <stop offset="100%" stopColor="rgba(15, 23, 42, 0.8)" />
+                </linearGradient>
+
+                {/* Subtle outer drop shadow filter to pop against the background */}
+                <filter id="gtsGlassShadow" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#000000" floodOpacity="0.25" />
+                </filter>
+              </defs>
+
+              {/* Back Layer: Thick, robust, pitch black outline for ultimate clarity and contrast */}
+              <motion.text
                 x="50%"
                 y="52%"
                 dominantBaseline="central"
                 textAnchor="middle"
-                fontFamily="Georgia, Cambria, 'Times New Roman', serif"
-                fontSize="105"
-                fontWeight="bold"
-                fill="rgba(241, 245, 249, 0.75)"
-                stroke="#94a3b8"
-                strokeWidth="3"
-                className="dark:fill-slate-900/50 dark:stroke-slate-600"
+                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                fontSize="64"
+                fontWeight="900"
+                letterSpacing="0.12em"
+                fill="none"
+                stroke="#020617"
+                strokeWidth="5.5"
+                filter="url(#gtsGlassShadow)"
+                className="opacity-95 dark:opacity-100"
               >
-                Green Tech Services
-              </text>
+                {brandingText.toUpperCase()}
+              </motion.text>
+
+              {/* Mid Layer: Crisp dark slate stroke for precise corners/lines */}
+              <motion.text
+                x="50%"
+                y="52%"
+                dominantBaseline="central"
+                textAnchor="middle"
+                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                fontSize="64"
+                fontWeight="900"
+                letterSpacing="0.12em"
+                fill="none"
+                stroke="#0f172a"
+                strokeWidth="2.5"
+              >
+                {brandingText.toUpperCase()}
+              </motion.text>
+
+              {/* Front Layer: Translucent Frosted Glass fill with subtle animated light shift */}
+              <motion.text
+                x="50%"
+                y="52%"
+                dominantBaseline="central"
+                textAnchor="middle"
+                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                fontSize="64"
+                fontWeight="900"
+                letterSpacing="0.12em"
+                fill="url(#gtsGlassGrad)"
+                className="block dark:hidden"
+                animate={{
+                  opacity: [0.85, 1, 0.85],
+                  scale: [1, 1.003, 1]
+                }}
+                transition={{
+                  duration: 6,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              >
+                {brandingText.toUpperCase()}
+              </motion.text>
+
+              <motion.text
+                x="50%"
+                y="52%"
+                dominantBaseline="central"
+                textAnchor="middle"
+                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                fontSize="64"
+                fontWeight="900"
+                letterSpacing="0.12em"
+                fill="url(#gtsGlassDarkGrad)"
+                className="hidden dark:block"
+                animate={{
+                  opacity: [0.85, 1, 0.85],
+                  scale: [1, 1.003, 1]
+                }}
+                transition={{
+                  duration: 6,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              >
+                {brandingText.toUpperCase()}
+              </motion.text>
             </svg>
           </div>
 
@@ -2054,7 +2145,7 @@ export default function Layout({
                 <span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
 
                 <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">
-                  © {new Date().getFullYear()} Green Tech Services Operations. Enterprise Edition.
+                  © {new Date().getFullYear()} {brandingText} Operations. Enterprise Edition.
                 </span>
               </div>
             </div>
