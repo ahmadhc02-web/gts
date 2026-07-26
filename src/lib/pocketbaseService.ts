@@ -2,7 +2,7 @@ import { pb } from './pocketbase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget, ComplaintReview } from '../types';
 import { safeStringify } from './utils';
 
-export const activeSyncingMonths = new Set<string>();
+
 
 // Unified snake_case/camelCase mappings for GTS ISP schema tables in PocketBase
 const mappings: Record<string, Record<string, string>> = {
@@ -819,10 +819,28 @@ export const pocketbaseService = {
     });
   },
 
+  
+  _billingMonthExecutionLocks: {} as Record<string, Promise<void>>,
+  _syncingMonths: new Set<string>(),
+
   async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main') {
+    const syncKey = `${monthId}_${dealerId}`;
+    if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
+    const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
+    const run = previous.then(() => this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId));
+    this._billingMonthExecutionLocks[syncKey] = run.catch(() => {});
+    return run;
+  },
+
+  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main') {
+    const syncKey = `${monthId}_${dealerId}`;
+    if (!this._syncingMonths) this._syncingMonths = new Set<string>();
+    this._syncingMonths.add(syncKey);
+
     const logEntry = this.addSyncLog('billing_months', 'sync', 'pending', `Month: ${monthId}, Dealer: ${dealerId}, Rows count: ${rows.length}`);
     try {
       const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
+
       
       let success = false;
       let errorMsg = '';
@@ -884,6 +902,10 @@ export const pocketbaseService = {
       logEntry.status = 'failed';
       logEntry.errorMessage = e.message || String(e);
       this.saveSyncLogsLocally();
+    } finally {
+      if (this._syncingMonths) {
+        this._syncingMonths.delete(syncKey);
+      }
     }
   },
 
@@ -964,8 +986,7 @@ export const pocketbaseService = {
   },
 
   async syncBillingRows(monthId: string, dealerId: string, rows: any[]) {
-    activeSyncingMonths.add(monthId);
-    const logRowsEntry = this.addSyncLog('billing_rows', 'sync', 'pending', `Syncing ${rows.length} rows for Month: ${monthId}`);
+        const logRowsEntry = this.addSyncLog('billing_rows', 'sync', 'pending', `Syncing ${rows.length} rows for Month: ${monthId}`);
     const logUserDataEntry = this.addSyncLog('users_data', 'sync', 'pending', `Syncing ${rows.length} rows for Month: ${monthId}`);
     try {
       const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
@@ -1138,8 +1159,6 @@ export const pocketbaseService = {
       logRowsEntry.errorMessage = e.message || String(e);
       logUserDataEntry.status = 'success';
       this.saveSyncLogsLocally();
-    } finally {
-      activeSyncingMonths.delete(monthId);
     }
   },
 
@@ -2469,7 +2488,7 @@ export const pocketbaseService = {
         clearTimeout(debounceTimer);
       }
       debounceTimer = setTimeout(() => {
-        if (activeSyncingMonths.size > 0) {
+        if (pocketbaseService._syncingMonths && pocketbaseService._syncingMonths.size > 0) {
           triggerFetch();
           return;
         }

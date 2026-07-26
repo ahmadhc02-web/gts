@@ -141,7 +141,7 @@ export default function AdminPanel({
       const bMonths = await pocketbaseService.getBillingMonths(activeDealerId);
       for (const m of bMonths) {
         if (m.rows) {
-          await pocketbaseService.saveBillingMonth(m.id, m.rows, currentUser?.username || 'admin', activeDealerId || 'main').catch(()=>{});
+          await saveBillingMonthTracked(m.id, m.rows, currentUser?.username || 'admin', activeDealerId || 'main').catch(()=>{});
         }
       }
       
@@ -511,6 +511,18 @@ export default function AdminPanel({
   const [masterClients, setMasterClients] = useState<any[]>([]);
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
   const savingMonthIds = React.useRef<Set<string>>(new Set());
+
+  
+  const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false) => {
+    savingMonthIds.current.add(monthId);
+    try {
+      await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate);
+    } finally {
+      savingMonthIds.current.delete(monthId);
+    }
+  };
+
+
   const [currentMonthId, setCurrentMonthId] = useState<string>('');
   const [isConfiguringNewMonth, setIsConfiguringNewMonth] = useState(false);
   const [isDeleteSheetModalOpen, setIsDeleteSheetModalOpen] = useState(false);
@@ -1183,8 +1195,7 @@ export default function AdminPanel({
         updatedAt: Date.now()
       };
       if (monthId) {
-        savingMonthIds.current.add(monthId);
-      }
+              }
       setBillingMonths(prev => {
         // Prevent duplicate if somehow triggered twice
         if (prev.some(m => m.id === monthId)) return prev;
@@ -1325,8 +1336,7 @@ export default function AdminPanel({
 
       // INSTANT UI UPDATE
       if (currentMonthId) {
-        savingMonthIds.current.add(currentMonthId);
-      }
+              }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: existingRows } : m));
 
       toast.success("USER LIST RECHECKED PERFECTLY!", {
@@ -1334,14 +1344,12 @@ export default function AdminPanel({
       });
 
       // Background persist
-      pocketbaseService.saveBillingMonth(currentMonthId, existingRows, currentUser.username || 'admin', activeDealerId)
+      saveBillingMonthTracked(currentMonthId, existingRows, currentUser.username || 'admin', activeDealerId)
         .catch(err => {
            console.error("Background sync for recheck failed:", err);
            toast.error("Cloud Sync Warning", { description: "Some records may not have saved to the cloud." });
         })
-        .finally(() => {
-           savingMonthIds.current.delete(currentMonthId);
-        });
+        ;
     } catch (err: any) {
       console.error(err);
       toast.error("Recheck user list failed", { description: getCleanErrorMessage(err) });
@@ -1369,10 +1377,9 @@ export default function AdminPanel({
       const count = editedRowIndices.size;
 
       // Update saving state to prevent subscription overwrite
-      savingMonthIds.current.add(currentMonthId);
-
+      
       // Execute full save & sync to database
-      await pocketbaseService.saveBillingMonth(
+      await saveBillingMonthTracked(
         currentMonthId,
         activeDoc.rows,
         currentUser?.username || 'admin',
@@ -1382,8 +1389,7 @@ export default function AdminPanel({
 
       savedBillingSnapshotRef.current = JSON.parse(JSON.stringify(activeDoc.rows));
       setEditedRowIndices(new Set());
-      savingMonthIds.current.delete(currentMonthId);
-
+      
       toast.success("Recovery Edits Saved Successfully! 🎉", {
         description: `${count} edited row${count > 1 ? 's' : ''} saved to database.`
       });
@@ -1485,8 +1491,7 @@ export default function AdminPanel({
       });
 
       // Background debounced persist for cell edits
-      savingMonthIds.current.add(currentMonthId);
-      pocketbaseService.saveBillingMonth(
+            saveBillingMonthTracked(
         currentMonthId,
         updatedRows,
         currentUser?.username || 'admin',
@@ -1494,8 +1499,6 @@ export default function AdminPanel({
         forceImmediate
       ).catch(err => {
          console.warn("Background auto-save failed:", err);
-      }).finally(() => {
-         savingMonthIds.current.delete(currentMonthId);
       });
     } catch (err: any) {
       console.error(err);
@@ -1564,8 +1567,7 @@ export default function AdminPanel({
     if (!window.confirm(message)) return;
 
     if (currentMonthId) {
-      savingMonthIds.current.add(currentMonthId);
-    }
+          }
 
     const toastId = toast.loading("Resetting all CR amounts to 0...");
 
@@ -1601,7 +1603,7 @@ export default function AdminPanel({
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
 
       // 2. Persist to database
-      await pocketbaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId);
+      await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId);
 
       toast.success(`Success! All CR amounts in "${currentMonthId}" sheet have been reset to 0.`, { id: toastId });
     } catch (err: any) {
@@ -1626,8 +1628,7 @@ export default function AdminPanel({
       
       // Update local state instantly
       if (currentMonthId) {
-        savingMonthIds.current.add(currentMonthId);
-      }
+              }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
       
       // Save billing row to Recycle Bin
@@ -1647,7 +1648,7 @@ export default function AdminPanel({
         console.error("Error saving billing row to recycle bin:", binErr);
       }
 
-      pocketbaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
+      saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
          console.error("Failed to delete row in cloud:", err);
       });
       toast.success("Recovery row removed from current month's sheet.");
@@ -1702,12 +1703,11 @@ export default function AdminPanel({
 
       // Local state update immediately
       if (currentMonthId) {
-        savingMonthIds.current.add(currentMonthId);
-      }
+              }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
 
       // Remove from active Billing Month in DB
-      pocketbaseService.saveBillingMonth(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
+      saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
          console.error("Failed to update active billing month in cloud:", err);
       });
 
@@ -2383,12 +2383,11 @@ export default function AdminPanel({
       
       // Update local state instantly
       if (currentMonthId) {
-        savingMonthIds.current.add(currentMonthId);
-      }
+              }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: finalRows } : m));
       
       // Persist in background silently
-      pocketbaseService.saveBillingMonth(currentMonthId, finalRows, currentUser?.username || 'admin', activeDealerId).catch(err => {
+      saveBillingMonthTracked(currentMonthId, finalRows, currentUser?.username || 'admin', activeDealerId).catch(err => {
          console.warn("Background auto-sync for missing/deleted clients failed:", err);
       });
     }
