@@ -1223,10 +1223,14 @@ export default function EntrySheet({
       { sr: 2, name: 'Panel Balance', amount: 0, ch: false },
       { sr: 3, name: 'Cash Hand', amount: 0, ch: false }
     ];
+
+    const activeFolderId = openedFolderId || (loadedSheetId ? sheetFolderMap[loadedSheetId] : '') || sheets[activeSheetIdx]?.folderId || '';
+    const generatedId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
     
     // Inherit layout parameters from currently active/edited sheet for seamless multi-page consistency, while keeping data rows blank
     const newSheet = {
-      id: Math.random().toString(36).substring(7),
+      id: generatedId,
+      folderId: activeFolderId,
       recOfficer: recOfficer || currentUser.fullName || currentUser.username.toUpperCase(),
       recOfficerLabel: recOfficerLabel || 'REC. OFFICER',
       area: area || 'MAIN',
@@ -1248,6 +1252,12 @@ export default function EntrySheet({
       signLabel: signLabel || 'SIGN',
       submittedLabel: submittedLabel || 'SUBMITTED',
     };
+
+    if (activeFolderId) {
+      const nextMap = { ...sheetFolderMap, [generatedId]: activeFolderId };
+      setSheetFolderMap(nextMap);
+      saveMapToDb(nextMap);
+    }
     
     setSheets(prev => {
       const updated = [...prev];
@@ -1450,11 +1460,11 @@ export default function EntrySheet({
 
       // Ensure loadedSheetId is a valid 15-character PocketBase ID if not already
       let currentLoadedId = loadedSheetId;
-      if (currentLoadedId && (currentLoadedId.startsWith('sheet_') || !/^[a-z0-9]{15}$/.test(currentLoadedId))) {
+      if (!currentLoadedId || currentLoadedId.startsWith('sheet_') || !/^[a-z0-9]{15}$/.test(currentLoadedId)) {
         const generatedId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
         
         const nextMap = { ...sheetFolderMap };
-        if (nextMap[currentLoadedId]) {
+        if (currentLoadedId && nextMap[currentLoadedId]) {
           nextMap[generatedId] = nextMap[currentLoadedId];
           delete nextMap[currentLoadedId];
         }
@@ -1469,22 +1479,12 @@ export default function EntrySheet({
         currentLoadedId = generatedId;
       }
 
-      // STRICTLY ENFORCE: Ensure all A4 size sheets inside the active main folder are included in currentSyncSheets
+      // STRICTLY ENFORCE: Whichever A4 size sheet is saved, only that sheet's entries are added to the recovery sheet.
+      // Therefore, do NOT load/append other background history sheets of this folder.
       const activeFolderId = openedFolderId || 
         (currentLoadedId ? sheetFolderMap[currentLoadedId] : null) || 
         currentSyncSheets[activeSheetIdx]?.folderId || 
         '';
-
-      if (activeFolderId) {
-        const existingIds = new Set(currentSyncSheets.map(s => s.id).filter(Boolean));
-        const historySheetsInFolder = ledgerHistory.filter(sh => 
-          (sh.folderId === activeFolderId || sheetFolderMap[sh.id] === activeFolderId) &&
-          sh.id && !existingIds.has(sh.id)
-        );
-        if (historySheetsInFolder.length > 0) {
-          currentSyncSheets.push(...historySheetsInFolder);
-        }
-      }
 
       const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
       let totalUpdatedBillingCount = 0;
@@ -1906,22 +1906,24 @@ export default function EntrySheet({
       }
 
       // 4. Update currently loaded sheet references in editor
-      const lastSavedId = currentLoadedId;
+      const lastSavedId = currentLoadedId || currentSyncSheets[activeSheetIdx]?.id;
       if (lastSavedId) {
         setLoadedSheetId(lastSavedId);
-        setSheets(prev => {
-          const next = [...prev];
-          if (next[activeSheetIdx]) {
-            const savedLocal = savedSheetsToLocal.find(s => s.id === lastSavedId);
-            next[activeSheetIdx] = {
-              ...next[activeSheetIdx],
-              id: lastSavedId,
-              folderId: savedLocal?.folderId || next[activeSheetIdx].folderId || ''
+      }
+      setSheets(prev => {
+        return prev.map((sh, idx) => {
+          const matchingPayload = currentSyncSheets[idx];
+          if (matchingPayload) {
+            const savedLocal = savedSheetsToLocal.find(s => s.id === matchingPayload.id);
+            return {
+              ...sh,
+              id: matchingPayload.id,
+              folderId: savedLocal?.folderId || matchingPayload.folderId || sh.folderId || ''
             };
           }
-          return next;
+          return sh;
         });
-      }
+      });
 
       const activeRows = table1Rows.filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
       setOriginalActiveRows(activeRows.map(r => ({
@@ -6309,10 +6311,44 @@ export default function EntrySheet({
                 (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
                 (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
               );
-              const isDcOrTdc = matchingActiveRow && (matchingActiveRow.paymentStatus === 'dc' || matchingActiveRow.paymentStatus === 'tdc');
-              const outstandingStr = matchingActiveRow 
-                ? `Outstanding: Rs. ${isDcOrTdc ? 0 : parseFloat(matchingActiveRow.totalAmount || '0') - parseFloat(matchingActiveRow.paymentReceived || '0')}`
-                : cObj.pkgDetails || 'Active Master Customer';
+              
+              const getStatusBadge = (statusKey: string | undefined) => {
+                const s = (statusKey || 'active').toLowerCase();
+                switch (s) {
+                  case 'paid':
+                    return {
+                      label: 'Paid',
+                      class: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
+                    };
+                  case 'partial':
+                    return {
+                      label: 'Partial',
+                      class: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 border-blue-200 dark:border-blue-800/60'
+                    };
+                  case 'unpaid':
+                    return {
+                      label: 'Unpaid',
+                      class: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                    };
+                  case 'dc':
+                    return {
+                      label: 'DC',
+                      class: 'bg-slate-100 text-slate-700 dark:bg-slate-850 dark:text-slate-400 border-slate-200 dark:border-slate-800'
+                    };
+                  case 'tdc':
+                    return {
+                      label: 'TDC',
+                      class: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                    };
+                  default:
+                    return {
+                      label: 'Active',
+                      class: 'bg-slate-50 text-slate-700 dark:bg-slate-900/50 dark:text-slate-350 border-slate-150 dark:border-slate-800/80'
+                    };
+                }
+              };
+
+              const statusObj = getStatusBadge(matchingActiveRow?.paymentStatus);
 
               return (
                 <button
@@ -6334,8 +6370,8 @@ export default function EntrySheet({
                     </span>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="text-[9px] bg-slate-100 dark:bg-slate-900 group-hover:bg-white/20 text-slate-700 dark:text-slate-350 group-hover:text-white font-bold px-1.5 py-0.5 rounded font-mono">
-                      {outstandingStr.length > 20 ? outstandingStr.substring(0, 18) + '..' : outstandingStr}
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${statusObj.class} group-hover:bg-white group-hover:text-slate-950 group-hover:border-white transition-colors`}>
+                      {statusObj.label}
                     </span>
                   </div>
                 </button>
