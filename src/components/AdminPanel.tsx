@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -105,12 +105,29 @@ export default function AdminPanel({
 }: AdminPanelProps) {
   const [localActiveTab, setLocalActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing'>('complaints');
   const activeTab = activeTabProp !== undefined ? activeTabProp as any : localActiveTab;
+  
+  // Unsaved changes tracking for Recovery Rows
+  const [editedRowIndices, setEditedRowIndices] = useState<Set<number>>(new Set());
+  const [isSavingRecoveryRows, setIsSavingRecoveryRows] = useState(false);
+  const savedBillingSnapshotRef = React.useRef<any[]>([]);
+  const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
+  const [pendingNavigationAction, setPendingNavigationAction] = useState<(() => void) | null>(null);
+
   const setActiveTab = (tabId: 'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing') => {
-    if (onNavigateProp) {
-      onNavigateProp(tabId);
-    } else {
-      setLocalActiveTab(tabId);
+    const doNavigate = () => {
+      if (onNavigateProp) {
+        onNavigateProp(tabId);
+      } else {
+        setLocalActiveTab(tabId);
+      }
+    };
+
+    if (activeTab === 'billing' && tabId !== 'billing' && editedRowIndices.size > 0) {
+      setPendingNavigationAction(() => doNavigate);
+      setIsUnsavedModalOpen(true);
+      return;
     }
+    doNavigate();
   };
   const customNames = branding.customNames || {};
   const [isFormVisible, setIsFormVisible] = useState(true);
@@ -493,7 +510,7 @@ export default function AdminPanel({
   // --- Advanced Enterprise Billing & Recovery Module states ---
   const [masterClients, setMasterClients] = useState<any[]>([]);
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
-  const lastLocalEditTime = React.useRef<Record<string, number>>({});
+  const savingMonthIds = React.useRef<Set<string>>(new Set());
   const [currentMonthId, setCurrentMonthId] = useState<string>('');
   const [isConfiguringNewMonth, setIsConfiguringNewMonth] = useState(false);
   const [isDeleteSheetModalOpen, setIsDeleteSheetModalOpen] = useState(false);
@@ -970,14 +987,11 @@ export default function AdminPanel({
       });
       
       setBillingMonths(prev => {
-        const now = Date.now();
         return sorted.map(incomingMonth => {
-          const lastEdit = lastLocalEditTime.current[incomingMonth.id];
-          // Protect for up to 15 seconds to give database background sync plenty of time to finish
-          if (lastEdit && (now - lastEdit < 15000)) {
+          if (savingMonthIds.current.has(incomingMonth.id)) {
             const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
             if (currentLocalMonth) {
-              console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (last edited ${now - lastEdit}ms ago)`);
+              console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save in progress)`);
               return {
                 ...incomingMonth,
                 rows: currentLocalMonth.rows
@@ -1169,7 +1183,7 @@ export default function AdminPanel({
         updatedAt: Date.now()
       };
       if (monthId) {
-        lastLocalEditTime.current[monthId] = Date.now();
+        savingMonthIds.current.add(monthId);
       }
       setBillingMonths(prev => {
         // Prevent duplicate if somehow triggered twice
@@ -1311,7 +1325,7 @@ export default function AdminPanel({
 
       // INSTANT UI UPDATE
       if (currentMonthId) {
-        lastLocalEditTime.current[currentMonthId] = Date.now();
+        savingMonthIds.current.add(currentMonthId);
       }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: existingRows } : m));
 
@@ -1320,14 +1334,81 @@ export default function AdminPanel({
       });
 
       // Background persist
-      pocketbaseService.saveBillingMonth(currentMonthId, existingRows, currentUser.username || 'admin', activeDealerId).catch(err => {
-         console.error("Background sync for recheck failed:", err);
-         toast.error("Cloud Sync Warning", { description: "Some records may not have saved to the cloud." });
-      });
+      pocketbaseService.saveBillingMonth(currentMonthId, existingRows, currentUser.username || 'admin', activeDealerId)
+        .catch(err => {
+           console.error("Background sync for recheck failed:", err);
+           toast.error("Cloud Sync Warning", { description: "Some records may not have saved to the cloud." });
+        })
+        .finally(() => {
+           savingMonthIds.current.delete(currentMonthId);
+        });
     } catch (err: any) {
       console.error(err);
       toast.error("Recheck user list failed", { description: getCleanErrorMessage(err) });
     }
+  };
+
+      // Maintain pristine snapshot when month changes or when no unsaved edits exist
+  useEffect(() => {
+    if (currentMonthId && editedRowIndices.size === 0) {
+      const activeDoc = billingMonths.find(m => m.id === currentMonthId);
+      if (activeDoc && activeDoc.rows) {
+        savedBillingSnapshotRef.current = JSON.parse(JSON.stringify(activeDoc.rows));
+      }
+    }
+  }, [currentMonthId, billingMonths, editedRowIndices.size]);
+
+  const handleBatchSaveRecoveryRows = async (): Promise<boolean> => {
+    if (!currentMonthId || editedRowIndices.size === 0) return true;
+
+    setIsSavingRecoveryRows(true);
+    try {
+      const activeDoc = billingMonths.find(m => m.id === currentMonthId);
+      if (!activeDoc || !activeDoc.rows) return false;
+
+      const count = editedRowIndices.size;
+
+      // Update saving state to prevent subscription overwrite
+      savingMonthIds.current.add(currentMonthId);
+
+      // Execute full save & sync to database
+      await pocketbaseService.saveBillingMonth(
+        currentMonthId,
+        activeDoc.rows,
+        currentUser?.username || 'admin',
+        activeDealerId || 'main',
+        true
+      );
+
+      savedBillingSnapshotRef.current = JSON.parse(JSON.stringify(activeDoc.rows));
+      setEditedRowIndices(new Set());
+      savingMonthIds.current.delete(currentMonthId);
+
+      toast.success("Recovery Edits Saved Successfully! 🎉", {
+        description: `${count} edited row${count > 1 ? 's' : ''} saved to database.`
+      });
+      return true;
+    } catch (err: any) {
+      console.error("Failed to batch save recovery rows:", err);
+      toast.error("Failed to save recovery rows", { description: getCleanErrorMessage(err) });
+      return false;
+    } finally {
+      setIsSavingRecoveryRows(false);
+    }
+  };
+
+  const handleDiscardRecoveryEdits = () => {
+    if (!currentMonthId) return;
+    if (savedBillingSnapshotRef.current && savedBillingSnapshotRef.current.length > 0) {
+      setBillingMonths(prev => prev.map(m => {
+        if (m.id === currentMonthId) {
+          return { ...m, rows: JSON.parse(JSON.stringify(savedBillingSnapshotRef.current)) };
+        }
+        return m;
+      }));
+    }
+    setEditedRowIndices(new Set());
+    toast.info("Unsaved edits discarded", { description: "Recovery rows restored to last saved state." });
   };
 
   const handleSaveRowField = (rowIndex: number, field: string, val: any, forceImmediate = false) => {
@@ -1337,7 +1418,6 @@ export default function AdminPanel({
     }
 
     if (!currentMonthId) return;
-    lastLocalEditTime.current[currentMonthId] = Date.now();
 
     try {
       const activeDocIndex = billingMonths.findIndex(m => m.id === currentMonthId);
@@ -1397,7 +1477,15 @@ export default function AdminPanel({
         return next;
       });
 
-      // Background persist in PocketBase
+      // Track row index in editedRowIndices
+      setEditedRowIndices(prev => {
+        const next = new Set(prev);
+        next.add(rowIndex);
+        return next;
+      });
+
+      // Background debounced persist for cell edits
+      savingMonthIds.current.add(currentMonthId);
       pocketbaseService.saveBillingMonth(
         currentMonthId,
         updatedRows,
@@ -1405,7 +1493,9 @@ export default function AdminPanel({
         activeDealerId || 'main',
         forceImmediate
       ).catch(err => {
-        console.error("Failed to persist billing cell edit:", err);
+         console.warn("Background auto-save failed:", err);
+      }).finally(() => {
+         savingMonthIds.current.delete(currentMonthId);
       });
     } catch (err: any) {
       console.error(err);
@@ -1474,7 +1564,7 @@ export default function AdminPanel({
     if (!window.confirm(message)) return;
 
     if (currentMonthId) {
-      lastLocalEditTime.current[currentMonthId] = Date.now();
+      savingMonthIds.current.add(currentMonthId);
     }
 
     const toastId = toast.loading("Resetting all CR amounts to 0...");
@@ -1536,7 +1626,7 @@ export default function AdminPanel({
       
       // Update local state instantly
       if (currentMonthId) {
-        lastLocalEditTime.current[currentMonthId] = Date.now();
+        savingMonthIds.current.add(currentMonthId);
       }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
       
@@ -1612,7 +1702,7 @@ export default function AdminPanel({
 
       // Local state update immediately
       if (currentMonthId) {
-        lastLocalEditTime.current[currentMonthId] = Date.now();
+        savingMonthIds.current.add(currentMonthId);
       }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
 
@@ -2293,7 +2383,7 @@ export default function AdminPanel({
       
       // Update local state instantly
       if (currentMonthId) {
-        lastLocalEditTime.current[currentMonthId] = Date.now();
+        savingMonthIds.current.add(currentMonthId);
       }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: finalRows } : m));
       
@@ -2539,7 +2629,20 @@ export default function AdminPanel({
 
     const handleMonthSelected = (e: Event) => {
       const customEvent = e as CustomEvent;
-      setCurrentMonthId(customEvent.detail);
+      const newMonthId = customEvent.detail;
+      if (newMonthId === currentMonthId) return;
+
+      const doSwitchMonth = () => {
+        setCurrentMonthId(newMonthId);
+        setEditedRowIndices(new Set());
+      };
+
+      if (editedRowIndices.size > 0) {
+        setPendingNavigationAction(() => doSwitchMonth);
+        setIsUnsavedModalOpen(true);
+      } else {
+        doSwitchMonth();
+      }
     };
 
     window.addEventListener('gts-billing-action', handleBillingAction);
@@ -2549,7 +2652,20 @@ export default function AdminPanel({
       window.removeEventListener('gts-billing-action', handleBillingAction);
       window.removeEventListener('gts-billing-month-selected', handleMonthSelected);
     };
-  }, [currentMonthId, billingMonths, activeRows]);
+  }, [currentMonthId, billingMonths, activeRows, editedRowIndices.size]);
+
+  // Window beforeunload prompt if unsaved Recovery Rows edits exist
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (editedRowIndices.size > 0 && activeTab === 'billing') {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved changes in Recovery Rows. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [editedRowIndices.size, activeTab]);
 
   const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
@@ -7558,7 +7674,26 @@ export default function AdminPanel({
                       <Layers size={16} className="text-blue-500" />
                       Recovery Rows ({filteredRows.length} listed)
                       
-                      {/* Advance mode toggle */}
+                      {/* Header Save Changes Button */}
+                      <AnimatePresence>
+                        {editedRowIndices.size > 0 && (
+                          <motion.button
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.8, opacity: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleBatchSaveRecoveryRows}
+                            disabled={isSavingRecoveryRows}
+                            className="ml-2 px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white text-[10.5px] font-black uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-500/25 flex items-center gap-1.5 cursor-pointer border border-emerald-400/40 animate-pulse"
+                            title="Click to save all modified recovery rows to database"
+                          >
+                            <Save size={13} className={cn(isSavingRecoveryRows && "animate-spin")} />
+                            <span>{isSavingRecoveryRows ? "Saving..." : `Save Changes (${editedRowIndices.size})`}</span>
+                          </motion.button>
+                        )}
+                      </AnimatePresence>
+
                       <motion.button
                         layout
                         whileHover={{ 
@@ -7727,7 +7862,8 @@ export default function AdminPanel({
                                   "hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors whitespace-nowrap",
                                   !isBillingUnlocked && "cursor-pointer",
                                   isTdc && "bg-rose-500/5 text-rose-500",
-                                  isDc && "bg-neutral-500/10 text-neutral-500"
+                                  isDc && "bg-neutral-500/10 text-neutral-500",
+                                  editedRowIndices.has(globalRowIdx) && "bg-amber-500/15 dark:bg-amber-500/20 border-l-4 border-l-amber-500"
                                 )}
                                 onClick={(e) => {
                                   if (!isBillingUnlocked) {
@@ -7736,8 +7872,13 @@ export default function AdminPanel({
                                 }}
                               >
                                 {/* Sr# */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800 text-center select-none font-sans text-[11px]">
-                                  {localIdx + 1}
+                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800 text-center select-none font-sans text-[11px] font-bold">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span>{localIdx + 1}</span>
+                                    {editedRowIndices.has(globalRowIdx) && (
+                                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" title="Row Modified (Unsaved)" />
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[13.5px] font-black">
                                   <input
@@ -8596,7 +8737,7 @@ export default function AdminPanel({
         appConfig={appConfig}
         billingMonths={billingMonths}
         setBillingMonths={setBillingMonths}
-        lastLocalEditTime={lastLocalEditTime}
+        savingMonthIds={savingMonthIds}
         initialShowUserLedger={entrySheetOpenWithUserLedger}
       />
 
@@ -8758,6 +8899,128 @@ export default function AdminPanel({
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Sticky Save Bar */}
+      <AnimatePresence>
+        {activeTab === 'billing' && editedRowIndices.size > 0 && (
+          <motion.div
+            initial={{ y: 60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 60, opacity: 0 }}
+            className="fixed bottom-6 right-6 z-[100] flex items-center gap-3 bg-slate-900/95 dark:bg-slate-950/95 text-white p-3 px-5 rounded-2xl shadow-2xl border border-emerald-500/40 backdrop-blur-xl"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+              <span className="text-xs font-black uppercase tracking-wider text-slate-200">
+                {editedRowIndices.size} Row{editedRowIndices.size > 1 ? 's' : ''} Modified
+              </span>
+            </div>
+
+            <div className="h-4 w-px bg-slate-700/80 mx-1" />
+
+            <button
+              type="button"
+              onClick={handleDiscardRecoveryEdits}
+              className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
+            >
+              Discard
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBatchSaveRecoveryRows}
+              disabled={isSavingRecoveryRows}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-500/30 flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+            >
+              <Save size={14} className={cn(isSavingRecoveryRows && "animate-spin")} />
+              <span>{isSavingRecoveryRows ? "Saving..." : "Save Changes"}</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Unsaved Changes Confirmation Popup Modal */}
+      <AnimatePresence>
+        {isUnsavedModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden p-6 space-y-5 font-sans"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 text-amber-500">
+                  <AlertTriangle size={24} />
+                </div>
+                <div className="space-y-1 flex-1">
+                  <h3 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Unsaved Recovery Changes
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+                    You have <span className="font-extrabold text-amber-600 dark:text-amber-400">{editedRowIndices.size} modified row{editedRowIndices.size > 1 ? 's' : ''}</span> in Recovery Rows that have not been saved to the database.
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800 font-sans">
+                Do you want to save your changes to the database now, or discard changes before leaving?
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDiscardRecoveryEdits();
+                    setIsUnsavedModalOpen(false);
+                    if (pendingNavigationAction) {
+                      pendingNavigationAction();
+                      setPendingNavigationAction(null);
+                    }
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-xl transition-colors cursor-pointer"
+                >
+                  Discard
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUnsavedModalOpen(false);
+                    setPendingNavigationAction(null);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const saved = await handleBatchSaveRecoveryRows();
+                    if (saved) {
+                      setIsUnsavedModalOpen(false);
+                      if (pendingNavigationAction) {
+                        pendingNavigationAction();
+                        setPendingNavigationAction(null);
+                      }
+                    }
+                  }}
+                  className="w-full sm:w-auto px-5 py-2.5 text-xs font-black uppercase tracking-wider bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Save size={14} />
+                  <span>Save & Continue</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

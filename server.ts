@@ -15,6 +15,31 @@ dotenv.config();
 // Allow self-signed certificates when proxying or fetching from self-hosted PocketBase servers
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
+// Handle socket reset and aborted request errors globally to prevent Node server crashes
+process.on("uncaughtException", (err: any) => {
+  const code = err?.code || "";
+  const msg = String(err?.message || err || "");
+  if (
+    code === "ECONNRESET" ||
+    code === "EPIPE" ||
+    code === "ECONNABORTED" ||
+    msg.includes("aborted") ||
+    msg.includes("read ECONNRESET")
+  ) {
+    // Suppress benign client disconnect / socket reset errors
+    return;
+  }
+  console.error("Uncaught Exception:", err);
+});
+
+process.on("unhandledRejection", (reason: any) => {
+  const msg = String(reason?.message || reason || "");
+  if (msg.includes("aborted") || msg.includes("read ECONNRESET")) {
+    return;
+  }
+  console.warn("Unhandled Rejection:", reason);
+});
+
 function getCleanPocketBaseUrl(): string {
   const raw = process.env.POCKETBASE_URL || process.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090";
   let url = raw.trim().replace(/^['"]|['"]$/g, "");
@@ -107,9 +132,33 @@ async function startServer() {
           proxyReq.removeHeader("x-real-ip");
         },
         error: (err: any, req: any, res: any) => {
-          console.error("[PocketBase Proxy Error]:", err);
-          if (!res.headersSent) {
-            res.status(502).json({ error: "PocketBase Proxy Error", message: err.message });
+          const errCode = err?.code || "";
+          const errMsg = String(err?.message || err || "");
+          const isAbortOrReset =
+            errCode === "ECONNRESET" ||
+            errCode === "ECONNABORTED" ||
+            errCode === "EPIPE" ||
+            errCode === "ETIMEDOUT" ||
+            errCode === "ERR_STREAM_PREMATURE_CLOSE" ||
+            errMsg.includes("aborted") ||
+            errMsg.includes("socket hang up") ||
+            errMsg.includes("read ECONNRESET");
+
+          if (isAbortOrReset) {
+            // Client closed connection, aborted request, or socket reset - handle gracefully
+            if (res && !res.headersSent) {
+              try {
+                res.status(499).end();
+              } catch (_) {}
+            }
+            return;
+          }
+
+          console.warn("[PocketBase Proxy Status]:", errMsg);
+          if (res && !res.headersSent) {
+            try {
+              res.status(502).json({ error: "PocketBase Gateway Notice", message: errMsg });
+            } catch (_) {}
           }
         },
       },

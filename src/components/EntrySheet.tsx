@@ -25,7 +25,7 @@ interface EntrySheetProps {
   billingMonths?: any[];
   initialShowUserLedger?: boolean;
   setBillingMonths?: React.Dispatch<React.SetStateAction<any[]>>;
-  lastLocalEditTime?: React.MutableRefObject<Record<string, number>>;
+  savingMonthIds?: React.MutableRefObject<Set<string>>;
 }
 
 interface Table1Row {
@@ -59,7 +59,7 @@ export default function EntrySheet({
   billingMonths = [],
   initialShowUserLedger = false,
   setBillingMonths,
-  lastLocalEditTime
+  savingMonthIds
 }: EntrySheetProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
@@ -1762,44 +1762,67 @@ export default function EntrySheet({
 
       // After the loop, persist all accumulated billing months
       for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
+        if (savingMonthIds && savingMonthIds.current) {
+          savingMonthIds.current.add(monthId);
+        }
+
+        let finalMergedRows: any[] = [];
+
         if (setBillingMonths) {
-          if (lastLocalEditTime && lastLocalEditTime.current) {
-            lastLocalEditTime.current[monthId] = Date.now();
-          }
-          
           setBillingMonths(prev => {
             const activeDocIndex = prev.findIndex(m => m.id === monthId);
-            if (activeDocIndex === -1) return prev;
-            
-            const activeDoc = prev[activeDocIndex];
-            const prevRows = activeDoc.rows || [];
-            
+            let prevRows: any[] = [];
+            if (activeDocIndex !== -1) {
+              prevRows = prev[activeDocIndex].rows || [];
+            } else if (billingMonths) {
+              const existingInProps = billingMonths.find(m => m.id === monthId);
+              if (existingInProps) prevRows = existingInProps.rows || [];
+            }
+
             // Merge accumulatedRows into prevRows so we don't lose concurrent changes
             const mergedRows = [...prevRows];
             for (const accRow of accumulatedRows) {
-               const idx = mergedRows.findIndex(r => (r.clientId && r.clientId === accRow.clientId) || (r.username && r.username.toLowerCase() === accRow.username?.toLowerCase()));
+               const idx = mergedRows.findIndex(r => 
+                 (r.clientId && accRow.clientId && r.clientId === accRow.clientId) || 
+                 (r.username && accRow.username && r.username.toLowerCase() === accRow.username.toLowerCase()) ||
+                 (r.name && accRow.name && r.name.toLowerCase() === accRow.name.toLowerCase())
+               );
                if (idx !== -1) {
                  mergedRows[idx] = accRow; // overwrite with A4 edit
                } else {
                  mergedRows.push(accRow);
                }
             }
-            
-            const newPrev = [...prev];
-            newPrev[activeDocIndex] = { ...activeDoc, rows: mergedRows };
-            
-            pocketbaseService.saveBillingMonth(
-              monthId, 
-              mergedRows, 
-              currentUser.username || 'admin',
-              activeDealerId,
-              true
-            ).catch(err => {
-              console.warn("Failed to save billing month background sync:", err);
-            });
-            
-            return newPrev;
+
+            finalMergedRows = mergedRows;
+
+            if (activeDocIndex !== -1) {
+              const newPrev = [...prev];
+              newPrev[activeDocIndex] = { ...prev[activeDocIndex], rows: mergedRows };
+              return newPrev;
+            } else {
+              return [{ id: monthId, rows: mergedRows, createdAt: Date.now(), updatedAt: Date.now() }, ...prev];
+            }
           });
+        } else {
+          finalMergedRows = accumulatedRows;
+        }
+
+        // Always save merged rows directly to database automatically
+        try {
+          await pocketbaseService.saveBillingMonth(
+            monthId, 
+            finalMergedRows.length > 0 ? finalMergedRows : accumulatedRows, 
+            currentUser?.username || 'admin',
+            activeDealerId,
+            true
+          );
+        } catch (err) {
+          console.warn("Failed to save billing month background sync:", err);
+        } finally {
+          if (savingMonthIds && savingMonthIds.current) {
+            savingMonthIds.current.delete(monthId);
+          }
         }
       }
 

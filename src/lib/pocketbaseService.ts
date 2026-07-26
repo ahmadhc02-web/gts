@@ -2,6 +2,8 @@ import { pb } from './pocketbase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget, ComplaintReview } from '../types';
 import { safeStringify } from './utils';
 
+export const activeSyncingMonths = new Set<string>();
+
 // Unified snake_case/camelCase mappings for GTS ISP schema tables in PocketBase
 const mappings: Record<string, Record<string, string>> = {
   users: {
@@ -770,7 +772,10 @@ export const pocketbaseService = {
 
     if (forceImmediate) {
       if (this._saveBillingMonthTimers[key]) {
-        clearTimeout(this._saveBillingMonthTimers[key]);
+        clearTimeout(this._saveBillingMonthTimers[key].timerId);
+        if (this._saveBillingMonthTimers[key].resolve) {
+           this._saveBillingMonthTimers[key].resolve();
+        }
         delete this._saveBillingMonthTimers[key];
       }
       const latest = this._saveBillingMonthLatestRows[key];
@@ -786,10 +791,15 @@ export const pocketbaseService = {
     // that rapid sequential bulk edits do not cause overlapping database locks or network congestion.
     return new Promise<void>((resolve, reject) => {
       if (this._saveBillingMonthTimers[key]) {
-        clearTimeout(this._saveBillingMonthTimers[key]);
+        clearTimeout(this._saveBillingMonthTimers[key].timerId);
+        if (this._saveBillingMonthTimers[key].reject) {
+           // We are cancelling the previous debounced operation, but we don't want to throw an error 
+           // that might break the UI. We'll just resolve it since a newer one is taking over.
+           this._saveBillingMonthTimers[key].resolve();
+        }
       }
 
-      this._saveBillingMonthTimers[key] = setTimeout(async () => {
+      const timerId = setTimeout(async () => {
         try {
           const latest = this._saveBillingMonthLatestRows[key];
           if (latest) {
@@ -804,6 +814,8 @@ export const pocketbaseService = {
           delete this._saveBillingMonthTimers[key];
         }
       }, 250);
+
+      this._saveBillingMonthTimers[key] = { timerId, resolve, reject };
     });
   },
 
@@ -845,6 +857,23 @@ export const pocketbaseService = {
         logEntry.status = 'failed';
         logEntry.errorMessage = `Saved to individual rows, but failed on billing_months: ${errorMsg}`;
         this.saveSyncLogsLocally();
+      }
+
+      // Always update local storage cache for instant persistence
+      try {
+        const cacheKey = `gts_cache_v3_billing_months`;
+        const rawCache = localStorage.getItem(cacheKey);
+        let list: any[] = rawCache ? JSON.parse(rawCache) : [];
+        const idx = list.findIndex(m => m.id === monthId || m.month_id === monthId);
+        const updatedObj = { id: monthId, month_id: monthId, dealer_id: dealerId, rows, rows_data: rows, updated_by: updatedBy, updatedAt: Date.now() };
+        if (idx !== -1) {
+          list[idx] = { ...list[idx], ...updatedObj };
+        } else {
+          list.unshift(updatedObj);
+        }
+        localStorage.setItem(cacheKey, JSON.stringify(list));
+      } catch (e) {
+        console.warn("Failed to update local cache for billing_months:", e);
       }
 
       // Sync rows to billing_rows (fully await to ensure absolute persistence before returning)
@@ -935,6 +964,7 @@ export const pocketbaseService = {
   },
 
   async syncBillingRows(monthId: string, dealerId: string, rows: any[]) {
+    activeSyncingMonths.add(monthId);
     const logRowsEntry = this.addSyncLog('billing_rows', 'sync', 'pending', `Syncing ${rows.length} rows for Month: ${monthId}`);
     const logUserDataEntry = this.addSyncLog('users_data', 'sync', 'pending', `Syncing ${rows.length} rows for Month: ${monthId}`);
     try {
@@ -953,9 +983,18 @@ export const pocketbaseService = {
         return isNaN(num) ? 0 : num;
       };
 
-      // Map rows to PocketBase format
-      const rawMappedRows = rows.map(r => {
-        const rowId = r.clientId || r.id || `gen_${Math.random().toString(36).substring(2, 11)}`;
+      // Map rows to PocketBase format with deterministic client_id
+      const rawMappedRows = rows.map((r, idx) => {
+        let rowId = r.clientId || r.id;
+        if (!rowId || !String(rowId).trim()) {
+          if (r.username && String(r.username).trim()) {
+            rowId = `usr_${String(r.username).trim().toLowerCase()}`;
+          } else if (r.name && String(r.name).trim()) {
+            rowId = `name_${String(r.name).trim().toLowerCase().replace(/\s+/g, '_')}`;
+          } else {
+            rowId = `row_${idx}_${monthId}`;
+          }
+        }
         return {
           month_id: String(monthId || ''),
           dealer_id: String(dealerId || 'main'),
@@ -1099,6 +1138,8 @@ export const pocketbaseService = {
       logRowsEntry.errorMessage = e.message || String(e);
       logUserDataEntry.status = 'success';
       this.saveSyncLogsLocally();
+    } finally {
+      activeSyncingMonths.delete(monthId);
     }
   },
 
@@ -2428,6 +2469,10 @@ export const pocketbaseService = {
         clearTimeout(debounceTimer);
       }
       debounceTimer = setTimeout(() => {
+        if (activeSyncingMonths.size > 0) {
+          triggerFetch();
+          return;
+        }
         fetchBillingMonths();
       }, 1000); // 1-second debounce to absorb rapid successive updates
     };

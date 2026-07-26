@@ -498,7 +498,7 @@ export default function Layout({
   };
 
   return (
-    <div className="min-h-screen transition-colors duration-500 overflow-x-hidden">
+    <div className="min-h-screen transition-colors duration-500 overflow-x-hidden relative">
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
       {user && (
         <div className={cn(
@@ -1997,31 +1997,71 @@ export default function Layout({
       {/* Footer */}
       {user && (
       <footer className={cn(
-        "py-6 sm:py-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950",
+        "relative w-full overflow-hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-4 sm:py-5 transition-colors",
         user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
       )}>
         <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col items-center">
-             <div className="relative group mb-3 sm:mb-4">
-                <div className="absolute -inset-1 bg-gradient-to-r from-brand-accent to-blue-500 rounded-lg blur opacity-25 group-hover:opacity-50 transition" />
-                <div className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-950 flex items-center justify-center shadow-xl border border-white/10 overflow-hidden">
-                  <span className="text-white font-black text-base sm:text-xl tracking-tighter italic leading-none drop-shadow-md">G<span className="text-brand-accent">TS</span></span>
-                </div>
-             </div>
-             <p className="text-[8px] sm:text-[10px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-[0.2em] sm:tracking-[0.3em] mb-1">
-               {brandingText}
-             </p>
-             <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">ISP Management Pro</h4>
+          {/* Main Footer Graphic Box with Outlined "Green Tech Services" Text */}
+          <div className="relative w-full flex flex-col items-center justify-center min-h-[80px] sm:min-h-[110px] my-0.5">
+            <svg
+              viewBox="0 0 1200 140"
+              className="w-full max-w-full h-auto select-none pointer-events-none opacity-85 dark:opacity-40"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <text
+                x="50%"
+                y="52%"
+                dominantBaseline="central"
+                textAnchor="middle"
+                fontFamily="Georgia, Cambria, 'Times New Roman', serif"
+                fontSize="105"
+                fontWeight="bold"
+                fill="rgba(241, 245, 249, 0.75)"
+                stroke="#94a3b8"
+                strokeWidth="3"
+                className="dark:fill-slate-900/50 dark:stroke-slate-600"
+              >
+                Green Tech Services
+              </text>
+            </svg>
           </div>
-          
-          <div className="h-px w-6 sm:w-8 bg-slate-200 dark:bg-slate-800 mx-auto my-6 sm:my-8" />
 
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6 max-w-4xl mx-auto">
-            <p className="text-[9px] sm:text-[11px] text-slate-400 dark:text-slate-500 font-medium text-center md:text-left">
-              © {new Date().getFullYear()} Green Tech Services Operations. <br className="xs:hidden" /> Enterprise Edition.
-            </p>
-            <div className="inline-flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-[8px] sm:text-[10px] uppercase font-bold tracking-widest text-slate-400 cursor-default">
-              Powered by Green Net
+          {/* Bottom Row containing GTS Logo, Company Name, ISP MANAGEMENT PRO, Copyright & Powered By */}
+          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200/80 dark:border-slate-800/80">
+            {/* Left/Center: GTS Logo + Brand Info + Copyright */}
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 text-center sm:text-left">
+              {/* GTS Logo */}
+              <div className="relative group shrink-0">
+                <div className="absolute -inset-1 bg-blue-500/20 rounded-lg blur-xs group-hover:opacity-100 transition duration-300" />
+                <div className="relative w-8 h-8 rounded-lg bg-slate-950 flex items-center justify-center shadow-md border border-white/20 overflow-hidden">
+                  <span className="text-white font-black text-xs tracking-tighter italic leading-none">
+                    G<span className="text-blue-500">TS</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Brand & Copyright Text Block */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                <div className="flex items-center justify-center sm:justify-start gap-2">
+                  <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs sm:text-sm tracking-tight">
+                    {brandingText}
+                  </span>
+                  <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-200/60 dark:border-blue-800/60">
+                    ISP MANAGEMENT PRO
+                  </span>
+                </div>
+
+                <span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
+
+                <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">
+                  © {new Date().getFullYear()} Green Tech Services Operations. Enterprise Edition.
+                </span>
+              </div>
+            </div>
+
+            {/* Right: Powered by Green Net pill */}
+            <div className="shrink-0 inline-flex items-center px-3.5 py-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 text-[8px] sm:text-[9.5px] uppercase font-black tracking-widest text-slate-500 dark:text-slate-400 shadow-2xs cursor-default">
+              POWERED BY GREEN NET
             </div>
           </div>
         </div>
