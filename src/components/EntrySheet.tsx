@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
   History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
-  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings, Download
+  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings, Download, Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -229,6 +229,7 @@ export default function EntrySheet({
   const [folderSortOption, setFolderSortOption] = useState<'a-to-z' | 'amount-high' | 'amount-low' | 'newest'>('newest');
   const [sheetToDeleteId, setSheetToDeleteId] = useState<string | null>(null);
   const [showTerminateMonthModal, setShowTerminateMonthModal] = useState(false);
+  const [isSavingSheet, setIsSavingSheet] = useState(false);
 
   // User search popup state variables
   const [showUserSearchPopup, setShowUserSearchPopup] = useState(false);
@@ -1428,6 +1429,10 @@ export default function EntrySheet({
       });
       return;
     }
+    if (isSavingSheet) return;
+    setIsSavingSheet(true);
+    const savingToastId = toast.loading("Saving A4 sheet and synchronizing to the database...", { duration: 15000 });
+    
     const allSyncedUsersSummary: string[] = [];
     try {
       // Build finalized synced list of sheets
@@ -1932,10 +1937,37 @@ export default function EntrySheet({
         comments: (r.comments || '').trim()
       })));
 
-      // 5. INSTANT SUCCESS NOTIFICATIONS
+      // 6. SYNCHRONOUS DATABASE SYNC (Wait to ensure it's saved to the cloud)
+      try {
+        // A. Save A4 sheets to pocketbase
+        for (const payload of sheetPayloads) {
+          await pocketbaseService.saveLedgerSheet(payload);
+        }
+
+        // B. Save synced billing months to pocketbase
+        for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
+          const changedIndices = accumulatedChangedIndicesMap[monthId] 
+            ? Array.from(accumulatedChangedIndicesMap[monthId]) 
+            : undefined;
+
+          await pocketbaseService.saveBillingMonth(
+            monthId, 
+            accumulatedRows, 
+            currentUser?.username || 'admin',
+            activeDealerId,
+            true,
+            changedIndices
+          );
+        }
+      } catch (dbError) {
+        console.error("DB persistence failed:", dbError);
+        throw new Error("Failed to save to database. Please check your network and try again.");
+      }
+
+      // 5. SUCCESS NOTIFICATIONS (Shown only after successful save)
       const primaryOfficerName = currentSyncSheets[0]?.recOfficer || recOfficer || 'Recovery Officer';
       toast.success("📄 A4 Size Sheet Saved Successfully!", {
-        description: `Sheet for "${primaryOfficerName}" has been saved instantly.`,
+        description: `Sheet for "${primaryOfficerName}" has been securely saved to the database.`,
         duration: 4000
       });
 
@@ -1965,36 +1997,11 @@ export default function EntrySheet({
         });
       }
 
-      // 6. ASYNCHRONOUS BACKGROUND DATABASE SYNC (Zero network delay for the user!)
-      (async () => {
-        try {
-          // A. Save A4 sheets to pocketbase in background
-          for (const payload of sheetPayloads) {
-            await pocketbaseService.saveLedgerSheet(payload);
-          }
-
-          // B. Save synced billing months to pocketbase in background
-          for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
-            const changedIndices = accumulatedChangedIndicesMap[monthId] 
-              ? Array.from(accumulatedChangedIndicesMap[monthId]) 
-              : undefined;
-
-            await pocketbaseService.saveBillingMonth(
-              monthId, 
-              accumulatedRows, 
-              currentUser?.username || 'admin',
-              activeDealerId,
-              true,
-              changedIndices
-            );
-          }
-        } catch (dbError) {
-          console.error("Background DB persistence failed:", dbError);
-        }
-      })();
-
     } catch (e: any) {
       toast.error(getCleanErrorMessage(e));
+    } finally {
+      toast.dismiss(savingToastId);
+      setIsSavingSheet(false);
     }
   };
 
@@ -3543,11 +3550,12 @@ export default function EntrySheet({
             {/* Save active sheet */}
             <button
               onClick={handleSaveSheet}
-              className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all shadow-md flex items-center gap-1 border-none"
+              disabled={isSavingSheet}
+              className={`p-2 rounded-xl text-white text-[9px] font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-1 border-none ${isSavingSheet ? 'bg-emerald-600/50 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer active:scale-95'}`}
               title="Commit active sheet to historical database logs"
             >
-              <Save size={12} />
-              <span>Save</span>
+              {isSavingSheet ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+              <span>{isSavingSheet ? 'Saving...' : 'Save'}</span>
             </button>
 
             {/* Reset blank */}

@@ -407,7 +407,9 @@ async function upsertPB(collectionName: string, idField: string, idValue: string
         if (record) {
           existingId = record.id;
         }
-      } catch (err) {}
+      } catch (err: any) {
+        console.error("upsertPB getOne error:", err.message);
+      }
     }
     
     // 2. If not found by PB id, try finding by custom idField (fallback)
@@ -417,7 +419,9 @@ async function upsertPB(collectionName: string, idField: string, idValue: string
         if (record) {
           existingId = record.id;
         }
-      } catch (err) {}
+      } catch (err: any) {
+        console.error("upsertPB getFirstListItem error:", err.message);
+      }
     }
     
     // 3. Update or Create
@@ -794,9 +798,9 @@ export const pocketbaseService = {
     const prevIsFull = prev && !prev.changedIndices;
     const currIsFull = !changedIndices;
 
-    if (prevIsFull || currIsFull) {
-      // Either side wants everything synced -> do a full sync, don't narrow it down.
-      combinedChangedIndices = undefined;
+    if (!prev || prevIsFull || currIsFull) {
+      // Either side wants everything synced, or no previous exists -> just use current or full sync
+      combinedChangedIndices = !prev ? changedIndices : undefined;
     } else {
       const prevSet = prev!.changedIndices instanceof Set
         ? prev!.changedIndices as Set<number>
@@ -2229,8 +2233,9 @@ export const pocketbaseService = {
         message: `Client details updated: "${clientName}" revised by ${authorName}`,
         authorName
       });
-    } catch (error) {
-      console.error('PB: updateClient error:', error);
+    } catch (error: any) {
+      console.error('PB: updateClient error:', error?.data || error);
+      throw error;
     }
   },
 
