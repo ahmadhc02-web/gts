@@ -652,45 +652,40 @@ export const pocketbaseService = {
         filter = `dealer_id = "${dealerId}"`;
       }
       
-      // 1. Fetch from billing_rows (PRIMARY SOURCE since it bypasses the 403 on billing_months JSON cache)
+      const monthMap = new Map<string, any>();
 
-      // 2. Fallback to billing_rows if billing_months was empty or failed
+      // 1. Fetch from billing_months collection (has full JSON rows_data saved directly)
+      try {
+        const pbBillingMonths = await pb.collection('billing_months').getFullList({ filter, sort: '-created' });
+        for (const em of pbBillingMonths) {
+          const rowsFromData = Array.isArray(em.rows_data) ? em.rows_data : (Array.isArray(em.rows) ? em.rows : []);
+          monthMap.set(em.month_id, {
+            id: em.month_id,
+            dealerId: em.dealer_id || dealerId,
+            rows: rowsFromData,
+            updatedAt: em.updated ? new Date(em.updated).getTime() : Date.now(),
+            createdAt: em.created ? new Date(em.created).getTime() : Date.now()
+          });
+        }
+      } catch (err) {
+        console.warn("PB: Failed to fetch billing_months:", err);
+      }
+
+      // 2. Fetch individual records from billing_rows to merge any extra rows/edits
       let rowRecords: any[] = [];
       try {
-        rowRecords = await pb.collection('billing_rows').getFullList({
-          filter
-        });
+        rowRecords = await pb.collection('billing_rows').getFullList({ filter });
       } catch (err) {
         console.warn("PB: Failed to fetch billing from billing_rows:", err);
       }
 
-      // 3. Fallback to users_data
-      if (!rowRecords || rowRecords.length === 0) {
-        try {
-          rowRecords = await pb.collection('users_data').getFullList({
-            filter
-          });
-        } catch (err) {
-          console.warn("PB: Failed to fetch billing from users_data:", err);
-        }
-      }
-
-      const monthMap = new Map<string, any>();
       if (rowRecords && rowRecords.length > 0) {
-        // Group by month_id
+        const rowsByMonth = new Map<string, any[]>();
         for (const r of rowRecords) {
-          const monthId = r.month_id || 'UNKNOWN';
-          if (!monthMap.has(monthId)) {
-            monthMap.set(monthId, {
-              id: monthId,
-              dealerId: r.dealer_id || dealerId,
-              rows: [],
-              updatedAt: r.updated ? new Date(r.updated).getTime() : Date.now(),
-              createdAt: r.created ? new Date(r.created).getTime() : Date.now()
-            });
-          }
+          const mId = r.month_id || 'UNKNOWN';
           if (isExcludedFromRecovery(r.name, r.username)) continue;
-          monthMap.get(monthId).rows.push({
+          if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
+          rowsByMonth.get(mId)!.push({
             id: r.client_id || r.id,
             clientId: r.client_id || r.id,
             name: r.name || '',
@@ -698,11 +693,11 @@ export const pocketbaseService = {
             mobileNumber: r.mobile_number || '',
             area: r.area || '',
             rt: r.rt || '',
-            baseAmount: Number(r.base_amount) || Number(r.base_amount === 0 ? 0 : (r.amount || 0)) || 0,
-            cr: Number(r.cr) || 0,
-            totalAmount: Number(r.total_amount) || 0,
+            baseAmount: Number(r.base_amount ?? r.amount ?? 0),
+            cr: Number(r.cr ?? 0),
+            totalAmount: Number(r.total_amount ?? 0),
             billingDay: r.billing_day || '5',
-            paymentReceived: Number(r.payment_received) || 0,
+            paymentReceived: Number(r.payment_received ?? 0),
             paymentStatus: r.payment_status || 'unpaid',
             comments: r.comments || '',
             occ: r.occ || '',
@@ -716,25 +711,79 @@ export const pocketbaseService = {
             network: r.network || ''
           });
         }
+
+        for (const [mId, rowList] of rowsByMonth.entries()) {
+          if (!monthMap.has(mId)) {
+            monthMap.set(mId, {
+              id: mId,
+              dealerId,
+              rows: rowList,
+              updatedAt: Date.now(),
+              createdAt: Date.now()
+            });
+          } else {
+            const existingMonth = monthMap.get(mId)!;
+            if (!existingMonth.rows || existingMonth.rows.length === 0) {
+              existingMonth.rows = rowList;
+            } else {
+              const existingRowsMap = new Map<string, any>();
+              existingMonth.rows.forEach((r: any, idx: number) => {
+                const k = r.clientId || r.id || r.username || `idx_${idx}`;
+                existingRowsMap.set(k, r);
+              });
+
+              rowList.forEach((r: any) => {
+                const k = r.clientId || r.id || r.username;
+                if (k && !existingRowsMap.has(k)) {
+                  existingMonth.rows.push(r);
+                } else if (k && existingRowsMap.has(k)) {
+                  const extRow = existingRowsMap.get(k);
+                  // Merge modified values if billing_rows has edits
+                  if (r.paymentReceived > 0 || (r.paymentStatus && r.paymentStatus !== 'unpaid')) {
+                    extRow.paymentReceived = r.paymentReceived;
+                    extRow.paymentStatus = r.paymentStatus;
+                  }
+                  if (r.comments) extRow.comments = r.comments;
+                  if (r.cr !== undefined && r.cr !== 0) extRow.cr = r.cr;
+                  if (r.baseAmount !== undefined && r.baseAmount !== 0) extRow.baseAmount = r.baseAmount;
+                  if (r.totalAmount !== undefined && r.totalAmount !== 0) extRow.totalAmount = r.totalAmount;
+                }
+              });
+            }
+          }
+        }
       }
 
-      // Also fetch from billing_months to ensure empty months are included
+      // 3. Fallback/merge with local storage cache for offline/instant persistence
       try {
-        const emptyMonths = await pb.collection('billing_months').getFullList({ filter, sort: '-created' });
-        for (const em of emptyMonths) {
-          if (!monthMap.has(em.month_id)) {
-            monthMap.set(em.month_id, {
-              id: em.month_id,
-              dealerId: em.dealer_id,
-              rows: [],
-              updatedAt: em.updated ? new Date(em.updated).getTime() : Date.now(),
-              createdAt: em.created ? new Date(em.created).getTime() : Date.now()
-            });
+        const rawCache = localStorage.getItem('gts_cache_v3_billing_months');
+        if (rawCache) {
+          const cachedList: any[] = JSON.parse(rawCache);
+          for (const cm of cachedList) {
+            const mId = cm.id || cm.month_id;
+            if (!mId) continue;
+            const cachedRows = cm.rows || cm.rows_data || [];
+            if (!monthMap.has(mId)) {
+              monthMap.set(mId, {
+                id: mId,
+                dealerId: cm.dealer_id || dealerId,
+                rows: cachedRows,
+                updatedAt: cm.updatedAt || Date.now(),
+                createdAt: cm.createdAt || Date.now()
+              });
+            }
           }
         }
       } catch (e) {}
 
-      return Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
+      const sortedList = Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
+
+      // Save updated merged state back to local cache
+      try {
+        localStorage.setItem('gts_cache_v3_billing_months', JSON.stringify(sortedList));
+      } catch (e) {}
+
+      return sortedList;
     } catch (e) {
       console.error("PB: Failed to get billing months:", e);
       return [];
@@ -1055,12 +1104,12 @@ export const pocketbaseService = {
         mobile_number: String(r.mobileNumber || r.mobile || ''),
         area: String(r.area || ''),
         rt: String(r.rt || ''),
-        base_amount: sanitizeNum(r.baseAmount || r.amount),
+        base_amount: sanitizeNum(r.baseAmount ?? r.base_amount ?? r.amount),
         cr: sanitizeNum(r.cr),
-        total_amount: sanitizeNum(r.totalAmount || r.total_amount),
+        total_amount: sanitizeNum(r.totalAmount ?? r.total_amount),
         billing_day: String(r.billingDay || '5'),
-        payment_received: sanitizeNum(r.paymentReceived || r.payment_received),
-        payment_status: String(r.paymentStatus || 'unpaid'),
+        payment_received: sanitizeNum(r.paymentReceived ?? r.payment_received),
+        payment_status: String(r.paymentStatus ?? r.payment_status ?? 'unpaid'),
         comments: String(r.comments || ''),
         occ: String(r.occ || ''),
         ser_nam: String(r.serNam || r.ser_nam || ''),
@@ -1090,13 +1139,13 @@ export const pocketbaseService = {
       const logRowsEntry = this.addSyncLog('billing_rows', 'sync_targeted', 'pending', `Syncing ${targetIndicesArray.length} edited rows for Month: ${monthId}`);
       
       try {
-        const rowsToSync = targetIndicesArray
-          .map(i => rows[i])
-          .filter(Boolean);
+        const rowsToSyncWithIdx = targetIndicesArray
+          .map(i => ({ row: rows[i], realIndex: i }))
+          .filter(item => Boolean(item.row));
 
-        if (rowsToSync.length === 0) return;
+        if (rowsToSyncWithIdx.length === 0) return;
 
-        const mappedRowsToSync = rowsToSync.map((r, idx) => mapRowToPb(r, idx));
+        const mappedRowsToSync = rowsToSyncWithIdx.map(item => mapRowToPb(item.row, item.realIndex));
 
         // Fetch existing records for this month to match IDs
         let existingRows: any[] = [];
