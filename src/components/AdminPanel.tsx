@@ -1678,7 +1678,7 @@ export default function AdminPanel({
         console.error("Error saving billing row to recycle bin:", binErr);
       }
 
-      saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
+      await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId, true).catch(err => {
          console.error("Failed to delete row in cloud:", err);
       });
       toast.success("Recovery row removed from current month's sheet.");
@@ -1737,7 +1737,7 @@ export default function AdminPanel({
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
 
       // Remove from active Billing Month in DB
-      saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId).catch(err => {
+      await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId, true).catch(err => {
          console.error("Failed to update active billing month in cloud:", err);
       });
 
@@ -1769,6 +1769,10 @@ export default function AdminPanel({
 
     try {
       await pocketbaseService.deleteBillingMonth(selectedMonthId, activeDealerId);
+      
+      // Remove deleted recovery sheet from React state immediately
+      setBillingMonths(prev => prev.filter(m => m.id !== selectedMonthId));
+
       toast.success(`${selectedMonthId} recovery sheet was deleted from database successfully.`);
       if (currentMonthId === selectedMonthId) {
         setCurrentMonthId('');
@@ -1789,6 +1793,12 @@ export default function AdminPanel({
 
     try {
       await pocketbaseService.deleteAllBillingData(activeDealerId);
+      
+      setBillingMonths(prev => prev.filter(m => m.dealerId !== activeDealerId && activeDealerId !== 'main'));
+      if (!activeDealerId || activeDealerId === 'main') {
+        setBillingMonths([]);
+      }
+
       toast.success("💥 ALL BILLING DATA DELETED SUCCESSFULLY", { description: "All billing monthly sheets and related client rows have been permanently purged from the database." });
       setCurrentMonthId('');
       setIsPurgeAllModalOpen(false);

@@ -663,6 +663,7 @@ export const pocketbaseService = {
             id: em.month_id,
             dealerId: em.dealer_id || dealerId,
             rows: rowsFromData,
+            hasAuthoritativeRowsData: true,
             updatedAt: em.updated ? new Date(em.updated).getTime() : Date.now(),
             createdAt: em.created ? new Date(em.created).getTime() : Date.now()
           });
@@ -718,37 +719,30 @@ export const pocketbaseService = {
               id: mId,
               dealerId,
               rows: rowList,
+              hasAuthoritativeRowsData: false,
               updatedAt: Date.now(),
               createdAt: Date.now()
             });
           } else {
             const existingMonth = monthMap.get(mId)!;
-            if (!existingMonth.rows || existingMonth.rows.length === 0) {
-              existingMonth.rows = rowList;
-            } else {
-              const existingRowsMap = new Map<string, any>();
-              existingMonth.rows.forEach((r: any, idx: number) => {
-                const k = r.clientId || r.id || r.username || `idx_${idx}`;
-                existingRowsMap.set(k, r);
-              });
+            // Only populate from billing_rows if monthMap didn't have authoritative rows_data from billing_months
+            if (!existingMonth.hasAuthoritativeRowsData) {
+              if (!existingMonth.rows || existingMonth.rows.length === 0) {
+                existingMonth.rows = rowList;
+              } else {
+                const existingRowsMap = new Map<string, any>();
+                existingMonth.rows.forEach((r: any, idx: number) => {
+                  const k = r.clientId || r.id || (r.username ? String(r.username).toLowerCase().trim() : `idx_${idx}`);
+                  existingRowsMap.set(k, r);
+                });
 
-              rowList.forEach((r: any) => {
-                const k = r.clientId || r.id || r.username;
-                if (k && !existingRowsMap.has(k)) {
-                  existingMonth.rows.push(r);
-                } else if (k && existingRowsMap.has(k)) {
-                  const extRow = existingRowsMap.get(k);
-                  // Merge modified values if billing_rows has edits
-                  if (r.paymentReceived > 0 || (r.paymentStatus && r.paymentStatus !== 'unpaid')) {
-                    extRow.paymentReceived = r.paymentReceived;
-                    extRow.paymentStatus = r.paymentStatus;
+                rowList.forEach((r: any) => {
+                  const k = r.clientId || r.id || (r.username ? String(r.username).toLowerCase().trim() : null);
+                  if (k && !existingRowsMap.has(k)) {
+                    existingMonth.rows.push(r);
                   }
-                  if (r.comments) extRow.comments = r.comments;
-                  if (r.cr !== undefined && r.cr !== 0) extRow.cr = r.cr;
-                  if (r.baseAmount !== undefined && r.baseAmount !== 0) extRow.baseAmount = r.baseAmount;
-                  if (r.totalAmount !== undefined && r.totalAmount !== 0) extRow.totalAmount = r.totalAmount;
-                }
-              });
+                });
+              }
             }
           }
         }
@@ -768,9 +762,16 @@ export const pocketbaseService = {
                 id: mId,
                 dealerId: cm.dealer_id || dealerId,
                 rows: cachedRows,
+                hasAuthoritativeRowsData: true,
                 updatedAt: cm.updatedAt || Date.now(),
                 createdAt: cm.createdAt || Date.now()
               });
+            } else {
+              const existingMonth = monthMap.get(mId)!;
+              if (cm.updatedAt && cm.updatedAt > existingMonth.updatedAt && Array.isArray(cachedRows)) {
+                existingMonth.rows = cachedRows;
+                existingMonth.updatedAt = cm.updatedAt;
+              }
             }
           }
         }
@@ -1004,20 +1005,37 @@ export const pocketbaseService = {
   async deleteBillingMonth(monthId: string, dealerId: string = 'main') {
     const logEntry = this.addSyncLog('billing_months', 'delete', 'pending', `Deleting sheet Month: ${monthId}, Dealer: ${dealerId}`);
     try {
-      const filter = `month_id = "${monthId}" && dealer_id = "${dealerId}"`;
+      const filter = dealerId && dealerId !== 'main'
+        ? `month_id = "${monthId}" && dealer_id = "${dealerId}"`
+        : `month_id = "${monthId}"`;
+
+      // Cancel any pending debounced auto-saves for this month
+      const saveKey = `${monthId}_${dealerId}`;
+      if (this._saveBillingMonthTimers && this._saveBillingMonthTimers[saveKey]) {
+        clearTimeout(this._saveBillingMonthTimers[saveKey].timerId);
+        delete this._saveBillingMonthTimers[saveKey];
+      }
+      if (this._saveBillingMonthLatestRows && this._saveBillingMonthLatestRows[saveKey]) {
+        delete this._saveBillingMonthLatestRows[saveKey];
+      }
+      if (this._syncingMonths) {
+        this._syncingMonths.delete(saveKey);
+      }
       
-      // Try to delete from billing_months
+      // Try to delete all matching records from billing_months
       try {
-        const existing = await pb.collection('billing_months').getList(1, 1, { filter });
-        if (existing.items.length > 0) {
-          await pb.collection('billing_months').delete(existing.items[0].id);
+        const existing = await pb.collection('billing_months').getFullList({ filter });
+        for (const item of existing) {
+          await pb.collection('billing_months').delete(item.id).catch(() => {});
         }
       } catch (err) {}
 
       // Delete from billing_rows
-      const rowExisting = await pb.collection('billing_rows').getFullList({ filter });
-      const deletePromises = rowExisting.map(row => pb.collection('billing_rows').delete(row.id).catch(() => {}));
-      await Promise.all(deletePromises);
+      try {
+        const rowExisting = await pb.collection('billing_rows').getFullList({ filter });
+        const deletePromises = rowExisting.map(row => pb.collection('billing_rows').delete(row.id).catch(() => {}));
+        await Promise.all(deletePromises);
+      } catch (err) {}
 
       // Delete from users_data (try/catch to avoid crashes since it is a Supabase table, not PocketBase)
       try {
@@ -1028,14 +1046,29 @@ export const pocketbaseService = {
       } catch (err: any) {
         console.warn("PB: Skipping delete from users_data collection (not present on this server).");
       }
+
+      // Purge from local storage cache to avoid restoring deleted month on page refresh
+      try {
+        const cacheKey = `gts_cache_v3_billing_months`;
+        const rawCache = localStorage.getItem(cacheKey);
+        if (rawCache) {
+          let list: any[] = JSON.parse(rawCache);
+          list = list.filter(m => m.id !== monthId && m.month_id !== monthId);
+          localStorage.setItem(cacheKey, JSON.stringify(list));
+        }
+      } catch (e) {
+        console.warn("Failed to remove deleted month from local cache:", e);
+      }
+
       logEntry.status = 'success';
-      logEntry.recordDetails = `Deleted sheet and all related rows from billing_rows.`;
+      logEntry.recordDetails = `Deleted sheet and all related rows from billing_months, billing_rows, and local cache.`;
       this.saveSyncLogsLocally();
     } catch (e: any) {
       console.error("PB: Failed to delete billing month", e);
       logEntry.status = 'failed';
       logEntry.errorMessage = e.message || String(e);
       this.saveSyncLogsLocally();
+      throw e;
     }
   },
 
@@ -1045,6 +1078,17 @@ export const pocketbaseService = {
       let filter = '';
       if (dealerId && dealerId !== 'main') {
         filter = `dealer_id = "${dealerId}"`;
+      }
+
+      // Cancel all pending timers
+      if (this._saveBillingMonthTimers) {
+        Object.keys(this._saveBillingMonthTimers).forEach(k => {
+          clearTimeout(this._saveBillingMonthTimers[k].timerId);
+        });
+        this._saveBillingMonthTimers = {};
+      }
+      if (this._saveBillingMonthLatestRows) {
+        this._saveBillingMonthLatestRows = {};
       }
 
       const months = await pb.collection('billing_months').getFullList({ filter });
@@ -1064,6 +1108,21 @@ export const pocketbaseService = {
       } catch (err: any) {
         console.warn("PB: Skipping delete all from users_data collection (not present on this server).");
       }
+
+      // Clear local cache for deleted dealer or all
+      try {
+        const cacheKey = `gts_cache_v3_billing_months`;
+        if (dealerId && dealerId !== 'main') {
+          const rawCache = localStorage.getItem(cacheKey);
+          if (rawCache) {
+            let list: any[] = JSON.parse(rawCache);
+            list = list.filter(m => m.dealer_id !== dealerId && m.dealerId !== dealerId);
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+          }
+        } else {
+          localStorage.removeItem(cacheKey);
+        }
+      } catch (e) {}
 
       logEntry.status = 'success';
       logEntry.recordDetails = `Deleted all billing sheets and individual rows from billing_rows for dealer: ${dealerId}`;
@@ -1233,6 +1292,7 @@ export const pocketbaseService = {
         if (ext) {
           keptIds.add(ext.client_id);
           keptIds.add(ext.id);
+          if (ext.username) keptIds.add(String(ext.username).toLowerCase().trim());
 
           // Smart normalized comparison to prevent unnecessary DB updates
           const isChanged =
@@ -1262,13 +1322,13 @@ export const pocketbaseService = {
         }
       }
 
-      // Safeguard deletes
+      // Safeguard deletes only if entire sheet was wiped accidentally
       let deletes: string[] = [];
-      if (existingRows.length > 30 && rows.length < existingRows.length * 0.4) {
-        console.warn(`[SyncBillingRows] Safeguard triggered: incoming rows count (${rows.length}) vs existing (${existingRows.length}). Skipping deletes.`);
+      if (existingRows.length > 30 && rows.length === 0) {
+        console.warn(`[SyncBillingRows] Safeguard triggered: entire sheet wiped (${rows.length}) vs existing (${existingRows.length}). Skipping deletes.`);
       } else {
         deletes = existingRows
-          .filter(r => !keptIds.has(r.client_id) && !keptIds.has(r.id))
+          .filter(r => !keptIds.has(r.client_id) && !keptIds.has(r.id) && (!r.username || !keptIds.has(String(r.username).toLowerCase().trim())))
           .map(r => r.id);
       }
 
@@ -2682,7 +2742,7 @@ export const pocketbaseService = {
                 if (idx !== -1) {
                   newRows[idx] = mappedRow;
                   updated = true;
-                } else {
+                } else if (e.action === 'create' && !m.hasAuthoritativeRowsData) {
                   newRows.push(mappedRow);
                   updated = true;
                 }
