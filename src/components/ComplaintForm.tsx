@@ -204,10 +204,10 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
     setScheduleDate('');
   };
 
-  const inputClasses = "w-full px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-brand-accent/10 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm text-center [text-align-last:center] uppercase placeholder:normal-case";
+  const inputClasses = "w-full px-4 py-3.5 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-brand-accent/10 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm text-center [text-align-last:center] uppercase placeholder:normal-case";
   const labelClasses = "block text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-2 text-center group-focus-within/field:text-brand-accent transition-colors duration-300";
 
-  const compactInputClasses = "w-full pl-10 pr-4 py-3 text-sm font-black rounded-xl border-2 border-slate-300 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-600 dark:focus:border-emerald-500 hover:border-slate-400 dark:hover:border-slate-700 transition-all duration-300 uppercase placeholder:normal-case shadow-sm h-12";
+  const compactInputClasses = "w-full pl-10 pr-4 py-3 text-sm font-black rounded-xl border-2 border-slate-300 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-950 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-600 dark:focus:border-emerald-500 hover:border-slate-400 dark:hover:border-slate-700 transition-all duration-300 uppercase placeholder:normal-case shadow-sm h-12";
   const compactLabelContainerClasses = "absolute left-3.5 -top-2 px-1.5 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-all duration-200 z-10 flex items-center gap-1.5";
 
   if (compact) {
@@ -262,8 +262,8 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
               
               {showClientList && customerUsername && filteredClients.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
-                  <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 text-center">
+                <div className="absolute left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="px-3 py-1.5 border-b border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-slate-950/50 text-center">
                     <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">
                       Matches Found
                     </span>
@@ -273,12 +273,12 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                       key={client.id}
                       type="button"
                       onClick={() => handleSelectClient(client)}
-                      className="w-full px-4 py-2 flex flex-col items-center hover:bg-emerald-500 text-center group/item transition-all border-b border-slate-100 dark:border-slate-800/40 last:border-0 cursor-pointer"
+                      className="w-full px-4 py-2 flex flex-col items-center hover:bg-emerald-500 text-center group/item transition-all border-b border-slate-100 dark:border-white/10 last:border-0 cursor-pointer"
                     >
                       <span className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-tight group-hover/item:text-white">{client.name}</span>
                       <div className="flex items-center gap-1.5 mt-0.5 justify-center">
                         <span className="text-[9px] font-bold text-emerald-500 group-hover/item:text-white/90 uppercase">@{client.username}</span>
-                        <span className="text-[8px] font-medium text-slate-400 group-hover/item:text-white/75 uppercase tracking-widest border-l border-slate-200 dark:border-slate-800 pl-1.5">{client.area}</span>
+                        <span className="text-[8px] font-medium text-slate-400 group-hover/item:text-white/75 uppercase tracking-widest border-l border-slate-200 dark:border-white/10 pl-1.5">{client.area}</span>
                       </div>
                     </button>
                   ))}
@@ -472,7 +472,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           </div>
 
           {/* Schedule Ticket inline block */}
-          <div className="col-span-12 p-2.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/10 dark:bg-slate-900/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+          <div className="col-span-12 p-2.5 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/10 dark:bg-slate-900/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -493,7 +493,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   value={scheduleDate}
                   onChange={(e) => setScheduleDate(e.target.value)}
                   required={isScheduled}
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-[10px] font-mono"
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-[10px] font-mono"
                 />
               </div>
             )}
@@ -562,7 +562,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
       {/* Decorative background element */}
       <div className="absolute -inset-2 bg-gradient-to-r from-brand-accent/10 via-blue-500/10 to-brand-accent/10 rounded-[2.5rem] blur-2xl opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-500"></div>
       
-      <motion.div layout className="relative p-7 sm:p-9 md:p-11 bg-white dark:bg-slate-950 rounded-[2rem] border border-slate-200/60 dark:border-slate-800/80 shadow-[0_20px_50px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden">
+      <motion.div layout className="relative p-7 sm:p-9 md:p-11 bg-white dark:bg-slate-950 rounded-[2rem] border border-slate-200/60 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden">
         <motion.div layout className="flex flex-col items-center justify-center text-center mb-10">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
@@ -643,8 +643,8 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   />
                   
                   {showClientList && customerUsername && filteredClients.length > 0 && (
-                    <div className="absolute z-50 w-full mt-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
-                      <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 text-center">
+                    <div className="absolute z-50 w-full mt-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="p-3 border-b border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-slate-950/50 text-center">
                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                           Database Matches Found
                         </span>
@@ -654,12 +654,12 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                           key={client.id}
                           type="button"
                           onClick={() => handleSelectClient(client)}
-                          className="w-full px-6 py-4 flex flex-col items-center hover:bg-brand-accent text-center group/item transition-all border-b border-slate-100 dark:border-slate-800/40 last:border-0"
+                          className="w-full px-6 py-4 flex flex-col items-center hover:bg-brand-accent text-center group/item transition-all border-b border-slate-100 dark:border-white/10 last:border-0"
                         >
                           <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight group-hover/item:text-white">{client.name}</span>
                           <div className="flex flex-wrap items-center gap-2 mt-2 justify-center">
                             <span className="text-[10px] font-bold text-brand-accent group-hover/item:text-white/80 uppercase">@{client.username}</span>
-                            <span className="text-[9px] font-medium text-slate-400 group-hover/item:text-white/60 uppercase tracking-widest border-l border-slate-200 dark:border-slate-800 group-hover/item:border-white/20 pl-2">{client.area}</span>
+                            <span className="text-[9px] font-medium text-slate-400 group-hover/item:text-white/60 uppercase tracking-widest border-l border-slate-200 dark:border-white/10 group-hover/item:border-white/20 pl-2">{client.area}</span>
                             {client.pkgDetails && (
                               <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-900/40 px-2 py-0.5 rounded-md group-hover/item:text-white group-hover/item:bg-white/20 group-hover/item:border-transparent uppercase">
                                 {client.pkgDetails}
@@ -813,7 +813,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </motion.div>
 
             {/* Premium, interactive schedule settings block */}
-            <motion.div layout className="p-5 mt-2 rounded-[1.25rem] border border-dashed border-slate-205 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/10 space-y-4">
+            <motion.div layout className="p-5 mt-2 rounded-[1.25rem] border border-dashed border-slate-205 dark:border-white/10 bg-slate-50/20 dark:bg-slate-900/10 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex flex-col text-left">
                   <span className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 tracking-wider">(Schedule ur Operations)</span>

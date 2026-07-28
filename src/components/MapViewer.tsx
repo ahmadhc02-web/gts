@@ -523,7 +523,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     </button>
                     <button
                       onClick={() => setPurgeTarget(null)}
-                      className="w-full py-4 rounded-2xl border border-slate-100 dark:border-slate-800 text-slate-400 font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
+                      className="w-full py-4 rounded-2xl border border-slate-100 dark:border-white/10 text-slate-400 font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
                     >
                       Cancel
                     </button>
@@ -792,7 +792,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                           status === 'good' && "bg-green-50 dark:bg-green-950/20 text-green-600 dark:text-green-400 border-green-100 dark:border-green-905/10",
                           status === 'fair' && "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-900/10",
                           status === 'poor' && "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-450 border-rose-100 dark:border-rose-900/10",
-                          status === 'loading' && "bg-slate-50 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-800"
+                          status === 'loading' && "bg-slate-50 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-white/10"
                         )}>
                           {latencyStr}
                         </span>
@@ -801,7 +801,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     
                     <Popup className="custom-popup">
                       <div className="p-2 min-w-[200px]">
-                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-white/10">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xs shadow-sm bg-indigo-500 uppercase tracking-widest">
                             Node
                           </div>
@@ -1150,7 +1150,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   onDragEnd={(_, info) => {
                     if (info.offset.y > 150) setIsSelectingTarget(false);
                   }}
-                  className="w-full max-w-lg bg-white dark:bg-slate-950 rounded-t-[3rem] sm:rounded-3xl p-6 shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.3)] border-t sm:border border-slate-200 dark:border-slate-800 pointer-events-auto h-[80vh] sm:h-auto flex flex-col"
+                  className="w-full max-w-lg bg-white dark:bg-slate-950 rounded-t-[3rem] sm:rounded-3xl p-6 shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.3)] border-t sm:border border-slate-200 dark:border-white/10 pointer-events-auto h-[80vh] sm:h-auto flex flex-col"
                 >
                   <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto mb-6 sm:hidden cursor-grab active:cursor-grabbing" />
                   
@@ -1177,7 +1177,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     <input 
                       placeholder="ENTER NODE ID OR ALIAS..."
                       value={filterText}
-                      className="w-full h-11 sm:h-14 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl pl-12 pr-4 text-[10px] sm:text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
+                      className="w-full h-11 sm:h-14 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-2xl pl-12 pr-4 text-[10px] sm:text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
                       onChange={(e) => setFilterText(e.target.value)}
                     />
                   </div>
@@ -1327,10 +1327,10 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 animate={{ x: 0 }}
                 exit={{ x: "-100%" }}
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                className="absolute left-0 top-0 bottom-0 w-full sm:w-[380px] bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 shadow-2xl z-[1005] flex flex-col p-6 pt-24 pointer-events-auto"
+                className="absolute left-0 top-0 bottom-0 w-full sm:w-[380px] bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-white/10 shadow-2xl z-[1005] flex flex-col p-6 pt-24 pointer-events-auto"
               >
                 {/* Header info */}
-                <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-white/10">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 shadow-sm border border-indigo-500/10">
                       <Globe size={18} />
@@ -1348,7 +1348,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                       className={cn(
                         "p-2 rounded-xl border flex items-center justify-center transition-all",
                         isPingingTargets
-                          ? "bg-slate-100 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800 animate-spin"
+                          ? "bg-slate-100 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-white/10 animate-spin"
                           : "bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/30 hover:bg-indigo-100"
                       )}
                       title="Run latency speed checks"
@@ -1365,7 +1365,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 </div>
 
                 {/* Insertion Form */}
-                <div className="py-4 space-y-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="py-4 space-y-3 border-b border-slate-100 dark:border-white/10">
                   <div className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Deploy Custom Monitor Beacon</div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
@@ -1375,7 +1375,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                         placeholder="google.com"
                         value={newTargetDomain}
                         onChange={(e) => setNewTargetDomain(e.target.value)}
-                        className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200"
+                        className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && newTargetDomain) {
                             handleAddMonitorTarget();
@@ -1390,7 +1390,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                         placeholder="Google Main Gateway"
                         value={newTargetLabel}
                         onChange={(e) => setNewTargetLabel(e.target.value)}
-                        className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200"
+                        className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && newTargetDomain) {
                             handleAddMonitorTarget();
@@ -1417,7 +1417,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   
                   {monitorTargets.length === 0 ? (
                     <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center space-y-3">
-                      <div className="w-12 h-12 rounded-full border border-dashed border-slate-300 dark:border-slate-800 flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-full border border-dashed border-slate-300 dark:border-white/10 flex items-center justify-center">
                         <Globe size={18} className="text-slate-300" />
                       </div>
                       <span className="text-[9px] font-black uppercase tracking-widest">No custom targets monitored</span>
@@ -1433,7 +1433,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                       return (
                         <div 
                           key={`drawer-target-${target.id}-${idx}`}
-                          className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex flex-col gap-2.5"
+                          className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white/10 flex flex-col gap-2.5"
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex items-center gap-2">
@@ -1457,13 +1457,13 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                               status === 'good' && "bg-green-100 dark:bg-green-950/40 text-green-600 dark:text-green-400 border-green-200 dark:border-green-900/10",
                               status === 'fair' && "bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/10",
                               status === 'poor' && "bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-450 border-rose-200 dark:border-rose-900/10",
-                              status === 'loading' && "bg-slate-100 dark:bg-slate-850 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 animate-pulse"
+                              status === 'loading' && "bg-slate-100 dark:bg-slate-850 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 animate-pulse"
                             )}>
                               {latencyStr}
                             </span>
                           </div>
 
-                          <div className="flex items-center justify-between pt-1.5 border-t border-slate-100/50 dark:border-slate-800/50">
+                          <div className="flex items-center justify-between pt-1.5 border-t border-slate-100/50 dark:border-white/10">
                             <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Global Matrix Action</span>
                             <div className="flex items-center gap-1">
                               <button
@@ -1474,7 +1474,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                                     toast.error("Coordinates not found for this monitor");
                                   }
                                 }}
-                                className="px-2 py-1 text-[8px] font-black bg-white dark:bg-slate-950 hover:bg-slate-100 text-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-850 rounded-lg transition-colors cursor-pointer"
+                                className="px-2 py-1 text-[8px] font-black bg-white dark:bg-slate-950 hover:bg-slate-100 text-slate-800 dark:text-slate-300 border border-slate-200 dark:border-white/10 rounded-lg transition-colors cursor-pointer"
                               >
                                 Locate
                               </button>
@@ -1483,7 +1483,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                                   setPositioningTargetId(target.id);
                                   toast.info(`Shield terminal active. Click anywhere on native Map screen.`);
                                 }}
-                                className="px-2 py-1 text-[8px] font-black bg-white dark:bg-slate-950 hover:bg-slate-100 text-indigo-650 dark:text-indigo-400 border border-slate-200 dark:border-slate-850 rounded-lg transition-colors cursor-pointer"
+                                className="px-2 py-1 text-[8px] font-black bg-white dark:bg-slate-950 hover:bg-slate-100 text-indigo-650 dark:text-indigo-400 border border-slate-200 dark:border-white/10 rounded-lg transition-colors cursor-pointer"
                               >
                                 Deploy Node
                               </button>

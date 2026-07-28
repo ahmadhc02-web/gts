@@ -322,10 +322,10 @@ Provide:
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 500, opacity: 0 }}
         transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-        className="fixed top-0 right-0 h-screen w-full sm:w-[500px] z-[200] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.15)] dark:shadow-[0_0_50px_rgba(0,0,0,0.6)] flex flex-col overflow-hidden text-slate-800 dark:text-slate-100"
+        className="fixed top-0 right-0 h-screen w-full sm:w-[500px] z-[200] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.15)] dark:shadow-[0_0_50px_rgba(0,0,0,0.6)] flex flex-col overflow-hidden text-slate-800 dark:text-slate-100"
       >
         {/* Header Section */}
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center justify-between">
+        <div className="p-4 border-b border-slate-100 dark:border-white/10 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-brand-accent to-blue-400 flex items-center justify-center text-white shadow-md shadow-brand-accent/20">
@@ -354,7 +354,7 @@ Provide:
         </div>
 
         {/* Dynamic Sub-Tabs Panel Selection */}
-        <div className="p-2 bg-slate-50/40 dark:bg-slate-950/40 border-b border-slate-150 dark:border-slate-850/60 flex gap-1 items-center">
+        <div className="p-2 bg-slate-50/40 dark:bg-slate-950/40 border-b border-slate-150 dark:border-white/10 flex gap-1 items-center">
           <button
             onClick={() => {
               setActiveSubTab('trends');
@@ -403,7 +403,7 @@ Provide:
         </div>
 
         {/* Global Live Search Grounding Toggle Bar */}
-        <div className="bg-slate-50/80 dark:bg-slate-950/60 border-b border-slate-150 dark:border-slate-800/60 px-4 py-2.5 flex items-center justify-between text-xs transition-colors duration-200">
+        <div className="bg-slate-50/80 dark:bg-slate-950/60 border-b border-slate-150 dark:border-white/10 px-4 py-2.5 flex items-center justify-between text-xs transition-colors duration-200">
           <label className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer select-none">
             <input
               type="checkbox"
@@ -456,7 +456,7 @@ Provide:
                 {loadingTrends ? (
                   <div className="space-y-4 py-12 text-center flex flex-col items-center justify-center">
                     <div className="relative">
-                      <div className="w-12 h-12 rounded-full border-2 border-slate-200 dark:border-slate-800 border-t-brand-accent animate-spin" />
+                      <div className="w-12 h-12 rounded-full border-2 border-slate-200 dark:border-white/10 border-t-brand-accent animate-spin" />
                       <Sparkles size={16} className="text-brand-accent absolute top-3.5 left-3.5 animate-pulse" />
                     </div>
                     <div className="space-y-1">
@@ -502,7 +502,7 @@ Provide:
                           <motion.div 
                             key={idx} 
                             whileHover={{ y: -3, transition: { duration: 0.2 } }}
-                            className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-850 shadow-sm space-y-2.5 relative overflow-hidden"
+                            className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-2xl border border-slate-100 dark:border-white/10 shadow-sm space-y-2.5 relative overflow-hidden"
                           >
                             <span className="absolute top-0 right-0 w-24 h-24 bg-brand-accent/5 rounded-full blur-xl pointer-events-none" />
                             <div className="flex items-center justify-between">
@@ -549,9 +549,9 @@ Provide:
                       
                       <div className="space-y-4">
                         {trendData.actionableSuggestions?.map((suggestion, idx) => (
-                          <div key={idx} className="bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+                          <div key={idx} className="bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
                             {/* Inner Title bar */}
-                            <div className="p-3 bg-slate-100/50 dark:bg-slate-900/30 border-b border-slate-200/40 dark:border-slate-850 flex items-center justify-between select-none">
+                            <div className="p-3 bg-slate-100/50 dark:bg-slate-900/30 border-b border-slate-200/40 dark:border-white/10 flex items-center justify-between select-none">
                               <div className="flex items-center gap-2">
                                 <span className="inline-block w-2.5 h-2.5 rounded-full bg-brand-accent shrink-0 animate-pulse" />
                                 <span className="text-[9px] font-black tracking-wider text-brand-accent uppercase">
@@ -569,7 +569,7 @@ Provide:
                               </div>
 
                               {/* Bullet actions checklist */}
-                              <div className="space-y-2 bg-slate-100/40 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200/50 dark:border-slate-850">
+                              <div className="space-y-2 bg-slate-100/40 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200/50 dark:border-white/10">
                                 <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 font-mono">Troubleshooting Matrix:</p>
                                 <ul className="space-y-1.5">
                                   {suggestion.troubleshootingSteps?.map((step, sIdx) => (
@@ -588,7 +588,7 @@ Provide:
                                   <span className="text-brand-accent text-[8px] tracking-widest lowercase uppercase font-black">Empathetic</span>
                                 </p>
                                 
-                                <div className="relative group/copy p-3 rounded-xl bg-slate-100/50 dark:bg-slate-900 text-[11px] font-medium leading-relaxed font-sans text-slate-700 dark:text-slate-300 border border-dashed border-slate-200 dark:border-slate-800 flex items-start justify-between gap-4 transition-all hover:bg-slate-100 dark:hover:bg-slate-900/60">
+                                <div className="relative group/copy p-3 rounded-xl bg-slate-100/50 dark:bg-slate-900 text-[11px] font-medium leading-relaxed font-sans text-slate-700 dark:text-slate-300 border border-dashed border-slate-200 dark:border-white/10 flex items-start justify-between gap-4 transition-all hover:bg-slate-100 dark:hover:bg-slate-900/60">
                                   <span className="flex-1 select-all">{suggestion.templateResponse}</span>
                                   <button
                                     onClick={() => copyToClipboard(suggestion.templateResponse, idx)}
@@ -610,7 +610,7 @@ Provide:
                     </div>
 
                     {/* Manual force reload footer info */}
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-850 flex items-center justify-between text-[9px] font-mono text-slate-400 dark:text-slate-500 select-none">
+                    <div className="pt-3 border-t border-slate-100 dark:border-white/10 flex items-center justify-between text-[9px] font-mono text-slate-400 dark:text-slate-500 select-none">
                       <span>Refreshed: {new Date(trendData.generatedAt).toLocaleTimeString()}</span>
                       <button 
                         onClick={fetchTrends}
@@ -662,7 +662,7 @@ Provide:
                           setSelectedComplaintId(e.target.value);
                           setDiagnosisResult('');
                         }}
-                        className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs px-3.5 py-3 rounded-2xl focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent text-slate-900 dark:text-white cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 duration-200 font-medium whitespace-nowrap overflow-ellipsis"
+                        className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-xs px-3.5 py-3 rounded-2xl focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent text-slate-900 dark:text-white cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 duration-200 font-medium whitespace-nowrap overflow-ellipsis"
                       >
                         {liveComplaints.map((c) => (
                           <option key={c.id} value={c.id}>
@@ -679,7 +679,7 @@ Provide:
                   if (!complaint) return null;
 
                   return (
-                    <div className="bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-150 dark:border-slate-850 p-4 space-y-3 shadow-sm relative overflow-hidden">
+                    <div className="bg-slate-50 dark:bg-slate-950/50 rounded-2xl border border-slate-150 dark:border-white/10 p-4 space-y-3 shadow-sm relative overflow-hidden">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-mono font-black text-brand-accent tracking-widest uppercase">
                           TICKET PROFILE
@@ -694,7 +694,7 @@ Provide:
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-[11px] border-b border-dashed border-slate-200 dark:border-slate-800 pb-3">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-[11px] border-b border-dashed border-slate-200 dark:border-white/10 pb-3">
                         <div>
                           <span className="text-slate-400 dark:text-slate-550 text-[9px] uppercase font-bold tracking-wider font-mono">Subscriber:</span>
                           <p className="font-semibold text-slate-800 dark:text-slate-200 truncate mt-0.5">{complaint.customerName || 'N/A'} ({complaint.customerUsername || 'N/A'})</p>
@@ -711,7 +711,7 @@ Provide:
                         )}
                         <div className="col-span-2 mt-1">
                           <span className="text-slate-400 dark:text-slate-550 text-[9px] uppercase font-bold tracking-wider font-mono">Reported Problem:</span>
-                          <p className="text-slate-700 dark:text-slate-300 font-medium leading-relaxed mt-1 whitespace-pre-line bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-2.5 rounded-xl text-[11px]">
+                          <p className="text-slate-700 dark:text-slate-300 font-medium leading-relaxed mt-1 whitespace-pre-line bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/10 p-2.5 rounded-xl text-[11px]">
                             {complaint.description || 'No description of problem.'}
                           </p>
                         </div>
@@ -741,8 +741,8 @@ Provide:
                 })()}
 
                 {diagnosisResult && (
-                  <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm space-y-3.5 p-4 animate-scale-in">
-                    <div className="flex items-center justify-between border-b border-slate-150 dark:border-slate-850 pb-2.5">
+                  <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm space-y-3.5 p-4 animate-scale-in">
+                    <div className="flex items-center justify-between border-b border-slate-150 dark:border-white/10 pb-2.5">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                         <span className="text-[9px] font-black tracking-widest text-[#34d399] uppercase font-mono">
@@ -756,7 +756,7 @@ Provide:
                       {diagnosisResult}
                     </div>
 
-                    <div className="pt-4 border-t border-slate-150 dark:border-slate-850/80 flex flex-col sm:flex-row gap-2 select-none">
+                    <div className="pt-4 border-t border-slate-150 dark:border-white/10 flex flex-col sm:flex-row gap-2 select-none">
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(diagnosisResult);
@@ -801,7 +801,7 @@ Provide:
                         "flex flex-col max-w-[85%] rounded-2xl p-3.5 space-y-1.5 font-sans leading-relaxed shadow-sm block-animation",
                         msg.role === 'user'
                           ? "bg-brand-accent text-white ml-auto rounded-tr-none shadow-md shadow-brand-accent/10"
-                          : "bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 mr-auto rounded-tl-none border border-slate-150 dark:border-slate-850"
+                          : "bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 mr-auto rounded-tl-none border border-slate-150 dark:border-white/10"
                       )}
                     >
                       {msg.role === 'assistant' && (
@@ -816,7 +816,7 @@ Provide:
                         {msg.text}
                       </p>
                       {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
-                        <div className="mt-2 text-left pt-2 border-t border-slate-150 dark:border-slate-850/80 space-y-1.5 w-full select-none">
+                        <div className="mt-2 text-left pt-2 border-t border-slate-150 dark:border-white/10 space-y-1.5 w-full select-none">
                           <span className="text-[9px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5 font-mono">
                             <Globe size={11} className="text-brand-accent animate-pulse" /> Grounded Web Connections:
                           </span>
@@ -847,7 +847,7 @@ Provide:
                   ))}
                   
                   {sendingMessage && (
-                    <div className="flex items-center gap-2 mr-auto bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-slate-850 rounded-2xl px-4 py-3 shadow-sm content-center font-mono text-[9px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest leading-none">
+                    <div className="flex items-center gap-2 mr-auto bg-slate-50 dark:bg-slate-950 border border-slate-150 dark:border-white/10 rounded-2xl px-4 py-3 shadow-sm content-center font-mono text-[9px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest leading-none">
                       <Loader2 size={12} className="text-brand-accent animate-spin" />
                       <span>compiling diagnostics data...</span>
                     </div>
@@ -868,7 +868,7 @@ Provide:
                       <button
                         key={idx}
                         onClick={() => handleSendPrompt(quick.slice(2))}
-                        className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-850 text-[9px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 px-2.5 py-1.5 rounded-xl cursor-pointer transition-all duration-200 active:scale-95 shadow-sm"
+                        className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-850 text-[9px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 px-2.5 py-1.5 rounded-xl cursor-pointer transition-all duration-200 active:scale-95 shadow-sm"
                       >
                         {quick}
                       </button>
@@ -882,14 +882,14 @@ Provide:
 
         {/* Chat input footer wrapper (only for ask) */}
         {activeSubTab === 'ask' && (
-          <div className="p-3 bg-slate-50 dark:bg-slate-950 border-t border-slate-150 dark:border-slate-850/80 flex items-center gap-2 select-none">
+          <div className="p-3 bg-slate-50 dark:bg-slate-950 border-t border-slate-150 dark:border-white/10 flex items-center gap-2 select-none">
             <input
               type="text"
               value={userInput}
               onChange={(e) => setUserInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendPrompt()}
               placeholder="Ask diagnostic / template question..."
-              className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs px-3.5 py-2.5 rounded-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)] focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent text-slate-900 dark:text-white leading-normal"
+              className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-xs px-3.5 py-2.5 rounded-2xl shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)] focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent text-slate-900 dark:text-white leading-normal"
             />
             <button
               onClick={() => handleSendPrompt()}

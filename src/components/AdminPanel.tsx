@@ -2712,7 +2712,7 @@ export default function AdminPanel({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [editedRowIndices.size, activeTab]);
 
-  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
+  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white\/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
 
   return (
@@ -2758,7 +2758,7 @@ export default function AdminPanel({
                     <label className={labelClasses}>Select Sheet From List</label>
                     
                     {billingMonths.length === 0 ? (
-                      <div className="py-8 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 font-sans">
+                      <div className="py-8 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-white\/10 font-sans">
                         No billing monthly sheets found in database.
                       </div>
                     ) : (
@@ -2776,7 +2776,7 @@ export default function AdminPanel({
                                 "w-full text-left p-3 rounded-2xl border transition-all duration-300 flex items-center justify-between gap-3 cursor-pointer relative overflow-hidden",
                                 isSelected
                                   ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-500 dark:border-rose-900 shadow-md shadow-rose-500/5"
-                                  : "bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-900 border-slate-200/80 dark:border-slate-800"
+                                  : "bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-900 border-slate-200/80 dark:border-white\/10"
                               )}
                             >
                               <div className="flex items-center gap-3">
@@ -3020,7 +3020,7 @@ export default function AdminPanel({
               className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-amber-500/30 overflow-hidden"
             >
               <div className="p-8 space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-white\/10 pb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-500">
                       <Zap size={20} className="animate-bounce" />
@@ -3049,7 +3049,7 @@ export default function AdminPanel({
                     Google blocks direct login within specialized embedded web frame panels or Electron custom wrappers with <strong className="text-rose-500 font-bold">"This browser or app may not be secure"</strong>.
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/45 border border-slate-100 dark:border-slate-850 space-y-3">
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/45 border border-slate-100 dark:border-white/10 space-y-3">
                     <p className="text-[11px] text-amber-800 dark:text-amber-300 font-extrabold leading-relaxed text-right font-sans">
                       برائے مہربانی نیچے دیے گئے بٹن پر کلک کر کے گوگل لاگ ان پیج کو اپنے اصل کمپیوٹر براؤزر (جیسے کروم، برائیو، یا ایج) میں کھولیں اور وہاں سے لاگ ان کریں:
                     </p>
@@ -3073,7 +3073,7 @@ export default function AdminPanel({
                   {/* Manual link copying as robust fallback */}
                   <div className="space-y-1.5">
                     <label className="text-[9px] font-black uppercase tracking-wider text-slate-450 ml-1">Or Copy Direct Authorization Link:</label>
-                    <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-250/30 dark:border-slate-850 focus-within:ring-2 focus-within:ring-amber-500/30 transition-all">
+                    <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-250/30 dark:border-white/10 focus-within:ring-2 focus-within:ring-amber-500/30 transition-all">
                       <input
                         type="text"
                         readOnly
@@ -3091,7 +3091,7 @@ export default function AdminPanel({
                   </div>
 
                   {/* Live sync pulse status */}
-                  <div className="flex items-center justify-center gap-3 py-3 border-t border-slate-50 dark:border-slate-850/50 text-[10px] uppercase font-bold tracking-widest text-slate-450 dark:text-slate-500">
+                  <div className="flex items-center justify-center gap-3 py-3 border-t border-slate-50 dark:border-white/10 text-[10px] uppercase font-bold tracking-widest text-slate-450 dark:text-slate-500">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
@@ -3148,7 +3148,7 @@ export default function AdminPanel({
                   </button>
                   <button
                     onClick={() => setUserToDelete(null)}
-                    className="w-full py-4 rounded-2xl border-2 border-slate-100 dark:border-slate-800 text-slate-500 font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
+                    className="w-full py-4 rounded-2xl border-2 border-slate-100 dark:border-white\/10 text-slate-500 font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
                   >
                     Abort Action
                   </button>
@@ -3176,7 +3176,7 @@ export default function AdminPanel({
                 <h3 className="text-2xl font-black uppercase tracking-tight">Dealer Intelligence</h3>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Select an authorized dealer network to audit operational performance</p>
               </div>
-              <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white\/10">
                 <button 
                   onClick={() => setSelectedDealerId('all')}
                   className={cn(
@@ -3208,7 +3208,7 @@ export default function AdminPanel({
                       "p-6 rounded-2xl border-2 transition-all cursor-pointer group",
                       selectedDealerId === dealer.uid 
                         ? "bg-slate-950 dark:bg-brand-accent text-white border-slate-950 dark:border-brand-accent" 
-                        : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 hover:border-brand-accent/50"
+                        : "bg-white dark:bg-slate-950 border-slate-100 dark:border-white\/10 hover:border-brand-accent/50"
                     )}
                   >
                     <div className="flex justify-between items-start mb-6">
@@ -3220,7 +3220,7 @@ export default function AdminPanel({
                       </div>
                       <div className={cn(
                         "px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest border",
-                        selectedDealerId === dealer.uid ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500"
+                        selectedDealerId === dealer.uid ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-white\/10 text-slate-500"
                       )}>
                         {dealer.lineCode}
                       </div>
@@ -3229,7 +3229,7 @@ export default function AdminPanel({
                     <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate">{dealer.username}</h4>
                     <p className={cn("text-[10px] font-bold uppercase tracking-widest mb-6", selectedDealerId === dealer.uid ? "text-white/60" : "text-slate-400")}>Authorized Dealer Network</p>
                     
-                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10 dark:border-slate-800">
+                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10 dark:border-white\/10">
                       <div>
                         <p className={cn("text-[9px] font-black uppercase tracking-widest", selectedDealerId === dealer.uid ? "text-white/40" : "text-slate-500")}>Operations</p>
                         <p className="text-xl font-black tracking-tighter">{dealerComplaints.length}</p>
@@ -3245,7 +3245,7 @@ export default function AdminPanel({
             </div>
 
             {users.filter(u => u.role === 'dealer').length === 0 && (
-              <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+              <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-white\/10 rounded-3xl">
                 <div className="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-6">
                   <ShieldAlert size={32} className="text-slate-300" />
                 </div>
@@ -3346,7 +3346,7 @@ export default function AdminPanel({
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 10)
                 .map(([name, count], i) => (
-                  <div key={`top10-${name}-${i}`} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 group hover:border-brand-accent transition-all">
+                  <div key={`top10-${name}-${i}`} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white\/10 group hover:border-brand-accent transition-all">
                     <div className="flex items-center gap-4">
                       <div className={cn(
                         "w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm",
@@ -3438,7 +3438,7 @@ export default function AdminPanel({
                           "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                           newUserRole === 'member' 
                             ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent" 
-                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-white\/10 text-slate-500"
                         )}
                       >
                         Field Agent
@@ -3450,7 +3450,7 @@ export default function AdminPanel({
                           "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                           newUserRole === 'liteadmin' 
                             ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20" 
-                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-white\/10 text-slate-500"
                         )}
                       >
                         Lite Admin
@@ -3462,7 +3462,7 @@ export default function AdminPanel({
                           "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                           newUserRole === 'admin' 
                             ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20" 
-                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-white\/10 text-slate-500"
                         )}
                       >
                         Supervisor
@@ -3475,7 +3475,7 @@ export default function AdminPanel({
                             "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border col-span-2 sm:col-span-1",
                             newUserRole === 'super_admin' 
                               ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/20" 
-                              : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                              : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-white\/10 text-slate-500"
                           )}
                         >
                           Super Admin
@@ -3496,13 +3496,13 @@ export default function AdminPanel({
 
             <div className="lg:col-span-2">
               <div className="business-card overflow-hidden bg-white dark:bg-slate-950">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-white\/10 bg-slate-50 dark:bg-slate-900/50">
                    <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Link Access Directory</h4>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead className="bg-slate-50 dark:bg-slate-900/50">
-                    <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <tr className="border-b border-slate-100 dark:border-white\/10">
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Clearance</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
@@ -3561,7 +3561,7 @@ export default function AdminPanel({
                             </div>
                           ) : (
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-slate-800 shadow-sm">
+                              <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-white\/10 shadow-sm">
                                 <img 
                                   src={getAvatarUrl(user.profilePicture)} 
                                   alt={user.username} 
@@ -3596,7 +3596,7 @@ export default function AdminPanel({
                               user.role === 'admin' ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/30" :
                               user.role === 'liteadmin' ? "bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/30" :
                               user.role === 'dealer' ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/30" :
-                              "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+                              "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white\/10"
                             )}>
                               {user.role}
                             </span>
@@ -3613,7 +3613,7 @@ export default function AdminPanel({
                            </span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-slate-800">
+                          <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-white\/10">
                             {user.createdByName || (user.createdBy === 'system' ? 'System' : 'Unknown Agent')}
                           </span>
                         </td>
@@ -3742,7 +3742,7 @@ export default function AdminPanel({
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white\/10">
                         <div className="flex items-center gap-3">
                           {isAudioMuted ? <VolumeX className="text-rose-500" size={18} /> : <Volume2 className="text-emerald-500" size={18} />}
                           <div>
@@ -3763,7 +3763,7 @@ export default function AdminPanel({
 
                       <button
                         onClick={onSoundTest}
-                        className="w-full py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all flex items-center justify-center gap-3"
+                        className="w-full py-3 rounded-xl border border-slate-200 dark:border-white\/10 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all flex items-center justify-center gap-3"
                       >
                         <Zap size={14} className="text-amber-500" />
                         Execute Speaker Sync Test
@@ -3773,7 +3773,7 @@ export default function AdminPanel({
                 </div>
 
                 {/* Microphone Section */}
-                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-white\/10">
                   <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tactical Voice Input</h4>
                   {!micAuthorized ? (
                     <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20">
@@ -3789,7 +3789,7 @@ export default function AdminPanel({
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white\/10">
                         <div className="flex items-center gap-3">
                           {isMicMuted ? <VolumeX className="text-rose-500" size={18} /> : <Mic className="text-blue-500" size={18} />}
                           <div>
@@ -3808,14 +3808,14 @@ export default function AdminPanel({
                         </button>
                       </div>
 
-                      <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                      <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white\/10">
                         <MicVisualizer isMuted={isMicMuted} isAuthorized={micAuthorized} />
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="pt-4 border-t border-slate-100 dark:border-white\/10">
                   <button
                     onClick={onLogout}
                     className="w-full py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-xs shadow-lg flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
@@ -3831,7 +3831,7 @@ export default function AdminPanel({
               <div className="space-y-8">
                 <div className="business-card p-10 bg-white dark:bg-slate-950">
                   <div className="flex items-center gap-5 mb-10">
-                    <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-900 dark:text-brand-accent shadow-sm">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 flex items-center justify-center text-slate-900 dark:text-brand-accent shadow-sm">
                       <Shield size={28} />
                     </div>
                     <div>
@@ -3955,13 +3955,13 @@ export default function AdminPanel({
 
             <div className="lg:col-span-2">
               <div className="business-card overflow-hidden bg-white dark:bg-slate-950">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-white\/10 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
                    <h4 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500">Authorized Dealers Registry</h4>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left whitespace-nowrap">
                     <thead className="bg-slate-50 dark:bg-slate-900/50">
-                    <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <tr className="border-b border-slate-100 dark:border-white\/10">
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity / Company</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Line Code</th>
                       <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Node Status</th>
@@ -4007,11 +4007,11 @@ export default function AdminPanel({
                                   🏢 {dealer.companyName || 'No Company Set'}
                                 </span>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                  <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col justify-center min-w-[120px]">
+                                  <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-white\/10 flex flex-col justify-center min-w-[120px]">
                                     <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Login username</span>
                                     <span className="text-[11px] font-extrabold text-slate-900 dark:text-indigo-400 select-all tracking-wide break-all">{dealer.username}</span>
                                   </div>
-                                  <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col justify-center min-w-[120px]">
+                                  <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-white\/10 flex flex-col justify-center min-w-[120px]">
                                     <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Authentication Passkey</span>
                                     <span className="text-[11px] font-extrabold text-[#00E5FF] select-all tracking-wide break-all font-mono">{dealer.password || '••••••••'}</span>
                                   </div>
@@ -4030,7 +4030,7 @@ export default function AdminPanel({
                               />
                             ) : (
                               <div className="flex items-center gap-3">
-                                <span className="px-3 py-1 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[10px] font-black rounded border border-slate-200 dark:border-slate-800 tracking-wider">
+                                <span className="px-3 py-1 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[10px] font-black rounded border border-slate-200 dark:border-white\/10 tracking-wider">
                                   {dealer.lineCode}
                                 </span>
                                 <button
@@ -4149,7 +4149,7 @@ export default function AdminPanel({
                     <input 
                       type="text" 
                       placeholder="Add Category..." 
-                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value.trim();
@@ -4164,7 +4164,7 @@ export default function AdminPanel({
                   
                   <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
                     {appConfig.categories.map((cat, i) => (
-                      <div key={`cat-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                      <div key={`cat-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-white\/10 text-[10px] font-bold uppercase tracking-tight">
                         <span className="text-slate-700 dark:text-slate-300 uppercase">{cat}</span>
                         <button 
                           onClick={() => {
@@ -4196,7 +4196,7 @@ export default function AdminPanel({
                     <input 
                       type="text" 
                       placeholder="Add Status..." 
-                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value.trim();
@@ -4211,7 +4211,7 @@ export default function AdminPanel({
                   
                   <div className="flex flex-wrap gap-2">
                     {appConfig.statuses.map((stat, i) => (
-                      <div key={`stat-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                      <div key={`stat-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-white\/10 text-[10px] font-bold uppercase tracking-tight">
                         <span className="text-slate-700 dark:text-slate-300">{stat}</span>
                         <button 
                           onClick={() => {
@@ -4243,7 +4243,7 @@ export default function AdminPanel({
                     <input 
                       type="text" 
                       placeholder="Add Priority..." 
-                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value.trim();
@@ -4258,7 +4258,7 @@ export default function AdminPanel({
                   
                   <div className="flex flex-wrap gap-2">
                     {appConfig.priorities.map((pri, i) => (
-                      <div key={`pri-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                      <div key={`pri-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-white\/10 text-[10px] font-bold uppercase tracking-tight">
                         <span className="text-slate-700 dark:text-slate-300">{pri}</span>
                         <button 
                           onClick={() => {
@@ -4290,7 +4290,7 @@ export default function AdminPanel({
                     <input 
                       type="text" 
                       placeholder="Add Zone..." 
-                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value.trim();
@@ -4305,7 +4305,7 @@ export default function AdminPanel({
                   
                   <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
                     {appConfig.zones?.map((zone, i) => (
-                      <div key={`zone-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                      <div key={`zone-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-white\/10 text-[10px] font-bold uppercase tracking-tight">
                         <span className="text-slate-700 dark:text-slate-300">{zone}</span>
                         <button 
                           onClick={() => {
@@ -4453,7 +4453,7 @@ export default function AdminPanel({
                 </div>
 
                 {googleTokens && (
-                  <div className="space-y-6 bg-slate-50/50 dark:bg-slate-900/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-800">
+                  <div className="space-y-6 bg-slate-50/50 dark:bg-slate-900/30 p-6 rounded-2xl border border-slate-100 dark:border-white\/10">
                     <div className="space-y-4">
                       <div className="space-y-2">
                          <label className={labelClasses}>Spreadsheet ID</label>
@@ -4500,7 +4500,7 @@ export default function AdminPanel({
                 )}
 
                 {!googleTokens && (
-                  <div className="flex items-center justify-center p-8 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
+                  <div className="flex items-center justify-center p-8 border-2 border-dashed border-slate-100 dark:border-white\/10 rounded-2xl">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-center leading-relaxed">
                       Please link your Google account<br/>to reveal mirroring parameters
                     </p>
@@ -4514,12 +4514,12 @@ export default function AdminPanel({
                  <button
                   onClick={handleBulkExport}
                   disabled={isExporting}
-                  className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-sm"
+                  className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-white\/10 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-sm"
                 >
                   {isExporting ? 'Exporting...' : 'Perform Bulk System Export'}
                   <CloudUpload size={14} className={isExporting ? "animate-bounce" : ""} />
                 </button>
-                <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/60 max-w-sm w-full text-center">
+                <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-white\/10/60 max-w-sm w-full text-center">
                   {googleTokens && !googleTokens.refresh_token ? (
                     <>
                       <div className="flex items-center gap-2 mb-1 justify-center">
@@ -4573,7 +4573,7 @@ export default function AdminPanel({
 
             {/* Real Offline A to Z Local Backup and Restore Panel */}
             <div className={cn("p-8 sm:p-12", getCardStyle(branding.cardStyle))}>
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-8 pb-8 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-8 pb-8 border-b border-slate-100 dark:border-white\/10">
                 <div className="flex items-center gap-5">
                   <div className="w-16 h-16 rounded-2xl bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center text-brand-accent">
                     <HardDriveDownload size={32} />
@@ -4638,7 +4638,7 @@ export default function AdminPanel({
                         "p-8 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 min-h-[160px]",
                         dragActive 
                           ? "border-brand-accent bg-brand-accent/10" 
-                          : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/40"
+                          : "border-slate-200 dark:border-white\/10 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/40"
                       )}
                       onClick={() => document.getElementById('restore-file-input2')?.click()}
                     >
@@ -4658,7 +4658,7 @@ export default function AdminPanel({
                       </p>
                     </div>
                   ) : (
-                    <div className="p-6 bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-4">
+                    <div className="p-6 bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-white\/10 rounded-2xl space-y-4">
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1">
                           <p className="text-xs font-bold font-mono text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
@@ -4678,7 +4678,7 @@ export default function AdminPanel({
                       </div>
 
                       {uploadedBackupData && (
-                        <div className="p-3 bg-white/60 dark:bg-slate-950/40 rounded-xl space-y-1 text-[10px] border border-slate-100 dark:border-slate-800">
+                        <div className="p-3 bg-white/60 dark:bg-slate-950/40 rounded-xl space-y-1 text-[10px] border border-slate-100 dark:border-white\/10">
                           <div className="flex justify-between font-bold text-slate-500 uppercase tracking-wider">
                             <span>Compiled On:</span>
                             <span className="font-mono text-slate-800 dark:text-slate-300 text-right">
@@ -4746,7 +4746,7 @@ export default function AdminPanel({
                     value={recycleSearchTerm}
                     onChange={(e) => setRecycleSearchTerm(e.target.value)}
                     placeholder="Search deleted items..."
-                    className="pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-rose-500 w-full sm:w-60 font-medium"
+                    className="pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-white\/10 bg-white dark:bg-slate-950 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-rose-500 w-full sm:w-60 font-medium"
                   />
                   <span className="absolute left-3 top-3.5 text-slate-400">🔍</span>
                 </div>
@@ -4772,7 +4772,7 @@ export default function AdminPanel({
                 </div>
               ) : recycleItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center min-h-[300px] text-center max-w-md mx-auto space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center border border-slate-100 dark:border-slate-800 text-slate-400">
+                  <div className="w-16 h-16 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center border border-slate-100 dark:border-white\/10 text-slate-400">
                     <Trash2 size={24} />
                   </div>
                   <div className="space-y-1">
@@ -4785,7 +4785,7 @@ export default function AdminPanel({
               ) : (
                 <div className="space-y-4">
                   {/* Bulk Actions and Master Checkbox Bar */}
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-white\/10/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <button
                         type="button"
@@ -4871,7 +4871,7 @@ export default function AdminPanel({
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, x: -50, scale: 0.95, transition: { duration: 0.25 } }}
                             transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                            className="border border-slate-100 dark:border-slate-800/80 rounded-2xl overflow-hidden bg-white dark:bg-slate-950/40 hover:border-slate-200 dark:hover:border-slate-800 transition-all shadow-sm"
+                            className="border border-slate-100 dark:border-white\/10/80 rounded-2xl overflow-hidden bg-white dark:bg-slate-950/40 hover:border-slate-200 dark:hover:border-slate-800 transition-all shadow-sm"
                           >
                             {/* Row Header */}
                             <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -4889,7 +4889,7 @@ export default function AdminPanel({
                                   )}
                                 </button>
 
-                                <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 flex items-center justify-center shrink-0 text-slate-500">
+                                <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white\/10/80 flex items-center justify-center shrink-0 text-slate-500">
                                   <Trash2 size={18} />
                                 </div>
                                 <div className="space-y-1">
@@ -4944,11 +4944,11 @@ export default function AdminPanel({
 
                             {/* Expanded detail box */}
                             {isExpanded && (
-                              <div className="p-5 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-100 dark:border-slate-800/80 font-mono text-xs text-slate-600 dark:text-slate-300 space-y-4">
+                              <div className="p-5 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-100 dark:border-white\/10/80 font-mono text-xs text-slate-600 dark:text-slate-300 space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div className="space-y-2">
                                     <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Database Entry Metadata</h5>
-                                    <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 space-y-1 text-[11px]">
+                                    <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/50 dark:border-white\/10/50 space-y-1 text-[11px]">
                                       <div><span className="font-bold text-slate-500">ORIGINAL TABLE:</span> {details.originalTable}</div>
                                       <div><span className="font-bold text-slate-500">ORIGINAL ID:</span> {details.originalId}</div>
                                       <div><span className="font-bold text-slate-500">DEALER SCOPE:</span> {item.dealer_id}</div>
@@ -5113,7 +5113,7 @@ export default function AdminPanel({
                     whileHover={{ y: -4, scale: 1.01 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => setMypcOpenedFile(item.id as any)}
-                    className="group cursor-pointer p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800/70 rounded-[2rem] shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.3)] hover:border-blue-500/30 dark:hover:border-blue-500/30 flex flex-col items-center sm:items-start text-center sm:text-left space-y-4 transition-all duration-300 relative overflow-hidden"
+                    className="group cursor-pointer p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-white\/10/70 rounded-[2rem] shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.3)] hover:border-blue-500/30 dark:hover:border-blue-500/30 flex flex-col items-center sm:items-start text-center sm:text-left space-y-4 transition-all duration-300 relative overflow-hidden"
                   >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all duration-300 -mr-12 -mt-12 pointer-events-none" />
                     
@@ -5130,11 +5130,11 @@ export default function AdminPanel({
             )}
             {mypcOpenedFile && (
               <div className="space-y-6 animate-fade-in text-left">
-                <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-900 px-5 py-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-900 px-5 py-4 rounded-2xl border border-slate-200 dark:border-white\/10">
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => setMypcOpenedFile(null)}
-                      className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 dark:border-slate-800 cursor-pointer shadow-sm transition-all"
+                      className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 dark:border-white\/10 cursor-pointer shadow-sm transition-all"
                     >
                       ◀ Close Application
                     </button>
@@ -5167,7 +5167,7 @@ export default function AdminPanel({
                   {mypcOpenedFile === 'user_details' && (
                     <div className="max-w-7xl mx-auto space-y-6 text-left">
                       {/* Sub-view Segment Toggle Tabs */}
-                      <div className="flex border-b border-slate-205 dark:border-slate-800 pb-2 gap-4">
+                      <div className="flex border-b border-slate-205 dark:border-white\/10 pb-2 gap-4">
                         <button
                           type="button"
                           onClick={() => setMypcUserSubTab('client_directory')}
@@ -5195,7 +5195,7 @@ export default function AdminPanel({
                       </div>
 
                       {mypcUserSubTab === 'client_directory' ? (
-                        <div className="animate-fade-in bg-white dark:bg-slate-950 p-6 rounded-3xl border border-slate-200/60 dark:border-slate-850/60 shadow-xl">
+                        <div className="animate-fade-in bg-white dark:bg-slate-950 p-6 rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-xl">
                           <ClientManagement 
                             appConfig={appConfig} 
                             isAdmin={true} 
@@ -5283,13 +5283,13 @@ export default function AdminPanel({
                                   value={mypcClientSearch}
                                   onChange={(e) => setMypcClientSearch(e.target.value)}
                                   placeholder="Search SSID, Client Name, ID, Area..."
-                                  className="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-205 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-60"
+                                  className="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-205 dark:border-white\/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-60"
                                 />
 
                                 <select
                                   value={mypcClientArea}
                                   onChange={(e) => setMypcClientArea(e.target.value)}
-                                  className="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-205 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                                  className="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-205 dark:border-white\/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
                                 >
                                   <option value="ALL">All Covered Sectors</option>
                                   {mypcUniqueAreas.map((area) => (
@@ -5413,7 +5413,7 @@ export default function AdminPanel({
                                                     toast.success(`Ping successfully finalized for client ${c.name}`);
                                                   }, 1200);
                                                 }}
-                                                className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 hover:bg-blue-500 hover:text-white dark:hover:bg-blue-600 outline-none text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-350 transition-all border border-slate-205 dark:border-slate-800 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
+                                                className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 hover:bg-blue-500 hover:text-white dark:hover:bg-blue-600 outline-none text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-350 transition-all border border-slate-205 dark:border-white\/10 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
                                               >
                                                 {isPinging ? (
                                                   <span className="w-2 h-2 rounded-full bg-blue-400 border-t border-r border-white animate-spin shrink-0" />
@@ -5439,7 +5439,7 @@ export default function AdminPanel({
                                                   "px-2.5 py-1.5 rounded-lg outline-none text-[9px] font-black uppercase tracking-widest transition-all border cursor-pointer inline-flex items-center gap-1",
                                                   isBursting 
                                                     ? "bg-amber-500 text-white border-amber-500 shadow-lg shadow-amber-500/20" 
-                                                    : "bg-slate-50 dark:bg-slate-900 hover:bg-amber-550 hover:text-white dark:hover:bg-amber-600 text-slate-600 dark:text-slate-350 border-slate-205 dark:border-slate-800"
+                                                    : "bg-slate-50 dark:bg-slate-900 hover:bg-amber-550 hover:text-white dark:hover:bg-amber-600 text-slate-600 dark:text-slate-350 border-slate-205 dark:border-white\/10"
                                                 )}
                                               >
                                                 <Flame size={10} />
@@ -5470,7 +5470,7 @@ export default function AdminPanel({
                                                     toast.success(`Hops traceback path generated.`);
                                                   }, 1300);
                                                 }}
-                                                className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 hover:bg-indigo-500 hover:text-white dark:hover:bg-indigo-600 outline-none text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-350 transition-all border border-slate-205 dark:border-slate-800 cursor-pointer inline-flex items-center gap-1"
+                                                className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 hover:bg-indigo-500 hover:text-white dark:hover:bg-indigo-600 outline-none text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-350 transition-all border border-slate-205 dark:border-white\/10 cursor-pointer inline-flex items-center gap-1"
                                               >
                                                 <MapPinned size={10} />
                                                 <span>Trace Path</span>
@@ -5569,7 +5569,7 @@ export default function AdminPanel({
                           <div className="p-5 rounded-xl border border-slate-100 dark:border-slate-900 bg-slate-50/50 dark:bg-slate-900/10 space-y-3">
                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Logged Operator Account</p>
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-slate-800 shadow-sm">
+                              <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-white\/10 shadow-sm">
                                 <img 
                                   src={getAvatarUrl(currentUser.profilePicture)} 
                                   alt={currentUser.username} 
@@ -5597,7 +5597,7 @@ export default function AdminPanel({
                       {/* Split Operator Directory Register layout shifted from user_details */}
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
                         <div className="lg:col-span-1">
-                          <div className={cn("p-8 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850", getCardStyle(branding.cardStyle))}>
+                          <div className={cn("p-8 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
                             <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3">
                               <UserPlus size={20} className="text-brand-accent" />
                               Link Access
@@ -5655,7 +5655,7 @@ export default function AdminPanel({
                                       "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                                       newUserRole === 'member' 
                                         ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                                        : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-white\/10 text-slate-500"
                                     )}
                                   >
                                     Field Agent
@@ -5667,7 +5667,7 @@ export default function AdminPanel({
                                       "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                                       newUserRole === 'liteadmin' 
                                         ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                                        : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-white\/10 text-slate-500"
                                     )}
                                   >
                                     Lite Admin
@@ -5679,7 +5679,7 @@ export default function AdminPanel({
                                       "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                                       newUserRole === 'admin' 
                                         ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                                        : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-white\/10 text-slate-500"
                                     )}
                                   >
                                     Supervisor
@@ -5692,7 +5692,7 @@ export default function AdminPanel({
                                         "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border col-span-2 sm:col-span-1",
                                         newUserRole === 'super_admin' 
                                           ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/20" 
-                                          : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500"
+                                          : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-white\/10 text-slate-500"
                                       )}
                                     >
                                       Super Admin
@@ -5713,13 +5713,13 @@ export default function AdminPanel({
 
                         <div className="lg:col-span-2">
                           <div className={cn("overflow-hidden bg-white dark:bg-slate-950", getCardStyle(branding.cardStyle))}>
-                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+                            <div className="px-6 py-4 border-b border-slate-100 dark:border-white\/10 bg-slate-50 dark:bg-slate-900/50">
                                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Link Access Directory</h4>
                             </div>
                             <div className="overflow-x-auto">
                               <table className="w-full text-left">
                                 <thead className="bg-slate-50 dark:bg-slate-900/50">
-                                <tr className="border-b border-slate-100 dark:border-slate-800">
+                                <tr className="border-b border-slate-100 dark:border-white\/10">
                                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
                                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Clearance</th>
                                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
@@ -5778,7 +5778,7 @@ export default function AdminPanel({
                                         </div>
                                       ) : (
                                         <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-slate-800 shadow-sm">
+                                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-white\/10 shadow-sm">
                                             <img 
                                               src={getAvatarUrl(user.profilePicture)} 
                                               alt={user.username} 
@@ -5813,7 +5813,7 @@ export default function AdminPanel({
                                           user.role === 'admin' ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/30" :
                                           user.role === 'liteadmin' ? "bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/30" :
                                           user.role === 'dealer' ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/30" :
-                                          "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+                                          "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white\/10"
                                         )}>
                                           {user.role}
                                         </span>
@@ -5830,7 +5830,7 @@ export default function AdminPanel({
                                        </span>
                                     </td>
                                     <td className="px-6 py-4">
-                                      <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-slate-800">
+                                      <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-white\/10">
                                         {user.createdByName || (user.createdBy === 'system' ? 'System' : 'Unknown Agent')}
                                       </span>
                                     </td>
@@ -5934,7 +5934,7 @@ export default function AdminPanel({
                     <div className="max-w-7xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                         {/* Category Management */}
-                        <div className={cn("p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850", getCardStyle(branding.cardStyle))}>
+                        <div className={cn("p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
                           <div className="flex items-center justify-between mb-6">
                             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Service Categories</h4>
                             <Layers size={16} className="text-blue-500" />
@@ -5945,7 +5945,7 @@ export default function AdminPanel({
                               <input 
                                 type="text" 
                                 placeholder="Add Category..." 
-                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900 dark:text-white"
+                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900 dark:text-white"
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     const val = e.currentTarget.value.trim();
@@ -5960,7 +5960,7 @@ export default function AdminPanel({
                             
                             <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
                               {appConfig.categories.map((cat, i) => (
-                                <div key={`cat-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-205 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                                <div key={`cat-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-205 dark:border-white\/10 text-[10px] font-bold uppercase tracking-tight">
                                   <span className="text-slate-700 dark:text-slate-300 uppercase">{cat}</span>
                                   <button 
                                     onClick={() => {
@@ -5981,7 +5981,7 @@ export default function AdminPanel({
                         </div>
 
                         {/* Status Management */}
-                        <div className={cn("p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850", getCardStyle(branding.cardStyle))}>
+                        <div className={cn("p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
                           <div className="flex items-center justify-between mb-6">
                             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Workflow Statuses</h4>
                             <Activity size={16} className="text-amber-500" />
@@ -5992,7 +5992,7 @@ export default function AdminPanel({
                               <input 
                                 type="text" 
                                 placeholder="Add Status..." 
-                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-white"
+                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-white"
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     const val = e.currentTarget.value.trim();
@@ -6007,7 +6007,7 @@ export default function AdminPanel({
                             
                             <div className="flex flex-wrap gap-2">
                               {appConfig.statuses.map((stat, i) => (
-                                <div key={`stat-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-205 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                                <div key={`stat-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-205 dark:border-white\/10 text-[10px] font-bold uppercase tracking-tight">
                                   <span className="text-slate-700 dark:text-slate-300">{stat}</span>
                                   <button 
                                     onClick={() => {
@@ -6028,7 +6028,7 @@ export default function AdminPanel({
                         </div>
 
                         {/* Priority Management */}
-                        <div className={cn("p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850", getCardStyle(branding.cardStyle))}>
+                        <div className={cn("p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
                           <div className="flex items-center justify-between mb-6">
                             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Priority Levels</h4>
                             <ShieldAlert size={16} className="text-rose-500" />
@@ -6039,7 +6039,7 @@ export default function AdminPanel({
                               <input 
                                 type="text" 
                                 placeholder="Add Priority..." 
-                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-900 dark:text-white"
+                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-900 dark:text-white"
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     const val = e.currentTarget.value.trim();
@@ -6054,7 +6054,7 @@ export default function AdminPanel({
                             
                             <div className="flex flex-wrap gap-2">
                               {appConfig.priorities.map((pri, i) => (
-                                <div key={`pri-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-205 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                                <div key={`pri-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-205 dark:border-white\/10 text-[10px] font-bold uppercase tracking-tight">
                                   <span className="text-slate-700 dark:text-slate-300">{pri}</span>
                                   <button 
                                     onClick={() => {
@@ -6075,7 +6075,7 @@ export default function AdminPanel({
                         </div>
 
                         {/* Zone Management */}
-                        <div className={cn("p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850", getCardStyle(branding.cardStyle))}>
+                        <div className={cn("p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
                           <div className="flex items-center justify-between mb-6">
                             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Operation Zones</h4>
                             <MapPin size={16} className="text-emerald-500" />
@@ -6086,7 +6086,7 @@ export default function AdminPanel({
                               <input 
                                 type="text" 
                                 placeholder="Add Zone..." 
-                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
+                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     const val = e.currentTarget.value.trim();
@@ -6101,7 +6101,7 @@ export default function AdminPanel({
                             
                             <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
                               {appConfig.zones?.map((zone, i) => (
-                                <div key={`zone-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-205 dark:border-slate-800 text-[10px] font-bold uppercase tracking-tight">
+                                <div key={`zone-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-205 dark:border-white\/10 text-[10px] font-bold uppercase tracking-tight">
                                   <span className="text-slate-700 dark:text-slate-300">{zone}</span>
                                   <button 
                                     onClick={() => {
@@ -6252,7 +6252,7 @@ export default function AdminPanel({
                           </div>
 
                           {googleTokens && (
-                            <div className="space-y-6 bg-slate-50/50 dark:bg-slate-900/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-800">
+                            <div className="space-y-6 bg-slate-50/50 dark:bg-slate-900/30 p-6 rounded-2xl border border-slate-100 dark:border-white\/10">
                               <div className="space-y-4">
                                 <div className="space-y-2">
                                    <label className={labelClasses}>Spreadsheet ID</label>
@@ -6299,7 +6299,7 @@ export default function AdminPanel({
                           )}
 
                           {!googleTokens && (
-                            <div className="flex items-center justify-center p-8 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
+                            <div className="flex items-center justify-center p-8 border-2 border-dashed border-slate-100 dark:border-white\/10 rounded-2xl">
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-center leading-relaxed">
                                 Please link your Google account<br/>to reveal mirroring parameters
                               </p>
@@ -6313,12 +6313,12 @@ export default function AdminPanel({
                            <button
                             onClick={handleBulkExport}
                             disabled={isExporting}
-                            className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-205 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-sm cursor-pointer"
+                            className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-205 dark:border-white\/10 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-sm cursor-pointer"
                           >
                             {isExporting ? 'Exporting...' : 'Perform Bulk System Export'}
                             <CloudUpload size={14} className={isExporting ? "animate-bounce" : ""} />
                           </button>
-                          <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/60 max-w-sm w-full text-center">
+                          <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-white\/10/60 max-w-sm w-full text-center">
                             {googleTokens && !googleTokens.refresh_token ? (
                               <>
                                 <div className="flex items-center gap-2 mb-1 justify-center">
@@ -6370,7 +6370,7 @@ export default function AdminPanel({
 
                       {/* Real Offline A to Z Local Backup and Restore Panel */}
                       <div className={cn("p-8 sm:p-12 mt-6", getCardStyle(branding.cardStyle))}>
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-8 pb-8 border-b border-slate-100 dark:border-slate-800">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-8 pb-8 border-b border-slate-100 dark:border-white\/10">
                           <div className="flex items-center gap-5">
                             <div className="w-16 h-16 rounded-2xl bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center text-brand-accent">
                               <HardDriveDownload size={32} />
@@ -6435,7 +6435,7 @@ export default function AdminPanel({
                                   "p-8 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 min-h-[160px]",
                                   dragActive 
                                     ? "border-brand-accent bg-brand-accent/10" 
-                                    : "border-slate-205 dark:border-slate-800 hover:border-slate-350 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/40"
+                                    : "border-slate-205 dark:border-white\/10 hover:border-slate-350 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/40"
                                 )}
                                 onClick={() => document.getElementById('restore-file-input2')?.click()}
                               >
@@ -6455,7 +6455,7 @@ export default function AdminPanel({
                                 </p>
                               </div>
                             ) : (
-                              <div className="p-6 bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 rounded-2xl space-y-4">
+                              <div className="p-6 bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-white\/10 rounded-2xl space-y-4">
                                 <div className="flex items-start justify-between gap-4">
                                   <div className="space-y-1">
                                     <p className="text-xs font-bold font-mono text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
@@ -6475,7 +6475,7 @@ export default function AdminPanel({
                                 </div>
 
                                 {uploadedBackupData && (
-                                  <div className="p-3 bg-white/60 dark:bg-slate-950/40 rounded-xl space-y-1 text-[10px] border border-slate-100 dark:border-slate-800">
+                                  <div className="p-3 bg-white/60 dark:bg-slate-950/40 rounded-xl space-y-1 text-[10px] border border-slate-100 dark:border-white\/10">
                                     <div className="flex justify-between font-bold text-slate-500 uppercase tracking-wider">
                                       <span>Compiled On:</span>
                                       <span className="font-mono text-slate-800 dark:text-slate-300 text-right">
@@ -6517,7 +6517,7 @@ export default function AdminPanel({
                   {/* Subview 7: Security & Audio Matrix settings_info */}
                   {mypcOpenedFile === 'settings_info' && (
                     <div className="max-w-2xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
-                      <div className="business-card p-10 bg-white dark:bg-slate-950 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xl">
+                      <div className="business-card p-10 bg-white dark:bg-slate-950 rounded-3xl border border-slate-200/80 dark:border-white\/10 shadow-xl">
                         <div className="flex items-center gap-5 mb-10">
                           <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-sm">
                             <Volume2 size={28} />
@@ -6547,7 +6547,7 @@ export default function AdminPanel({
                               </div>
                             ) : (
                               <div className="space-y-4">
-                                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white\/10">
                                   <div className="flex items-center gap-3">
                                     {isAudioMuted ? <VolumeX className="text-rose-500" size={18} /> : <Volume2 className="text-emerald-500" size={18} />}
                                     <div>
@@ -6570,7 +6570,7 @@ export default function AdminPanel({
                                 <button
                                   type="button"
                                   onClick={onSoundTest}
-                                  className="w-full py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all flex items-center justify-center gap-3 bg-transparent cursor-pointer"
+                                  className="w-full py-3 rounded-xl border border-slate-200 dark:border-white\/10 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all flex items-center justify-center gap-3 bg-transparent cursor-pointer"
                                 >
                                   <Zap size={14} className="text-amber-500" />
                                   Execute Speaker Sync Test
@@ -6580,7 +6580,7 @@ export default function AdminPanel({
                           </div>
 
                           {/* Microphone Section */}
-                          <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                          <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-white\/10">
                             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tactical Voice Input</h4>
                             {!micAuthorized ? (
                               <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 text-center">
@@ -6597,7 +6597,7 @@ export default function AdminPanel({
                               </div>
                             ) : (
                               <div className="space-y-4">
-                                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white\/10">
                                   <div className="flex items-center gap-3">
                                     {isMicMuted ? <VolumeX className="text-rose-500" size={18} /> : <Mic className="text-blue-500" size={18} />}
                                     <div>
@@ -6617,7 +6617,7 @@ export default function AdminPanel({
                                   </button>
                                 </div>
 
-                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-850">
+                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white/10">
                                   <MicVisualizer isMuted={isMicMuted} isAuthorized={micAuthorized} />
                                 </div>
                               </div>
@@ -6634,7 +6634,7 @@ export default function AdminPanel({
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left animate-in fade-in duration-300">
                         {/* Dealer Setup Form */}
                         <div className="lg:col-span-1">
-                          <div className={cn("p-8 border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-950", getCardStyle(branding.cardStyle))}>
+                          <div className={cn("p-8 border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950", getCardStyle(branding.cardStyle))}>
                             <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3 text-emerald-600 dark:text-emerald-400">
                               <ShieldAlert size={20} />
                               Dealer Setup
@@ -6707,14 +6707,14 @@ export default function AdminPanel({
 
                         {/* Authorized Dealers Registry List */}
                         <div className="lg:col-span-2">
-                          <div className="business-card overflow-hidden bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl">
-                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center whitespace-normal break-words">
+                          <div className="business-card overflow-hidden bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-white\/10 shadow-xl">
+                            <div className="px-6 py-4 border-b border-slate-100 dark:border-white\/10 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center whitespace-normal break-words">
                               <h4 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500">Authorized Dealers Registry</h4>
                             </div>
                             <div className="overflow-x-auto">
                               <table className="w-full text-left whitespace-nowrap">
                                 <thead className="bg-slate-50 dark:bg-slate-900/50">
-                                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                                  <tr className="border-b border-slate-100 dark:border-white\/10">
                                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity / Company</th>
                                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Line Code</th>
                                     <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Node Status</th>
@@ -6760,11 +6760,11 @@ export default function AdminPanel({
                                                 🏢 {dealer.companyName || 'No Company Set'}
                                               </span>
                                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                                <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col justify-center min-w-[120px]">
+                                                <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-white\/10 flex flex-col justify-center min-w-[120px]">
                                                   <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Login username</span>
                                                   <span className="text-[11px] font-extrabold text-slate-900 dark:text-indigo-400 select-all tracking-wide break-all">{dealer.username}</span>
                                                 </div>
-                                                <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-col justify-center min-w-[120px]">
+                                                <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-white\/10 flex flex-col justify-center min-w-[120px]">
                                                   <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Authentication Passkey</span>
                                                   <span className="text-[11px] font-extrabold text-[#00E5FF] select-all tracking-wide break-all font-mono">{dealer.password || '••••••••'}</span>
                                                 </div>
@@ -6783,7 +6783,7 @@ export default function AdminPanel({
                                             />
                                           ) : (
                                             <div className="flex items-center gap-3">
-                                              <span className="px-3 py-1 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[10px] font-black rounded border border-slate-200 dark:border-slate-800 tracking-wider">
+                                              <span className="px-3 py-1 bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-[10px] font-black rounded border border-slate-200 dark:border-white\/10 tracking-wider">
                                                 {dealer.lineCode}
                                               </span>
                                               <button
@@ -6923,7 +6923,7 @@ export default function AdminPanel({
                             <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Dealer Intelligence</h3>
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-relaxed">Select an authorized dealer network to audit operational performance</p>
                           </div>
-                          <div className="flex bg-slate-105 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                          <div className="flex bg-slate-105 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white\/10">
                             <button 
                               type="button"
                               onClick={() => setSelectedDealerId('all')}
@@ -6956,7 +6956,7 @@ export default function AdminPanel({
                                   "p-6 rounded-2xl border-2 transition-all cursor-pointer group",
                                   selectedDealerId === dealer.uid 
                                     ? "bg-slate-950 dark:bg-brand-accent text-white border-slate-950 dark:border-brand-accent" 
-                                    : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 hover:border-brand-accent/50"
+                                    : "bg-white dark:bg-slate-950 border-slate-100 dark:border-white\/10 hover:border-brand-accent/50"
                                 )}
                               >
                                 <div className="flex justify-between items-start mb-6">
@@ -6968,7 +6968,7 @@ export default function AdminPanel({
                                   </div>
                                   <div className={cn(
                                     "px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest border",
-                                    selectedDealerId === dealer.uid ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500"
+                                    selectedDealerId === dealer.uid ? "bg-white/20 border-white/30" : "bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-white\/10 text-slate-500"
                                   )}>
                                     {dealer.lineCode}
                                   </div>
@@ -6977,7 +6977,7 @@ export default function AdminPanel({
                                 <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate text-slate-950 dark:text-slate-100">{dealer.username}</h4>
                                 <p className={cn("text-[10px] font-bold uppercase tracking-widest mb-6", selectedDealerId === dealer.uid ? "text-white/60" : "text-slate-400")}>Authorized Dealer Network</p>
                                 
-                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10 dark:border-slate-800">
+                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10 dark:border-white\/10">
                                   <div>
                                     <p className={cn("text-[9px] font-black uppercase tracking-widest", selectedDealerId === dealer.uid ? "text-white/40" : "text-slate-500")}>Operations</p>
                                     <p className="text-xl font-black tracking-tighter">{dealerComplaints.length}</p>
@@ -6993,7 +6993,7 @@ export default function AdminPanel({
                         </div>
 
                         {users.filter(u => u.role === 'dealer').length === 0 && (
-                          <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+                          <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-white\/10 rounded-3xl">
                             <div className="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-6">
                               <ShieldAlert size={32} className="text-slate-300" />
                             </div>
@@ -7078,7 +7078,7 @@ export default function AdminPanel({
 
         {activeTab === 'sync_status' && (
           <div className="max-w-[115rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/80 pb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-white\/10/80 pb-6">
               <div className="space-y-1">
                 <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                   <Database className="text-emerald-500" size={32} />
@@ -7094,7 +7094,7 @@ export default function AdminPanel({
                     pocketbaseService.clearSyncLogs();
                     toast.success('Sync telemetry logs cleared');
                   }}
-                  className="px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-900 font-black uppercase tracking-widest text-[10px] transition-all cursor-pointer flex items-center gap-2"
+                  className="px-5 py-3 rounded-xl border border-slate-200 dark:border-white\/10 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-900 font-black uppercase tracking-widest text-[10px] transition-all cursor-pointer flex items-center gap-2"
                 >
                   <Trash2 size={13} />
                   <span>Clear Logs</span>
@@ -7318,7 +7318,7 @@ export default function AdminPanel({
                   <select
                     value={syncFilterCollection}
                     onChange={(e) => setSyncFilterCollection(e.target.value)}
-                    className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl"
+                    className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-white\/10 rounded-xl"
                   >
                     <option value="all">All Collections</option>
                     <option value="billing_months">billing_months</option>
@@ -7330,7 +7330,7 @@ export default function AdminPanel({
                   <select
                     value={syncFilterStatus}
                     onChange={(e) => setSyncFilterStatus(e.target.value)}
-                    className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl"
+                    className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-white\/10 rounded-xl"
                   >
                     <option value="all">All Statuses</option>
                     <option value="success">Success</option>
@@ -7437,7 +7437,7 @@ export default function AdminPanel({
                   exit={{ opacity: 0, y: -10 }}
                   className={cn("p-6 rounded-2xl border space-y-4 max-w-lg mb-4", getCardStyle(branding.cardStyle))}
                 >
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-white\/10">
                     <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Establish Monthly Recovery Cycle</span>
                     <button type="button" onClick={() => setIsConfiguringNewMonth(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
                   </div>
@@ -7450,7 +7450,7 @@ export default function AdminPanel({
                         value={newMonthName}
                         onChange={(e) => setNewMonthName(e.target.value)}
                         placeholder="e.g. JUN, JUL, OCT"
-                        className="w-full px-4 py-3 text-xs uppercase font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500 select-all"
+                        className="w-full px-4 py-3 text-xs uppercase font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-200 dark:border-white\/10 rounded-xl focus:border-blue-500 select-all"
                       />
                     </div>
                     <div>
@@ -7458,7 +7458,7 @@ export default function AdminPanel({
                       <select
                         value={newMonthYear}
                         onChange={(e) => setNewMonthYear(e.target.value)}
-                        className="w-full px-4 py-3 text-xs font-mono font-bold bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500"
+                        className="w-full px-4 py-3 text-xs font-mono font-bold bg-white dark:bg-slate-950 border border-slate-200 dark:border-white\/10 rounded-xl focus:border-blue-500"
                       >
                         <option value="25">2025</option>
                         <option value="26">2026</option>
@@ -7690,7 +7690,7 @@ export default function AdminPanel({
                         damping: 20,
                         delay: i * 0.05
                       }}
-                      className="group relative p-3 sm:p-4 bg-white dark:bg-slate-900/90 rounded-xl border border-slate-200 dark:border-slate-800 border-l-4 border-l-slate-800 dark:border-l-slate-400 flex flex-col justify-between overflow-hidden shadow-sm hover:border-slate-400 dark:hover:border-slate-500 transition-all duration-300 cursor-default"
+                      className="group relative p-3 sm:p-4 bg-white dark:bg-slate-900/90 rounded-xl border border-slate-200 dark:border-white\/10 border-l-4 border-l-slate-800 dark:border-l-slate-400 flex flex-col justify-between overflow-hidden shadow-sm hover:border-slate-400 dark:hover:border-slate-500 transition-all duration-300 cursor-default"
                     >
                       <div className="space-y-2 relative z-10">
                         <div className="flex items-center justify-between gap-2">
@@ -7754,7 +7754,7 @@ export default function AdminPanel({
                           "ml-2 text-[9.5px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded-xl cursor-pointer transition-all duration-300 inline-flex items-center gap-1.5 shrink-0 border relative overflow-hidden",
                           isAdvanceMode
                             ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white border-blue-400 font-sans font-black shadow-lg"
-                            : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800 font-sans font-black"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:border-white\/10 dark:text-slate-300 dark:hover:bg-slate-800 font-sans font-black"
                         )}
                         title="Toggle view of advanced business parameters"
                       >
@@ -7774,14 +7774,14 @@ export default function AdminPanel({
                         value={billingSearchQuery}
                         onChange={(e) => setBillingSearchQuery(e.target.value)}
                         placeholder="Search Name, User ID, PPPoE..."
-                        className="px-4 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500 w-full sm:w-64"
+                        className="px-4 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white\/10 rounded-xl focus:border-blue-500 w-full sm:w-64"
                       />
 
                       {/* Status selector */}
                       <select
                         value={billingStatusFilter}
                         onChange={(e) => setBillingStatusFilter(e.target.value)}
-                        className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500 font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
+                        className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white\/10 rounded-xl focus:border-blue-500 font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
                       >
                         <option value="all">ALL PAYMENT FLAGS</option>
                         <option value="paid">PAID</option>
@@ -7796,7 +7796,7 @@ export default function AdminPanel({
                       <select
                         value={billingAreaFilter}
                         onChange={(e) => setBillingAreaFilter(e.target.value)}
-                        className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:border-blue-500 font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
+                        className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white\/10 rounded-xl focus:border-blue-500 font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
                       >
                         <option value="all">ALL AREAS</option>
                         {Array.from(new Set(activeRows.map((r: any) => r.area).filter(Boolean))).map((areaName: any) => (
@@ -7811,7 +7811,7 @@ export default function AdminPanel({
                           "px-3 py-2 border rounded-xl font-bold uppercase tracking-wider text-[11px] transition-all flex items-center gap-1.5 shadow-sm shrink-0",
                           isBillingUnlocked 
                             ? "bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/40 cursor-pointer"
-                            : "bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-800 cursor-not-allowed opacity-60"
+                            : "bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-white\/10 cursor-not-allowed opacity-60"
                         )}
                         title={isBillingUnlocked ? "Set CR amount to 0 for all rows in this sheet" : "🔒 Unlock billing to reset all CR"}
                       >
@@ -7822,7 +7822,7 @@ export default function AdminPanel({
                   </div>
 
                   {/* Absolute Google Sheets Spreadsheet Emulator Layout (Horizontal Scroll single row grid) */}
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 overflow-hidden shadow-inner hidden md:block">
+                  <div className="border border-slate-200 dark:border-white\/10 rounded-xl bg-slate-50 dark:bg-slate-950 overflow-hidden shadow-inner hidden md:block">
                     <div 
                       ref={billingScrollContainerRef}
                       onMouseMove={handleBillingMouseMove}
@@ -7831,55 +7831,55 @@ export default function AdminPanel({
                     >
                       <table id="billing-spreadsheet-table" className="w-full border-collapse text-left text-xs text-slate-950 dark:text-slate-100">
                         <thead>
-                          <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 font-extrabold uppercase text-[10px] tracking-wider text-slate-950 dark:text-slate-100 font-sans select-none whitespace-nowrap">
-                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-slate-800 min-w-[40px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('sr')}>
+                          <tr className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-white\/10 font-extrabold uppercase text-[10px] tracking-wider text-slate-950 dark:text-slate-100 font-sans select-none whitespace-nowrap">
+                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-white\/10 min-w-[40px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('sr')}>
                               Sr#{getBillingSortIcon('sr')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[160px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('name')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[160px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('name')}>
                               FULL NAME{getBillingSortIcon('name')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[110px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('username')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[110px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('username')}>
                               USER ID (PPPoE){getBillingSortIcon('username')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[110px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('mobileNumber')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[110px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('mobileNumber')}>
                               MOBILE #{getBillingSortIcon('mobileNumber')}
                             </th>
-                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-slate-800 min-w-[65px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('area')}>
+                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-white\/10 min-w-[65px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('area')}>
                               AREA{getBillingSortIcon('area')}
                             </th>
-                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-slate-800 min-w-[60px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('rt')}>
+                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-white\/10 min-w-[60px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('rt')}>
                               RT{getBillingSortIcon('rt')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[85px] text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('baseAmount')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[85px] text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('baseAmount')}>
                               B. AMOUNT{getBillingSortIcon('baseAmount')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[85px] text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('cr')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[85px] text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('cr')}>
                               CR. (ARREARS){getBillingSortIcon('cr')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[100px] text-right bg-slate-100/50 dark:bg-slate-900/50 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('totalAmount')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[100px] text-right bg-slate-100/50 dark:bg-slate-900/50 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('totalAmount')}>
                               T. AMOUNT{getBillingSortIcon('totalAmount')}
                             </th>
-                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-slate-800 min-w-[55px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('billingDay')}>
+                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-white\/10 min-w-[55px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('billingDay')}>
                               BD{getBillingSortIcon('billingDay')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[100px] text-right bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600 cursor-pointer hover:bg-emerald-500/20 transition-colors" onClick={() => handleBillingSort('paymentReceived')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[100px] text-right bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600 cursor-pointer hover:bg-emerald-500/20 transition-colors" onClick={() => handleBillingSort('paymentReceived')}>
                               RECOVERY{getBillingSortIcon('paymentReceived')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[95px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('paymentStatus')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[95px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('paymentStatus')}>
                               STATUS{getBillingSortIcon('paymentStatus')}
                             </th>
                             {isAdvanceMode && (
                               <>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[180px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors text-left" onClick={() => handleBillingSort('comments')}>
+                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[180px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors text-left" onClick={() => handleBillingSort('comments')}>
                                   COMMENTS{getBillingSortIcon('comments')}
                                 </th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[100px]">OCCUPATION</th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[110px]">SER NAM</th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[95px]">PKG DETAILS</th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[90px] text-center">DATE</th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-right">DEVICE</th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[80px] text-right">ABL</th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-slate-800 min-w-[95px]">NETWORK</th>
+                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[100px]">OCCUPATION</th>
+                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[110px]">SER NAM</th>
+                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[95px]">PKG DETAILS</th>
+                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[90px] text-center">DATE</th>
+                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[80px] text-right">DEVICE</th>
+                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[80px] text-right">ABL</th>
+                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[95px]">NETWORK</th>
                               </>
                             )}
                             <th className="py-2 px-1.5 text-center min-w-[50px]">ACT</th>
@@ -7919,7 +7919,7 @@ export default function AdminPanel({
                                 }}
                               >
                                 {/* Sr# */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800 text-center select-none font-sans text-[11px] font-bold">
+                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10 text-center select-none font-sans text-[11px] font-bold">
                                   <div className="flex items-center justify-center gap-1">
                                     <span>{localIdx + 1}</span>
                                     {editedRowIndices.has(globalRowIdx) && (
@@ -7927,7 +7927,7 @@ export default function AdminPanel({
                                     )}
                                   </div>
                                 </td>
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[13.5px] font-black">
+                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black">
                                   <input
                                     id={`rec_cell_${globalRowIdx}_name`}
                                     type="text"
@@ -7942,7 +7942,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* User ID / Username */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[13.5px] font-black text-black dark:text-white">
+                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black text-black dark:text-white">
                                   <input
                                     id={`rec_cell_${globalRowIdx}_username`}
                                     type="text"
@@ -7956,7 +7956,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Mobile */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[13px] font-black text-black dark:text-white">
+                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white">
                                   <input
                                     id={`rec_cell_${globalRowIdx}_mobileNumber`}
                                     type="text"
@@ -7970,7 +7970,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Area */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans">
+                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
                                   <input
                                     id={`rec_cell_${globalRowIdx}_area`}
                                     type="text"
@@ -7984,7 +7984,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* RT */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans">
+                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
                                   <input
                                     id={`rec_cell_${globalRowIdx}_rt`}
                                     type="text"
@@ -7998,7 +7998,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Base Amount */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
+                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
                                   <div className="flex items-center justify-end font-black text-black">
                                     <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
                                     <input
@@ -8015,7 +8015,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Cr. Arrears */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
+                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
                                   <div className="flex items-center justify-end">
                                     <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
                                     <input
@@ -8035,12 +8035,12 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Total Amount */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-[13.5px] font-sans">
+                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-[13.5px] font-sans">
                                   PKR {isDc ? 0 : (isTdc ? (rowRef.cr || 0) : (rowRef.totalAmount || 0)).toLocaleString()}
                                 </td>
 
                                 {/* BD (Billing Day) */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-center select-all font-sans">
+                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center select-all font-sans">
                                   <input
                                     id={`rec_cell_${globalRowIdx}_billingDay`}
                                     type="text"
@@ -8055,7 +8055,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Monthly Paid Recovery */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800 bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
+                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10 bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
                                   <div className="flex items-center justify-end">
                                     <span className="text-emerald-900 dark:text-emerald-400 mr-0.5 font-black text-[11px]">PKR</span>
                                     <input
@@ -8072,7 +8072,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Status */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans">
+                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
                                   <select
                                     value={rowRef.paymentStatus}
                                     disabled={!isBillingUnlocked}
@@ -8100,7 +8100,7 @@ export default function AdminPanel({
                                 {isAdvanceMode && (
                                   <>
                                     {/* Comments */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans">
+                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
                                       <input
                                         id={`rec_cell_${globalRowIdx}_comments`}
                                         type="text"
@@ -8116,7 +8116,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Occupation */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans">
+                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
                                       <input
                                         id={`rec_cell_${globalRowIdx}_occ`}
                                         type="text"
@@ -8130,7 +8130,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Serial / PPPoE Username */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[11px]">
+                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[11px]">
                                       <input
                                         id={`rec_cell_${globalRowIdx}_serNam`}
                                         type="text"
@@ -8144,7 +8144,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* PKG details */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 text-blue-900 dark:text-blue-250 font-black font-sans">
+                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-blue-900 dark:text-blue-250 font-black font-sans">
                                       <input
                                         id={`rec_cell_${globalRowIdx}_pkgDetails`}
                                         type="text"
@@ -8158,7 +8158,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Connection Date */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 text-center font-sans text-[11px]">
+                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans text-[11px]">
                                       <input
                                         id={`rec_cell_${globalRowIdx}_connectionDate`}
                                         type="text"
@@ -8173,7 +8173,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Device Price */}
-                                    <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
+                                    <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
                                       <input
                                         id={`rec_cell_${globalRowIdx}_devicePrice`}
                                         type="number"
@@ -8187,7 +8187,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* ABL charges */}
-                                    <td className="py-1 px-1 border-r border-slate-200 dark:border-slate-800/80 text-right font-sans">
+                                    <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
                                       <input
                                         id={`rec_cell_${globalRowIdx}_abl`}
                                         type="number"
@@ -8201,7 +8201,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Network name */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-slate-800/80 font-sans text-[11px]">
+                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[11px]">
                                       <input
                                         id={`rec_cell_${globalRowIdx}_network`}
                                         type="text"
@@ -8255,23 +8255,23 @@ export default function AdminPanel({
                         </tbody>
                         <tfoot className="sticky bottom-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] border-t-2 border-slate-300 dark:border-slate-700">
                           <tr className="font-sans font-black uppercase text-[11px] tracking-wider text-black dark:text-white">
-                            <td colSpan={6} className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-black dark:text-white">
+                            <td colSpan={6} className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black text-black dark:text-white">
                               SHEET TOTALS (FILTERED): 
                             </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black bg-slate-50 dark:bg-slate-950/30 text-black dark:text-white">
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black bg-slate-50 dark:bg-slate-950/30 text-black dark:text-white">
                               {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
                             </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-rose-700 dark:text-rose-400 bg-slate-50 dark:bg-slate-950/30">
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black text-rose-700 dark:text-rose-400 bg-slate-50 dark:bg-slate-950/30">
                               {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
                             </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
                               PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
                             </td>
-                            <td className="py-4 px-3 border-r border-slate-200/50 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-950/30"></td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-slate-800/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
+                            <td className="py-4 px-3 border-r border-slate-200/50 dark:border-white\/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
+                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
                               PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
                             </td>
-                            <td colSpan={isAdvanceMode ? 10 : 2} className="py-4 px-4 border-slate-200/50 dark:border-slate-800/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
+                            <td colSpan={isAdvanceMode ? 10 : 2} className="py-4 px-4 border-slate-200/50 dark:border-white\/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
                               (Cumulative total of {filteredRows.length} shown rows)
                             </td>
                           </tr>
@@ -8281,7 +8281,7 @@ export default function AdminPanel({
 
                     {/* Premium Pagination controls */}
                     {totalPages > 1 && (
-                      <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 sm:px-6 select-none flex-wrap gap-3">
+                      <div className="flex items-center justify-between border-t border-slate-200 dark:border-white\/10 bg-slate-50 dark:bg-slate-900/60 p-3 sm:px-6 select-none flex-wrap gap-3">
                         <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider">
                           Showing <span className="text-slate-600 dark:text-slate-400 font-sans">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="text-slate-600 dark:text-slate-400 font-sans">{Math.min(currentPage * itemsPerPage, filteredRows.length)}</span> of <span className="text-slate-600 dark:text-slate-400 font-sans">{filteredRows.length}</span> rows
                         </div>
@@ -8294,7 +8294,7 @@ export default function AdminPanel({
                               const tbl = document.getElementById('billing-spreadsheet-table');
                               if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white\/10 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
                             title="First Page"
                           >
                             « First
@@ -8307,7 +8307,7 @@ export default function AdminPanel({
                               const tbl = document.getElementById('billing-spreadsheet-table');
                               if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white\/10 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
                           >
                             ◀ Prev
                           </button>
@@ -8324,7 +8324,7 @@ export default function AdminPanel({
                               const tbl = document.getElementById('billing-spreadsheet-table');
                               if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white\/10 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
                           >
                             Next ▶
                           </button>
@@ -8336,7 +8336,7 @@ export default function AdminPanel({
                               const tbl = document.getElementById('billing-spreadsheet-table');
                               if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-800 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
+                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white\/10 dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
                             title="Last Page"
                           >
                             Last »
@@ -8383,11 +8383,11 @@ export default function AdminPanel({
                               ? "bg-emerald-500/5 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-100" 
                               : isPartial 
                               ? "bg-amber-500/5 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100" 
-                              : "bg-white dark:bg-slate-900/95 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
+                              : "bg-white dark:bg-slate-900/95 border-slate-200 dark:border-white\/10 text-slate-800 dark:text-slate-100"
                           )}
                         >
                           {/* Top bar */}
-                          <div className="flex items-start justify-between gap-2 border-b border-dotted border-slate-200 dark:border-slate-800 pb-2 mb-2">
+                          <div className="flex items-start justify-between gap-2 border-b border-dotted border-slate-200 dark:border-white\/10 pb-2 mb-2">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-black px-1.5 py-0.5 rounded shrink-0">
                                 #{globalRowIdx + 1}
@@ -8453,7 +8453,7 @@ export default function AdminPanel({
                                 disabled={!isBillingUnlocked}
                                 onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
                                 onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-slate-850 rounded-lg text-[11px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-sans"
+                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[11px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-sans"
                                 placeholder="..."
                               />
                             </div>
@@ -8468,7 +8468,7 @@ export default function AdminPanel({
                                   disabled={!isBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value, true)}
-                                  className="w-full text-center bg-slate-50/40 dark:bg-slate-950/30 px-1 py-1 border border-slate-150 dark:border-slate-850 rounded-lg text-[10px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase font-sans"
+                                  className="w-full text-center bg-slate-50/40 dark:bg-slate-950/30 px-1 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[10px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase font-sans"
                                 />
                               </div>
                               <div className="space-y-0.5">
@@ -8479,7 +8479,7 @@ export default function AdminPanel({
                                   disabled={!isBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value, true)}
-                                  className="w-full text-center bg-slate-50/40 dark:bg-slate-950/30 px-1 py-1 border border-slate-150 dark:border-slate-850 rounded-lg text-[10px] focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-300 font-black uppercase font-sans"
+                                  className="w-full text-center bg-slate-50/40 dark:bg-slate-950/30 px-1 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[10px] focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-300 font-black uppercase font-sans"
                                 />
                               </div>
                             </div>
@@ -8487,7 +8487,7 @@ export default function AdminPanel({
                             {/* Base Amount */}
                             <div className="space-y-0.5">
                               <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Base Amount</span>
-                              <div className="flex items-center bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-slate-850 rounded-lg focus-within:ring-1 focus-within:ring-blue-500/30">
+                              <div className="flex items-center bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg focus-within:ring-1 focus-within:ring-blue-500/30">
                                 <span className="text-[9px] text-slate-400 dark:text-slate-500 font-black mr-1 shrink-0">PKR</span>
                                 <input
                                   type="number"
@@ -8503,7 +8503,7 @@ export default function AdminPanel({
                             {/* Cr. Arrears */}
                             <div className="space-y-0.5">
                               <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Arrears</span>
-                              <div className="flex items-center bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-slate-850 rounded-lg focus-within:ring-1 focus-within:ring-blue-500/30">
+                              <div className="flex items-center bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg focus-within:ring-1 focus-within:ring-blue-500/30">
                                 <span className={cn("text-[9px] font-black mr-1 shrink-0", outstandingCr > 0 ? "text-rose-600" : "text-slate-400")}>PKR</span>
                                 <input
                                   type="number"
@@ -8560,7 +8560,7 @@ export default function AdminPanel({
 
                           {/* Advance params block shown only when isAdvanceMode toggled on */}
                           {isAdvanceMode && (
-                            <div className="mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800 space-y-2 text-[11px] bg-slate-50/50 dark:bg-black/10 p-2 rounded-xl font-sans">
+                            <div className="mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-white\/10 space-y-2 text-[11px] bg-slate-50/50 dark:bg-black/10 p-2 rounded-xl font-sans">
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-0.5">
                                   <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Occupation</span>
@@ -8569,7 +8569,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.occ}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-slate-800/80 rounded font-sans text-black dark:text-white font-black"
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded font-sans text-black dark:text-white font-black"
                                   />
                                 </div>
                                 <div className="space-y-0.5">
@@ -8579,7 +8579,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.serNam}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-slate-800/80 rounded font-sans text-black dark:text-white"
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded font-sans text-black dark:text-white"
                                   />
                                 </div>
                               </div>
@@ -8592,7 +8592,7 @@ export default function AdminPanel({
                                   disabled={false}
                                   onClick={(e) => e.stopPropagation()}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
-                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-1 border border-slate-200/50 dark:border-slate-800/80 rounded font-bold text-black dark:text-white font-sans"
+                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-1 border border-slate-200/50 dark:border-white\/10/80 rounded font-bold text-black dark:text-white font-sans"
                                   placeholder="No comment..."
                                 />
                               </div>
@@ -8605,7 +8605,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.pkgDetails}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-slate-800/80 rounded text-blue-900 dark:text-blue-300 font-bold font-sans"
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-blue-900 dark:text-blue-300 font-bold font-sans"
                                   />
                                 </div>
                                 <div className="space-y-0.5">
@@ -8615,7 +8615,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.connectionDate}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-slate-800/80 rounded text-center font-sans text-black dark:text-white"
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-center font-sans text-black dark:text-white"
                                     placeholder="MM/DD/YY"
                                   />
                                 </div>
@@ -8629,7 +8629,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.devicePrice}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-slate-800/80 rounded text-right font-sans text-black dark:text-white"
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-right font-sans text-black dark:text-white"
                                   />
                                 </div>
                                 <div className="space-y-0.5">
@@ -8639,12 +8639,12 @@ export default function AdminPanel({
                                     defaultValue={rowRef.abl}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-slate-800/80 rounded text-right font-sans text-black dark:text-white"
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-right font-sans text-black dark:text-white"
                                   />
                                 </div>
                               </div>
 
-                              <div className="flex items-center justify-between gap-1 mt-1 pt-1.5 border-t border-slate-200/60 dark:border-slate-800/50">
+                              <div className="flex items-center justify-between gap-1 mt-1 pt-1.5 border-t border-slate-200/60 dark:border-white\/10/50">
                                 <div className="space-y-0.5 flex-1 max-w-[65%]">
                                   <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase block leading-none">Network</span>
                                   <input
@@ -8652,7 +8652,7 @@ export default function AdminPanel({
                                     defaultValue={rowRef.network}
                                     disabled={!isBillingUnlocked}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-slate-800/80 rounded text-[11px] font-sans text-black dark:text-white font-black"
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-[11px] font-sans text-black dark:text-white font-black"
                                   />
                                 </div>
                                 
@@ -8687,14 +8687,14 @@ export default function AdminPanel({
                     })}
                     
                     {filteredRows.length === 0 && (
-                      <div className="col-span-full py-12 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 font-sans">
+                      <div className="col-span-full py-12 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-white\/10 font-sans">
                         No billing records aligned with search filters.
                       </div>
                     )}
 
                     {/* Compact Pagination for mobile cards */}
                     {totalPages > 1 && (
-                      <div className="col-span-full flex items-center justify-between py-2 border-t border-slate-200/50 dark:border-slate-800/50 mt-1 select-none flex-wrap gap-2">
+                      <div className="col-span-full flex items-center justify-between py-2 border-t border-slate-200/50 dark:border-white\/10/50 mt-1 select-none flex-wrap gap-2">
                         <div className="text-[9px] text-slate-400 font-mono font-bold uppercase">
                           Page {currentPage} of {totalPages} ({filteredRows.length} total)
                         </div>
@@ -8705,7 +8705,7 @@ export default function AdminPanel({
                             onClick={() => {
                               setBillingPage(1);
                             }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
+                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white/10 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
                           >
                             « First
                           </button>
@@ -8715,7 +8715,7 @@ export default function AdminPanel({
                             onClick={() => {
                               setBillingPage(prev => Math.max(prev - 1, 1));
                             }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
+                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white/10 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
                           >
                             ◀ Prev
                           </button>
@@ -8725,7 +8725,7 @@ export default function AdminPanel({
                             onClick={() => {
                               setBillingPage(prev => Math.min(prev + 1, totalPages));
                             }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-slate-850 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
+                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white/10 rounded-lg bg-white dark:bg-slate-900 cursor-pointer font-sans"
                           >
                             Next ▶
                           </button>
@@ -8734,7 +8734,7 @@ export default function AdminPanel({
                     )}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200/60 dark:border-slate-850">
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200/60 dark:border-white/10">
                     <div>
                       Month: <span className="text-slate-700 dark:text-slate-300 font-sans">{currentMonthId}</span> | 
                       Master clients in pool: <span className="text-slate-700 dark:text-slate-300 font-sans">{masterClients.length}</span>
@@ -8808,9 +8808,9 @@ export default function AdminPanel({
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-4xl lg:max-w-5xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300"
+              className="bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-white\/10 w-full max-w-4xl lg:max-w-5xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300"
             >
-              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-200 dark:border-white\/10 bg-slate-50 dark:bg-slate-900/50">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
                     <UserPlus size={20} />
@@ -8832,7 +8832,7 @@ export default function AdminPanel({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {/* Basic Details */}
                   <div className="space-y-4">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Client Information</h4>
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-white\/10 pb-2">Client Information</h4>
                     
                     <div className="space-y-3">
                       <div>
@@ -8859,7 +8859,7 @@ export default function AdminPanel({
 
                   {/* Billing Details */}
                   <div className="space-y-4">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Financial Status</h4>
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 dark:border-white\/10 pb-2">Financial Status</h4>
                     
                     <div className="space-y-3">
                       <div>
@@ -8878,11 +8878,11 @@ export default function AdminPanel({
                       </div>
 
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                           <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Base Amount</div>
                           <div className="text-sm font-black text-slate-800 dark:text-slate-100">PKR {selectedRecoveryRow.baseAmount || 0}</div>
                         </div>
-                        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                           <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Arrears (Cr.)</div>
                           <div className={cn("text-sm font-black", parseFloat(selectedRecoveryRow.cr || 0) > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-800 dark:text-slate-100")}>PKR {selectedRecoveryRow.cr || 0}</div>
                         </div>
@@ -8903,47 +8903,47 @@ export default function AdminPanel({
                 </div>
 
                 {/* Advance Details */}
-                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-white\/10">
                   <h4 className="text-xs font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 flex items-center gap-2">
                     <Zap size={14} /> Advanced Parameters
                   </h4>
                   
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     {/* Full-width landscape-optimized comments box */}
-                    <div className="col-span-2 sm:col-span-3 bg-slate-50 dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-150 dark:border-slate-800 space-y-2 shadow-sm">
+                    <div className="col-span-2 sm:col-span-3 bg-slate-50 dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-150 dark:border-white\/10 space-y-2 shadow-sm">
                       <div className="text-[10px] font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 flex items-center gap-1.5">
                         💬 Comments & Remarks
                       </div>
-                      <div className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-150 dark:border-slate-850/80 shadow-inner leading-relaxed whitespace-pre-wrap select-text min-h-[90px]">
+                      <div className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-150 dark:border-white/10 shadow-inner leading-relaxed whitespace-pre-wrap select-text min-h-[90px]">
                         {selectedRecoveryRow.comments || '—'}
                       </div>
                     </div>
 
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Occupation</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.occ || '—'}</div>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Service Name</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.serviceName || '—'}</div>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Package Details</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.pkgDetails || '—'}</div>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Installation Date</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.date || '—'}</div>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Device/Router</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.device || '—'}</div>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">ABL</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.abl || '—'}</div>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800">
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Network / Node</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.network || '—'}</div>
                     </div>
@@ -9007,7 +9007,7 @@ export default function AdminPanel({
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden p-6 space-y-5 font-sans"
+              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-white\/10 rounded-2xl shadow-2xl overflow-hidden p-6 space-y-5 font-sans"
             >
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 text-amber-500">
@@ -9023,7 +9023,7 @@ export default function AdminPanel({
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800 font-sans">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200/60 dark:border-white\/10 font-sans">
                 Do you want to save your changes to the database now, or discard changes before leaving?
               </p>
 

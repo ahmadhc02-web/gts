@@ -642,7 +642,7 @@ export default function LoginForm({
       </div>
 
       {/* Main Header */}
-      <header className="fixed top-0 left-0 right-0 z-40 w-full px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50 shadow-sm transition-colors duration-300">
+      <header className="fixed top-0 left-0 right-0 z-40 w-full px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-b border-slate-200/50 dark:border-white/10 shadow-sm transition-colors duration-300">
         <div className="flex items-center space-x-3 cursor-pointer group">
           <div className="relative shrink-0 select-none transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]">
             <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-60 transition duration-1000 animate-pulse" />
@@ -774,7 +774,7 @@ export default function LoginForm({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="relative z-20 w-full py-24 px-4 bg-slate-50 dark:bg-[#0b0f19] pointer-events-auto"
+            className="relative z-20 w-full py-24 px-4 bg-slate-50 dark:bg-slate-950 pointer-events-auto"
           >
             <div className="max-w-7xl mx-auto">
               <div className="text-center mb-16">
@@ -794,7 +794,7 @@ export default function LoginForm({
                 {/* Plan A */}
                 <motion.div
                   whileHover={{ y: -10 }}
-                  className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl relative overflow-hidden group"
+                  className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-white/10 shadow-xl relative overflow-hidden group"
                 >
                   <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
                     <Wifi size={64} className="text-emerald-500" />
@@ -902,7 +902,7 @@ export default function LoginForm({
                 {/* Plan C */}
                 <motion.div
                   whileHover={{ y: -10 }}
-                  className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl relative overflow-hidden group"
+                  className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-white/10 shadow-xl relative overflow-hidden group"
                 >
                   <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
                     <Rocket size={64} className="text-emerald-500" />
@@ -954,7 +954,7 @@ export default function LoginForm({
                 {/* Plan D */}
                 <motion.div
                   whileHover={{ y: -10 }}
-                  className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-slate-800 shadow-xl relative overflow-hidden group"
+                  className="bg-white dark:bg-slate-900/80 backdrop-blur-sm rounded-3xl p-8 border border-slate-200 dark:border-white/10 shadow-xl relative overflow-hidden group"
                 >
                   <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
                     <Globe size={64} className="text-emerald-500" />
@@ -1038,7 +1038,7 @@ export default function LoginForm({
               exit={{ scale: 0.95, y: 20, opacity: 0 }}
               transition={{ duration: 0.4 }}
               className={cn(
-                "gts-login-container w-full max-w-4xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative bg-white/95 dark:bg-[#0b0f19]/90 backdrop-blur-2xl border border-emerald-500/20 rounded-[2rem] overflow-hidden min-h-[500px] sm:min-h-[550px] flex-shrink-0 z-20 my-auto",
+                "gts-login-container w-full max-w-4xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative bg-white/95 dark:bg-slate-950/90 backdrop-blur-2xl border border-emerald-500/20 rounded-[2rem] overflow-hidden min-h-[500px] sm:min-h-[550px] flex-shrink-0 z-20 my-auto",
                 isRightPanelActive && "active",
               )}
             >
@@ -1205,10 +1205,10 @@ export default function LoginForm({
                     <div className="pt-2">
                       <div className="relative mb-3">
                         <div className="absolute inset-0 flex items-center">
-                          <div className="w-full border-t border-slate-200 dark:border-slate-800"></div>
+                          <div className="w-full border-t border-slate-200 dark:border-white/10"></div>
                         </div>
                         <div className="relative flex justify-center text-[9px] uppercase font-black tracking-widest">
-                          <span className="px-2 bg-white dark:bg-[#0b0f19] text-slate-400">
+                          <span className="px-2 bg-white dark:bg-slate-950 text-slate-400">
                             or secondary access
                           </span>
                         </div>
@@ -1220,7 +1220,7 @@ export default function LoginForm({
                         disabled={isLoading}
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        className="w-full py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-slate-800 dark:text-slate-100 font-extrabold uppercase tracking-[0.15em] text-[9px] shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                        className="w-full py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-100 font-extrabold uppercase tracking-[0.15em] text-[9px] shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
                           <path
@@ -1676,7 +1676,7 @@ export default function LoginForm({
               initial={{ scale: 0.95, y: 15 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 15 }}
-              className="relative w-full max-w-sm p-6 bg-white dark:bg-[#0b0f19] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-sm p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden"
             >
               <div className="text-center mb-6">
                 <div className="inline-flex p-3 rounded-full bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 mb-2 border border-blue-200/50">
@@ -1690,7 +1690,7 @@ export default function LoginForm({
                 </p>
               </div>
 
-              <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-150 dark:border-slate-800 space-y-1.5 text-center mb-4">
+              <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-150 dark:border-white/10 space-y-1.5 text-center mb-4">
                 <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">
                   Linked to Dealer Network
                 </span>
@@ -1709,7 +1709,7 @@ export default function LoginForm({
                 initial={{ y: -30, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.2, type: "spring", damping: 15 }}
-                className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-4"
+                className="space-y-2 border-t border-slate-100 dark:border-white/10 pt-4"
               >
                 <label className="block text-center text-[10px] font-black text-brand-accent uppercase tracking-widest leading-normal">
                   Enter Dealer Network Code
@@ -1737,7 +1737,7 @@ export default function LoginForm({
                 )}
               </motion.div>
 
-              <div className="space-y-2 pt-6 mt-4 border-t border-slate-200/50 dark:border-slate-800/85">
+              <div className="space-y-2 pt-6 mt-4 border-t border-slate-200/50 dark:border-white/10">
                 <button
                   type="button"
                   onClick={() => {
@@ -1793,13 +1793,13 @@ export default function LoginForm({
               initial={{ scale: 0.95, y: 15 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 15 }}
-              className="relative w-full max-w-md p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden"
+              className="relative w-full max-w-md p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden"
             >
               {/* Corner Accents */}
               <div className="absolute top-0 right-0 w-24 h-24 bg-brand-accent/10 rounded-full blur-2xl pointer-events-none" />
               <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
 
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-slate-800/60">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-white/10">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-brand-accent/10 flex items-center justify-center text-brand-accent">
                     <Terminal size={16} />
@@ -2080,7 +2080,7 @@ export default function LoginForm({
                   <h4 className="text-sm font-black uppercase tracking-tight text-emerald-600 dark:text-emerald-400 leading-none">
                     Security Updated
                   </h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-bold p-3 bg-slate-50 dark:bg-[#0b0f19] rounded-2xl border border-slate-100 dark:border-slate-800/50 text-left">
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-bold p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-white/10 text-left">
                     {recoverySuccess}
                   </p>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">

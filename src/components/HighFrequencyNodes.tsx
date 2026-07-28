@@ -49,7 +49,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
 
   return (
     <div className="h-full flex flex-col space-y-6">
-      <div className="flex-1 flex flex-col bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-[0_22px_48px_rgba(0,0,0,0.12),_0_8px_24px_rgba(245,158,11,0.08)] overflow-hidden">
+      <div className="flex-1 flex flex-col bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-white/10 p-5 shadow-[0_22px_48px_rgba(0,0,0,0.12),_0_8px_24px_rgba(245,158,11,0.08)] overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
@@ -96,7 +96,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                   className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
                     expandedUser === user.name 
                       ? 'bg-amber-500/5 border-amber-500/30' 
-                      : 'bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800/50 hover:border-amber-500/30'
+                      : 'bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-white/10 hover:border-amber-500/30'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -142,7 +142,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                             <button 
                               key={`${complaint.id}-${cIdx}`} 
                               onClick={() => setSelectedComplaint(complaint)}
-                              className="w-full text-left p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between gap-3 hover:border-amber-500/30 transition-all active:scale-[0.98]"
+                              className="w-full text-left p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-white/10 shadow-sm flex items-center justify-between gap-3 hover:border-amber-500/30 transition-all active:scale-[0.98]"
                             >
                                <div className="flex-1 min-w-0">
                                   <p className="text-[10px] font-bold text-slate-900 dark:text-white truncate uppercase">{complaint.category}</p>
@@ -206,9 +206,9 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl md:max-w-3xl bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
+              className="relative w-full max-w-2xl md:max-w-3xl bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
             >
-              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+              <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
                     <Info size={20} />
@@ -228,7 +228,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
 
               <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
                 {/* User profile & coordinates */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-b border-slate-100 dark:border-white/10 pb-5">
                   <div className="space-y-1">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Customer Node</p>
                     <div className="flex items-center gap-2 text-slate-900 dark:text-white">
@@ -264,15 +264,15 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   
                   {/* Core 1: Operational Log */}
-                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 pb-2 mb-3">
+                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/10 p-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2 mb-3">
                       <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">OPERATIONAL LOG</span>
                       <span className="text-[8px] font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1 rounded uppercase font-bold">Issue Details</span>
                     </div>
                     <p className="text-xs text-slate-705 dark:text-slate-300 font-medium leading-relaxed italic min-h-[80px]">
                       "{selectedComplaint.description}"
                     </p>
-                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-800/50 flex flex-col gap-1">
+                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-white/10 flex flex-col gap-1">
                       <div className="flex justify-between items-center text-[8px] font-bold text-slate-400">
                         <span>LOG CAPTAIN:</span>
                         <div className="flex items-center gap-1.5">
@@ -302,8 +302,8 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                   </div>
 
                   {/* Core 2: Team Resolution Protocol */}
-                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 pb-2 mb-3">
+                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/10 p-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2 mb-3">
                       <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500 dark:text-emerald-400">RESOLUTION PROTOCOL</span>
                       <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1 rounded uppercase font-bold">Action Taken</span>
                     </div>
@@ -336,7 +336,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                         <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 leading-snug">No active technical resolution protocol registered yet.</p>
                       </div>
                     )}
-                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-800/50 flex flex-col gap-1">
+                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-white/10 flex flex-col gap-1">
                       <div className="flex justify-between items-center text-[8px] font-bold text-slate-400">
                         <span>TEAM AUTHOR:</span>
                         <div className="flex items-center gap-1.5">
@@ -366,8 +366,8 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                   </div>
 
                   {/* Core 3: Customer Review */}
-                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 pb-2 mb-3">
+                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/10 p-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2 mb-3">
                       <span className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400">CUSTOMER REVIEW</span>
                       <span className="text-[8px] font-mono bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-1 rounded uppercase font-bold">Feedback</span>
                     </div>
@@ -381,7 +381,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                         <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 leading-snug">Complete full dispatch protocol to trigger customer review telemetry.</p>
                       </div>
                     )}
-                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-800/50 flex flex-col gap-1">
+                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-white/10 flex flex-col gap-1">
                       <div className="flex justify-between text-[8px] font-bold text-slate-400">
                         <span>REVIEW TELEMETRY:</span>
                         <span className="text-slate-600 dark:text-slate-300">{selectedComplaint.customerReview ? 'SUCCESS' : 'PENDING'}</span>
@@ -395,7 +395,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Hardware Interface / Panel Details</p>
-                    <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-white/10">
                       <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
                         {selectedComplaint.panelDetails || "NO HARDWARE PANEL SPECIFIED FOR THIS ACTIVE NODE REGISTRY ENTRY."}
                       </p>
@@ -403,7 +403,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                   </div>
                   <div className="space-y-1">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Broadband Subscription / Speed Details</p>
-                    <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-white/10">
                       <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
                         {selectedComplaint.pkgDetails || "NO SPEED PROFILE SPECIFIED FOR THIS ACTIVE NODE REGISTRY ENTRY."}
                       </p>
@@ -412,7 +412,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                 </div>
 
                 {/* Timestamps */}
-                <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-white/10 shrink-0">
                   <div className="flex items-center gap-2 text-slate-400">
                     <Calendar size={12} />
                     <span className="text-[9px] font-black uppercase tracking-widest">

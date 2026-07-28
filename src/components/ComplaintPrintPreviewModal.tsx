@@ -134,10 +134,10 @@ export default function ComplaintPrintPreviewModal({
         {/* Dynamic Controls Drawer (Hidden in print) */}
         <div 
           id="a4-single-complaint-controls"
-          className="print-single-hide w-full md:w-[380px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full shadow-2xl relative z-[610]"
+          className="print-single-hide w-full md:w-[380px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-white/10 flex flex-col h-full shadow-2xl relative z-[610]"
         >
           {/* Header */}
-          <div className="p-5 border-b border-slate-150 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-950/50 flex items-center justify-between">
+          <div className="p-5 border-b border-slate-150 dark:border-white/10 bg-slate-50/50 dark:bg-slate-950/50 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-blue-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
                 <Printer size={18} />
@@ -159,7 +159,7 @@ export default function ComplaintPrintPreviewModal({
 
           {/* Guidelines / Help Content */}
           <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar text-xs">
-            <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/60 p-4 rounded-2xl space-y-2 text-slate-600 dark:text-slate-400">
+            <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-white/10 p-4 rounded-2xl space-y-2 text-slate-600 dark:text-slate-400">
               <p className="font-extrabold uppercase text-[10px] text-slate-800 dark:text-slate-200 tracking-wider flex items-center gap-1.5">
                 <CheckCircle2 size={12} className="text-emerald-500" />
                 A4-Compliant Format
@@ -174,7 +174,7 @@ export default function ComplaintPrintPreviewModal({
               </ul>
             </div>
 
-            <div className="border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
+            <div className="border border-dashed border-slate-200 dark:border-white/10 rounded-2xl p-4 space-y-3">
               <span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest">Document Registry</span>
               <div className="space-y-2 font-mono text-[11px]">
                 <div className="flex justify-between">
@@ -198,7 +198,7 @@ export default function ComplaintPrintPreviewModal({
           </div>
 
           {/* Printable Actions Button */}
-          <div className="p-5 border-t border-slate-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-col gap-3">
+          <div className="p-5 border-t border-slate-150 dark:border-white/10 bg-slate-50 dark:bg-slate-950 flex flex-col gap-3">
             <button
               id="trigger-physical-print-btn"
               onClick={handlePrint}
@@ -219,7 +219,7 @@ export default function ComplaintPrintPreviewModal({
           className="flex-1 bg-slate-100 dark:bg-slate-950 p-8 overflow-y-auto print:p-0 print:bg-white custom-scrollbar flex flex-col items-center gap-6"
         >
           {/* Canvas Indicator (Hidden in print) */}
-          <div className="print-single-hide w-full max-w-[210mm] text-center border-b border-dashed border-slate-200 dark:border-slate-850 pb-2.5 flex items-center justify-between">
+          <div className="print-single-hide w-full max-w-[210mm] text-center border-b border-dashed border-slate-200 dark:border-white/10 pb-2.5 flex items-center justify-between">
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
               Live A4 portrait preview simulation
             </span>

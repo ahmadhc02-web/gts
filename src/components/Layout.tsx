@@ -502,7 +502,7 @@ export default function Layout({
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
       {user && (
         <div className={cn(
-          "group/rail left-0 bottom-0 w-[68px] hover:w-[240px] transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-slate-800/60 flex-col items-stretch pb-5 select-none overflow-hidden",
+          "group/rail left-0 bottom-0 w-[68px] hover:w-[240px] transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-white/10 flex-col items-stretch pb-5 select-none overflow-hidden",
           isSidebarOpen ? "flex z-[160] top-0" : "hidden lg:flex z-[51] top-0",
           isPreview ? "absolute h-full" : "fixed shadow-[1px_0_15px_rgba(0,0,0,0.02)]"
         )}>
@@ -709,12 +709,12 @@ export default function Layout({
         }}
         transition={{ type: 'spring', damping: 28, stiffness: 240 }}
         className={cn(
-          "top-0 bottom-0 left-0 z-[150] overflow-hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-r border-slate-200/80 dark:border-slate-800/80 shadow-2xl flex-col hidden lg:flex",
+          "top-0 bottom-0 left-0 z-[150] overflow-hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-r border-slate-200/80 dark:border-white/10 shadow-2xl flex-col hidden lg:flex",
           isPreview ? "absolute" : "fixed",
           !isSidebarOpen && "pointer-events-none"
         )}
       >
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800/60 flex items-center justify-between shrink-0">
+        <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
              <div className="w-8 h-8 rounded-lg bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
                 <LayoutDashboard size={18} />
@@ -800,7 +800,7 @@ export default function Layout({
           ))}
         </div>
 
-        <div className="p-4 mt-auto space-y-3 shrink-0 border-t border-slate-100 dark:border-slate-850 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+        <div className="p-4 mt-auto space-y-3 shrink-0 border-t border-slate-100 dark:border-white/10 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
           {/* MY PC Sidebar Button */}
           <motion.button
             onClick={() => handleSidebarNav('mypc')}
@@ -920,14 +920,14 @@ export default function Layout({
                   </div>
 
                   <div className="space-y-4 sm:space-y-6">
-                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800">
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-white/10">
                       <p className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
                         {selectedNotif.message}
                       </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                      <div className="p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                      <div className="p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-white/10">
                         <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Author</p>
                         <div className="flex items-center gap-1.5 sm:gap-2">
                           {(() => {
@@ -953,7 +953,7 @@ export default function Layout({
                           <span className="text-[10px] sm:text-xs font-bold text-slate-900 dark:text-slate-100">{selectedNotif.authorName}</span>
                         </div>
                       </div>
-                      <div className="p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                      <div className="p-3 sm:p-4 rounded-xl border border-slate-100 dark:border-white/10">
                         <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Timestamp</p>
                         <div className="flex items-center gap-1.5 sm:gap-2">
                           <Clock size={10} className="text-emerald-500 sm:w-[12px] sm:h-[12px]" />
@@ -963,11 +963,11 @@ export default function Layout({
                     </div>
 
                     {selectedNotif.details && (
-                      <div className="p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/20">
+                      <div className="p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-white/10 bg-slate-50/50 dark:bg-slate-900/20">
                          <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 sm:mb-3">Payload Data</p>
                          <div className="space-y-1.5 sm:space-y-2">
                             {Object.entries(selectedNotif.details).filter(([k]) => k !== 'id' && k !== 'createdAt').slice(0, 5).map(([key, value]) => (
-                              <div key={key} className="flex justify-between items-center text-[9px] sm:text-[10px] py-1 border-b border-slate-100 dark:border-slate-800/50 last:border-0">
+                              <div key={key} className="flex justify-between items-center text-[9px] sm:text-[10px] py-1 border-b border-slate-100 dark:border-white/10 last:border-0">
                                 <span className="font-bold uppercase text-slate-500">{key}</span>
                                 <span className="font-black text-slate-900 dark:text-slate-100 truncate max-w-[140px] sm:max-w-[200px]">{String(value)}</span>
                               </div>
@@ -1045,9 +1045,9 @@ export default function Layout({
                 stiffness: 220,
                 duration: 0.2
               }}
-              className="fixed bottom-20 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-[0_20px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden flex flex-col"
+              className="fixed bottom-20 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden flex flex-col"
             >
-              <div className="p-6 border-b border-slate-100 dark:border-slate-800/50 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-brand-accent/10 flex items-center justify-center">
                     <History size={16} className="text-brand-accent" />
@@ -1103,7 +1103,7 @@ export default function Layout({
                         setSelectedNotif(notif);
                         setIsNotificationsOpen(false);
                       }}
-                      className={`p-3.5 rounded-xl border border-slate-100 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-900/20 hover:bg-white dark:hover:bg-slate-900 transition-all duration-300 group cursor-pointer border-l-4 ${
+                      className={`p-3.5 rounded-xl border border-slate-100 dark:border-white/10 bg-slate-50/30 dark:bg-slate-900/20 hover:bg-white dark:hover:bg-slate-900 transition-all duration-300 group cursor-pointer border-l-4 ${
                         notif.type === 'complaint_created' ? 'border-l-emerald-500' :
                         notif.type === 'complaint_updated' ? 'border-l-blue-500' :
                         notif.type === 'complaint_deleted' ? 'border-l-rose-500' :
@@ -1157,7 +1157,7 @@ export default function Layout({
                 )}
               </div>
 
-              <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800/50">
+              <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-white/10">
                 <button 
                   onClick={() => setIsNotificationsOpen(false)}
                   className="w-full py-2.5 bg-slate-900 dark:bg-brand-accent text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-brand-accent/10 hover:scale-[1.02] active:scale-95 transition-all"
@@ -1195,7 +1195,7 @@ export default function Layout({
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setActiveTab('complaints')}
-                    className="flex md:hidden items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-750 dark:text-slate-300 border border-slate-200/50 dark:border-slate-800/50 text-[9px] font-black uppercase tracking-wider cursor-pointer"
+                    className="flex md:hidden items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-750 dark:text-slate-300 border border-slate-200/50 dark:border-white/10 text-[9px] font-black uppercase tracking-wider cursor-pointer"
                   >
                     <ChevronLeft size={11} className="text-slate-500 shrink-0" />
                     <span>Go Back</span>
@@ -1217,7 +1217,7 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => setIsMonthDropdownOpen(!isMonthDropdownOpen)}
-                    className="inline-flex items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800/80 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none w-28 sm:w-56"
+                    className="inline-flex items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none w-28 sm:w-56"
                   >
                     <div className="flex items-center gap-1 min-w-0">
                       <FolderOpen size={11} className="text-blue-500 shrink-0 sm:size-[13px]" />
@@ -1244,7 +1244,7 @@ export default function Layout({
                           animate={{ opacity: 1, y: 0, scaleY: 1 }}
                           exit={{ opacity: 0, y: -10, scaleY: 0.9 }}
                           transition={{ type: "spring", stiffness: 450, damping: 25 }}
-                          className="absolute right-0 sm:left-0 mt-2 w-60 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-2xl py-2 z-40 overflow-hidden font-sans border-t-4 border-t-blue-500 max-h-72 overflow-y-auto"
+                          className="absolute right-0 sm:left-0 mt-2 w-60 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 shadow-2xl py-2 z-40 overflow-hidden font-sans border-t-4 border-t-blue-500 max-h-72 overflow-y-auto"
                         >
                           <div className="px-4 pb-2 mb-1.5 border-b border-slate-100 dark:border-slate-900 text-[8.5px] text-slate-400 font-mono font-black uppercase tracking-widest block">
                             Billing Recovery Sheets
@@ -1292,7 +1292,7 @@ export default function Layout({
                   whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'ledger-vault' }))}
-                  className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                  className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                   title="User Ledger Vault"
                 >
                   <Users size={13} className="text-slate-500 dark:text-slate-400 animate-pulse shrink-0" />
@@ -1305,7 +1305,7 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'entry-sheet' }))}
-                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                     title="Entry Sheet"
                   >
                     <ClipboardList size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
@@ -1319,7 +1319,7 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'batch-print' }))}
-                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800/80 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                     title="Batch Print"
                   >
                     <Printer size={13} className="text-blue-500 shrink-0" />
@@ -1334,7 +1334,7 @@ export default function Layout({
                     type="button"
                     disabled={!hasActiveRows}
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'download-csv' }))}
-                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800/80 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none disabled:opacity-40 shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none disabled:opacity-40 shrink-0"
                     title="Download CSV Sheet"
                   >
                     <HardDriveDownload size={13} className="text-emerald-500 shrink-0" />
@@ -1348,7 +1348,7 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'new-month' }))}
-                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                     title="Create New Month Sheet"
                   >
                     <PlusSquare size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
@@ -1452,7 +1452,7 @@ export default function Layout({
                       "flex items-center gap-1 px-2.5 h-9 rounded-xl border bg-white dark:bg-slate-900 text-[10px] font-extrabold uppercase tracking-wider transition-all focus:outline-none select-none shadow-sm cursor-pointer",
                       showRefreshOptions 
                         ? "border-brand-accent text-brand-accent" 
-                        : "border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700"
+                        : "border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700"
                     )}
                   >
                     <span className={cn(
@@ -1471,7 +1471,7 @@ export default function Layout({
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 8 }}
-                        className="absolute top-full left-0 mt-1.5 w-36 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)] z-[100] overflow-hidden py-1"
+                        className="absolute top-full left-0 mt-1.5 w-36 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)] z-[100] overflow-hidden py-1"
                       >
                         {[
                           { label: 'AUTO - OFF', value: 0 },
@@ -1513,7 +1513,7 @@ export default function Layout({
                 </button>
 
                 {/* LASTCHK timer */}
-                <div className="flex items-center px-2.5 h-9 bg-slate-50 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/50 rounded-xl text-[9px] font-extrabold text-slate-400 dark:text-slate-500 font-mono tracking-tight uppercase shadow-sm select-none">
+                <div className="flex items-center px-2.5 h-9 bg-slate-50 dark:bg-slate-900 border border-slate-200/50 dark:border-white/10 rounded-xl text-[9px] font-extrabold text-slate-400 dark:text-slate-500 font-mono tracking-tight uppercase shadow-sm select-none">
                   LASTCHK:{lastRefreshedTime}
                 </div>
               </div>
@@ -1528,7 +1528,7 @@ export default function Layout({
                     "w-9 h-9 rounded-full border flex items-center justify-center relative transition-all bg-white dark:bg-slate-900 shadow-sm cursor-pointer hover:scale-105 active:scale-95",
                     alertAuthorized 
                       ? "border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10"
-                      : "border-slate-200 dark:border-slate-800 text-amber-500 bg-amber-500/5 hover:bg-amber-500/10"
+                      : "border-slate-200 dark:border-white/10 text-amber-500 bg-amber-500/5 hover:bg-amber-500/10"
                   )}
                   title={alertAuthorized ? (isAudioMuted ? "Alert History (Muted)" : "Alert History") : "Alert Restricted"}
                 >
@@ -1574,7 +1574,7 @@ export default function Layout({
                 <button 
                   id="profile-toggle-btn"
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="h-9 flex items-center gap-2.5 px-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-200/50 dark:border-slate-800/80 shadow-sm cursor-pointer select-none"
+                  className="h-9 flex items-center gap-2.5 px-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-200/50 dark:border-white/10 shadow-sm cursor-pointer select-none"
                 >
                   <div className="hidden sm:flex flex-col items-end justify-center select-none">
                     <span className="text-[10px] font-black tracking-tight text-slate-800 dark:text-slate-200 leading-none">
@@ -1624,13 +1624,13 @@ export default function Layout({
                         animate={{ opacity: 1, height: "auto", scaleY: 1, y: 0, originY: 0 }}
                         exit={{ opacity: 0, height: 0, scaleY: 0.8, y: -10, originY: 0 }}
                         transition={{ type: "spring", damping: 26, stiffness: 320 }}
-                        className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[340px] bg-white dark:bg-slate-950 rounded-3xl border border-slate-200/70 dark:border-slate-800/80 shadow-[0_20px_50px_rgba(0,0,0,0.12)] dark:shadow-[0_25px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden origin-top text-slate-800 dark:text-slate-100 animate-slideDown"
+                        className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[340px] bg-white dark:bg-slate-950 rounded-3xl border border-slate-200/70 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.12)] dark:shadow-[0_25px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden origin-top text-slate-800 dark:text-slate-100 animate-slideDown"
                       >
                         {/* Upper Gradient Accent */}
                         <div className="absolute top-0 left-0 right-0 h-[3.5px] bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
                         
                         {/* Improved Header */}
-                        <div className="p-5 pb-4 bg-slate-50/50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800/50 relative">
+                        <div className="p-5 pb-4 bg-slate-50/50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-white/10 relative">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
                               <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-emerald-400/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
@@ -1649,7 +1649,7 @@ export default function Layout({
                         </div>
 
                         {/* Interactive Photo Uploader Section */}
-                        <div className="p-5 pb-4 flex flex-col items-center gap-1.5 border-b border-slate-100 dark:border-slate-800/30">
+                        <div className="p-5 pb-4 flex flex-col items-center gap-1.5 border-b border-slate-100 dark:border-white/10">
                           <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                             {/* Colorful glow behind on hover */}
                             <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-indigo-500 blur opacity-20 group-hover:opacity-55 transition-opacity duration-500 animate-pulse" />
@@ -1695,7 +1695,7 @@ export default function Layout({
                             <button
                               type="button"
                               onClick={() => fileInputRef.current?.click()}
-                              className="px-2 py-0.5 bg-slate-55 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200/50 dark:border-slate-800 rounded text-[8px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 transition-all active:scale-95 cursor-pointer"
+                              className="px-2 py-0.5 bg-slate-55 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200/50 dark:border-white/10 rounded text-[8px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 transition-all active:scale-95 cursor-pointer"
                             >
                               CHOOSE_FILE
                             </button>
@@ -1783,7 +1783,7 @@ export default function Layout({
                                 value={editFullName}
                                 onChange={(e) => setEditFullName(e.target.value)}
                                 placeholder="Enter Full Name"
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
                               />
                             </div>
                           </div>
@@ -1800,7 +1800,7 @@ export default function Layout({
                                 value={editUsername}
                                 onChange={(e) => setEditUsername(e.target.value)}
                                 placeholder="Username"
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
                               />
                             </div>
                           </div>
@@ -1817,7 +1817,7 @@ export default function Layout({
                                 value={editPassword}
                                 onChange={(e) => setEditPassword(e.target.value)}
                                 placeholder="••••••••"
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
                               />
                             </div>
                           </div>
@@ -1834,7 +1834,7 @@ export default function Layout({
                                 value={editEmail}
                                 onChange={(e) => setEditEmail(e.target.value)}
                                 placeholder="example@mail.com"
-                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
+                                className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold focus:bg-white dark:focus:bg-slate-900 focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all text-slate-850 dark:text-slate-100"
                               />
                             </div>
                           </div>
@@ -1862,7 +1862,7 @@ export default function Layout({
                         </form>
 
                         {/* Dashboard Footer with Roles & Termination Option */}
-                        <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-850 flex items-center justify-between">
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[7px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Security Access</span>
                             <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none">
@@ -1934,7 +1934,7 @@ export default function Layout({
               
               <div className="p-6 sm:p-8 space-y-6">
                 {/* Header section with instructions */}
-                <div className="flex items-center justify-between border-b-2 border-slate-200 dark:border-slate-800 pb-4">
+                <div className="flex items-center justify-between border-b-2 border-slate-200 dark:border-white/10 pb-4">
                   <div className="flex items-center gap-3">
                     <div className="relative flex h-3.5 w-3.5 items-center justify-center">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -1997,7 +1997,7 @@ export default function Layout({
       {/* Footer */}
       {user && (
       <footer className={cn(
-        "relative w-full overflow-hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-4 sm:py-5 transition-colors",
+        "relative w-full overflow-hidden border-t border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 py-4 sm:py-5 transition-colors",
         user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
       )}>
         <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8">
@@ -2118,7 +2118,7 @@ export default function Layout({
           </div>
 
           {/* Bottom Row containing GTS Logo, Company Name, ISP MANAGEMENT PRO, Copyright & Powered By */}
-          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200/80 dark:border-slate-800/80">
+          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200/80 dark:border-white/10">
             {/* Left/Center: GTS Logo + Brand Info + Copyright */}
             <div className="flex flex-col sm:flex-row items-center gap-2.5 text-center sm:text-left">
               {/* GTS Logo */}
@@ -2151,7 +2151,7 @@ export default function Layout({
             </div>
 
             {/* Right: Powered by Green Net pill */}
-            <div className="shrink-0 inline-flex items-center px-3.5 py-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 text-[8px] sm:text-[9.5px] uppercase font-black tracking-widest text-slate-500 dark:text-slate-400 shadow-2xs cursor-default">
+            <div className="shrink-0 inline-flex items-center px-3.5 py-1 rounded-full border border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-slate-900/80 text-[8px] sm:text-[9.5px] uppercase font-black tracking-widest text-slate-500 dark:text-slate-400 shadow-2xs cursor-default">
               POWERED BY GREEN NET
             </div>
           </div>

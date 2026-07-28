@@ -257,7 +257,7 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
               )}
             >
               {/* Left Side: Controls */}
-              <div className="flex-1 p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[85vh] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800">
+              <div className="flex-1 p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[85vh] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Printer className="text-blue-500 w-5 h-5" />
@@ -282,7 +282,7 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                       type="text"
                       value={template.title}
                       onChange={(e) => setTemplate({ ...template, title: e.target.value.toUpperCase() })}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 outline-none focus:border-blue-500 transition-colors uppercase font-bold text-slate-800 dark:text-slate-100"
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 outline-none focus:border-blue-500 transition-colors uppercase font-bold text-slate-800 dark:text-slate-100"
                     />
                   </div>
 
@@ -293,7 +293,7 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                         type="text"
                         value={template.address1}
                         onChange={(e) => setTemplate({ ...template, address1: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 outline-none focus:border-blue-500 transition-colors font-semibold text-slate-800 dark:text-slate-100"
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 outline-none focus:border-blue-500 transition-colors font-semibold text-slate-800 dark:text-slate-100"
                       />
                     </div>
                     <div className="space-y-2">
@@ -302,7 +302,7 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                         type="text"
                         value={template.address2}
                         onChange={(e) => setTemplate({ ...template, address2: e.target.value })}
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 outline-none focus:border-blue-500 transition-colors font-semibold text-slate-800 dark:text-slate-100"
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 outline-none focus:border-blue-500 transition-colors font-semibold text-slate-800 dark:text-slate-100"
                       />
                     </div>
                   </div>
@@ -318,14 +318,14 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                           placeholder="Item 1 Name"
                           value={template.item1Name}
                           onChange={(e) => setTemplate({ ...template, item1Name: e.target.value })}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 outline-none font-semibold text-slate-800 dark:text-slate-100"
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 outline-none font-semibold text-slate-800 dark:text-slate-100"
                         />
                         <input
                           type="text"
                           placeholder="Amount"
                           value={template.item1Amount}
                           onChange={(e) => setTemplate({ ...template, item1Amount: e.target.value })}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 outline-none font-mono text-right text-slate-800 dark:text-slate-100"
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 outline-none font-mono text-right text-slate-800 dark:text-slate-100"
                         />
                       </div>
 
@@ -335,14 +335,14 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                           placeholder="Item 2 Name"
                           value={template.item2Name}
                           onChange={(e) => setTemplate({ ...template, item2Name: e.target.value })}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 outline-none font-semibold text-slate-800 dark:text-slate-100"
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 outline-none font-semibold text-slate-800 dark:text-slate-100"
                         />
                         <input
                           type="text"
                           placeholder="Amount"
                           value={template.item2Amount}
                           onChange={(e) => setTemplate({ ...template, item2Amount: e.target.value })}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 outline-none font-mono text-right text-slate-800 dark:text-slate-100"
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 outline-none font-mono text-right text-slate-800 dark:text-slate-100"
                         />
                       </div>
 
@@ -352,14 +352,14 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                           placeholder="Item 3 Name"
                           value={template.item3Name}
                           onChange={(e) => setTemplate({ ...template, item3Name: e.target.value })}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 outline-none font-semibold text-slate-800 dark:text-slate-100"
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 outline-none font-semibold text-slate-800 dark:text-slate-100"
                         />
                         <input
                           type="text"
                           placeholder="Amount"
                           value={template.item3Amount}
                           onChange={(e) => setTemplate({ ...template, item3Amount: e.target.value })}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 outline-none font-mono text-right text-slate-800 dark:text-slate-100"
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 outline-none font-mono text-right text-slate-800 dark:text-slate-100"
                         />
                       </div>
 
@@ -369,14 +369,14 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                           placeholder="Item 4 Name"
                           value={template.item4Name}
                           onChange={(e) => setTemplate({ ...template, item4Name: e.target.value })}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 outline-none font-semibold text-slate-800 dark:text-slate-100"
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 outline-none font-semibold text-slate-800 dark:text-slate-100"
                         />
                         <input
                           type="text"
                           placeholder="Amount"
                           value={template.item4Amount}
                           onChange={(e) => setTemplate({ ...template, item4Amount: e.target.value })}
-                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 outline-none font-mono text-right text-slate-800 dark:text-slate-100"
+                          className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-1.5 outline-none font-mono text-right text-slate-800 dark:text-slate-100"
                         />
                       </div>
                     </div>
@@ -388,7 +388,7 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                     <textarea
                       value={template.footer}
                       onChange={(e) => setTemplate({ ...template, footer: e.target.value })}
-                      className="w-full h-16 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 outline-none focus:border-blue-500 transition-colors font-semibold text-slate-800 dark:text-slate-100 resize-none"
+                      className="w-full h-16 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 outline-none focus:border-blue-500 transition-colors font-semibold text-slate-800 dark:text-slate-100 resize-none"
                     />
                   </div>
                 </div>

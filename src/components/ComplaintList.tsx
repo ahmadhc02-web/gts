@@ -775,7 +775,7 @@ export default function ComplaintList({
                   </button>
                   <button
                     onClick={() => setComplaintToDelete(null)}
-                    className="w-full py-3 rounded-xl border-2 border-slate-100 dark:border-slate-800 text-slate-500 font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
+                    className="w-full py-3 rounded-xl border-2 border-slate-100 dark:border-white/10 text-slate-500 font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
                   >
                     Cancel Action
                   </button>
@@ -804,7 +804,7 @@ export default function ComplaintList({
       </div>
 
       {/* Search Bar, Time Range & Action Line */}
-      <div className="flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-900/10 p-4 rounded-2xl border border-slate-200/50 dark:border-slate-800/60 mb-2">
+      <div className="flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-900/10 p-4 rounded-2xl border border-slate-200/50 dark:border-white/10 mb-2">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           
           {/* Leftside search field */}
@@ -817,7 +817,7 @@ export default function ComplaintList({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search registry (Name, Phone, Area)..."
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-xs font-semibold focus:ring-2 focus:ring-brand-accent/20 outline-none transition-all"
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-xs font-semibold focus:ring-2 focus:ring-brand-accent/20 outline-none transition-all"
             />
           </div>
 
@@ -828,7 +828,7 @@ export default function ComplaintList({
             <div className="relative">
               <button
                 onClick={() => setTimeRangeOpen(!timeRangeOpen)}
-                className="flex items-center justify-between gap-2 px-4 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-350 shadow-sm min-w-[130px] hover:border-brand-accent transition-all cursor-pointer"
+                className="flex items-center justify-between gap-2 px-4 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-350 shadow-sm min-w-[130px] hover:border-brand-accent transition-all cursor-pointer"
               >
                 <span>{timeRange}</span>
                 <ChevronDown size={14} className={cn("text-slate-400 transition-transform duration-300", timeRangeOpen && "rotate-180")} />
@@ -840,7 +840,7 @@ export default function ComplaintList({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 8 }}
-                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-50 text-left"
+                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 text-left"
                   >
                     <div className="p-1.5 space-y-1">
                       {['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'All Time'].map((r) => (
@@ -881,7 +881,7 @@ export default function ComplaintList({
             </button>
 
             {/* Split status filters pill toggler */}
-            <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white/10">
               <button
                 onClick={() => setStatusFilter('all')}
                 className={cn(
@@ -943,7 +943,7 @@ export default function ComplaintList({
             <div className="relative">
               <button
                 onClick={() => setExportOpen(!exportOpen)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-850 hover:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-all cursor-pointer border border-transparent dark:border-slate-800"
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-850 hover:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-all cursor-pointer border border-transparent dark:border-white/10"
               >
                 <Download size={13} />
                 <span>Export</span>
@@ -956,7 +956,7 @@ export default function ComplaintList({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 8 }}
-                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-50 text-left"
+                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 text-left"
                   >
                     <div className="p-1.5 space-y-1">
                       <button
@@ -994,7 +994,7 @@ export default function ComplaintList({
                           window.print();
                           setExportOpen(false);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer border-t border-slate-150 dark:border-slate-800/85 pt-1.5 mt-1"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer border-t border-slate-150 dark:border-white/10 pt-1.5 mt-1"
                       >
                         <Printer size={14} className="text-indigo-500" />
                         <span>Print Registry (A4)</span>
@@ -1009,12 +1009,12 @@ export default function ComplaintList({
         </div>
 
         {/* Dropdown filters grid line */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-200/40 dark:border-slate-800/40">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-200/40 dark:border-white/10">
           <div>
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as any)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1033,7 +1033,7 @@ export default function ComplaintList({
             <select
               value={zoneFilter}
               onChange={(e) => setZoneFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1052,7 +1052,7 @@ export default function ComplaintList({
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value as any)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1073,11 +1073,11 @@ export default function ComplaintList({
       <motion.div 
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn("overflow-hidden shadow-2xl border bg-white dark:bg-slate-950/40 border-slate-200/50 dark:border-slate-800/80 backdrop-blur-md", getCardStyle(branding.cardStyle))}
+        className={cn("overflow-hidden shadow-2xl border bg-white dark:bg-slate-950/40 border-slate-200/50 dark:border-white/10 backdrop-blur-md", getCardStyle(branding.cardStyle))}
       >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1250px]">
-            <thead className="bg-slate-50/75 dark:bg-slate-900/40 border-b border-slate-150 dark:border-slate-800/85">
+            <thead className="bg-slate-50/75 dark:bg-slate-900/40 border-b border-slate-150 dark:border-white/10">
               <tr>
                 <th 
                   className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
@@ -1198,7 +1198,7 @@ export default function ComplaintList({
                       }}
                       onClick={() => setSelectedComplaint(complaint)}
                       className={cn(
-                        "group hover:scale-[1.002] active:scale-[0.999] hover:shadow-[0_4px_24px_rgba(0,0,0,0.02)] dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.25)] border-y border-slate-100/50 dark:border-slate-800/40 transition-all duration-300 cursor-pointer relative",
+                        "group hover:scale-[1.002] active:scale-[0.999] hover:shadow-[0_4px_24px_rgba(0,0,0,0.02)] dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.25)] border-y border-slate-100/50 dark:border-white/10 transition-all duration-300 cursor-pointer relative",
                         getEffectiveStatus(complaint, now).toLowerCase() === 'complete' 
                           ? 'bg-emerald-500/[0.005] dark:bg-slate-950/20 hover:bg-emerald-500/[0.02] dark:hover:bg-emerald-500/[0.03]' 
                           : getEffectiveStatus(complaint, now).toLowerCase() === 'in process'
@@ -1223,7 +1223,7 @@ export default function ComplaintList({
                         )} />
                         
                         <div className="flex items-center gap-3.5 pl-1.5">
-                          <div className="shrink-0 w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover:scale-110 group-hover:bg-brand-accent/10 group-hover:text-brand-accent group-hover:border-brand-accent/20 transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.01)]">
+                          <div className="shrink-0 w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover:scale-110 group-hover:bg-brand-accent/10 group-hover:text-brand-accent group-hover:border-brand-accent/20 transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.01)]">
                             <Wifi size={17} className="shrink-0" />
                           </div>
                           <div className="flex flex-col">
@@ -1266,7 +1266,7 @@ export default function ComplaintList({
                       {/* USER ID & SECTOR */}
                       <td className="px-6 py-4.5 font-sans">
                         <div className="flex flex-col">
-                          <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider bg-slate-100/50 dark:bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-200/20 dark:border-slate-800/20 w-max leading-none">
+                          <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider bg-slate-100/50 dark:bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-200/20 dark:border-white/10 w-max leading-none">
                             {complaint.customerUsername || 'NO USER_ID'}
                           </span>
                           <span className="text-[10px] font-extrabold text-slate-500 mt-1.5 flex items-center gap-1">
@@ -1280,7 +1280,7 @@ export default function ComplaintList({
                       <td className="px-6 py-4.5">
                         <div className="flex flex-col gap-1.5 max-w-[280px]">
                           {complaint.panelDetails ? (
-                            <span className="text-[9.5px] font-lexend font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200/50 dark:border-slate-800/60 block truncate select-all leading-tight">
+                            <span className="text-[9.5px] font-lexend font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200/50 dark:border-white/10 block truncate select-all leading-tight">
                               {complaint.panelDetails}
                             </span>
                           ) : (
@@ -1451,7 +1451,7 @@ export default function ComplaintList({
         </div>
 
         {filteredComplaints.length > 0 && (
-          <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Display Limit:</span>
@@ -1461,7 +1461,7 @@ export default function ComplaintList({
                     setItemsPerPage(Number(e.target.value));
                     setCurrentPage(1);
                   }}
-                  className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-2 py-1 text-[10px] font-black text-slate-600 dark:text-slate-300 outline-none focus:ring-1 focus:ring-brand-accent transition-all"
+                  className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-md px-2 py-1 text-[10px] font-black text-slate-600 dark:text-slate-300 outline-none focus:ring-1 focus:ring-brand-accent transition-all"
                 >
                   <option value={20}>20 UNITS</option>
                   <option value={50}>50 UNITS</option>
@@ -1478,7 +1478,7 @@ export default function ComplaintList({
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                className="p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
                 <ChevronLeft size={16} />
               </button>
@@ -1504,7 +1504,7 @@ export default function ComplaintList({
                         "w-8 h-8 rounded-lg text-[10px] font-black uppercase transition-all",
                         currentPage === pageNum 
                           ? "bg-slate-900 dark:bg-brand-accent text-white shadow-lg" 
-                          : "bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-500 hover:border-brand-accent hover:text-brand-accent"
+                          : "bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-500 hover:border-brand-accent hover:text-brand-accent"
                       )}
                     >
                       {pageNum}
@@ -1516,7 +1516,7 @@ export default function ComplaintList({
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                className="p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
                 <ChevronRight size={16} />
               </button>
@@ -1555,7 +1555,7 @@ export default function ComplaintList({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 30 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/80 dark:border-slate-800/80 z-10 animate-in fade-in zoom-in-95 duration-200"
+              className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/80 dark:border-white/10 z-10 animate-in fade-in zoom-in-95 duration-200"
             >
               {/* Banner/Header Graphic background */}
               <div className="h-28 bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 relative flex items-end justify-center">
@@ -1609,13 +1609,13 @@ export default function ComplaintList({
                 </span>
 
                 {/* Horizontal divider */}
-                <div className="w-full border-b border-slate-100 dark:border-slate-800/85 my-4.5" />
+                <div className="w-full border-b border-slate-100 dark:border-white/10 my-4.5" />
 
                 {/* Meta Attributes Grid */}
                 <div className="w-full space-y-3">
                   
                   {/* Email Field Row */}
-                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-white/10 flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-800/40 flex items-center justify-center text-emerald-500 dark:text-emerald-400 shrink-0">
                       <Mail size={15} />
                     </div>
@@ -1628,7 +1628,7 @@ export default function ComplaintList({
                   </div>
 
                   {/* Gender Field Row */}
-                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-white/10 flex items-center gap-3">
                     {(selectedDelegate.profilePicture?.includes(':::gender:female') || selectedDelegate.profilePicture === 'default:female') ? (
                       <>
                         <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200/50 dark:border-rose-800/40 flex items-center justify-center text-rose-500 dark:text-rose-400 shrink-0">
@@ -1657,7 +1657,7 @@ export default function ComplaintList({
                   </div>
 
                   {/* Activity/Joining Date Row */}
-                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                  <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-white/10 flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/50 dark:border-amber-800/40 flex items-center justify-center text-amber-500 dark:text-amber-400 shrink-0">
                       <Calendar size={15} />
                     </div>
@@ -1740,7 +1740,7 @@ export default function ComplaintList({
                     </div>
                     
                     {selectedComplaint.customerUsername && (
-                      <div className="flex flex-col gap-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                      <div className="flex flex-col gap-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-white/10">
                         <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Access ID</span>
                         <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-brand-accent uppercase tracking-widest leading-none">
                           {selectedComplaint.customerUsername}
@@ -1768,22 +1768,22 @@ export default function ComplaintList({
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/45 border border-slate-100 dark:border-slate-800/60">
-                  <div className="space-y-1 md:border-r border-slate-105 dark:border-slate-800 pr-1.5 sm:pr-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/45 border border-slate-100 dark:border-white/10">
+                  <div className="space-y-1 md:border-r border-slate-105 dark:border-white/10 pr-1.5 sm:pr-3">
                     <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">{customNames.zone || 'Sector'}</p>
                     <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
                       <MapPin size={13} className="text-brand-accent shrink-0" />
                       <span className="uppercase text-xs sm:text-sm truncate">{selectedComplaint.area}</span>
                     </div>
                   </div>
-                  <div className="space-y-1 md:border-r border-slate-105 dark:border-slate-800 pr-1.5 sm:pr-3">
+                  <div className="space-y-1 md:border-r border-slate-105 dark:border-white/10 pr-1.5 sm:pr-3">
                     <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">Contact</p>
                     <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
                       <Phone size={13} className="text-brand-accent shrink-0" />
                       <span className="font-mono text-xs sm:text-sm truncate">{selectedComplaint.number}</span>
                     </div>
                   </div>
-                  <div className="space-y-1 md:border-r border-slate-105 dark:border-slate-800 pr-1.5 sm:pr-3">
+                  <div className="space-y-1 md:border-r border-slate-105 dark:border-white/10 pr-1.5 sm:pr-3">
                     <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">{customNames.pkg || 'Profile'}</p>
                     <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
                       <Package size={13} className="text-brand-accent shrink-0" />
@@ -1810,7 +1810,7 @@ export default function ComplaintList({
                       initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3 }}
-                      className="group relative rounded-xl border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                      className="group relative rounded-xl border border-slate-200/60 dark:border-white/10 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
                     >
                       {/* Side indicator with priority color */}
                       <div className={cn(
@@ -1863,7 +1863,7 @@ export default function ComplaintList({
                       initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: 0.05 }}
-                      className="group relative rounded-xl border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                      className="group relative rounded-xl border border-slate-200/60 dark:border-white/10 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
                     >
                       <div className="p-3 space-y-2 relative overflow-hidden">
                         {/* Thank You Animation Background Overlay */}
@@ -1997,7 +1997,7 @@ export default function ComplaintList({
                       initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: 0.1 }}
-                      className="group relative rounded-xl border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                      className="group relative rounded-xl border border-slate-200/60 dark:border-white/10 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
                     >
                       <div className="p-3 space-y-2 relative overflow-hidden">
                         {/* Thank You Animation Background Overlay */}
@@ -2042,7 +2042,7 @@ export default function ComplaintList({
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ duration: 0.3, delay: 0.15 }}
-                      className="flex flex-row items-center justify-between p-2 rounded-xl border border-slate-200/50 dark:border-slate-800/60 bg-slate-50/60 dark:bg-slate-950/40 gap-2"
+                      className="flex flex-row items-center justify-between p-2 rounded-xl border border-slate-200/50 dark:border-white/10 bg-slate-50/60 dark:bg-slate-950/40 gap-2"
                     >
                       <div className="flex items-center gap-1.5 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
                         {(() => {
@@ -2137,7 +2137,7 @@ export default function ComplaintList({
                                   Resolution & Review telemetry verified.
                                 </motion.p>
 
-                                <div className="w-full text-left space-y-1.5 p-3 bg-slate-100/50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-slate-800">
+                                <div className="w-full text-left space-y-1.5 p-3 bg-slate-100/50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-white/10">
                                   <div className="flex items-center gap-1.5 justify-between">
                                     <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Team Resolution:</span>
                                     <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 truncate max-w-[140px]">{selectedComplaint.remarks || 'Confirmed'}</span>
@@ -2183,7 +2183,7 @@ export default function ComplaintList({
                                           value={statusRemarks}
                                           onChange={(e) => setStatusRemarks(e.target.value.toUpperCase())}
                                           placeholder="Enter resolution protocol details..."
-                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
+                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
                                         />
                                         <button
                                           type="button"
@@ -2264,7 +2264,7 @@ export default function ComplaintList({
                                       value={customerReview}
                                       onChange={(e) => setCustomerReview(e.target.value.toUpperCase())}
                                       placeholder="Type customer feedback or review here..."
-                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-indigo-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
+                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-indigo-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
                                     />
                                     <button
                                       type="button"
@@ -2368,7 +2368,7 @@ export default function ComplaintList({
                                 "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
                                 selectedComplaint.status.toLowerCase() === s.toLowerCase() 
                                   ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-lg shadow-brand-accent/20" 
-                                  : "bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-800 hover:border-slate-300"
+                                  : "bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-white/10 hover:border-slate-300"
                               )}
                             >
                               {s}
@@ -2396,7 +2396,7 @@ export default function ComplaintList({
                                 type="datetime-local"
                                 value={scheduleModalDate}
                                 onChange={(e) => setScheduleModalDate(e.target.value)}
-                                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-purple-500 text-center"
+                                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-purple-500 text-center"
                               />
                               <p className="text-[8px] font-medium text-slate-400 dark:text-slate-500 text-center leading-normal">
                                 Scheduled records will remain visually submerged until 12 hours prior to dispatch.
@@ -2405,7 +2405,7 @@ export default function ComplaintList({
                                 <button
                                   type="button"
                                   onClick={() => setShowInlineSchedulePicker(false)}
-                                  className="flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                                  className="flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
                                 >
                                   Cancel
                                 </button>
@@ -2526,7 +2526,7 @@ function EditModal({
     }
   };
 
-  const inputClasses = "w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
+  const inputClasses = "w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5 tracking-widest ml-1";
 
   return (
@@ -2543,7 +2543,7 @@ function EditModal({
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800"
+        className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-white/10"
       >
         <form onSubmit={handleSave} className="p-8 space-y-6">
           <div className="flex justify-between items-center mb-4">
@@ -2655,7 +2655,7 @@ function EditModal({
                     "py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all",
                     data.priority === p 
                       ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-md"
-                      : "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-400"
+                      : "bg-white dark:bg-slate-900 border-slate-100 dark:border-white/10 text-slate-400"
                   )}
                 >
                   {p}
@@ -2678,7 +2678,7 @@ function EditModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3.5 rounded-xl border-2 border-slate-100 dark:border-slate-800 text-slate-500 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
+              className="flex-1 py-3.5 rounded-xl border-2 border-slate-100 dark:border-white/10 text-slate-500 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
             >
               Abort Changes
             </button>

@@ -79,10 +79,10 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
       <div className="print-batch-overlay fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm z-[250] flex items-stretch justify-end overflow-hidden print:p-0 print:bg-transparent print:backdrop-blur-none print:static">
         
         {/* Dynamic Left Control Side Drawer (Hidden in Print Mode) */}
-        <div className="w-full md:w-[380px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full z-[300] print:hidden shadow-2xl relative">
+        <div className="w-full md:w-[380px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-white/10 flex flex-col h-full z-[300] print:hidden shadow-2xl relative">
           
           {/* Header Title */}
-          <div className="p-5 border-b border-slate-150 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-950/50 flex items-center justify-between">
+          <div className="p-5 border-b border-slate-150 dark:border-white/10 bg-slate-50/50 dark:bg-slate-950/50 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-accent to-blue-500 flex items-center justify-center text-white shadow-md shadow-brand-accent/20">
                 <Printer size={18} />
@@ -127,7 +127,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
               </div>
 
               {billingMonths.length === 0 ? (
-                <p className="text-[11px] text-slate-400 uppercase tracking-wide py-3 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                <p className="text-[11px] text-slate-400 uppercase tracking-wide py-3 text-center border border-dashed border-slate-200 dark:border-white/10 rounded-xl">
                   No monthly sheets found in database.
                 </p>
               ) : (
@@ -143,7 +143,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                           "w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer",
                           isChecked
                             ? "bg-brand-accent/5 border-brand-accent/30 text-brand-accent dark:bg-brand-accent/10"
-                            : "bg-slate-50 border-slate-200 dark:bg-slate-950 dark:border-slate-800 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900"
+                            : "bg-slate-50 border-slate-200 dark:bg-slate-950 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900"
                         )}
                       >
                         <div className="flex items-center gap-3">
@@ -174,7 +174,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
               <span className="font-black text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-550 select-none">
                 Customize Table Columns
               </span>
-              <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-150 dark:border-slate-850">
+              <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-150 dark:border-white/10">
                 {Object.entries(enabledColumns).map(([key, isEnabled]) => {
                   const labelMap: Record<string, string> = {
                     username: "User ID",
@@ -204,7 +204,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
               </div>
 
               {/* Status and Date Filters */}
-              <div className="space-y-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+              <div className="space-y-3 mt-4 pt-4 border-t border-slate-200 dark:border-white/10">
                 <span className="font-black text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-550 select-none block mb-2">
                   Advanced Filters
                 </span>
@@ -215,7 +215,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                     <select
                       value={filterPaymentStatus}
                       onChange={(e) => setFilterPaymentStatus(e.target.value as any)}
-                      className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
+                      className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
                     >
                       <option value="all">Show All Rows</option>
                       <option value="unpaid">Only Unpaid (unpaid, tdc)</option>
@@ -233,7 +233,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                         placeholder="e.g. 1"
                         value={filterStartDay}
                         onChange={(e) => setFilterStartDay(e.target.value)}
-                        className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
+                        className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -245,7 +245,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                         placeholder="e.g. 15"
                         value={filterEndDay}
                         onChange={(e) => setFilterEndDay(e.target.value)}
-                        className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
+                        className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
                       />
                     </div>
                   </div>
@@ -256,7 +256,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
           </div>
 
           {/* Sticky Actions Trigger Footer */}
-          <div className="p-5 border-t border-slate-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-col gap-3">
+          <div className="p-5 border-t border-slate-150 dark:border-white/10 bg-slate-50 dark:bg-slate-950 flex flex-col gap-3">
             <button
               onClick={handlePrint}
               disabled={selectedMonthIds.length === 0}
@@ -275,7 +275,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
         {/* Live Scrollable Preview Canvas of printed pages (Print Mode overlay is handled separately below) */}
         <div className="flex-1 bg-slate-100 dark:bg-slate-950 p-8 overflow-y-auto print:p-0 print:bg-white custom-scrollbar flex flex-col items-center gap-10">
           
-          <div className="w-[210mm] text-center border-b border-dashed border-slate-200 dark:border-slate-850 pb-2 flex items-center justify-between print:hidden">
+          <div className="w-[210mm] text-center border-b border-dashed border-slate-200 dark:border-white/10 pb-2 flex items-center justify-between print:hidden">
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
               Printers Live Simulation Grid (A4 Portrait)
             </span>
@@ -288,7 +288,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
           <div className="batch-print-container flex flex-col gap-8 print:gap-0 w-full max-w-[210mm] items-center">
             
             {selectedSheets.length === 0 ? (
-              <div className="w-[210mm] min-h-[297mm] bg-white border border-slate-200 rounded-xl p-16 flex flex-col items-center justify-center text-center space-y-4 print:hidden dark:bg-slate-900 dark:border-slate-800">
+              <div className="w-[210mm] min-h-[297mm] bg-white border border-slate-200 rounded-xl p-16 flex flex-col items-center justify-center text-center space-y-4 print:hidden dark:bg-slate-900 dark:border-white/10">
                 <FileText size={48} className="text-slate-300 dark:text-slate-700 animate-pulse" />
                 <div className="space-y-1">
                   <p className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-200">No Sheets Spooled</p>

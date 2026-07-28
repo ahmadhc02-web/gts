@@ -241,7 +241,7 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 font-lexend animate-fade-in relative z-10">
       {/* Container Card with clean-edge dashboard feel on soft light-grey textured background */}
       <div 
-        className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 p-5 flex flex-col relative overflow-hidden shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 transition-all duration-300"
+        className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200/80 dark:border-white/10 p-5 flex flex-col relative overflow-hidden shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 transition-all duration-300"
         style={{
           backgroundImage: 'radial-gradient(rgba(148, 163, 184, 0.08) 1.2px, transparent 1.2px)',
           backgroundSize: '24px 24px'
@@ -252,7 +252,7 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 blur-[48px] rounded-full pointer-events-none z-0" />
 
         {/* Top Header: Controls & Action Details */}
-        <div className="flex items-center justify-between gap-2 mb-4 relative z-10 w-full border-b border-slate-100 dark:border-slate-800/40 pb-3">
+        <div className="flex items-center justify-between gap-2 mb-4 relative z-10 w-full border-b border-slate-100 dark:border-white/10 pb-3">
           <div className="flex items-center gap-1 shrink-0">
             <span className="text-[10px] font-black tracking-widest text-[#2563eb] bg-[#2563eb]/10 px-2.5 py-1 rounded-lg uppercase">
               MONITOR
@@ -260,7 +260,7 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
           </div>
 
           <div className="flex items-center shrink-0">
-            <div className="flex items-center bg-slate-100/80 dark:bg-slate-900/80 p-0.5 rounded-lg border border-slate-200/60 dark:border-slate-800">
+            <div className="flex items-center bg-slate-100/80 dark:bg-slate-900/80 p-0.5 rounded-lg border border-slate-200/60 dark:border-white/10">
               {(['weekly', 'monthly', 'yearly'] as const).map((type) => (
                 <button
                   key={type}

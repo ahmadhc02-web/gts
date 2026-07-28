@@ -2649,7 +2649,7 @@ export default function EntrySheet({
           }
         `}} />
         <div className="max-w-5xl mx-auto w-full space-y-6 print:space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 print:hidden">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 pb-4 print:hidden">
              <div className="flex items-center gap-3">
                <button onClick={() => {
                  setShowUserLedger(false);
@@ -2664,7 +2664,7 @@ export default function EntrySheet({
              </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm print:hidden">
+          <div className="flex flex-col sm:flex-row gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm print:hidden">
              <div className="flex-1 space-y-1">
                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Search User</label>
                <div className="relative">
@@ -2674,7 +2674,7 @@ export default function EntrySheet({
                    value={ledgerSearchUser}
                    onChange={(e) => setLedgerSearchUser(e.target.value)}
                    placeholder="Enter Name, User ID, or PPPoE..." 
-                   className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 text-sm font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 transition-all outline-none"
+                   className="w-full pl-9 pr-4 py-2 border border-slate-200 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-slate-950 text-sm font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 transition-all outline-none"
                  />
                </div>
              </div>
@@ -2684,7 +2684,7 @@ export default function EntrySheet({
                <select 
                  value={ledgerSelectedFolder}
                  onChange={(e) => setLedgerSelectedFolder(e.target.value)}
-                 className="w-full px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 text-sm font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 transition-all outline-none"
+                 className="w-full px-4 py-2 border border-slate-200 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-slate-950 text-sm font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 transition-all outline-none"
                >
                  <option value="all">ALL VOLUMES / MONTHS</option>
                  {folders.map(f => (
@@ -2695,8 +2695,8 @@ export default function EntrySheet({
           </div>
 
           {keyword ? (
-            <div className="user-ledger-print-block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm print:border-none print:shadow-none print:rounded-none">
-               <div className="px-5 py-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center print:bg-white print:border-none print:p-0 print:mb-4">
+            <div className="user-ledger-print-block bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm print:border-none print:shadow-none print:rounded-none">
+               <div className="px-5 py-4 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-white/10 flex justify-between items-center print:bg-white print:border-none print:p-0 print:mb-4">
                  <div>
                    <h2 className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 tracking-wider print:text-lg print:text-black">
                      Transaction History Statement
@@ -2729,7 +2729,7 @@ export default function EntrySheet({
                <div className="overflow-x-auto print:overflow-visible">
                  <table className="w-full text-left whitespace-nowrap text-xs">
                    <thead className="bg-slate-100 dark:bg-slate-900/50">
-                     <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                     <tr className="border-b border-slate-200 dark:border-white/10 text-[10px] font-black uppercase tracking-widest text-slate-500">
                        <th className="py-3 px-5">Date</th>
                        <th className="py-3 px-5">Folder</th>
                        <th className="py-3 px-5">User / Target</th>
@@ -2781,7 +2781,7 @@ export default function EntrySheet({
                    </tbody>
                    {results.length > 0 && (
                      <tfoot className="bg-slate-50 dark:bg-slate-900">
-                       <tr className="border-t-2 border-slate-200 dark:border-slate-800 font-black uppercase text-[11px] text-slate-800 dark:text-slate-200">
+                       <tr className="border-t-2 border-slate-200 dark:border-white/10 font-black uppercase text-[11px] text-slate-800 dark:text-slate-200">
                          <td colSpan={5} className="py-4 px-5 text-right">Total Aggregate Recovery:</td>
                          <td className="py-4 px-5 text-right font-mono text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-500/10 shadow-inner">
                            PKR {results.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString()}
@@ -2793,7 +2793,7 @@ export default function EntrySheet({
                </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-24 text-slate-400 space-y-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
+            <div className="flex flex-col items-center justify-center py-24 text-slate-400 space-y-4 border border-dashed border-slate-200 dark:border-white/10 rounded-3xl">
               <Search className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto opacity-50" />
               <div className="text-center">
                 <p className="text-sm font-bold uppercase tracking-wider text-slate-500 mb-1">Vault Awaiting Query</p>
@@ -2915,7 +2915,7 @@ export default function EntrySheet({
     return (
       <div className="w-full h-full overflow-y-auto bg-slate-50 dark:bg-slate-950 p-6 flex flex-col gap-6 select-none scrollbar-thin">
         {/* Upper Header info */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-850 pb-5 w-full">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 dark:border-white/10 pb-5 w-full">
           <div className="flex items-center justify-between w-full md:w-auto gap-2">
             <div className="text-left flex-1 min-w-0">
               <h1 className="text-sm min-[380px]:text-base sm:text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5 sm:gap-2">
@@ -2954,7 +2954,7 @@ export default function EntrySheet({
                   <span className="min-[360px]:hidden">New</span>
                 </button>
               ) : (
-                <form onSubmit={handleCreateFolder} className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0">
+                <form onSubmit={handleCreateFolder} className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-0.5 rounded-xl border border-slate-200 dark:border-white/10 shrink-0">
                   <input
                     type="text"
                     placeholder="Name..."
@@ -2988,7 +2988,7 @@ export default function EntrySheet({
                 <select
                   value={folderSortOption}
                   onChange={(e) => setFolderSortOption(e.target.value as any)}
-                  className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-705 dark:text-slate-300 text-[10px] items-center font-bold uppercase transition-colors hover:border-slate-300 dark:hover:border-slate-700 py-2 px-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
+                  className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-705 dark:text-slate-300 text-[10px] items-center font-bold uppercase transition-colors hover:border-slate-300 dark:hover:border-slate-700 py-2 px-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
                 >
                   <option value="newest">Latest Date (Default)</option>
                   <option value="a-to-z">Alphabetical (A-Z)</option>
@@ -3002,7 +3002,7 @@ export default function EntrySheet({
                     placeholder="Search Sheets..."
                     value={dashboardSearchQuery}
                     onChange={(e) => setDashboardSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 text-[11px] bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl outline-none focus:ring-1 focus:ring-blue-550 transition-all text-slate-900 dark:text-white font-bold"
+                    className="w-full pl-8 pr-3 py-2 text-[11px] bg-white dark:bg-slate-900 border border-slate-205 dark:border-white/10 rounded-xl outline-none focus:ring-1 focus:ring-blue-550 transition-all text-slate-900 dark:text-white font-bold"
                   />
                 </div>
                 <button
@@ -3028,7 +3028,7 @@ export default function EntrySheet({
                   New Folder
                 </button>
               ) : (
-                <form onSubmit={handleCreateFolder} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                <form onSubmit={handleCreateFolder} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white/10">
                   <input
                     type="text"
                     placeholder="Folder Name..."
@@ -3061,7 +3061,7 @@ export default function EntrySheet({
           <div className="flex items-center gap-3 text-left">
             <button
               onClick={() => setOpenedFolderId(null)}
-              className="px-3.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
+              className="px-3.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
             >
               <ChevronLeft size={16} className="text-slate-505" />
               Back to PC Directory
@@ -3239,7 +3239,7 @@ export default function EntrySheet({
                 );
               })()}
               {folders.length === 0 && (
-                <div className="flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 text-center min-h-[200px] mt-2">
+                <div className="flex flex-col items-center justify-center p-8 bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed border-slate-200 dark:border-white/10 text-center min-h-[200px] mt-2">
                   <FolderPlus size={32} className="text-blue-550 dark:text-blue-400 mb-3 animate-bounce" />
                   <p className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
                     No directory folders established yet
@@ -3281,7 +3281,7 @@ export default function EntrySheet({
 
               {/* List of Sheet Cards configured as folder-like details */}
               {openedFolderSheets.length === 0 ? (
-                <div className="col-span-full py-16 text-center flex flex-col items-center justify-center gap-2 bg-slate-50/50 dark:bg-slate-900/10 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                <div className="col-span-full py-16 text-center flex flex-col items-center justify-center gap-2 bg-slate-50/50 dark:bg-slate-900/10 rounded-3xl border border-dashed border-slate-200 dark:border-white/10">
                   <FileText className="w-8 h-8 text-slate-300 dark:text-slate-700 stroke-[1.8] animate-bounce" />
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none mt-1">
                     This directory is empty
@@ -3304,7 +3304,7 @@ export default function EntrySheet({
                       animate={{ opacity: 1, y: 0 }}
                       whileHover={{ y: -4, scale: 1.015 }}
                       transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                      className="p-5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/90 dark:to-slate-950/90 border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-3xl flex flex-col justify-between gap-5 shadow-sm hover:shadow-xl hover:shadow-blue-550/[0.03] group relative select-none"
+                      className="p-5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/90 dark:to-slate-950/90 border border-slate-200/80 dark:border-white/10 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-3xl flex flex-col justify-between gap-5 shadow-sm hover:shadow-xl hover:shadow-blue-550/[0.03] group relative select-none"
                     >
                       {/* Visual paper-sheet card layout */}
                       <div className="flex items-start justify-between min-w-0">
@@ -3336,7 +3336,7 @@ export default function EntrySheet({
                       </div>
 
                       {/* Operational Details Area Metas */}
-                      <div className="grid grid-cols-2 gap-3 py-3 border-y border-slate-100 dark:border-slate-850/60">
+                      <div className="grid grid-cols-2 gap-3 py-3 border-y border-slate-100 dark:border-white/10">
                         <div>
                           <span className="block text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Area Center</span>
                           <span className="text-[10px] font-extrabold text-slate-700 dark:text-slate-300 uppercase truncate block mt-1">{sh.area || "Main"}</span>
@@ -3370,7 +3370,7 @@ export default function EntrySheet({
                             pocketbaseService.saveLedgerSheet({ ...sh, folderId: destId }, scopeId).catch(console.error);
                             toast.success(`Moved sheet to ${folders.find(f => f.id === destId)?.name || 'folder'}`);
                           }}
-                          className="py-1 px-2 border border-slate-205 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950 text-[9px] font-black uppercase text-slate-500 cursor-pointer outline-none focus:ring-1 focus:ring-blue-500 transition-shadow shrink-0"
+                          className="py-1 px-2 border border-slate-205 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-slate-950 text-[9px] font-black uppercase text-slate-500 cursor-pointer outline-none focus:ring-1 focus:ring-blue-500 transition-shadow shrink-0"
                           title="Move to other folder"
                         >
                           {folders.map(f => (
@@ -3410,7 +3410,7 @@ export default function EntrySheet({
         ) : (
           <>
             {/* Full-Width Workspace Premium Navbar (Replaces the floating right toolbar) */}
-            <div className="w-full bg-[#fcfcfc] dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm px-3 sm:px-6 py-1.5 sm:py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-4 z-[310] print:hidden shrink-0 select-none">
+            <div className="w-full bg-[#fcfcfc] dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shadow-sm px-3 sm:px-6 py-1.5 sm:py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-4 z-[310] print:hidden shrink-0 select-none">
               {/* Left Block */}
               <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto shrink-0">
                 <button
@@ -3452,7 +3452,7 @@ export default function EntrySheet({
           </div>
 
           {/* Middle Block: Live statistics feedback */}
-          <div className="flex items-center gap-4 text-[10px] bg-slate-50/50 dark:bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800/80 hidden lg:flex">
+          <div className="flex items-center gap-4 text-[10px] bg-slate-50/50 dark:bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 hidden lg:flex">
             <div className="flex flex-col gap-0.5">
               <span className="text-[8px] font-bold text-slate-405 dark:text-slate-500 uppercase tracking-widest">ROWS FILLED</span>
               <span className="font-extrabold text-[#0f172a] dark:text-slate-100">
@@ -3478,7 +3478,7 @@ export default function EntrySheet({
           {/* Right Block: Main controller actions */}
           <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end overflow-x-auto scrollbar-none pb-1 sm:pb-0 shrink-0">
             {/* Viewport Scale Control */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-950 rounded-xl p-0.5 border border-slate-250 dark:border-slate-800 text-[9px] font-black uppercase shrink-0">
+            <div className="flex items-center bg-slate-100 dark:bg-slate-950 rounded-xl p-0.5 border border-slate-250 dark:border-white/10 text-[9px] font-black uppercase shrink-0">
               <span className="text-slate-400 dark:text-slate-500 px-1.5 font-black text-[8px]">ZOOM</span>
               {(['fit', '100%', '85%', '75%'] as const).map((zOpt) => (
                 <button
@@ -3696,10 +3696,10 @@ export default function EntrySheet({
               animate={{ opacity: 1, width: window.innerWidth < 1024 ? (window.innerWidth - 32) : 280 }}
               exit={{ opacity: 0, width: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className={`bg-[#fdfdfd] dark:bg-slate-900 border-r border-slate-205 dark:border-slate-800/85 p-4 overflow-y-auto shrink-0 print:hidden h-full text-slate-850 dark:text-slate-100 select-none text-left scrollbar-thin flex flex-col gap-3 font-mono z-[400] ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 left-0 shadow-2xl max-w-full' : 'relative w-[280px]'}`}
+              className={`bg-[#fdfdfd] dark:bg-slate-900 border-r border-slate-205 dark:border-white/10 p-4 overflow-y-auto shrink-0 print:hidden h-full text-slate-850 dark:text-slate-100 select-none text-left scrollbar-thin flex flex-col gap-3 font-mono z-[400] ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 left-0 shadow-2xl max-w-full' : 'relative w-[280px]'}`}
             >
                 
-                <div className="flex items-center justify-between pb-2.5 border-b border-slate-150 dark:border-slate-800 mb-3">
+                <div className="flex items-center justify-between pb-2.5 border-b border-slate-150 dark:border-white/10 mb-3">
                   <div className="flex items-center gap-1.5">
                     <Settings2 className="w-4 h-4 text-brand-accent animate-spin-slow" />
                     <span className="text-[10px] font-black uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc]">Sizing Designer</span>
@@ -3716,7 +3716,7 @@ export default function EntrySheet({
 
                 {/* Spacing & Scaling Slider Section */}
                 <div className="space-y-2.5">
-                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
+                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Row padding</span>
                       <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{rowPadding}px</span>
@@ -3733,7 +3733,7 @@ export default function EntrySheet({
                     <span className="text-[7.5px] text-slate-450 leading-none block mt-1">Squeeze padding to fit lines on one page.</span>
                   </div>
 
-                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
+                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Table Font Size</span>
                       <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{tableFontSize}px</span>
@@ -3749,7 +3749,7 @@ export default function EntrySheet({
                     />
                   </div>
 
-                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
+                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Header Font Size</span>
                       <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{headerFontSize}px</span>
@@ -3768,7 +3768,7 @@ export default function EntrySheet({
 
                   {/* Page Margins Controllers */}
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
+                    <div className="p-2 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
                       <span className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider block mb-1">Top Margin</span>
                       <span className="text-[8px] font-mono text-brand-accent block mb-1">{paperPaddingY}mm</span>
                       <input 
@@ -3780,7 +3780,7 @@ export default function EntrySheet({
                         className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent"
                       />
                     </div>
-                    <div className="p-2 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-slate-850/60 shadow-sm">
+                    <div className="p-2 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
                       <span className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider block mb-1">Side Margin</span>
                       <span className="text-[8px] font-mono text-brand-accent block mb-1">{paperPaddingX}mm</span>
                       <input 
@@ -3795,13 +3795,13 @@ export default function EntrySheet({
                   </div>
 
                   {/* Table 1 Grid lines */}
-                  <div className="border-t border-slate-150 dark:border-slate-850 pt-2.5 mt-1">
+                  <div className="border-t border-slate-150 dark:border-white/10 pt-2.5 mt-1">
                     <span className="text-[9.5px] font-black uppercase tracking-wider text-[#0f172a] dark:text-[#f1f5f9] block mb-2">
                       Table 1 Grid Lines (Col Width)
                     </span>
                     
                     <div className="space-y-1.5 text-[8.5px] font-bold text-slate-500">
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
+                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
                         <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Sr column</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthSr}px</span>
@@ -3813,7 +3813,7 @@ export default function EntrySheet({
                         />
                       </div>
 
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
+                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
                         <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Customer ID col</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthId}px</span>
@@ -3825,7 +3825,7 @@ export default function EntrySheet({
                         />
                       </div>
 
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
+                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
                         <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Name col</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthName}px</span>
@@ -3837,7 +3837,7 @@ export default function EntrySheet({
                         />
                       </div>
 
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
+                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
                         <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Comments/Phone col</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthComments}px</span>
@@ -3849,7 +3849,7 @@ export default function EntrySheet({
                         />
                       </div>
 
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
+                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
                         <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Amount col</span>
                           <span className="font-mono text-slate-655 dark:text-slate-400">{t1WidthAmount}px</span>
@@ -3864,13 +3864,13 @@ export default function EntrySheet({
                   </div>
 
                   {/* Table 2 Grid lines */}
-                  <div className="border-t border-slate-150 dark:border-slate-850 pt-2.5">
+                  <div className="border-t border-slate-150 dark:border-white/10 pt-2.5">
                     <span className="text-[9.5px] font-black uppercase tracking-wider text-[#0f172a] dark:text-[#f1f5f9] block mb-2">
                       Table 2 Grid Lines (Col Width)
                     </span>
                     
                     <div className="space-y-1.5 text-[8.5px] font-bold text-slate-500">
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
+                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
                         <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Account Title col</span>
                           <span className="font-mono text-slate-650 dark:text-slate-400">{t2WidthName}px</span>
@@ -3882,7 +3882,7 @@ export default function EntrySheet({
                         />
                       </div>
 
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-slate-800/40">
+                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
                         <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
                           <span>Amount col</span>
                           <span className="font-mono text-slate-655 dark:text-slate-400">{t2WidthAmount}px</span>
@@ -3939,7 +3939,7 @@ export default function EntrySheet({
                         if (e.key === 'Enter') handleLocalUnlock();
                       }}
                       placeholder="ENTER PASSKEY..."
-                      className="w-full sm:w-36 px-2.5 py-1.5 text-[9px] font-mono font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-900 dark:text-white"
+                      className="w-full sm:w-36 px-2.5 py-1.5 text-[9px] font-mono font-black tracking-widest bg-white dark:bg-slate-950 border border-slate-250 dark:border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-900 dark:text-white"
                     />
                     <button
                       type="button"
@@ -4039,7 +4039,7 @@ export default function EntrySheet({
                           }}
                         >
                           {/* Floating tools bar in top-right corner of sheet paper */}
-                          <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-md hover:shadow-lg border border-slate-200 dark:border-slate-800 rounded-lg px-1.5 py-1 transition-all duration-200 z-[110] print:hidden select-none">
+                          <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/95 dark:bg-slate-900/95 backdrop-blur shadow-md hover:shadow-lg border border-slate-200 dark:border-white/10 rounded-lg px-1.5 py-1 transition-all duration-200 z-[110] print:hidden select-none">
                             <span className="text-[8px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider mr-1 px-1 py-0.5 bg-slate-100 dark:bg-slate-950 rounded">
                               Page {sheetIdx + 1} of {sheets.length}
                             </span>
@@ -4051,7 +4051,7 @@ export default function EntrySheet({
                                 e.stopPropagation();
                                 handleAddSheet(sheetIdx);
                               }}
-                              className="p-1 rounded bg-indigo-50 dark:bg-indigo-950/45 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-505 dark:text-indigo-400 border border-slate-200 dark:border-slate-800 cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center p-0.5"
+                              className="p-1 rounded bg-indigo-50 dark:bg-indigo-950/45 hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-505 dark:text-indigo-400 border border-slate-200 dark:border-white/10 cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center p-0.5"
                               title="Create multi-page layout (Add new same-date Sheet to the right side)"
                             >
                               <FolderPlus size={10} className="stroke-[2.5]" />
@@ -4064,7 +4064,7 @@ export default function EntrySheet({
                                 e.stopPropagation();
                                 handleDeleteSheetItem(sheetIdx);
                               }}
-                              className="p-1 rounded bg-rose-50 dark:bg-rose-950/45 hover:bg-slate-100 dark:hover:bg-slate-800 text-rose-505 dark:text-rose-400 border border-slate-200 dark:border-slate-800 cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center p-0.5"
+                              className="p-1 rounded bg-rose-50 dark:bg-rose-950/45 hover:bg-slate-100 dark:hover:bg-slate-800 text-rose-505 dark:text-rose-400 border border-slate-200 dark:border-white/10 cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center p-0.5"
                               title="Delete sheet (Dusbin)"
                             >
                               <Trash2 size={10} className="stroke-[2.5]" />
@@ -4463,7 +4463,7 @@ export default function EntrySheet({
                       />
                       
                       {focusedRowIndex === index && focusedField === 'amount' && (
-                        <div className="absolute top-[105%] right-0 w-[120px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-slate-800 shadow-2xl rounded-xl p-1 z-[99999] print:hidden font-sans pointer-events-auto">
+                        <div className="absolute top-[105%] right-0 w-[120px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-white/10 shadow-2xl rounded-xl p-1 z-[99999] print:hidden font-sans pointer-events-auto">
                           <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1 text-left">
                             Set Status
                           </div>
@@ -4806,10 +4806,10 @@ export default function EntrySheet({
                   setIsReceiptSwipeOpen(false);
                 }
               }}
-              className={`w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[400] max-w-full ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 right-0 shadow-2xl' : 'relative'}`}
+              className={`w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[400] max-w-full ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 right-0 shadow-2xl' : 'relative'}`}
             >
               {/* Header / Title block */}
-              <div className="flex items-center justify-between pb-2 border-b border-slate-205 dark:border-slate-800">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-205 dark:border-white/10">
                 <div className="flex items-center gap-2">
                   <Printer className="text-brand-accent h-5 w-5 animate-pulse" />
                   <div>
@@ -4833,7 +4833,7 @@ export default function EntrySheet({
               </div>
 
               {/* Receipt Preview */}
-              <div className="flex-1 flex flex-col items-center justify-center py-4 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800/60 overflow-y-auto">
+              <div className="flex-1 flex flex-col items-center justify-center py-4 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-white/10 overflow-y-auto">
                 {lastSavedEntry ? (() => {
                   const now = new Date();
                   const optionsDate: Intl.DateTimeFormatOptions = { month: 'long', day: '2-digit', year: 'numeric' };
@@ -5340,7 +5340,7 @@ export default function EntrySheet({
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ type: 'spring', stiffness: 260, damping: 25 }}
-            className={`w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[400] max-w-full ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 right-0 shadow-2xl' : 'relative'}`}
+            className={`w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[400] max-w-full ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 right-0 shadow-2xl' : 'relative'}`}
           >
             {/* Title */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
@@ -5616,9 +5616,9 @@ export default function EntrySheet({
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 15, opacity: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden text-left"
+              className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-white/10 rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden text-left"
             >
-              <div className="p-6 border-b border-slate-100 dark:border-slate-850 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40 shrink-0">
+              <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-500 shrink-0 border border-emerald-100 dark:border-emerald-900/50">
                     <Sparkles size={20} className="animate-pulse text-emerald-500" />
@@ -5647,7 +5647,7 @@ export default function EntrySheet({
                 </p>
 
                 {userSearchResults.length === 0 ? (
-                  <div className="py-16 text-center flex flex-col items-center justify-center gap-3 bg-slate-50/50 dark:bg-slate-950/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <div className="py-16 text-center flex flex-col items-center justify-center gap-3 bg-slate-50/50 dark:bg-slate-950/50 rounded-2xl border border-dashed border-slate-200 dark:border-white/10">
                     <div className="p-4 bg-slate-100 dark:bg-slate-900 rounded-full text-slate-400">
                       <Search size={32} />
                     </div>
@@ -5671,9 +5671,9 @@ export default function EntrySheet({
                       return (
                         <div
                           key={`res-${sh.id}-${idx}`}
-                          className="p-5 bg-slate-50/80 dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-850 rounded-2.5xl hover:border-slate-300 dark:hover:border-slate-750 transition-all space-y-4 text-left"
+                          className="p-5 bg-slate-50/80 dark:bg-slate-950/40 border border-slate-200/80 dark:border-white/10 rounded-2.5xl hover:border-slate-300 dark:hover:border-slate-750 transition-all space-y-4 text-left"
                         >
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-105 dark:border-slate-850">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-105 dark:border-white/10">
                             <div className="flex items-center gap-3">
                               <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-550 dark:text-blue-400 rounded-xl">
                                 <FileSpreadsheet size={18} />
@@ -5711,7 +5711,7 @@ export default function EntrySheet({
                           </div>
 
                           {/* Matched row list within this sheet */}
-                          <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
+                          <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-white/10">
                             <table className="w-full text-left text-xs">
                               <thead>
                                 <tr className="bg-slate-105/60 dark:bg-slate-900/60 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-550 border-b border-slate-100 dark:border-slate-805">
@@ -5725,7 +5725,7 @@ export default function EntrySheet({
                                 {matchedRows.map((row: any, rIdx: number) => (
                                   <tr
                                     key={`row-${rIdx}`}
-                                    className="border-b border-slate-100/60 dark:border-slate-850 last:border-none font-bold text-slate-750 dark:text-slate-100"
+                                    className="border-b border-slate-100/60 dark:border-white/10 last:border-none font-bold text-slate-750 dark:text-slate-100"
                                   >
                                     <td className="px-3 py-2 text-[10px] font-mono text-blue-500">{row.cId || "N/A"}</td>
                                     <td className="px-3 py-2 font-black uppercase text-[10.5px]">{row.name || "N/A"}</td>
@@ -5745,7 +5745,7 @@ export default function EntrySheet({
                 )}
               </div>
 
-              <div className="p-5 border-t border-slate-100 dark:border-slate-850 flex justify-end gap-2 bg-slate-100/10 dark:bg-slate-900/20 shrink-0">
+              <div className="p-5 border-t border-slate-100 dark:border-white/10 flex justify-end gap-2 bg-slate-100/10 dark:bg-slate-900/20 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowUserSearchPopup(false)}
@@ -5770,7 +5770,7 @@ export default function EntrySheet({
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 15, opacity: 0 }}
               transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
             >
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
@@ -5791,7 +5791,7 @@ export default function EntrySheet({
                   <p className="uppercase text-[9px] font-bold text-slate-400">
                     Choose one of the core reset operations below:
                   </p>
-                  <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-1">
+                  <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-200 dark:border-white/10 space-y-1">
                     <p className="font-extrabold text-[#0f172a] dark:text-slate-200 uppercase text-[9.5px] tracking-wide flex items-center gap-1.5 label-danger">
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
                       Option 1: Total Server Purge
@@ -5841,7 +5841,7 @@ export default function EntrySheet({
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 15, opacity: 0 }}
               transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
             >
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
@@ -5862,7 +5862,7 @@ export default function EntrySheet({
                   <p className="uppercase text-[9px] font-bold text-slate-400">
                     Details of target card:
                   </p>
-                  <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-200 dark:border-slate-800/80 space-y-1">
+                  <div className="bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-200 dark:border-white/10 space-y-1">
                     {(() => {
                       const itemObj = ledgerHistory.find(s => s.id === sheetToDeleteId);
                       return (
@@ -5914,7 +5914,7 @@ export default function EntrySheet({
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 15, opacity: 0 }}
               transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
             >
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
@@ -5974,7 +5974,7 @@ export default function EntrySheet({
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 15 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800"
+              className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-200 dark:border-white/10"
             >
               <div className="flex justify-between items-center mb-6">
                 <div>
@@ -5999,7 +5999,7 @@ export default function EntrySheet({
                     value={editFolderName}
                     onChange={(e) => setEditFolderName(e.target.value)}
                     placeholder="Enter folder name..."
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500 mb-2"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500 mb-2"
                   />
                 </div>
 
@@ -6010,7 +6010,7 @@ export default function EntrySheet({
                   <select
                     value={editConnectedMonthId}
                     onChange={(e) => setEditConnectedMonthId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">-- Not Connected --</option>
                     {billingMonths.map(m => {
@@ -6025,7 +6025,7 @@ export default function EntrySheet({
                   </p>
                 </div>
 
-                <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800/60">
+                <div className="pt-4 border-t border-slate-200/60 dark:border-white/10">
                   <button
                     onClick={() => {
                       const cleanName = editFolderName.trim();
@@ -6072,7 +6072,7 @@ export default function EntrySheet({
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 15 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-6"
+              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-white/10 space-y-6"
             >
               <div className="flex items-center gap-4 text-rose-500 dark:text-rose-450">
                 <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center shrink-0">
@@ -6092,7 +6092,7 @@ export default function EntrySheet({
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 leading-relaxed">
                   Are you sure you want to delete this folder?
                 </p>
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800 space-y-2">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-white/10 space-y-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-black uppercase tracking-widest text-slate-450">Folder Name:</span>
                     <span className="text-xs font-black uppercase tracking-wider text-slate-850 dark:text-slate-200">
@@ -6135,7 +6135,7 @@ export default function EntrySheet({
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 15, opacity: 0 }}
               transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
             >
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
@@ -6197,9 +6197,9 @@ export default function EntrySheet({
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: 15, opacity: 0 }}
               transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left flex flex-col max-h-[80vh]"
+              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left flex flex-col max-h-[80vh]"
             >
-              <div className="p-5 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-start gap-3">
+              <div className="p-5 pb-3 border-b border-slate-100 dark:border-white/10 flex items-start gap-3">
                 <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-500 shrink-0">
                   <Printer size={20} className="text-emerald-500" />
                 </div>
@@ -6246,7 +6246,7 @@ export default function EntrySheet({
                             return [...prev, r.originalIndex];
                           });
                         }}
-                        className={`flex items-center justify-between p-3 rounded-xl border ${isSelected ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20' : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50'} cursor-pointer transition-colors`}
+                        className={`flex items-center justify-between p-3 rounded-xl border ${isSelected ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20' : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900/50'} cursor-pointer transition-colors`}
                       >
                         <div className="flex flex-col gap-0.5 overflow-hidden pr-3">
                           <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{r.name}</span>
@@ -6264,7 +6264,7 @@ export default function EntrySheet({
                 })()}
               </div>
 
-              <div className="p-5 border-t border-slate-100 dark:border-slate-800">
+              <div className="p-5 border-t border-slate-100 dark:border-white/10">
                 <button
                   onClick={() => {
                     if (selectedReceiptIndices.length === 0) {
@@ -6306,9 +6306,9 @@ export default function EntrySheet({
       {focusedRowIndex !== null && focusedField !== null && activeInputElement && (
         <div 
           style={getDropdownStyle()}
-          className="fixed bg-white dark:bg-slate-950 border border-slate-350 dark:border-slate-800 shadow-2xl rounded-xl p-1.5 max-h-56 overflow-y-auto print:hidden font-sans pointer-events-auto text-slate-900 dark:text-slate-100"
+          className="fixed bg-white dark:bg-slate-950 border border-slate-350 dark:border-white/10 shadow-2xl rounded-xl p-1.5 max-h-56 overflow-y-auto print:hidden font-sans pointer-events-auto text-slate-900 dark:text-slate-100"
         >
-          <div className="text-[8px] font-black tracking-wider uppercase text-slate-500 dark:text-slate-400 px-2 py-1 border-b border-slate-150 dark:border-slate-800 mb-1">
+          <div className="text-[8px] font-black tracking-wider uppercase text-slate-500 dark:text-slate-400 px-2 py-1 border-b border-slate-150 dark:border-white/10 mb-1">
             Search by User ID / Name
           </div>
           {getFilteredSuggestions(focusedField, searchQuery).length === 0 ? (
@@ -6341,7 +6341,7 @@ export default function EntrySheet({
                   case 'dc':
                     return {
                       label: 'DC',
-                      class: 'bg-slate-100 text-slate-700 dark:bg-slate-850 dark:text-slate-400 border-slate-200 dark:border-slate-800'
+                      class: 'bg-slate-100 text-slate-700 dark:bg-slate-850 dark:text-slate-400 border-slate-200 dark:border-white/10'
                     };
                   case 'tdc':
                     return {
@@ -6351,7 +6351,7 @@ export default function EntrySheet({
                   default:
                     return {
                       label: 'Active',
-                      class: 'bg-slate-50 text-slate-700 dark:bg-slate-900/50 dark:text-slate-350 border-slate-150 dark:border-slate-800/80'
+                      class: 'bg-slate-50 text-slate-700 dark:bg-slate-900/50 dark:text-slate-350 border-slate-150 dark:border-white/10'
                     };
                 }
               };

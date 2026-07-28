@@ -111,7 +111,7 @@ export default function VoiceMsgPlayer({ audioUrl, duration, isMe, isAudioMuted 
       
       <div className={cn(
         "p-2 rounded-xl border shrink-0",
-        isMe ? "bg-white/5 border-white/10" : "bg-slate-50/50 dark:bg-slate-800/30 border-slate-200/50 dark:border-slate-800/50"
+        isMe ? "bg-white/5 border-white/10" : "bg-slate-50/50 dark:bg-slate-800/30 border-slate-200/50 dark:border-white/10"
       )}>
         <Volume2 size={12} className={cn(isMe ? "text-white/30" : "text-slate-400")} />
       </div>

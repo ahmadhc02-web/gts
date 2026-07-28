@@ -188,7 +188,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
       {/* 24/7 Gmail Live Connection Status Banner */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isConnected ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'}`}>
@@ -240,7 +240,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
       </div>
 
       {!isConnected ? (
-        <div className="bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center">
+        <div className="bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-200 dark:border-white/10 rounded-3xl p-12 text-center">
           <ShieldAlert className="mx-auto text-slate-400 mb-4" size={48} />
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">Authorization Required</h3>
           <p className="text-sm text-slate-500 max-w-lg mx-auto mt-2 leading-relaxed">
@@ -258,7 +258,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Email Composer Sheet (left side) */}
-          <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+          <div className="lg:col-span-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 space-y-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <FileText size={18} className="text-blue-500" />
@@ -286,7 +286,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                     }}
                     onFocus={() => setShowDropdown(true)}
                     placeholder="Search by Customer Name, Complaint ID #, or Issue Description..."
-                    className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
+                    className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
                   />
                   {searchTerm && (
                     <button
@@ -310,7 +310,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                       initial={{ opacity: 0, y: -5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -5 }}
-                      className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl divide-y divide-slate-100 dark:divide-slate-800"
+                      className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl divide-y divide-slate-100 dark:divide-slate-800"
                     >
                       {filteredComplaints.length > 0 ? (
                         filteredComplaints.map((c) => (
@@ -352,7 +352,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                     value={recipientEmail}
                     onChange={(e) => setRecipientEmail(e.target.value)}
                     placeholder="customer@email.com or coworker@isp.com"
-                    className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
+                    className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
                   />
                 </div>
               </div>
@@ -371,7 +371,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                       className={`px-3 py-2 text-left rounded-xl border text-xs transition-all cursor-pointer ${
                         selectedTemplateIndex === idx
                           ? 'border-blue-500 bg-blue-50/40 text-blue-700 dark:bg-blue-950/20 dark:text-blue-400 font-bold'
-                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-medium hover:border-slate-300 dark:hover:border-slate-700'
+                          : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 font-medium hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <span className="block truncate">{tpl.name}</span>
@@ -391,7 +391,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                   value={emailSubject}
                   onChange={(e) => setEmailSubject(e.target.value)}
                   placeholder="e.g. [GTS-ISP] Fiber Network Maintenance Update"
-                  className="w-full px-4 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
+                  className="w-full px-4 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
                 />
               </div>
 
@@ -406,7 +406,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                   value={emailBody}
                   onChange={(e) => setEmailBody(e.target.value)}
                   placeholder="Specify descriptive message or utilize HTML structures for professional layouts..."
-                  className="w-full px-4 py-2.5 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
+                  className="w-full px-4 py-2.5 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:text-white"
                 />
               </div>
 
@@ -449,7 +449,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
 
           {/* Sent Gmail History Log (right side) */}
           <div className="lg:col-span-5 space-y-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-black uppercase text-slate-800 dark:text-slate-200 tracking-wide">
@@ -461,7 +461,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                 <button
                   onClick={loadGmailHistory}
                   disabled={isLoadingMessages}
-                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-950 text-slate-500 dark:text-slate-400 transition-all cursor-pointer"
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-slate-950 text-slate-500 dark:text-slate-400 transition-all cursor-pointer"
                   title="Reload Live History"
                 >
                   <RefreshCw size={14} className={isLoadingMessages ? "animate-spin" : ""} />
@@ -469,7 +469,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
               </div>
 
               {msgError && (
-                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-[10px] text-slate-500 dark:text-slate-400 flex items-start gap-2">
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl text-[10px] text-slate-500 dark:text-slate-400 flex items-start gap-2">
                   <AlertCircle size={12} className="shrink-0 text-slate-400 mt-0.5" />
                   <span>{msgError}</span>
                 </div>
@@ -491,7 +491,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                   {messages.map((msg) => (
                     <div 
                       key={msg.id}
-                      className="p-3.5 bg-slate-50/50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-850 rounded-2xl space-y-2 hover:border-slate-200 dark:hover:border-slate-800 transition-all"
+                      className="p-3.5 bg-slate-50/50 dark:bg-slate-950/40 border border-slate-100 dark:border-white/10 rounded-2xl space-y-2 hover:border-slate-200 dark:hover:border-slate-800 transition-all"
                     >
                       <div className="flex items-start justify-between">
                         <div className="truncate pr-2">
@@ -503,7 +503,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                         </span>
                       </div>
                       
-                      <p className="text-[10px] text-slate-500 leading-normal italic line-clamp-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-850 p-2 rounded-lg">
+                      <p className="text-[10px] text-slate-500 leading-normal italic line-clamp-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/10 p-2 rounded-lg">
                         "{msg.snippet}"
                       </p>
                       
@@ -520,7 +520,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
             </div>
 
             {/* Educational / Security Guideline Box */}
-            <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-200/80 dark:border-slate-850 rounded-3xl p-5 space-y-3.5">
+            <div className="bg-slate-50/50 dark:bg-slate-950/20 border border-slate-200/80 dark:border-white/10 rounded-3xl p-5 space-y-3.5">
               <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 tracking-wider flex items-center gap-2">
                 🛡️ Telecom Dispatch Compliance
               </h4>

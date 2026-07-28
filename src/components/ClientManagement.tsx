@@ -375,7 +375,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     currentPage * itemsPerPage
   );
 
-  const inputClasses = "w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case";
+  const inputClasses = "w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case";
   const labelClasses = "block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.15em] ml-1 mb-1.5";
 
   return (
@@ -404,7 +404,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                       if (e.key === 'Enter') handleLocalUnlock();
                     }}
                     placeholder="PASSKEY..."
-                    className="w-full text-center px-4 py-2 text-xs font-mono font-black tracking-widest bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-slate-100 focus:border-amber-500 shadow-sm"
+                    className="w-full text-center px-4 py-2 text-xs font-mono font-black tracking-widest bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-slate-100 focus:border-amber-500 shadow-sm"
                   />
                   <button
                     type="button"
@@ -645,7 +645,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       {/* Directory Section */}
       <div className={cn("lg:col-span-2", (!isAdmin && !editingId) && "lg:col-span-3")}>
         <div className="business-card bg-white dark:bg-slate-950 relative overflow-hidden">
-          <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="p-6 border-b border-slate-100 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
                 Client Infrastructure Directory
@@ -677,7 +677,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                 <select
                   value={selectedArea}
                   onChange={(e) => setSelectedArea(e.target.value)}
-                  className="pl-9 pr-8 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-brand-accent/20 appearance-none"
+                  className="pl-9 pr-8 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-[11px] font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-brand-accent/20 appearance-none"
                 >
                   <option value="all">Global Zones</option>
                   {appConfig.zones.map((zone, i) => (
@@ -693,7 +693,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="ID / Name / Mobile..."
-                  className="pl-9 pr-4 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-48 sm:w-64"
+                  className="pl-9 pr-4 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-[11px] font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-brand-accent/20 w-48 sm:w-64"
                 />
               </div>
             </div>
@@ -702,7 +702,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-slate-50/50 dark:bg-slate-900/50">
-                <tr className="border-b border-slate-100 dark:border-slate-800">
+                <tr className="border-b border-slate-100 dark:border-white/10">
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Contacts</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Package Details</th>
@@ -745,7 +745,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
-                        <div className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-fit">
+                        <div className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/10 w-fit">
                           <span className="text-[10px] font-black text-brand-accent uppercase tracking-tighter flex items-center gap-1.5">
                              <Package size={10} />
                              {client.pkgDetails || '---'}
@@ -891,7 +891,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           </div>
 
           {filteredClients.length > 0 && (
-            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Display Limit:</span>
@@ -901,7 +901,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                       setItemsPerPage(Number(e.target.value));
                       setCurrentPage(1);
                     }}
-                    className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-2 py-1 text-[10px] font-black text-slate-600 dark:text-slate-300 outline-none focus:ring-1 focus:ring-brand-accent transition-all"
+                    className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-md px-2 py-1 text-[10px] font-black text-slate-600 dark:text-slate-300 outline-none focus:ring-1 focus:ring-brand-accent transition-all"
                   >
                     <option value={20}>20 UNITS</option>
                     <option value={50}>50 UNITS</option>
@@ -918,7 +918,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                 <button
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
-                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  className="p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 >
                   <ChevronLeft size={16} />
                 </button>
@@ -944,7 +944,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                           "w-8 h-8 rounded-lg text-[10px] font-black uppercase transition-all",
                           currentPage === pageNum 
                             ? "bg-slate-900 dark:bg-brand-accent text-white shadow-lg" 
-                            : "bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-500 hover:border-brand-accent hover:text-brand-accent"
+                            : "bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-500 hover:border-brand-accent hover:text-brand-accent"
                         )}
                       >
                         {pageNum}
@@ -956,7 +956,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
-                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  className="p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 >
                   <ChevronRight size={16} />
                 </button>
@@ -981,7 +981,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden"
+              className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-100 dark:border-white/10 overflow-hidden"
             >
             <div className="h-32 bg-slate-950 dark:bg-brand-accent relative overflow-hidden">
                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,white_0%,transparent_100%)]" />
@@ -1065,7 +1065,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     </div>
 
                     <div className="space-y-4">
-                       <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                       <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-white/10">
                           <div className="flex items-center gap-3 mb-3">
                              <Smartphone size={14} className="text-sky-500" />
                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mobile Terminal</span>
@@ -1073,7 +1073,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                           <p className="text-lg font-black text-slate-900 dark:text-white tracking-widest">{viewingClient.mobileNumber || 'Protocol Link Unknown'}</p>
                        </div>
 
-                       <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                       <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-white/10">
                           <div className="flex items-center gap-3 mb-3">
                              <Phone size={14} className="text-indigo-500" />
                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fixed Line Archive</span>
@@ -1104,7 +1104,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   </div>
                </div>
 
-               <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+               <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/10 flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-emerald-500" />
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Validated Registry Entry</span>

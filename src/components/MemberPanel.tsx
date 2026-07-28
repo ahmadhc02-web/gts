@@ -180,7 +180,7 @@ export default function MemberPanel({
     }
   };
 
-  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400";
+  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-400 mb-2 tracking-widest ml-1";
 
   return (
@@ -383,7 +383,7 @@ export default function MemberPanel({
             </section>
 
             <section className="pt-12" id="operations-registry-member">
-              <div className="mb-8 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="mb-8 border-b border-slate-100 dark:border-white/10 pb-4">
                 <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-500">Operation Logs</h3>
               </div>
               <ComplaintList 
@@ -482,7 +482,7 @@ export default function MemberPanel({
                     </div>
 
                     <div className="space-y-6">
-                      <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-slate-800">
+                      <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-white/10">
                         <div className="flex items-center gap-3 mb-6">
                           <Activity className="text-amber-500" size={20} />
                           <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Audio Matrix Hub</h4>
@@ -525,7 +525,7 @@ export default function MemberPanel({
                         </div>
                       </div>
 
-                      <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-slate-800">
+                      <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-white/10">
                         <div className="flex items-center gap-3 mb-6">
                           <Mic className="text-blue-500" size={20} />
                           <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Voice Input Protocol</h4>
@@ -569,7 +569,7 @@ export default function MemberPanel({
             </section>
 
             {/* Sign Out Section */}
-            <section className="mt-12 pt-12 border-t border-slate-100 dark:border-slate-800 pb-12">
+            <section className="mt-12 pt-12 border-t border-slate-100 dark:border-white/10 pb-12">
               <button
                 onClick={onLogout}
                 className="w-full max-w-sm mx-auto py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-[11px] shadow-lg flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"

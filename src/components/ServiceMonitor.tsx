@@ -701,7 +701,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                       "w-10 h-10 rounded-2xl flex items-center justify-center border transition-all active:scale-95 shrink-0 relative",
                       isDeleteMode 
                         ? "bg-rose-500 border-rose-600 text-white shadow-md hover:bg-rose-600" 
-                        : "bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-800 text-slate-400 hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-950 transition-all"
+                        : "bg-white dark:bg-slate-900 border-slate-150 dark:border-white/10 text-slate-400 hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-950 transition-all"
                     )}
                     title="Toggle Multi-Select Delete Mode"
                   >
@@ -720,7 +720,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
 
                   <button 
                     onClick={onClose}
-                    className="w-10 h-10 rounded-2xl flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95 text-slate-400 hover:text-slate-900 dark:hover:text-white shrink-0"
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-150 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95 text-slate-400 hover:text-slate-900 dark:hover:text-white shrink-0"
                   >
                     <X size={20} />
                   </button>
@@ -795,12 +795,12 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                         className="absolute inset-0 z-45 flex flex-col bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8 rounded-[2.5rem] select-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-y-auto md:overflow-hidden md:max-h-full"
                       >
                         {/* 1. UPPER SECTION - SERVER DETAILS & OPTIONS */}
-                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-sky-100/30 dark:border-slate-800/80 pb-4 shrink-0">
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-sky-100/30 dark:border-white/10 pb-4 shrink-0">
                           {/* Left Back Arrow + Title and Favicon */}
                           <div className="flex items-center gap-3 w-full md:w-auto">
                             <button 
                               onClick={() => setExpandedTargetKey(null)}
-                              className="w-11 h-11 rounded-2xl flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 text-slate-500 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-950/20 hover:border-sky-200 dark:hover:border-sky-950 transition-all active:scale-95 shadow-sm shrink-0"
+                              className="w-11 h-11 rounded-2xl flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-150 dark:border-white/10 text-slate-500 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-950/20 hover:border-sky-200 dark:hover:border-sky-950 transition-all active:scale-95 shadow-sm shrink-0"
                               title="Return to Nodes Grid View"
                             >
                               <ArrowLeft size={18} />
@@ -894,7 +894,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
 
                             <button 
                               onClick={() => setExpandedTargetKey(null)}
-                              className="h-10 w-10 rounded-xl flex items-center justify-center bg-slate-100/50 dark:bg-slate-900/50 border border-slate-200/50 dark:border-slate-800 text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-500/30 transition-all active:scale-95 shrink-0"
+                              className="h-10 w-10 rounded-xl flex items-center justify-center bg-slate-100/50 dark:bg-slate-900/50 border border-slate-200/50 dark:border-white/10 text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-500/30 transition-all active:scale-95 shrink-0"
                               title="Back to List"
                             >
                               <X size={16} />
@@ -936,7 +936,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                             {/* Chart Graph Frame */}
                             <div className="flex-1 min-h-0 w-full relative">
                               {detailHistory.length === 0 ? (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-900/10 rounded-2xl p-6 text-center z-10 border border-slate-100/50 dark:border-slate-800">
+                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-900/10 rounded-2xl p-6 text-center z-10 border border-slate-100/50 dark:border-white/10">
                                   <Activity className="text-sky-500 animate-pulse mb-3" size={32} />
                                   <h6 className="text-xs font-black text-slate-700 dark:text-slate-350 uppercase tracking-widest">
                                     Initializing Telemetry Connection
@@ -1028,7 +1028,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                             </div>
 
                             {/* Signal stability notice */}
-                            <div className="mt-3 flex items-center justify-between text-[10px] border-t border-slate-100 dark:border-slate-800/80 pt-2.5 text-slate-400 font-medium select-none">
+                            <div className="mt-3 flex items-center justify-between text-[10px] border-t border-slate-100 dark:border-white/10 pt-2.5 text-slate-400 font-medium select-none">
                               <span>Physical Speed Category:</span>
                               <span className={cn(
                                 "font-bold font-lexend",
@@ -1118,7 +1118,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                           </div>
 
                           {/* Countdown slider progress tracker bar (very slim at the bottom edge) */}
-                          <div className="flex items-center justify-between gap-3 text-[9px] font-black text-slate-400/80 font-lexend uppercase tracking-widest pt-1 border-t border-slate-150 dark:border-slate-800/60">
+                          <div className="flex items-center justify-between gap-3 text-[9px] font-black text-slate-400/80 font-lexend uppercase tracking-widest pt-1 border-t border-slate-150 dark:border-white/10">
                             <span>Diagnostic Trace loop compiling schedule</span>
                             <div className="flex-1 max-w-[280px] h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden relative">
                               <div 
@@ -1188,7 +1188,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                   ? "border-rose-500 dark:border-rose-500 ring-2 sm:ring-4 ring-rose-500/10 bg-rose-50/5 dark:bg-rose-950/5" 
                                   : "",
                                 isDeleteMode && !isSelected 
-                                  ? "opacity-60 hover:opacity-100 border-slate-200 dark:border-slate-800" 
+                                  ? "opacity-60 hover:opacity-100 border-slate-200 dark:border-white/10" 
                                   : ""
                               )}
                             >
@@ -1216,7 +1216,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                           type="text"
                                           value={editLabel}
                                           onChange={(e) => setEditLabel(e.target.value)}
-                                          className="w-full text-xs font-semibold px-3 py-1.5 rounded-lg border border-sky-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                          className="w-full text-xs font-semibold px-3 py-1.5 rounded-lg border border-sky-150 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
                                           placeholder="e.g. Google Premium Edge"
                                         />
                                       </div>
@@ -1226,13 +1226,13 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                           type="text"
                                           value={editUrl}
                                           onChange={(e) => setEditUrl(e.target.value)}
-                                          className="w-full text-xs font-lexend px-3 py-1.5 rounded-lg border border-sky-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                          className="w-full text-xs font-lexend px-3 py-1.5 rounded-lg border border-sky-150 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
                                           placeholder="e.g. google.com"
                                         />
                                       </div>
                                     </div>
                                   </div>
-                                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
                                     <button
                                       onClick={handleSaveEdit}
                                       className="flex-1 py-1.5 bg-sky-500 hover:bg-sky-600 text-white font-black text-[9px] uppercase tracking-wider rounded-xl transition-all"
@@ -1352,7 +1352,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                   </div>
 
                                   {/* stats grid */}
-                                  <div className="grid grid-cols-4 gap-0.5 sm:gap-1 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100 dark:border-slate-800">
+                                  <div className="grid grid-cols-4 gap-0.5 sm:gap-1 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100 dark:border-white/10">
                                     <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
                                       <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">AVG</span>
                                       <span className="text-[8px] sm:text-[10px] font-black font-lexend text-slate-700 dark:text-sky-300 tabular-nums uppercase block">

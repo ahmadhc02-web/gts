@@ -1,0 +1,53 @@
+--- src/index.css
++++ src/index.css
+@@ -23,6 +23,23 @@
+ @variant dark (&:where(.dark, .dark *));
+ 
+ @layer base {
++  .dark {
++    /* Background colors scaled from Medium Off-Black #454545 */
++    --color-slate-950: #454545;
++    --color-slate-900: #4d4d4d;
++    --color-slate-850: #555555;
++    --color-slate-800: #5e5e5e;
++    --color-slate-700: #6b6b6b;
++    --color-slate-600: #7d7d7d;
++
++    /* Text colors lightened for visibility on #454545 */
++    --color-slate-500: #bababa;
++    --color-slate-400: #d1d1d1;
++    --color-slate-300: #e2e2e2;
++    --color-slate-200: #f0f0f0;
++    --color-slate-100: #f8f8f8;
++    --color-slate-50:  #ffffff;
++  }
+   html {
+     scroll-behavior: smooth;
+   }
+@@ -104,7 +121,7 @@
+   }
+ 
+   .dark .glass {
+-    background: rgba(15, 23, 42, 0.65);
++    background: rgba(69, 69, 69, 0.65);
+     border-color: rgba(255, 255, 255, 0.1);
+   }
+ }
+@@ -152,7 +169,7 @@
+ }
+ 
+ .dark .gts-login-container {
+-  background-color: #0b0f19;
++  background-color: #454545;
+   box-shadow: 0 5px 30px rgba(0, 0, 0, 0.7);
+   border: 1px solid rgba(255, 255, 255, 0.05);
+ }
+@@ -281,7 +298,7 @@
+   }
+ 
+   .dark .gts-login-container {
+-    background-color: rgba(11, 15, 25, 0.80);
++    background-color: rgba(69, 69, 69, 0.80);
+     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+     border: 1px solid rgba(255,255,255,0.05);
+   }

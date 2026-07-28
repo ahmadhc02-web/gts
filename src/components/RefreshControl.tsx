@@ -43,7 +43,7 @@ export default function RefreshControl({ onRefresh, isLoading }: RefreshControlP
         <button
           onClick={() => setShowOptions(!showOptions)}
           className={cn(
-            "flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[10px] font-black uppercase tracking-widest transition-all hover:border-brand-accent/50",
+            "flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-[10px] font-black uppercase tracking-widest transition-all hover:border-brand-accent/50",
             intervalTime > 0 ? "text-brand-accent border-brand-accent/30" : "text-slate-500"
           )}
         >
@@ -53,7 +53,7 @@ export default function RefreshControl({ onRefresh, isLoading }: RefreshControlP
         </button>
 
         {showOptions && (
-          <div className="absolute top-full left-0 mt-1 w-32 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-2xl z-[100] overflow-hidden">
+          <div className="absolute top-full left-0 mt-1 w-32 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg shadow-2xl z-[100] overflow-hidden">
             {REFRESH_INTERVALS.map((opt) => (
               <button
                 key={opt.value}

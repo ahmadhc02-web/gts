@@ -98,7 +98,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
   
   return (
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 pb-0">
-      <div className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col relative overflow-hidden shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 transition-shadow">
+      <div className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-white/10 flex flex-col relative overflow-hidden shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 transition-shadow">
         {/* Soft pastel decorative ambient blobs exactly like mockup photo */}
         {chartType === 'area' ? (
           <div className="absolute top-4 -right-16 w-48 h-48 bg-emerald-400/8 blur-[48px] rounded-full pointer-events-none z-0" />
@@ -112,7 +112,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                   <div className="flex flex-col w-full h-full justify-between">
                     <div className="flex-1 w-full min-h-[200px] min-w-0 relative flex items-center justify-center">
                       {/* Centered Label with elegant concentric double border layout matching photo */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[84px] h-[84px] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center pointer-events-none z-10 shadow-[inner_0_2px_4px_rgba(0,0,0,0.06),0_12px_24px_-6px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 transition-colors">
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[84px] h-[84px] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center pointer-events-none z-10 shadow-[inner_0_2px_4px_rgba(0,0,0,0.06),0_12px_24px_-6px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-white/10 transition-colors">
                         <div className="w-[72px] h-[72px] rounded-full border border-dashed border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-center">
                           <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white leading-tight">
                             {chartType === 'area' ? 'ZONE' : 'CATG.'}
@@ -236,9 +236,9 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                initial={{ opacity: 0, scale: 0.95, y: 20 }}
                animate={{ opacity: 1, scale: 1, y: 0 }}
                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-               className="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
+               className="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden"
              >
-               <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+               <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between shrink-0">
                  <div className="flex items-center gap-3">
                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
                      <Info size={20} />
@@ -307,7 +307,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                          </div>
 
                          {complaint.description && (
-                           <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 mt-3">
+                           <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-white/10 mt-3">
                              <p className="text-xs font-medium text-slate-600 dark:text-slate-300 line-clamp-2">{complaint.description}</p>
                            </div>
                          )}

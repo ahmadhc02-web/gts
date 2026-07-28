@@ -269,14 +269,14 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
     }
   };
 
-  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600";
+  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600";
   const labelClasses = "block text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 mb-2 tracking-[0.2em] ml-1";
   const sectionHeaderClasses = "text-xs font-black uppercase tracking-[0.2em] text-brand-accent border-b border-brand-accent/10 pb-4 mb-6 flex items-center gap-3";
 
   const getCardPreviewStyle = (style: BrandingConfig['cardStyle']) => {
     switch(style) {
-      case 'bordered': return "border-2 border-slate-200 dark:border-slate-800";
-      case 'elevated': return "shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-800";
+      case 'bordered': return "border-2 border-slate-200 dark:border-white/10";
+      case 'elevated': return "shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-white/10";
       case 'glass': return "bg-white/10 dark:bg-slate-900/10 backdrop-blur-md border border-white/20";
       default: return "border-none";
     }
@@ -299,7 +299,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
               exit={{ scale: 0.9, y: 20 }}
               className="w-full h-full max-w-7xl bg-white dark:bg-slate-950 rounded-[3rem] overflow-hidden flex flex-col shadow-2xl border border-white/10"
             >
-              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900">
+              <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50 dark:bg-slate-900">
                 <div className="flex items-center gap-4">
                   <Monitor className="text-brand-accent" size={24} />
                   <div>
@@ -425,7 +425,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                              </div>
                              <div className="space-y-4">
                                 {[1,2,3,4,5].map(i => (
-                                  <div key={'user-'+i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800">
+                                  <div key={'user-'+i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-white/10">
                                     <div className="flex items-center gap-3">
                                       <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-500">
                                         <Users size={14} />
@@ -451,7 +451,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                           <div className="overflow-x-auto">
                             <table className="w-full text-left">
                               <thead>
-                                <tr className="border-b border-slate-100 dark:border-slate-800">
+                                <tr className="border-b border-slate-100 dark:border-white/10">
                                   <th className="py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Timestamp</th>
                                   <th className="py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Origin</th>
                                   <th className="py-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Protocol</th>
@@ -529,7 +529,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
             </div>
           </div>
           <div className="flex items-center gap-4 w-full sm:w-auto">
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 mr-2 shadow-sm">
+            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-white/10 mr-2 shadow-sm">
               <button
                 onClick={undo}
                 disabled={past.length === 0}
@@ -580,7 +580,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-2 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-2 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10">
           <div className="flex flex-wrap gap-2">
             {[
               { id: 'identity', label: 'Identity', icon: Shield },
@@ -605,7 +605,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-white/10">
             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mr-2">Business Presets:</span>
             <div className="flex gap-2">
               {Object.keys(PRESETS).map((key) => (
@@ -711,7 +711,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                           </button>
                         ))}
                       </div>
-                      <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10">
                          <input 
                            type="color" 
                            value={config.accentColor}
@@ -736,7 +736,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                               "w-full px-5 py-4 rounded-xl border text-left text-sm font-bold transition-all flex justify-between items-center group",
                               config.fontFamily === font.value
                                 ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-lg"
-                                : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-brand-accent/50"
+                                : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:border-brand-accent/50"
                             )}
                             style={{ fontFamily: font.value }}
                           >
@@ -760,7 +760,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                                "px-4 py-3 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all",
                                config.sidebarTheme === theme
                                  ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-md scale-105"
-                                 : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500"
+                                 : "bg-white dark:bg-slate-900 border-slate-200 dark:border-white/10 text-slate-500"
                              )}
                            >
                              {theme}
@@ -780,7 +780,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                                 "flex-1 h-12 border-2 transition-all flex items-center justify-center",
                                 config.borderRadius === radius.value
                                   ? "bg-slate-900 dark:bg-brand-accent border-slate-900 dark:border-brand-accent text-white shadow-md scale-105"
-                                  : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500"
+                                  : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/10 text-slate-500"
                               )}
                               style={{ borderRadius: radius.value === 'none' ? '0' : radius.value === 'full' ? '9999px' : radius.value === 'sm' ? '0.125rem' : radius.value === 'md' ? '0.375rem' : '0.75rem' }}
                             >
@@ -792,7 +792,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
 
                      <div className="space-y-4">
                         <label className={labelClasses}>Animation Dynamics</label>
-                        <div className="flex items-center justify-between p-5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-inner">
+                        <div className="flex items-center justify-between p-5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-inner">
                           <div className="flex items-center gap-3 text-brand-accent">
                              <Zap size={20} className={config.enableAnimations ? "animate-pulse" : ""} />
                              <span className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Enable UI Motion</span>
@@ -828,7 +828,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                         "p-6 text-left rounded-2xl border-2 transition-all space-y-3 group",
                         config.cardStyle === style.value
                           ? "bg-slate-900 dark:bg-brand-accent border-slate-900 dark:border-brand-accent shadow-2xl scale-105"
-                          : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                          : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-white/10"
                       )}
                     >
                       <div className={cn(
@@ -849,7 +849,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                 </div>
 
                 {config.cardStyle === 'glass' && (
-                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-8 p-6 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-8 p-6 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10">
                       <div className="flex justify-between items-center mb-4">
                         <label className={labelClasses}>Glass Opacity Intensity</label>
                         <span className="text-xs font-mono font-bold text-brand-accent">{config.glassOpacity || 10}%</span>
@@ -875,7 +875,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                 <div className="space-y-8">
-                  <div className="flex items-center justify-between p-6 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-inner">
+                  <div className="flex items-center justify-between p-6 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-inner">
                     <div>
                       <p className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Deployment Status</p>
                       <p className="text-[10px] font-bold text-slate-500 uppercase">Control bot presence in active viewport</p>
@@ -901,7 +901,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                     <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">X Offset (Left %)</span>
-                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white/10">
                            <input
                             type="number"
                             value={config.mascotPos.x}
@@ -913,7 +913,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                       </div>
                       <div className="space-y-2">
                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Y Offset (Top %)</span>
-                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white/10">
                           <input
                             type="number"
                             value={config.mascotPos.y}
@@ -928,7 +928,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                 </div>
 
                 <div className="relative">
-                   <div className="absolute inset-0 bg-slate-100 dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 overflow-hidden">
+                   <div className="absolute inset-0 bg-slate-100 dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 p-6 overflow-hidden">
                       <div className="h-full w-full border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl flex items-center justify-center opacity-50">
                         <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.5em] rotate-90">Bot Viewport Matrix</p>
                       </div>
@@ -965,7 +965,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                 
                 <div className="space-y-4">
                   {(config.homeSections || []).sort((a, b) => a.order - b.order).map((section, index) => (
-                    <div key={section.id} className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <div key={section.id} className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10">
                       <div className="flex flex-col gap-1">
                         <button 
                           onClick={() => {
@@ -1016,7 +1016,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
               </div>
 
               <div className="business-card p-8 bg-white dark:bg-slate-950">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-100 dark:border-white/10 pb-4">
                   <div>
                     <h4 className={cn(sectionHeaderClasses, "mb-1")}><LayoutIcon size={18} /> Left Side Icon Rail Customization</h4>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Toggle which icons show up in the left-hand panel of icons on the desktop layout (Max 12)</p>
@@ -1090,7 +1090,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                             "p-2.5 rounded-xl border shrink-0 mt-0.5",
                             !isHidden 
                               ? "bg-blue-600/10 text-blue-600 border-blue-500/20" 
-                              : "bg-slate-200 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-800"
+                              : "bg-slate-200 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-white/10"
                           )}>
                             <item.icon size={16} />
                           </div>
@@ -1246,7 +1246,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
       <div className="lg:col-span-12 xl:col-span-4 space-y-6">
         <div className="sticky top-24 space-y-6">
           <div className="business-card bg-slate-50 dark:bg-slate-900 border-2 border-brand-accent/20">
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 flex items-center justify-between">
               <div className="flex items-center gap-2">
                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Global Preview Stream</span>
@@ -1383,7 +1383,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
             </div>
           </div>
 
-          <div className="p-6 rounded-3xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/80 shadow-inner">
+          <div className="p-6 rounded-3xl bg-slate-100 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 shadow-inner">
             <h5 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-5 pl-1">Operational Diagnostics</h5>
             <div className="space-y-4">
               {[

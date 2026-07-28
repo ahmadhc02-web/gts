@@ -433,7 +433,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
     const showDeleteAction = !isGroup || (currentUser.role === 'admin' || currentUser.role === 'super_admin');
 
     return (
-      <div className="relative overflow-hidden bg-slate-100 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800">
+      <div className="relative overflow-hidden bg-slate-100 dark:bg-slate-900 border-b border-slate-100 dark:border-white/10">
         {/* Background Swipe Actions */}
         <div className="absolute inset-0 flex items-center justify-between px-6 z-0">
           <div className="flex items-center gap-2 text-emerald-500">
@@ -508,7 +508,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
         damping: 25, 
         stiffness: 200
       }}
-      className="fixed left-0 w-full sm:w-96 bg-white dark:bg-slate-950 shadow-2xl z-[150] border-r border-slate-200 dark:border-slate-800 flex flex-col"
+      className="fixed left-0 w-full sm:w-96 bg-white dark:bg-slate-950 shadow-2xl z-[150] border-r border-slate-200 dark:border-white/10 flex flex-col"
       style={{ 
         height: viewportHeight,
         top: 0,
@@ -521,7 +521,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       {viewState === 'list' && (
         <div className="flex flex-col h-full bg-slate-50/30 dark:bg-slate-900/10">
           {/* Header */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-950">
+          <div className="p-4 border-b border-slate-200 dark:border-white/10 flex justify-between items-center bg-white dark:bg-slate-950">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
                 <MessageSquare size={20} />
@@ -563,13 +563,13 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
           </div>
 
           {/* Search Bar - Added */}
-          <div className="px-4 py-2 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800">
+          <div className="px-4 py-2 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-white/10">
              <div className="relative group">
                 <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
                 <input 
                   type="text" 
                   placeholder="SEARCH CHATS..." 
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-[10px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-slate-900 text-[10px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -606,7 +606,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
             }
 
             {/* Groups Section */}
-            <div className="px-5 py-3 bg-slate-100/50 dark:bg-slate-900/50 border-y border-slate-200 dark:border-slate-800">
+            <div className="px-5 py-3 bg-slate-100/50 dark:bg-slate-900/50 border-y border-slate-200 dark:border-white/10">
                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Tactical Units ({groups.length})</span>
             </div>
             {groups
@@ -622,7 +622,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
             )}
 
             {/* Individual DM Section */}
-            <div className="px-5 py-3 bg-slate-100/50 dark:bg-slate-900/50 border-y border-slate-200 dark:border-slate-800">
+            <div className="px-5 py-3 bg-slate-100/50 dark:bg-slate-900/50 border-y border-slate-200 dark:border-white/10">
                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Secure Uplinks</span>
             </div>
             {users
@@ -646,7 +646,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       {/* New Chat View */}
       {viewState === 'new-chat' && (
         <div className="flex flex-col h-full animate-in slide-in-from-right duration-300">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-4 bg-white dark:bg-slate-950">
+          <div className="p-4 border-b border-slate-200 dark:border-white/10 flex items-center gap-4 bg-white dark:bg-slate-950">
              <button onClick={() => setViewState('list')} className="p-2 -ml-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
                <ChevronLeft size={20} />
              </button>
@@ -658,7 +658,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                <input 
                  type="text" 
                  placeholder="SEARCH OPERATIVE..." 
-                 className="w-full pl-11 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all shadow-sm"
+                 className="w-full pl-11 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all shadow-sm"
                  value={searchTerm}
                  onChange={(e) => setSearchTerm(e.target.value)}
                />
@@ -709,7 +709,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       {/* Create Group View */}
       {viewState === 'create-group' && (currentUser.role === 'admin' || currentUser.role === 'super_admin') && (
         <div className="flex flex-col h-full animate-in slide-in-from-right duration-300">
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-950">
+          <div className="p-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-white dark:bg-slate-950">
              <div className="flex items-center gap-3">
                <button onClick={() => setViewState('list')} className="p-2 -ml-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
                  <ChevronLeft size={20} />
@@ -730,7 +730,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                 <input 
                   type="text" 
                   placeholder="UNIT CALLSIGN..." 
-                  className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all shadow-sm"
+                  className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 outline-none transition-all shadow-sm"
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
                 />
@@ -742,7 +742,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                    <input 
                      type="text" 
                      placeholder="FILTER PERSONEL..." 
-                     className="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest outline-none shadow-sm focus:ring-4 focus:ring-blue-600/10 transition-all"
+                     className="w-full pl-11 pr-4 py-2.5 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest outline-none shadow-sm focus:ring-4 focus:ring-blue-600/10 transition-all"
                      value={searchTerm}
                      onChange={(e) => setSearchTerm(e.target.value)}
                    />
@@ -768,7 +768,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                               "w-full p-3.5 rounded-2xl flex items-center gap-4 transition-all border",
                               isSelected 
                                 ? "bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/20" 
-                                : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 shadow-sm",
+                                : "bg-white dark:bg-slate-950 border-slate-100 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-slate-900 shadow-sm",
                               isMe && "ring-2 ring-emerald-500/50"
                             )}
                           >
@@ -788,7 +788,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                              </div>
                              <div className={cn(
                                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all", 
-                               isSelected ? "bg-white border-white" : "border-slate-200 dark:border-slate-800"
+                               isSelected ? "bg-white border-white" : "border-slate-200 dark:border-white/10"
                              )}>
                                 {isSelected && <CheckCheck size={12} className="text-blue-600" />}
                              </div>
@@ -810,7 +810,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-xs p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl relative overflow-hidden"
+              className="bg-white dark:bg-slate-900 w-full max-w-xs p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-2xl relative overflow-hidden"
             >
               <div className="absolute top-0 right-0 p-8 opacity-5">
                 <Trash2 size={80} />
@@ -846,7 +846,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
       {viewState === 'chat' && (
         <div className="flex-1 flex flex-col min-h-0 bg-slate-50/30 dark:bg-slate-900/10">
           {/* Header */}
-          <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center gap-3 shrink-0 z-[160]">
+          <div className="p-4 border-b border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center gap-3 shrink-0 z-[160]">
             <button 
               onClick={() => {
                 setViewState('list');
@@ -1001,7 +1001,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                         "relative px-4 py-2.5 rounded-2xl shadow-sm border transition-all cursor-grab active:cursor-grabbing",
                         isMe 
                           ? "rounded-tr-none bg-blue-600 text-white border-blue-500 shadow-blue-600/10" 
-                          : "rounded-tl-none bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border-slate-100 dark:border-slate-800 shadow-slate-200/50 dark:shadow-none"
+                          : "rounded-tl-none bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border-slate-100 dark:border-white/10 shadow-slate-200/50 dark:shadow-none"
                       )}
                     >
                       {msg.replyTo && (
@@ -1093,7 +1093,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                       SYNCHRONIZING...
                     </span>
                   </div>
-                  <div className="px-4 py-3 rounded-2xl rounded-tr-none bg-slate-50 dark:bg-slate-900/50 text-slate-400 border border-slate-200 dark:border-slate-800 opacity-60 italic text-[12px] font-mono shadow-sm">
+                  <div className="px-4 py-3 rounded-2xl rounded-tr-none bg-slate-50 dark:bg-slate-900/50 text-slate-400 border border-slate-200 dark:border-white/10 opacity-60 italic text-[12px] font-mono shadow-sm">
                     PACKET_TRANSIT
                   </div>
                 </motion.div>
@@ -1110,7 +1110,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                   initial={{ y: 50, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: 50, opacity: 0 }}
-                  className="absolute bottom-full left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 px-5 py-3 flex items-center gap-4 overflow-hidden shadow-[0_-8px_30px_rgba(0,0,0,0.08)] z-[155] rounded-t-3xl mx-2 mb-[-1px]"
+                  className="absolute bottom-full left-0 right-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-white/10 px-5 py-3 flex items-center gap-4 overflow-hidden shadow-[0_-8px_30px_rgba(0,0,0,0.08)] z-[155] rounded-t-3xl mx-2 mb-[-1px]"
                 >
                   <div className="w-1.5 h-10 bg-blue-600 dark:bg-blue-500 rounded-full shrink-0 shadow-[0_0_12px_rgba(37,99,235,0.3)]" />
                   <div className="flex-1 min-w-0">
@@ -1165,7 +1165,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                     <button
                       key={resp}
                       onClick={() => handleSendMessage(resp)}
-                      className="shrink-0 px-4 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:border-blue-600 hover:text-blue-600 transition-all shadow-sm active:scale-95"
+                      className="shrink-0 px-4 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:border-blue-600 hover:text-blue-600 transition-all shadow-sm active:scale-95"
                     >
                       {resp}
                     </button>
@@ -1183,7 +1183,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                 isMicMuted={isMicMuted}
               />
             ) : (
-              <div className="p-4 border-t border-slate-200 dark:border-slate-800 shrink-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur-sm z-[160]">
+              <div className="p-4 border-t border-slate-200 dark:border-white/10 shrink-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur-sm z-[160]">
                 <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(newMessage); }} className="flex items-center gap-2.5">
                   <button
                     type="button"
@@ -1212,7 +1212,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                         }, 150);
                       }}
                       placeholder="Transmitting tactical data..."
-                      className="w-full px-5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 dark:focus:border-blue-500 transition-all font-medium text-[13px] placeholder:text-slate-400 placeholder:uppercase placeholder:text-[10px] placeholder:tracking-widest shadow-inner shadow-black/5"
+                      className="w-full px-5 py-2.5 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-blue-600/10 focus:border-blue-600 dark:focus:border-blue-500 transition-all font-medium text-[13px] placeholder:text-slate-400 placeholder:uppercase placeholder:text-[10px] placeholder:tracking-widest shadow-inner shadow-black/5"
                     />
                   </div>
 
@@ -1255,7 +1255,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border border-slate-200 dark:border-slate-800 relative overflow-hidden"
+              className="bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-2xl max-w-sm w-full border border-slate-200 dark:border-white/10 relative overflow-hidden"
             >
               <div className="absolute top-0 left-0 right-0 h-1.5 bg-rose-600" />
               <div className="w-16 h-16 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-600 mb-6 border border-rose-500/20 shadow-inner">
@@ -1274,7 +1274,7 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                 </button>
                 <button
                   onClick={() => setDeleteConfirmId(null)}
-                  className="w-full px-6 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-sm font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95"
+                  className="w-full px-6 py-4 rounded-2xl border border-slate-200 dark:border-white/10 text-sm font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95"
                 >
                   Hold Record
                 </button>

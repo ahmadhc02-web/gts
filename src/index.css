@@ -22,7 +22,29 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+
 @layer base {
+  .dark {
+    /* Modern Lite Black Theme (#121212) */
+    --color-slate-950: #121212;
+    --color-slate-900: #1c1c1c;
+    --color-slate-850: #262626;
+    --color-slate-800: #333333;
+    --color-slate-700: #404040;
+    --color-slate-600: #525252;
+
+    /* Text and contrast colors, crisp and modern */
+    --color-slate-500: #737373;
+    --color-slate-400: #a3a3a3;
+    --color-slate-300: #d4d4d4;
+    --color-slate-200: #e5e5e5;
+    --color-slate-100: #f5f5f5;
+    --color-slate-50:  #ffffff;
+    
+    /* Branding specific adjustments for contrast */
+    --color-brand-border: #333333;
+  }
+
   html {
     scroll-behavior: smooth;
   }
@@ -87,7 +109,7 @@
 
 @layer utilities {
   .business-card {
-    @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl shadow-black/10 dark:shadow-black/50 transition-all duration-300;
+    @apply bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-xl shadow-black/10 dark:shadow-black/50 transition-all duration-300;
     border-radius: var(--radius-global);
   }
   
@@ -104,7 +126,7 @@
   }
 
   .dark .glass {
-    background: rgba(15, 23, 42, 0.65);
+    background: rgba(28, 28, 28, 0.65);
     border-color: rgba(255, 255, 255, 0.1);
   }
 }
@@ -152,7 +174,7 @@
 }
 
 .dark .gts-login-container {
-  background-color: #0b0f19;
+  background-color: #121212;
   box-shadow: 0 5px 30px rgba(0, 0, 0, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -281,7 +303,7 @@
   }
 
   .dark .gts-login-container {
-    background-color: rgba(11, 15, 25, 0.80);
+    background-color: rgba(28, 28, 28, 0.80);
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     border: 1px solid rgba(255,255,255,0.05);
   }

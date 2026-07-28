@@ -10,7 +10,7 @@ interface ReviewTimelineProps {
 export default function ReviewTimeline({ reviews }: ReviewTimelineProps) {
   if (!reviews || reviews.length === 0) {
     return (
-      <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-800/85 text-xs text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1.5">
+      <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-white/10 text-xs text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1.5">
         <span>💬 Awaiting Telemetry / No Review Logged</span>
       </div>
     );
@@ -21,7 +21,7 @@ export default function ReviewTimeline({ reviews }: ReviewTimelineProps) {
   const latestReviewId = sortedReviews[sortedReviews.length - 1]?.id;
 
   return (
-    <div className="relative pl-4 border-l-2 border-slate-150 dark:border-slate-800 space-y-4">
+    <div className="relative pl-4 border-l-2 border-slate-150 dark:border-white/10 space-y-4">
       {sortedReviews.map((review, idx) => {
         const isLatest = review.id === latestReviewId;
         return (

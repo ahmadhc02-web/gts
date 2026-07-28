@@ -215,9 +215,9 @@ export default function VoiceRecorder({ onSend, onCancel, isAudioMuted = false, 
     <motion.div 
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800"
+      className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-white/10"
     >
-      <div className="flex-1 flex items-center gap-4 bg-white dark:bg-slate-950 rounded-xl px-4 py-2 border border-slate-200 dark:border-slate-800">
+      <div className="flex-1 flex items-center gap-4 bg-white dark:bg-slate-950 rounded-xl px-4 py-2 border border-slate-200 dark:border-white/10">
         {isRecording ? (
           <>
             <motion.div 
