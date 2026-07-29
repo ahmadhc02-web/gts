@@ -17,10 +17,10 @@ RUN npm run build
 
 # Set production environment variables
 ENV NODE_ENV=production
-ENV PORT=7860
+ENV PORT=3000
 
-# Expose the port used by Hugging Face Space
-EXPOSE 7860
+# Expose port 3000
+EXPOSE 3000
 
 # Start the Express production server
 CMD ["npm", "start"]

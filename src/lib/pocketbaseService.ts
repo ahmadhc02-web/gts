@@ -364,6 +364,7 @@ function subscribeTable(
   }
   globalTableSubscribers[syncKey].add(callback);
 
+  let debounceTimer: any = null;
   pb.collection(tableName).subscribe('*', (e) => {
     let nextCache = globalTableCaches[syncKey] || [];
     const mappedRecord = mapRow(e.record);
@@ -379,10 +380,14 @@ function subscribeTable(
     }
 
     globalTableCaches[syncKey] = nextCache;
-    try {
-      localStorage.setItem(`gts_cache_v3_${tableName}`, JSON.stringify(nextCache));
-    } catch (err) {}
-    globalTableSubscribers[syncKey].forEach(cb => cb(nextCache));
+
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(`gts_cache_v3_${tableName}`, JSON.stringify(nextCache));
+      } catch (err) {}
+      globalTableSubscribers[syncKey].forEach(cb => cb(nextCache));
+    }, 150); // 150ms debounce for UI performance under heavy load
   }).catch(e => console.warn("PB Subscribe error:", e));
 
   return () => {
@@ -408,19 +413,26 @@ async function upsertPB(collectionName: string, idField: string, idValue: string
           existingId = record.id;
         }
       } catch (err: any) {
-        console.error("upsertPB getOne error:", err.message);
+        const isNotFound = err?.status === 404 || err?.response?.code === 404 || (err?.message && String(err.message).toLowerCase().includes("not found"));
+        if (!isNotFound) {
+          console.warn("upsertPB getOne warning:", err?.message || err);
+        }
       }
     }
     
     // 2. If not found by PB id, try finding by custom idField (fallback)
     if (!existingId && idField && idField !== 'id') {
       try {
-        const record = await pb.collection(collectionName).getFirstListItem(`${idField} = "${idValue}"`);
+        const safeValue = String(idValue).replace(/"/g, '\\"');
+        const record = await pb.collection(collectionName).getFirstListItem(`${idField} = "${safeValue}"`);
         if (record) {
           existingId = record.id;
         }
       } catch (err: any) {
-        console.error("upsertPB getFirstListItem error:", err.message);
+        const isNotFound = err?.status === 404 || err?.response?.code === 404 || (err?.message && String(err.message).toLowerCase().includes("not found"));
+        if (!isNotFound) {
+          console.warn("upsertPB getFirstListItem warning:", err?.message || err);
+        }
       }
     }
     
@@ -429,11 +441,13 @@ async function upsertPB(collectionName: string, idField: string, idValue: string
       return await pb.collection(collectionName).update(existingId, data);
     } else {
       const payload = { ...data };
-      if (idField && idField !== 'id' && idField !== 'complaint_id' && idField !== 'client_id' && idField !== 'target_id' && idField !== 'notification_id') {
-        payload[idField] = idValue;
+      if (idField && idField !== 'id') {
+        payload[idField] = payload[idField] ?? idValue;
       }
       if (isPbId) {
         payload.id = idValue;
+      } else {
+        delete payload.id;
       }
       return await pb.collection(collectionName).create(payload);
     }
@@ -652,11 +666,13 @@ export const pocketbaseService = {
         filter = `dealer_id = "${dealerId}"`;
       }
       
+      let networkSuccess = false;
       const monthMap = new Map<string, any>();
 
       // 1. Fetch from billing_months collection (has full JSON rows_data saved directly)
       try {
         const pbBillingMonths = await pb.collection('billing_months').getFullList({ filter, sort: '-created' });
+        networkSuccess = true;
         for (const em of pbBillingMonths) {
           const rowsFromData = Array.isArray(em.rows_data) ? em.rows_data : (Array.isArray(em.rows) ? em.rows : []);
           monthMap.set(em.month_id, {
@@ -676,6 +692,7 @@ export const pocketbaseService = {
       let rowRecords: any[] = [];
       try {
         rowRecords = await pb.collection('billing_rows').getFullList({ filter });
+        networkSuccess = true;
       } catch (err) {
         console.warn("PB: Failed to fetch billing from billing_rows:", err);
       }
@@ -725,32 +742,34 @@ export const pocketbaseService = {
             });
           } else {
             const existingMonth = monthMap.get(mId)!;
-            // Only populate from billing_rows if monthMap didn't have authoritative rows_data from billing_months
-            if (!existingMonth.hasAuthoritativeRowsData) {
-              if (!existingMonth.rows || existingMonth.rows.length === 0) {
-                existingMonth.rows = rowList;
-              } else {
-                const existingRowsMap = new Map<string, any>();
-                existingMonth.rows.forEach((r: any, idx: number) => {
-                  const k = r.clientId || r.id || (r.username ? String(r.username).toLowerCase().trim() : `idx_${idx}`);
-                  existingRowsMap.set(k, r);
-                });
+            if (!existingMonth.rows || existingMonth.rows.length === 0) {
+              existingMonth.rows = rowList;
+            } else {
+              const existingRowsMap = new Map<string, any>();
+              existingMonth.rows.forEach((r: any, idx: number) => {
+                const k = r.clientId || r.id || (r.username ? String(r.username).toLowerCase().trim() : `idx_${idx}`);
+                existingRowsMap.set(k, r);
+              });
 
-                rowList.forEach((r: any) => {
-                  const k = r.clientId || r.id || (r.username ? String(r.username).toLowerCase().trim() : null);
-                  if (k && !existingRowsMap.has(k)) {
-                    existingMonth.rows.push(r);
-                  }
-                });
-              }
+              rowList.forEach((r: any) => {
+                const k = r.clientId || r.id || (r.username ? String(r.username).toLowerCase().trim() : null);
+                if (k && !existingRowsMap.has(k)) {
+                  existingMonth.rows.push(r);
+                } else if (k && existingRowsMap.has(k)) {
+                  const extRow = existingRowsMap.get(k);
+                  // ALWAYS OVERWRITE with billing_rows as they are the true authoritative state for concurrent edits
+                  Object.assign(extRow, r);
+                }
+              });
             }
           }
         }
       }
 
-      // 3. Fallback/merge with local storage cache for offline/instant persistence
-      try {
-        const rawCache = localStorage.getItem('gts_cache_v3_billing_months');
+      // 3. Fallback/merge with local storage cache ONLY if offline/network failed
+      if (!networkSuccess) {
+        try {
+          const rawCache = localStorage.getItem('gts_cache_v3_billing_months');
         if (rawCache) {
           const cachedList: any[] = JSON.parse(rawCache);
           for (const cm of cachedList) {
@@ -776,6 +795,7 @@ export const pocketbaseService = {
           }
         }
       } catch (e) {}
+      }
 
       const sortedList = Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
 
@@ -1022,6 +1042,35 @@ export const pocketbaseService = {
         this._syncingMonths.delete(saveKey);
       }
       
+      // Unlink any folders that were connected to this month
+      try {
+        const folders = await pb.collection('ledger_folders').getFullList({ filter: `connected_month_id = "${monthId}"` });
+        for (const f of folders) {
+          await pb.collection('ledger_folders').update(f.id, { connected_month_id: '' }).catch(() => {});
+        }
+      } catch (err) {}
+
+      // Unlink from folder_month_map in branding_config
+      try {
+        const docId = `folder_month_map_${dealerId}`;
+        const record = await pb.collection('branding_config').getFirstListItem(`config_type = "${docId}"`).catch(() => null);
+        if (record && record.dashboard_subtext) {
+          const map = JSON.parse(record.dashboard_subtext);
+          let mapChanged = false;
+          Object.keys(map).forEach(key => {
+            if (map[key] === monthId) {
+              delete map[key];
+              mapChanged = true;
+            }
+          });
+          if (mapChanged) {
+            await pb.collection('branding_config').update(record.id, {
+              dashboard_subtext: JSON.stringify(map)
+            }).catch(() => {});
+          }
+        }
+      } catch (err) {}
+
       // Try to delete all matching records from billing_months
       try {
         const existing = await pb.collection('billing_months').getFullList({ filter });
@@ -2742,7 +2791,7 @@ export const pocketbaseService = {
                 if (idx !== -1) {
                   newRows[idx] = mappedRow;
                   updated = true;
-                } else if (e.action === 'create' && !m.hasAuthoritativeRowsData) {
+                } else if (e.action === 'create') {
                   newRows.push(mappedRow);
                   updated = true;
                 }
@@ -2754,7 +2803,10 @@ export const pocketbaseService = {
           
           if (updated) {
             cachedMonths = newMonths;
-            callback(JSON.parse(JSON.stringify(newMonths)));
+            if ((window as any)._billingRowsCbTimer) clearTimeout((window as any)._billingRowsCbTimer);
+            (window as any)._billingRowsCbTimer = setTimeout(() => {
+              callback(JSON.parse(JSON.stringify(cachedMonths)));
+            }, 150);
           }
         }
         triggerFetch();

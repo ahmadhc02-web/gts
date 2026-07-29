@@ -576,56 +576,10 @@ export default function App() {
       pocketbaseService.testConnection();
       
       try {
-        // Fetch all users to ensure bootstrap accounts exist
+        // Fetch all users
         const initialUsers = await pocketbaseService.getUsers();
-        let currentUsers = [...initialUsers];
-        
-        // Self-Healing Boot Seed: ONLY activate if the database is brand new and completely empty!
-        // This stops the system from constantly restoring deleted or modified default admin profiles on launch.
-        let seededAny = false;
-        if (initialUsers.length === 0) {
-          const requiredCoreUsers = [
-            { uid: 'admin_sys_node', username: 'admin', password: 'admin', role: 'super_admin' as const, status: 'active' as const },
-            { uid: 'yaseen_sys_node', username: 'yaseen', password: 'yaseen', role: 'super_admin' as const, status: 'active' as const },
-            { uid: 'abc_sys_node', username: 'abc', password: 'abc', role: 'super_admin' as const, status: 'active' as const }
-          ];
-
-          for (const req of requiredCoreUsers) {
-            console.log(`[Database Self-Heal] Seeding default core user: ${req.username}`);
-            try {
-              const seededUser = await pocketbaseService.createUser(
-                req.uid,
-                req.username,
-                req.password,
-                req.role,
-                'system',
-                'System Core Boot',
-                'main',
-                undefined,
-                undefined,
-                req.status
-              );
-              currentUsers.push({
-                ...seededUser,
-                uid: req.uid,
-                username: req.username,
-                password: req.password,
-                role: req.role,
-                status: req.status,
-                createdAt: Date.now()
-              });
-              seededAny = true;
-            } catch (seedErr) {
-              console.error(`Failed to seed user ${req.username}:`, seedErr);
-            }
-          }
-        }
-
-        if (seededAny) {
-          setUsers([...currentUsers]);
-        } else {
-          setUsers(currentUsers);
-        }
+        const currentUsers = [...initialUsers];
+        setUsers(currentUsers);
 
         // Re-validate current session identity against the fresh registry
         if (user) {
