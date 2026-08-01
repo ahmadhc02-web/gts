@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield, Tag, DollarSign, Calendar } from 'lucide-react';
 import { Client, UserProfile } from '../types';
-import { pocketbaseService, fromDb } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService, fromDb } from '../lib/supabaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';

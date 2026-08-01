@@ -110,10 +110,14 @@ if (typeof window !== 'undefined') {
   }
 }
 
+import { LoadingProvider } from './contexts/LoadingContext.tsx';
+
 if (shouldRender) {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <LoadingProvider>
+        <App />
+      </LoadingProvider>
     </StrictMode>,
   );
 }

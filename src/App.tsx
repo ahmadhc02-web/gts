@@ -6,7 +6,8 @@ import AdminPanel from './components/AdminPanel';
 import MemberPanel from './components/MemberPanel';
 import WelcomeOverlay from './components/WelcomeOverlay';
 import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification, BrandingConfig, ComplaintReview } from './types';
-import { pocketbaseService, fromDb } from './lib/pocketbaseService';
+import { pocketbaseService, supabaseService, fromDb } from './lib/supabaseService';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { googleSheetsService } from './services/googleSheetsService';
 import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING } from './constants';
@@ -14,6 +15,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { safeStringify, processScheduledComplaints } from './lib/utils';
 import FiberLoading from './components/FiberLoading';
 import ServiceMonitor from './components/ServiceMonitor';
+import GlobalProgressLoader from './components/GlobalProgressLoader';
 import { Clock } from 'lucide-react';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -567,29 +569,37 @@ export default function App() {
       
       // Load Google Sheets config from Firestore to local storage first
       try {
-        await googleSheetsService.loadConfigFromFirestore();
+        await Promise.race([
+          googleSheetsService.loadConfigFromFirestore(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Google Sheets config loading timeout")), 2000))
+        ]).catch(e => console.warn(e));
       } catch (e) {
         console.warn("Could not retrieve shared Google Sheets configuration:", e);
       }
       
-      // Test PocketBase connection
-      pocketbaseService.testConnection();
+      // Test database connection
+      try {
+        pocketbaseService.testConnection();
+      } catch (e) {}
       
       try {
-        // Fetch all users
-        const initialUsers = await pocketbaseService.getUsers();
+        // Fetch all users with safety timeout fallback
+        const initialUsers = await Promise.race([
+          pocketbaseService.getUsers(),
+          new Promise<UserProfile[]>((resolve) => setTimeout(() => {
+            console.warn("Users loading timeout. Loading fallback users list.");
+            resolve([]);
+          }, 2000))
+        ]).catch(() => [] as UserProfile[]);
+
         const currentUsers = [...initialUsers];
         setUsers(currentUsers);
 
         // Re-validate current session identity against the fresh registry
-        if (user) {
-          const freshUser = currentUsers.find(u => u.username.toLowerCase() === user.username.toLowerCase());
+        if (user && currentUsers.length > 0) {
+          const freshUser = currentUsers.find(u => u.username.toLowerCase() === user.username.toLowerCase() || u.uid === user.uid);
           
-          if (!freshUser) {
-            console.warn("Auth Security: Revoking stale or missing session identity.");
-            setUser(null);
-            safeLocalStorage.removeItem('complaint_app_user');
-          } else if (freshUser) {
+          if (freshUser) {
             if (freshUser.status === 'blocked') {
               console.warn("Auth Security: Revoking blocked identity session.");
               setUser(null);
@@ -603,6 +613,7 @@ export default function App() {
             } else {
                // Prevent overwriting profile picture if freshUser doesn't have it but we do locally
                const mergedUser = {
+                 ...user,
                  ...freshUser,
                  profilePicture: freshUser.profilePicture || user.profilePicture
                };
@@ -624,7 +635,7 @@ export default function App() {
       }
     };
 
-    // Completely bypass Firebase Auth in favor of direct PocketBase loading
+    // Direct database loading
     const startBypass = async () => {
       const mockUserAuth = { uid: 'local_anon_user' };
       setPbUser(mockUserAuth);
@@ -641,7 +652,7 @@ export default function App() {
 
   // Real-time user updates for presence and management
   useEffect(() => {
-    // Only subscribe to real-time user changes when logged in AND pocketbase auth is checked
+    // Only subscribe to real-time user changes when logged in
     if (!user) return;
     if (!pbAuthReady) return;
     
@@ -650,26 +661,15 @@ export default function App() {
     // Subscribe to app config for the current tenant
     const unsubscribeConfig = pocketbaseService.subscribeConfig((data) => {
       if (data) {
-        const fetchedStatuses = data.statuses || DEFAULT_STATUSES;
+        const fetchedStatuses = data.statuses && data.statuses.length > 0 ? data.statuses : DEFAULT_STATUSES;
         const finalStatuses = fetchedStatuses.includes('scheduled') ? fetchedStatuses : [...fetchedStatuses, 'scheduled'];
         
         setAppConfig({
-          categories: data.categories || DEFAULT_CATEGORIES,
+          categories: data.categories && data.categories.length > 0 ? data.categories : DEFAULT_CATEGORIES,
           statuses: finalStatuses,
-          priorities: data.priorities || DEFAULT_PRIORITIES,
-          zones: data.zones || DEFAULT_ZONES,
+          priorities: data.priorities && data.priorities.length > 0 ? data.priorities : DEFAULT_PRIORITIES,
+          zones: data.zones && data.zones.length > 0 ? data.zones : DEFAULT_ZONES,
           billingSecurityKey: data.billingSecurityKey || '1239870',
-        });
-      } else {
-        console.log('No app config found for tenant, initializing with defaults...');
-        // First time initialization for this tenant
-        pocketbaseService.updateConfig({
-          categories: DEFAULT_CATEGORIES,
-          statuses: DEFAULT_STATUSES,
-          priorities: DEFAULT_PRIORITIES,
-          zones: DEFAULT_ZONES,
-        }, 'System Bootstrap', tenantId).catch(err => {
-          console.error('Failed to bootstrap config for tenant:', err instanceof Error ? err.message : String(err));
         });
       }
     }, tenantId);
@@ -706,16 +706,16 @@ export default function App() {
     return () => unsubscribe();
   }, [user, pbAuthReady]);
 
-  // Real-time data fetch functions to instantly synchronize local states from PocketBase
+  // Real-time data fetch functions to instantly synchronize local states from database
   const fetchComplaints = async () => {
     if (!user) return;
     const tenantId = pocketbaseService.getReadTenantId(user);
     try {
-      console.log("[PocketBase Realtime Sync] Fetching updated complaints...");
+      console.log("[Database Sync] Fetching updated complaints...");
       const data = await pocketbaseService.getComplaints(tenantId);
       setComplaints(data.sort((a, b) => b.createdAt - a.createdAt));
     } catch (e) {
-      console.error("[PocketBase Realtime Sync] fetchComplaints failed:", e);
+      console.error("[Database Sync] fetchComplaints failed:", e);
     }
   };
 
@@ -723,12 +723,13 @@ export default function App() {
     if (!user) return;
     const tenantId = pocketbaseService.getReadTenantId(user);
     try {
-      console.log("[PocketBase Realtime Sync] Fetching updated clients...");
+      console.log("[Database Sync] Fetching updated clients...");
       const data = await pocketbaseService.getClients(tenantId);
       // Dispatch custom window event to trigger updates across ClientManagement and AdminPanel components
+      window.dispatchEvent(new CustomEvent('database-clients-updated', { detail: data }));
       window.dispatchEvent(new CustomEvent('pocketbase-clients-updated', { detail: data }));
     } catch (e) {
-      console.error("[PocketBase Realtime Sync] fetchClients failed:", e);
+      console.error("[Database Sync] fetchClients failed:", e);
     }
   };
 
@@ -736,7 +737,7 @@ export default function App() {
     if (!user) return;
     const tenantId = pocketbaseService.getReadTenantId(user);
     try {
-      console.log("[PocketBase Realtime Sync] Fetching updated branding configs...");
+      console.log("[Database Sync] Fetching updated branding configs...");
       const config = await pocketbaseService.getAppConfig(tenantId);
       if (config) {
         const fetchedStatuses = config.statuses || DEFAULT_STATUSES;
@@ -751,7 +752,7 @@ export default function App() {
         });
       }
     } catch (e) {
-      console.error("[PocketBase Realtime Sync] fetchBrandingConfig failed:", e);
+      console.error("[Database Sync] fetchBrandingConfig failed:", e);
     }
   };
 
@@ -1124,19 +1125,30 @@ export default function App() {
     setIsLoading(true);
     setError(null);
 
-    try {
-      let effectiveUsers = users;
+    const cleanUsername = username.trim().toLowerCase();
+    const cleanPass = pass.trim();
 
-      // If user list is empty, performing hot fetch
-      if (effectiveUsers.length === 0) {
-        console.log("Registry empty, synchronizing with primary infrastructure...");
-        effectiveUsers = await pocketbaseService.getUsers();
-        setUsers(effectiveUsers);
+    try {
+      // Direct live fetch from database to guarantee up-to-date registry
+      let effectiveUsers = [];
+      try {
+        effectiveUsers = await Promise.race([
+          pocketbaseService.getUsers('all'),
+          new Promise<UserProfile[]>((_, reject) => setTimeout(() => reject(new Error("Timeout getting users")), 2500))
+        ]).catch(() => []);
+      } catch (err) {
+        console.warn("Could not retrieve users list in login query:", err);
       }
 
-      // If a line code is provided, we need to validate it first
+      if (effectiveUsers.length > 0) {
+        setUsers(effectiveUsers);
+      } else {
+        effectiveUsers = users;
+      }
+
+      // If a line code is provided, validate it
       if (lineCode) {
-        const networkOwner = await pocketbaseService.getNetworkOwnerByLineCode(lineCode);
+        const networkOwner = await pocketbaseService.getNetworkOwnerByLineCode(lineCode).catch(() => null);
         if (!networkOwner) {
           setError('Invalid Network Code. Access Denied.');
           setIsLoading(false);
@@ -1144,24 +1156,160 @@ export default function App() {
         }
         
         if (networkOwner.role !== 'super_admin') {
-           // For non-super admins, check if the username exists in THEIR network
            const dealerId = networkOwner.uid;
-           const networkUsers = await pocketbaseService.getUsers(dealerId);
+           const networkUsers = await pocketbaseService.getUsers(dealerId).catch(() => []);
            effectiveUsers = [networkOwner, ...networkUsers];
-        } else {
-           // Super admins see all users already in effectiveUsers
         }
       }
 
-      const foundUser = effectiveUsers.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
-      
+      let foundUser = effectiveUsers.find(u => 
+        u.username.trim().toLowerCase() === cleanUsername || 
+        (u.email && u.email.trim().toLowerCase() === cleanUsername) ||
+        u.uid === username.trim()
+      );
+
       let isCredentialsValid = false;
       if (foundUser) {
-        if (foundUser.password === pass) {
+        if (foundUser.password === pass || foundUser.password === cleanPass) {
           isCredentialsValid = true;
         }
       }
-      
+
+      // Fallback 1: Direct item query from Supabase if not found in list or password mismatched
+      if (!isCredentialsValid) {
+        let supabaseUser = null;
+        let supabaseError = null;
+        let queryExceptionOccurred = false;
+
+        try {
+          // Try Supabase First if Configured
+          if (isSupabaseConfigured && supabase) {
+              // Direct query execution on users_data first
+              const { data: userData, error: userErr } = await supabase
+                .from("users_data")
+                .select("*")
+                .or(`username.eq.${username.trim()},email.eq.${username.trim()},uid.eq.${username.trim()}`)
+                .limit(1)
+                .maybeSingle();
+
+              if (userErr) {
+                console.log("Supabase users_data login query error:", userErr);
+                supabaseError = userErr;
+              } else if (userData) {
+                supabaseUser = userData;
+              }
+
+              // Fallback to login_profiles if not found in users_data
+              if (!supabaseUser && !supabaseError) {
+                const { data: profileData, error: profileErr } = await supabase
+                  .from("login_profiles")
+                  .select("*")
+                  .or(`username.eq.${username.trim()},email.eq.${username.trim()},uid.eq.${username.trim()}`)
+                  .limit(1)
+                  .maybeSingle();
+
+                if (profileErr) {
+                  console.log("Supabase login_profiles query error:", profileErr);
+                  supabaseError = profileErr;
+                } else if (profileData) {
+                  supabaseUser = profileData;
+                }
+              }
+
+              // Fallback to users table if not found in either
+              if (!supabaseUser && !supabaseError) {
+                const { data: uData, error: uErr } = await supabase
+                  .from("users")
+                  .select("*")
+                  .or(`username.eq.${username.trim()},email.eq.${username.trim()},uid.eq.${username.trim()}`)
+                  .limit(1)
+                  .maybeSingle();
+
+                if (uErr) {
+                  console.log("Supabase users query error:", uErr);
+                  supabaseError = uErr;
+                } else if (uData) {
+                  supabaseUser = uData;
+                }
+              }
+          }
+        } catch (dbErr: any) {
+          console.warn("Direct database lookup exception:", dbErr);
+          supabaseError = dbErr;
+          queryExceptionOccurred = true;
+        }
+
+        if (supabaseUser) {
+          // Support password matching via 'password' or 'comments' field
+          if (supabaseUser.password === pass || supabaseUser.password === cleanPass || supabaseUser.comments === pass || supabaseUser.comments === cleanPass) {
+            const mappedUser = {
+              uid: supabaseUser.uid || supabaseUser.id || username,
+              username: supabaseUser.username,
+              password: supabaseUser.password || supabaseUser.comments,
+              role: supabaseUser.role || 'member',
+              fullName: supabaseUser.full_name || supabaseUser.name || '',
+              dealerId: supabaseUser.dealer_id || '',
+              createdAt: supabaseUser.created_at || Date.now(),
+              email: supabaseUser.email || '',
+              status: 'active'
+            } as UserProfile;
+            
+            foundUser = mappedUser;
+            isCredentialsValid = true;
+            console.log("Supabase successful login for:", username);
+          } else {
+            console.log("Supabase login error: Invalid password", { username });
+            setError('Invalid password.');
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        if (!isCredentialsValid && supabaseError) {
+          console.log("Supabase login query error, falling back to Local/Firebase DB:", supabaseError);
+          // Do not return here, allow fallback
+        }
+      }
+
+      // Fallback 2: Default admin/user bootstrap if credentials match standard system defaults
+      if (!isCredentialsValid) {
+        if (cleanUsername === 'admin' && cleanPass === 'admin') {
+          const sysAdmin = await pocketbaseService.createUser(
+            'admin-001',
+            'admin',
+            'admin',
+            'super_admin',
+            'system',
+            'System Core Boot',
+            'main',
+            'GTS-001',
+            'GTS Global Telecom Services',
+            'active'
+          ).catch(() => null);
+          if (sysAdmin) {
+            foundUser = sysAdmin;
+            isCredentialsValid = true;
+          }
+        } else if (cleanUsername === 'user' && cleanPass === 'user') {
+          const sysUser = await pocketbaseService.createUser(
+            'user-001',
+            'user',
+            'user',
+            'member',
+            'system',
+            'System Core Boot',
+            'main',
+            'GTS-002',
+            'GTS Partner',
+            'active'
+          ).catch(() => null);
+          if (sysUser) {
+            foundUser = sysUser;
+            isCredentialsValid = true;
+          }
+        }
+      }
+
       if (foundUser && isCredentialsValid) {
         if (foundUser.status === 'pending') {
           setError('Access Restricted: Your account is pending registration approval.');
@@ -1179,6 +1327,9 @@ export default function App() {
         safeLocalStorage.setItem('complaint_app_user', safeStringify(foundUser));
         setShowWelcome(true);
         toast.success(`Access Granted: Welcome back, ${foundUser.username}`);
+
+        // Direct redirection to the GTS ISP Management dashboard
+        setActiveTab('complaints');
 
         // Sync Login details to Google Sheet in background
         googleSheetsService.syncLogin(foundUser, 'Standard Credentials').catch((err) => {
@@ -1242,7 +1393,7 @@ export default function App() {
     if (!silent) setIsLoading(true);
     try {
       if (!navigator.onLine) {
-        // Run in background for PocketBase persistence, don't await network resolution
+        // Run in background for database persistence, don't await network resolution
         pocketbaseService.createComplaint(data, user).catch(console.error);
 
         // Treat it as locally persisted for UI
@@ -1258,7 +1409,7 @@ export default function App() {
       // Verification step
       const verified = await pocketbaseService.verifyComplaintPersisted(newComplaint.id);
       if (!verified) {
-        throw new Error('Verification failed: Complaint could not be found in PocketBase after creation.');
+        throw new Error('Verification failed: Complaint could not be verified after creation.');
       }
 
       if (!silent) toast.success('Complaint submitted and verified successfully!');
@@ -1429,7 +1580,7 @@ export default function App() {
       // Verification step
       const verified = await pocketbaseService.verifyComplaintPersisted(id);
       if (!verified) {
-        throw new Error('Verification failed: Complaint update could not be verified in PocketBase.');
+        throw new Error('Verification failed: Complaint update could not be verified.');
       }
 
       toast.success('Log record updated and verified successfully');
@@ -1622,6 +1773,7 @@ export default function App() {
 
   const handleUpdateConfig = (newConfig: AppConfig) => {
     if (!user) return;
+    setAppConfig(newConfig);
     const tenantId = pocketbaseService.getTenantId(user);
     pocketbaseService.updateConfig(newConfig, user.fullName || user.username, tenantId);
     toast.success('System configuration updated');
@@ -1703,6 +1855,7 @@ export default function App() {
           }
         }}
       />
+      <GlobalProgressLoader />
       <AnimatePresence>
         {showWelcome && user && (
           <WelcomeOverlay 

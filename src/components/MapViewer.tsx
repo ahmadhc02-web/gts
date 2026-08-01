@@ -4,7 +4,7 @@ import L from 'leaflet';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Map as MapIcon, Layers, Satellite, Crosshair, RefreshCw, ZoomIn, ZoomOut, Search, MapPin, Save, Plus, Ruler, Trash2, Navigation, ClipboardList, Globe } from 'lucide-react';
 import { UserProfile, Client, MonitorTarget } from '../types';
-import { pocketbaseService } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { Polyline } from 'react-leaflet';

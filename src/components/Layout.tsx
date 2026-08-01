@@ -13,7 +13,7 @@ import RefreshControl from './RefreshControl';
 import FiberLoading from './FiberLoading';
 import InlineTextEditor from './InlineTextEditor';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { pocketbaseService } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { getAvatarUrl } from '../utils/avatar';
 import { toast } from 'sonner';
 import ComplaintForm from './ComplaintForm';

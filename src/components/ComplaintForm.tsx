@@ -7,7 +7,7 @@ import { safeLocalStorage } from '../lib/safeLocalStorage';
 import { Network, Wifi, ShieldAlert, Zap, Search, ChevronDown } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { AppConfig } from '../constants';
-import { pocketbaseService } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 
 interface ComplaintFormProps {
   onSubmit: (data: {

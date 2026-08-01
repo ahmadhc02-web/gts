@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Activity, RefreshCw, Plus, Trash2, Wifi, TrendingUp, Server, Zap, Cpu, AlertTriangle, CheckCircle2, Network, Radio, Edit, ArrowLeft, Clock, BarChart2, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { LineChart, Line, AreaChart, Area, ResponsiveContainer, YAxis, Tooltip, XAxis, CartesianGrid } from 'recharts';
 import { cn } from '../lib/utils';
-import { pocketbaseService } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { MonitorTarget, UserProfile } from '../types';
 import { toast } from 'sonner';
 

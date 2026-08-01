@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Save, RotateCcw, AlertCircle, Edit, Sparkles, Check } from 'lucide-react';
 import { BrandingConfig } from '../types';
-import { pocketbaseService } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
 import { toast } from 'sonner';
 

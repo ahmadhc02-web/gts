@@ -13,7 +13,9 @@ export function processScheduledComplaints(complaintsList: Complaint[]): Complai
     .filter(c => {
       const normStatus = (c.status || '').toString().trim().toLowerCase();
       if (normStatus === 'scheduled' && c.scheduledAt) {
-        const hoursRemaining = (c.scheduledAt - currentTime) / (1000 * 60 * 60);
+        const schedTime = typeof c.scheduledAt === 'number' ? c.scheduledAt : new Date(c.scheduledAt).getTime();
+        if (isNaN(schedTime)) return true; // Keep it if invalid date
+        const hoursRemaining = (schedTime - currentTime) / (1000 * 60 * 60);
         // If scheduled date is in future and more than 12 hours away, hide completely
         return hoursRemaining <= 12;
       }
@@ -22,7 +24,9 @@ export function processScheduledComplaints(complaintsList: Complaint[]): Complai
     .map(c => {
       const normStatus = (c.status || '').toString().trim().toLowerCase();
       if (normStatus === 'scheduled' && c.scheduledAt) {
-        const hoursRemaining = (c.scheduledAt - currentTime) / (1000 * 60 * 60);
+        const schedTime = typeof c.scheduledAt === 'number' ? c.scheduledAt : new Date(c.scheduledAt).getTime();
+        if (isNaN(schedTime)) return c;
+        const hoursRemaining = (schedTime - currentTime) / (1000 * 60 * 60);
         if (hoursRemaining <= 12) {
           return {
             ...c,

@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import NetworkBackground from "./NetworkBackground";
-import { pocketbaseService } from "../lib/pocketbaseService";
+import { supabaseService as pocketbaseService } from "../lib/supabaseService";
 
 const getApiUrl = (endpoint: string): string => {
   const host = window.location.hostname;

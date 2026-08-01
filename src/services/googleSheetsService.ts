@@ -1,7 +1,7 @@
 // src/services/googleSheetsService.ts
 import { safeStringify } from '../lib/utils';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
-import { pb } from '../lib/pocketbase';
+import { supabase } from '../lib/supabase';
 
 const getApiUrl = (endpoint: string): string => {
   const host = window.location.hostname;
@@ -61,9 +61,11 @@ export const googleSheetsService = {
     try {
       let existing = {};
       try {
-        const record = await pb.collection('branding_config').getFirstListItem('config_type = "google_sheets"');
-        if (record && record.dashboard_subtext) {
-          existing = JSON.parse(record.dashboard_subtext);
+        if (supabase) {
+          const { data: record } = await supabase.from('branding_config').select('*').eq('config_type', 'google_sheets').limit(1).maybeSingle();
+          if (record && record.dashboard_subtext) {
+            existing = JSON.parse(record.dashboard_subtext);
+          }
         }
       } catch (e) {}
 
@@ -71,47 +73,50 @@ export const googleSheetsService = {
 
       const payload = {
         config_type: 'google_sheets',
-        dashboard_subtext: JSON.stringify(merged),
-        updated_at: Date.now()
+        dashboard_subtext: JSON.stringify(merged)
       };
 
-      try {
-        const record = await pb.collection('branding_config').getFirstListItem('config_type = "google_sheets"');
-        await pb.collection('branding_config').update(record.id, payload);
-      } catch (e) {
-        await pb.collection('branding_config').create(payload);
+      if (supabase) {
+        const { data: existingRec } = await supabase.from('branding_config').select('id').eq('config_type', 'google_sheets').limit(1).maybeSingle();
+        if (existingRec && existingRec.id) {
+          await supabase.from('branding_config').update(payload).eq('id', existingRec.id);
+        } else {
+          await supabase.from('branding_config').insert([payload]);
+        }
       }
     } catch (e) {
-      console.warn("Failed syncing Google Sheets config to PocketBase:", e);
+      console.warn("Failed syncing Google Sheets config to Supabase:", e);
     }
   },
 
   loadConfigFromFirestore: async () => {
     try {
-      const record = await pb.collection('branding_config').getFirstListItem('config_type = "google_sheets"');
-      if (record && record.dashboard_subtext) {
-        const parsed = JSON.parse(record.dashboard_subtext);
-        if (parsed.tokens) {
-          configCache.tokens = parsed.tokens;
-          safeLocalStorage.setItem(TOKEN_KEY, safeStringify(parsed.tokens));
-          window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: parsed.tokens }));
+      if (supabase) {
+        const { data: record } = await supabase.from('branding_config').select('*').eq('config_type', 'google_sheets').limit(1).maybeSingle();
+        if (record && record.dashboard_subtext) {
+          const parsed = JSON.parse(record.dashboard_subtext);
+          if (parsed.tokens) {
+            configCache.tokens = parsed.tokens;
+            safeLocalStorage.setItem(TOKEN_KEY, safeStringify(parsed.tokens));
+            window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: parsed.tokens }));
+          }
+          if (parsed.spreadsheetId) {
+            configCache.spreadsheetId = parsed.spreadsheetId;
+            safeLocalStorage.setItem(SHEET_ID_KEY, parsed.spreadsheetId);
+          }
+          if (parsed.sheetName) {
+            configCache.sheetName = parsed.sheetName;
+            safeLocalStorage.setItem(SHEET_NAME_KEY, parsed.sheetName);
+          }
+          if (parsed.sheetRange) {
+            configCache.sheetRange = parsed.sheetRange;
+            safeLocalStorage.setItem(SHEET_RANGE_KEY, parsed.sheetRange);
+          }
+          return parsed;
         }
-        if (parsed.spreadsheetId) {
-          configCache.spreadsheetId = parsed.spreadsheetId;
-          safeLocalStorage.setItem(SHEET_ID_KEY, parsed.spreadsheetId);
-        }
-        if (parsed.sheetName) {
-          configCache.sheetName = parsed.sheetName;
-          safeLocalStorage.setItem(SHEET_NAME_KEY, parsed.sheetName);
-        }
-        if (parsed.sheetRange) {
-          configCache.sheetRange = parsed.sheetRange;
-          safeLocalStorage.setItem(SHEET_RANGE_KEY, parsed.sheetRange);
-        }
-        return parsed;
       }
     } catch (e) {
-      console.warn("Failed loading Google Sheets config from PocketBase:", e);
+      console.warn("Failed loading Google Sheets config from Supabase:", e);
     }
     return null;
   },
@@ -119,67 +124,61 @@ export const googleSheetsService = {
   subscribeGoogleSheetsConfig: (callback: (data: any) => void) => {
     const fetchConfig = async () => {
       try {
-        const record = await pb.collection('branding_config').getFirstListItem('config_type = "google_sheets"');
-        if (record && record.dashboard_subtext) {
-          const parsed = JSON.parse(record.dashboard_subtext);
-          
-          if (parsed.tokens) {
-            configCache.tokens = parsed.tokens;
-            safeLocalStorage.setItem(TOKEN_KEY, safeStringify(parsed.tokens));
-          } else {
-            configCache.tokens = null;
-            safeLocalStorage.removeItem(TOKEN_KEY);
-          }
-          
-          if (parsed.spreadsheetId) {
-            configCache.spreadsheetId = parsed.spreadsheetId;
-            safeLocalStorage.setItem(SHEET_ID_KEY, parsed.spreadsheetId);
-          } else {
-            configCache.spreadsheetId = null;
-            safeLocalStorage.removeItem(SHEET_ID_KEY);
-          }
-          
-          if (parsed.sheetName) {
-            configCache.sheetName = parsed.sheetName;
-            safeLocalStorage.setItem(SHEET_NAME_KEY, parsed.sheetName);
-          } else {
-            configCache.sheetName = 'Sheet1';
-            safeLocalStorage.removeItem(SHEET_NAME_KEY);
-          }
-          
-          if (parsed.sheetRange) {
-            configCache.sheetRange = parsed.sheetRange;
-            safeLocalStorage.setItem(SHEET_RANGE_KEY, parsed.sheetRange);
-          } else {
-            configCache.sheetRange = 'A1';
-            safeLocalStorage.removeItem(SHEET_RANGE_KEY);
-          }
+        if (supabase) {
+          const { data: record } = await supabase.from('branding_config').select('*').eq('config_type', 'google_sheets').limit(1).maybeSingle();
+          if (record && record.dashboard_subtext) {
+            const parsed = JSON.parse(record.dashboard_subtext);
+            
+            if (parsed.tokens) {
+              configCache.tokens = parsed.tokens;
+              safeLocalStorage.setItem(TOKEN_KEY, safeStringify(parsed.tokens));
+            } else {
+              configCache.tokens = null;
+              safeLocalStorage.removeItem(TOKEN_KEY);
+            }
+            
+            if (parsed.spreadsheetId) {
+              configCache.spreadsheetId = parsed.spreadsheetId;
+              safeLocalStorage.setItem(SHEET_ID_KEY, parsed.spreadsheetId);
+            } else {
+              configCache.spreadsheetId = null;
+              safeLocalStorage.removeItem(SHEET_ID_KEY);
+            }
+            
+            if (parsed.sheetName) {
+              configCache.sheetName = parsed.sheetName;
+              safeLocalStorage.setItem(SHEET_NAME_KEY, parsed.sheetName);
+            } else {
+              configCache.sheetName = 'Sheet1';
+              safeLocalStorage.removeItem(SHEET_NAME_KEY);
+            }
+            
+            if (parsed.sheetRange) {
+              configCache.sheetRange = parsed.sheetRange;
+              safeLocalStorage.setItem(SHEET_RANGE_KEY, parsed.sheetRange);
+            } else {
+              configCache.sheetRange = 'A1';
+              safeLocalStorage.removeItem(SHEET_RANGE_KEY);
+            }
 
-          window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: parsed.tokens || null }));
-          callback(parsed);
-        } else {
-          callback(null);
+            window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: parsed.tokens || null }));
+            callback(parsed);
+          } else {
+            callback(null);
+          }
         }
       } catch (e) {
-        console.warn("Failed loading PocketBase config inside subscription:", e);
+        console.warn("Failed loading Supabase config inside subscription:", e);
       }
     };
 
     fetchConfig();
 
-    console.log(`[Realtime] Subscribing to PocketBase branding_config for google_sheets changes`);
-    
-    pb.collection('branding_config').subscribe('*', (e) => {
-      if (e.record && e.record.config_type === 'google_sheets') {
-        fetchConfig();
-      }
-    }).catch((err) => {
-      console.warn("Failed subscribing to PocketBase branding_config realtime updates:", err);
-    });
+    // Use standard HTTP polling interval instead of WebSockets
+    const interval = setInterval(fetchConfig, 10000);
 
     return () => {
-      console.log(`[Realtime] Unsubscribing from PocketBase branding_config`);
-      pb.collection('branding_config').unsubscribe('*').catch(() => {});
+      clearInterval(interval);
     };
   },
 
@@ -294,32 +293,24 @@ export const googleSheetsService = {
           console.warn("Standard popup blocked or failed:", popupErr);
         }
 
-        // Active PocketBase realtime synchronization listener so that even if the popup was opened in Chrome/Brave/Edge or externally,
-        // we detect the new tokens written to PocketBase immediately!
-        let unsubPocketBase = () => {};
-        try {
-          console.log(`[Realtime] Subscribing to PocketBase branding_config for google_sheets auth polling`);
-          pb.collection('branding_config').subscribe('*', (e) => {
-            if (e.record && e.record.config_type === 'google_sheets' && e.record.dashboard_subtext) {
-              try {
-                const data = JSON.parse(e.record.dashboard_subtext);
-                if (data && data.tokens && data.updatedAt && data.updatedAt >= startTime - 15000) {
-                  console.log("googleSheetsService: Detected fresh tokens written to PocketBase in real-time!");
-                  googleSheetsService.saveTokens(data.tokens);
+        // REST polling listener for fresh tokens written to Supabase
+        let unsubSupabase = () => {};
+        if (supabase) {
+          const pollTimer = setInterval(async () => {
+            try {
+              const { data } = await supabase.from('branding_config').select('*').eq('tenant_id', 'google_sheets').single();
+              if (data && data.dashboard_subtext) {
+                const parsed = JSON.parse(data.dashboard_subtext);
+                if (parsed && parsed.tokens && parsed.updatedAt && parsed.updatedAt >= startTime - 15000) {
+                  googleSheetsService.saveTokens(parsed.tokens);
                   cleanup();
                   try { if (popup && !popup.closed) popup.close(); } catch (err) {}
-                  resolve(data.tokens);
+                  resolve(parsed.tokens);
                 }
-              } catch (pe) {}
-            }
-          }).catch(() => {});
-
-          unsubPocketBase = () => {
-            console.log(`[Realtime] Unsubscribing from PocketBase branding_config auth polling`);
-            pb.collection('branding_config').unsubscribe('*').catch(() => {});
-          };
-        } catch (fsErr) {
-          console.warn("Could not register live PocketBase oauth listener fallback:", fsErr);
+              }
+            } catch (e) {}
+          }, 2000);
+          unsubSupabase = () => clearInterval(pollTimer);
         }
 
         const messageHandler = (event: MessageEvent) => {
@@ -349,7 +340,7 @@ export const googleSheetsService = {
           } catch (e) {}
 
           if (popup && popup.closed) {
-            // Wait 2 more seconds in case PocketBase pushes the fresh tokens or directTokensStr is arriving
+            // Wait 2 more seconds in case database pushes the fresh tokens or directTokensStr is arriving
             setTimeout(() => {
               try {
                 const directTokensStr = safeLocalStorage.getItem('gts_sync_google_tokens_direct');
@@ -369,7 +360,7 @@ export const googleSheetsService = {
         const cleanup = () => {
           window.removeEventListener('message', messageHandler);
           clearInterval(checkTimer);
-          unsubPocketBase();
+          unsubSupabase();
         };
 
         window.addEventListener('message', messageHandler);

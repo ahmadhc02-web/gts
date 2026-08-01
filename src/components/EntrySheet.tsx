@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { pocketbaseService } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService } from '../lib/supabaseService';
+import { supabase } from '../lib/supabase';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { Client, UserProfile } from '../types';
 import { getCleanErrorMessage } from '../lib/styleUtils';
@@ -47,6 +48,17 @@ interface Table2Row {
   amount: number | string;
   ch: boolean;
 }
+
+const parseRowsArray = (val: any): any[] => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string' && val.trim()) {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) {}
+  }
+  return [];
+};
 
 export default function EntrySheet({ 
   isOpen, 
@@ -91,7 +103,7 @@ export default function EntrySheet({
   useEffect(() => {
     // Expose migration to window
     (window as any).runMigration = async () => {
-      console.log("Migration is no longer needed on PocketBase.");
+      console.log("Migration is no longer needed.");
     };
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
@@ -107,39 +119,39 @@ export default function EntrySheet({
       let didMerge = false;
       const migrationFlag = `migrated_local_folders_${scopeId || 'main'}`;
 
-      if (data === null) {
-        // Absolute first time loading, document not created in DB yet
-        mergedFolders = [];
-        didMerge = true;
-        localStorage.setItem(migrationFlag, 'true');
-      } else {
+      const savedFolders = localStorage.getItem(foldersKey) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
+      let localFoldersList: any[] = [];
+      if (savedFolders) {
+        try {
+          const parsed = JSON.parse(savedFolders);
+          if (Array.isArray(parsed)) localFoldersList = parsed;
+        } catch (e) {}
+      }
+
+      if (data && Array.isArray(data) && data.length > 0) {
         mergedFolders = [...data];
+      } else if (localFoldersList.length > 0) {
+        mergedFolders = [...localFoldersList];
+        didMerge = true;
+      }
 
-        if (!localStorage.getItem(migrationFlag)) {
-          // Unconditionally mark migration as run to avoid any re-trigger loops or race conditions on folder modifications
-          localStorage.setItem(migrationFlag, 'true');
-
-          const savedFolders = localStorage.getItem(foldersKey);
-          if (savedFolders) {
-            try {
-              const parsed = JSON.parse(savedFolders);
-              if (parsed && Array.isArray(parsed)) {
-                parsed.forEach(pf => {
-                  if (!mergedFolders.find(mf => mf.id === pf.id || mf.name.toLowerCase() === pf.name.toLowerCase())) {
-                    mergedFolders.push(pf);
-                    didMerge = true;
-                  }
-                });
-              }
-            } catch (e) { console.error("Migration parse error", e); }
-          }
+      // Safety merge: include any locally saved folder that might not be in the remote data snapshot yet
+      localFoldersList.forEach(pf => {
+        if (pf && pf.id && !mergedFolders.find(mf => mf.id === pf.id || (mf.name && pf.name && mf.name.toLowerCase() === pf.name.toLowerCase()))) {
+          mergedFolders.push(pf);
+          didMerge = true;
         }
+      });
+
+      if (!localStorage.getItem(migrationFlag)) {
+        localStorage.setItem(migrationFlag, 'true');
       }
 
       if (didMerge) {
         pocketbaseService.updateLedgerFolders(mergedFolders, scopeId).catch(console.error);
       }
       
+      localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(mergedFolders));
       setFolders(mergedFolders);
     }, scopeId);
 
@@ -250,7 +262,7 @@ export default function EntrySheet({
 
     const results: any[] = [];
     ledgerHistory.forEach((sheet) => {
-      const matchedRows = (Array.isArray(sheet.table1Rows) ? sheet.table1Rows : []).filter((r: any) => {
+      const matchedRows = parseRowsArray(sheet.table1Rows).filter((r: any) => {
         const rowCId = String(r.cId || '').trim().toLowerCase();
         const rowName = String(r.name || '').trim().toLowerCase();
         const rowComments = String(r.comments || '').trim().toLowerCase();
@@ -323,7 +335,7 @@ export default function EntrySheet({
   };
 
 
-  const handleCreateFolder = (e?: React.FormEvent) => {
+  const handleCreateFolder = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const cleanName = newFolderNameInput.trim();
     if (!cleanName) {
@@ -334,17 +346,42 @@ export default function EntrySheet({
       toast.error("A folder with this name already exists!");
       return;
     }
-    const nFolder = {
-      id: `folder_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      name: cleanName,
-      createdAt: Date.now()
-    };
-    const newFolders = [...folders, nFolder];
-    setFolders(newFolders);
-    saveFoldersToDb(newFolders);
-    setNewFolderNameInput('');
-    setIsCreatingFolder(false);
-    toast.success(`📁 Folder "${cleanName}" created successfully!`);
+    
+    const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
+
+    try {
+      const { data, error } = await supabase.from('ledger_folders').insert({
+        name: cleanName,
+        tenant_id: tenantId
+      }).select().single();
+
+      if (error) {
+        console.error("Supabase insert error for ledger_folders:", error);
+        toast.error("Failed to create folder in cloud: " + error.message);
+        return;
+      }
+
+      if (data) {
+        console.log("Successfully created folder in Supabase:", data);
+        const nFolder = {
+          id: data.id || data.folder_id || `folder_${Date.now()}`,
+          name: data.name,
+          createdAt: data.created ? new Date(data.created).getTime() : Date.now()
+        };
+        const newFolders = [...folders, nFolder];
+        setFolders(newFolders);
+        // Also keep local backup for offline resilience
+        const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+        localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+        
+        setNewFolderNameInput('');
+        setIsCreatingFolder(false);
+        toast.success(`📁 Folder "${cleanName}" created successfully!`);
+      }
+    } catch (err: any) {
+      console.error("Unexpected error creating folder:", err);
+      toast.error("Unexpected error creating folder");
+    }
   };
 
   const handleDeleteFolder = (folderId: string, e: React.MouseEvent) => {
@@ -407,17 +444,25 @@ export default function EntrySheet({
 
       // Update folder collection and unmap sheets in the database concurrently
       const updateSheetPromises = [
-        pocketbaseService.updateLedgerSheetFolderMap(nextMap, scopeId)
+        pocketbaseService.updateLedgerSheetFolderMap(nextMap, scopeId),
+        ...associatedSheetIds.map(shId => {
+          const sh = ledgerHistory.find(s => s.id === shId);
+          if (sh) {
+            return pocketbaseService.saveLedgerSheet({ ...sh, folderId: '', sort: '', sortFolder: '' }, scopeId);
+          }
+          return Promise.resolve();
+        })
       ];
 
       await Promise.all([
+        pocketbaseService.deleteLedgerFolder(folderToDelete.id, scopeId),
         pocketbaseService.updateLedgerFolders(newFolders, scopeId),
         ...updateSheetPromises
       ]);
 
       toast.success(`📁 Folder "${folderToDelete.name}" moved to Recycle Bin!`);
     } catch (error: any) {
-      console.error("PocketBase Delete Error:", error);
+      console.error("Database Delete Error:", error);
       
       // Rollback UI state and localStorage upon failure to prevent inconsistent states
       setFolders(previousFolders);
@@ -425,7 +470,7 @@ export default function EntrySheet({
       localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(previousFolders));
       localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(previousMap));
 
-      toast.error(`Database Error: Failed to delete folder. Please check your PocketBase connection or permission rules!`, {
+      toast.error(`Database Error: Failed to delete folder. Please check your database connection or permission rules!`, {
         id: `folder-delete-error-${folderId}`,
         duration: 8000
       });
@@ -434,7 +479,7 @@ export default function EntrySheet({
     setFolderToDeleteId(null);
   };
 
-  const handleCreateSheetInFolder = (folderId: string, e?: React.MouseEvent) => {
+  const handleCreateSheetInFolder = async (folderId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (isLocked) {
       toast.error("🔒 SYSTEM SECURED", { description: "Please unlock the Billing Security Shield first." });
@@ -467,61 +512,101 @@ export default function EntrySheet({
     const year = today.getFullYear();
     const formattedDate = `${day} - ${month} - ${year}`;
 
-    const newSheetId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
+    const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
 
-    // Set editor fields
-    setLoadedSheetId(newSheetId);
-    setRecOfficer(currentUser.fullName || currentUser.username.toUpperCase());
-    setArea('MAIN');
-    setSheetDate(formattedDate);
-    setTable1Rows(tRef);
-    setTable2Rows(t2);
-    setCashReceived('');
-    setSign('');
-    setSubmitted('');
-
-    const blankSheet = {
-      id: newSheetId,
-      folderId: folderId,
-      recOfficer: currentUser.fullName || currentUser.username.toUpperCase(),
-      recOfficerLabel: 'REC. OFFICER',
+    const blankSheetPayload = {
+      folder_id: folderId,
+      dealer_id: activeDealerId || currentUser?.uid || 'main',
+      rec_officer: currentUser.fullName || currentUser.username.toUpperCase(),
+      rec_officer_label: 'REC. OFFICER',
       area: 'MAIN',
-      areaLabel: 'AREA',
-      sheetDate: formattedDate,
-      dateLabel: 'DATE',
-      table1Rows: tRef,
-      table2Rows: t2,
-      cashReceived: '',
+      area_label: 'AREA',
+      sheet_date: formattedDate,
+      date_label: 'DATE',
+      table1_rows: JSON.stringify(tRef),
+      table2_rows: JSON.stringify(t2),
+      cash_received: '',
+      cash_received_label: 'CASH RECEIVED',
       sign: '',
+      sign_label: 'SIGN',
       submitted: '',
-      footnoteLeft: 'Enterprise Ledger Dispatch System',
-      footnoteRight: 'GENv2.5 // A4 PRINTABLE',
-      t1Headers: ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
-      t2Headers: ['SR', 'NAME', 'AMOUNT', 'CH'],
-      t1TotalLabel: 'TOTAL',
-      t2TotalLabel: 'TOTAL',
-      cashReceivedLabel: 'CASH RECEIVED',
-      signLabel: 'SIGN',
-      submittedLabel: 'SUBMITTED',
+      submitted_label: 'SUBMITTED',
+      footnote_left: 'Enterprise Ledger Dispatch System',
+      footnote_right: 'GENv2.5 // A4 PRINTABLE'
     };
 
-    isSwappingRef.current = true;
-    setSheets([blankSheet]);
-    setActiveSheetIdx(0);
-    setTimeout(() => {
-      isSwappingRef.current = false;
-    }, 50);
+    try {
+      const { data, error } = await supabase.from('ledger_sheets').insert(blankSheetPayload).select().single();
+      
+      if (error) {
+        console.error("Supabase insert error for ledger_sheets:", error);
+        toast.error("Failed to create sheet in cloud: " + error.message);
+        return;
+      }
+      
+      if (data) {
+        console.log("Successfully created sheet in Supabase:", data);
+        
+        const newSheetId = data.id;
 
-    // Map sheet id
-    const newMap = {
-      ...sheetFolderMap,
-      [newSheetId]: folderId
-    };
-    setSheetFolderMap(newMap);
-    saveMapToDb(newMap);
+        const blankSheet = {
+          id: newSheetId,
+          folderId: folderId,
+          recOfficer: data.rec_officer || currentUser.fullName || currentUser.username.toUpperCase(),
+          recOfficerLabel: data.rec_officer_label || 'REC. OFFICER',
+          area: data.area || 'MAIN',
+          areaLabel: data.area_label || 'AREA',
+          sheetDate: data.sheet_date || formattedDate,
+          dateLabel: data.date_label || 'DATE',
+          table1Rows: parseRowsArray(data.table1_rows || tRef),
+          table2Rows: parseRowsArray(data.table2_rows || t2),
+          cashReceived: data.cash_received || '',
+          sign: data.sign || '',
+          submitted: data.submitted || '',
+          footnoteLeft: data.footnote_left || 'Enterprise Ledger Dispatch System',
+          footnoteRight: data.footnote_right || 'GENv2.5 // A4 PRINTABLE',
+          t1Headers: ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
+          t2Headers: ['SR', 'NAME', 'AMOUNT', 'CH'],
+          t1TotalLabel: 'TOTAL',
+          t2TotalLabel: 'TOTAL',
+          cashReceivedLabel: data.cash_received_label || 'CASH RECEIVED',
+          signLabel: data.sign_label || 'SIGN',
+          submittedLabel: data.submitted_label || 'SUBMITTED',
+        };
 
-    setActiveView('editor');
-    toast.success("📄 Created empty sheet inside selected folder! Let's fill it.");
+        // Set editor fields
+        setLoadedSheetId(newSheetId);
+        setRecOfficer(blankSheet.recOfficer);
+        setArea(blankSheet.area);
+        setSheetDate(blankSheet.sheetDate);
+        setTable1Rows(blankSheet.table1Rows);
+        setTable2Rows(blankSheet.table2Rows);
+        setCashReceived('');
+        setSign('');
+        setSubmitted('');
+
+        isSwappingRef.current = true;
+        setSheets([blankSheet]);
+        setActiveSheetIdx(0);
+        setTimeout(() => {
+          isSwappingRef.current = false;
+        }, 50);
+
+        // Map sheet id
+        const newMap = {
+          ...sheetFolderMap,
+          [newSheetId]: folderId
+        };
+        setSheetFolderMap(newMap);
+        saveMapToDb(newMap);
+
+        setActiveView('editor');
+        toast.success("📄 Created empty sheet inside selected folder! Let's fill it.");
+      }
+    } catch (err: any) {
+      console.error("Unexpected error creating sheet:", err);
+      toast.error("Unexpected error creating sheet");
+    }
   };
 
   // Top fields
@@ -757,6 +842,45 @@ export default function EntrySheet({
   const [isBackingUp, setIsBackingUp] = useState(false);
 
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Load folders directly from Supabase ledger_folders table
+    const fetchFoldersFromDb = async () => {
+      try {
+        const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
+        let query = supabase.from('ledger_folders').select('*');
+        if (tenantId === 'main') {
+           query = query.or('tenant_id.eq.main,tenant_id.is.null,tenant_id.eq.');
+        } else {
+           query = query.eq('tenant_id', tenantId);
+        }
+        
+        const { data, error } = await query.order('created', { ascending: true });
+        
+        if (error) {
+           console.error("Failed to explicitly fetch ledger_folders:", error);
+           return;
+        }
+
+        if (data) {
+           console.log("Explicitly fetched folders from DB:", data);
+           const mappedFolders = data.map(f => ({
+             id: f.id,
+             name: f.name || '',
+             tenantId: f.tenant_id,
+             createdAt: f.created_at || f.created ? new Date(f.created_at || f.created).getTime() : Date.now()
+           }));
+           setFolders(mappedFolders);
+        }
+      } catch (err) {
+        console.error("Unexpected error fetching folders:", err);
+      }
+    };
+
+    fetchFoldersFromDb();
+  }, [isOpen, currentUser, activeDealerId]);
+
   // Subeffect to load master clients scoped to the current dealer tenant
   useEffect(() => {
     if (!isOpen) return;
@@ -774,16 +898,121 @@ export default function EntrySheet({
   // Real-time listener for Monthly Ledger Sheets History
   useEffect(() => {
     if (!isOpen) return;
+
+    const fetchSheetsFromDb = async () => {
+      try {
+        const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
+        let query = supabase.from('ledger_sheets').select('*');
+        if (tenantId === 'main') {
+           query = query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.');
+        } else {
+           query = query.eq('dealer_id', tenantId);
+        }
+
+        const { data, error } = await query.order('created', { ascending: true });
+
+        if (error) {
+           console.error("Failed to explicitly fetch ledger_sheets:", error);
+           return;
+        }
+
+        if (data) {
+           console.log("Explicitly fetched sheets from DB:", data);
+           const mappedSheets = data.map(r => ({
+              id: r.id || r.sheet_id,
+              folderId: r.folder_id,
+              recOfficer: r.rec_officer,
+              recOfficerLabel: r.rec_officer_label,
+              area: r.area,
+              areaLabel: r.area_label,
+              sheetDate: r.sheet_date,
+              dateLabel: r.date_label,
+              table1Rows: parseRowsArray(r.table1_rows),
+              table2Rows: parseRowsArray(r.table2_rows),
+              cashReceived: r.cash_received,
+              sign: r.sign,
+              submitted: r.submitted,
+              cashReceivedLabel: r.cash_received_label,
+              signLabel: r.sign_label,
+              submittedLabel: r.submitted_label,
+              footnoteLeft: r.footnote_left,
+              footnoteRight: r.footnote_right,
+              dealerId: r.dealer_id,
+              sheetSubtext: r.sheet_subtext || '',
+              createdAt: r.created_at || r.created ? new Date(r.created_at || r.created).getTime() : Date.now()
+           }));
+           setLedgerHistory(mappedSheets);
+        }
+      } catch (err) {
+        console.error("Unexpected error fetching sheets:", err);
+      }
+    };
+
+    fetchSheetsFromDb();
+    
     try {
       const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
       const unsubscribe = pocketbaseService.subscribeLedgerSheets((data) => {
-        setLedgerHistory(data);
+        // Only update if it brings newer info or keep fallback
+        setLedgerHistory(prev => data.length > 0 ? data : prev);
       }, tenantId);
       return () => unsubscribe();
     } catch (e) {
-      console.warn("Failed to fetch historical ledger sheets:", e);
+      console.warn("Failed to subscribe historical ledger sheets:", e);
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, activeDealerId]);
+
+  useEffect(() => {
+    if (openedFolderId && isOpen) {
+      const fetchFolderSpecificSheets = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('ledger_sheets')
+            .select('*')
+            .eq('folder_id', openedFolderId);
+            
+          if (error) {
+             console.error(`Failed to fetch sheets for folder ${openedFolderId}:`, error);
+          } else if (data) {
+             console.log(`Explicitly fetched sheets for folder ${openedFolderId}:`, data);
+             // We merge this with ledgerHistory to ensure it's up to date
+             setLedgerHistory(prev => {
+                const map = new Map(prev.map(sh => [sh.id, sh]));
+                data.forEach(r => {
+                  map.set(r.id || r.sheet_id, {
+                    id: r.id || r.sheet_id,
+                    folderId: r.folder_id,
+                    recOfficer: r.rec_officer,
+                    recOfficerLabel: r.rec_officer_label,
+                    area: r.area,
+                    areaLabel: r.area_label,
+                    sheetDate: r.sheet_date,
+                    dateLabel: r.date_label,
+                    table1Rows: parseRowsArray(r.table1_rows),
+                    table2Rows: parseRowsArray(r.table2_rows),
+                    cashReceived: r.cash_received,
+                    sign: r.sign,
+                    submitted: r.submitted,
+                    cashReceivedLabel: r.cash_received_label,
+                    signLabel: r.sign_label,
+                    submittedLabel: r.submitted_label,
+                    footnoteLeft: r.footnote_left,
+                    footnoteRight: r.footnote_right,
+                    dealerId: r.dealer_id,
+               sheetSubtext: r.sheet_subtext || '',
+                    createdAt: r.created_at || r.created ? new Date(r.created_at || r.created).getTime() : Date.now()
+                  });
+                });
+                return Array.from(map.values());
+             });
+          }
+        } catch (err) {
+          console.error("Unexpected error fetching folder specific sheets:", err);
+        }
+      };
+      fetchFolderSpecificSheets();
+    }
+  }, [openedFolderId, isOpen]);
 
   // Sync internal backup states with custom storage changes
   useEffect(() => {
@@ -1199,7 +1428,7 @@ export default function EntrySheet({
   };
 
   // Add a new A4 sheet item under the same date directly on the right side of the list
-  const handleAddSheet = (index: number) => {
+  const handleAddSheet = async (index: number) => {
     if (isLocked) {
       toast.error("🔒 SYSTEM SECURED", { description: "Unlock Billing security shield to add new sheets." });
       return;
@@ -1258,6 +1487,51 @@ export default function EntrySheet({
       const nextMap = { ...sheetFolderMap, [generatedId]: activeFolderId };
       setSheetFolderMap(nextMap);
       saveMapToDb(nextMap);
+    }
+    
+    // Save to Supabase immediately
+    const scopeId = activeDealerId || currentUser?.uid || 'main';
+    
+    const blankSheetPayload = {
+      folder_id: activeFolderId,
+      dealer_id: scopeId,
+      rec_officer: newSheet.recOfficer,
+      rec_officer_label: newSheet.recOfficerLabel,
+      area: newSheet.area,
+      area_label: newSheet.areaLabel,
+      sheet_date: newSheet.sheetDate,
+      date_label: newSheet.dateLabel,
+      table1_rows: JSON.stringify(newSheet.table1Rows),
+      table2_rows: JSON.stringify(newSheet.table2Rows),
+      cash_received: newSheet.cashReceived,
+      cash_received_label: newSheet.cashReceivedLabel,
+      sign: newSheet.sign,
+      sign_label: newSheet.signLabel,
+      submitted: newSheet.submitted,
+      submitted_label: newSheet.submittedLabel,
+      footnote_left: newSheet.footnoteLeft,
+      footnote_right: newSheet.footnoteRight
+    };
+
+    try {
+      const { data, error } = await supabase.from('ledger_sheets').insert(blankSheetPayload).select().single();
+      if (error) {
+        console.error("Supabase insert error for ledger_sheets (handleAddSheet):", error);
+        toast.error("Failed to instantly save new sheet to Supabase: " + error.message);
+      } else if (data) {
+        console.log("Successfully created sheet (handleAddSheet) in Supabase:", data);
+        // Replace generated ID with real Supabase ID
+        setSheets(prev => {
+          const updated = [...prev];
+          const createdIdx = updated.findIndex(s => s.id === generatedId);
+          if (createdIdx !== -1) {
+            updated[createdIdx].id = data.id;
+          }
+          return updated;
+        });
+      }
+    } catch (err) {
+      console.error("Failed to instantly save new sheet to Supabase:", err);
     }
     
     setSheets(prev => {
@@ -1463,7 +1737,7 @@ export default function EntrySheet({
         };
       }
 
-      // Ensure loadedSheetId is a valid 15-character PocketBase ID if not already
+      // Ensure loadedSheetId is a valid 15-character record ID if not already
       let currentLoadedId = loadedSheetId;
       if (!currentLoadedId || currentLoadedId.startsWith('sheet_') || !/^[a-z0-9]{15}$/.test(currentLoadedId)) {
         const generatedId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
@@ -1499,8 +1773,8 @@ export default function EntrySheet({
       let hasAnyValidSheet = false;
       for (let i = 0; i < currentSyncSheets.length; i++) {
         const sh = currentSyncSheets[i];
-        const hasT1Data = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
-        const hasT2Data = (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT1Data = parseRowsArray(sh.table1Rows).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT2Data = parseRowsArray(sh.table2Rows).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
         const officerName = sh.recOfficer || '';
         
         if (!officerName.trim()) {
@@ -1531,12 +1805,14 @@ export default function EntrySheet({
       const sheetPayloads: any[] = [];
       const savedSheetsToLocal: any[] = [];
       const updatedFolderMap = { ...sheetFolderMap };
+      const clientsToUpsertMap = new Map<string, any>();
 
+      // Step 1: Build basic payloads and local copies
       for (let i = 0; i < currentSyncSheets.length; i++) {
         const sh = currentSyncSheets[i];
         
-        const hasT1Data = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
-        const hasT2Data = (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT1Data = parseRowsArray(sh.table1Rows).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT2Data = parseRowsArray(sh.table2Rows).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
         const officerName = sh.recOfficer || '';
         if (!officerName.trim() || (!hasT1Data && !hasT2Data)) continue;
 
@@ -1550,16 +1826,22 @@ export default function EntrySheet({
           resolvedSheetId = isCurrentlyLoadedSheet ? currentLoadedId : Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
         }
 
+        const targetFolderObj = folders.find(f => f.id === targetFolderId);
+        const sortDetailName = targetFolderObj?.name || targetFolderId || '';
+        const finalFolderId = targetFolderId || '';
+
         const sheetPayload = {
           id: resolvedSheetId,
-          folderId: targetFolderId,
+          folderId: finalFolderId,
+          sort: sortDetailName,
+          sortFolder: sortDetailName,
           recOfficer: sh.recOfficer,
           recOfficerLabel: sh.recOfficerLabel || 'REC. OFFICER',
           area: sh.area || 'MAIN',
           areaLabel: sh.areaLabel || 'AREA',
           sheetDate: sh.sheetDate || sheetDate || '',
           dateLabel: sh.dateLabel || 'DATE',
-          table1Rows: (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).map(r => ({
+          table1Rows: parseRowsArray(sh.table1Rows).map(r => ({
             sr: r.sr,
             cId: r.cId || '',
             name: r.name || '',
@@ -1571,7 +1853,7 @@ export default function EntrySheet({
             clientUsername: r.clientUsername || '',
             status: r.status || ''
           })),
-          table2Rows: (Array.isArray(sh.table2Rows) ? sh.table2Rows : []).map(r => ({
+          table2Rows: parseRowsArray(sh.table2Rows).map(r => ({
             sr: r.sr,
             name: r.name || '',
             amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
@@ -1622,6 +1904,104 @@ export default function EntrySheet({
             delete updatedFolderMap[currentLoadedId];
           }
         }
+      }
+
+      // Step 2: Extract/Ensure Customer Cards linking/creation for ALL sheet rows, regardless of folder month status
+      const isExcludedName = (nameStr?: string) => {
+        if (!nameStr) return false;
+        const lower = nameStr.trim().toLowerCase();
+        return [
+          'bank',
+          'panel balance',
+          'panel',
+          'cash hand',
+          'hand cash',
+          'cash in hand',
+          'unspecified entry',
+          'expense',
+          'expenses'
+        ].includes(lower);
+      };
+
+      sheetPayloads.forEach((sheetPayload) => {
+        const allSheetRows = Array.isArray(sheetPayload.table1Rows) ? sheetPayload.table1Rows : [];
+
+        allSheetRows.forEach((r) => {
+          const amountVal = Number(r.amount) || 0;
+          const amountStr = String(r.amount || '').trim().toUpperCase();
+          const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr);
+
+          const hasId = Boolean(r.cId && String(r.cId).trim());
+          const hasName = Boolean(r.name && String(r.name).trim());
+
+          if (!hasId && !hasName) return;
+          if (isExcludedName(r.name)) return;
+
+          // Find existing customer card
+          let client = clients.find((c: any) => 
+            (r.clientId && c.id === r.clientId) ||
+            (r.clientUsername && c.username?.toLowerCase() === String(r.clientUsername).toLowerCase()) ||
+            (r.cId && (c.id?.toLowerCase() === String(r.cId).toLowerCase() || c.username?.toLowerCase() === String(r.cId).toLowerCase())) ||
+            (r.name && c.name?.toLowerCase() === String(r.name).toLowerCase())
+          );
+
+          if (!client && clientsToUpsertMap.size > 0) {
+            client = Array.from(clientsToUpsertMap.values()).find((c: any) =>
+              (r.cId && (c.id?.toLowerCase() === String(r.cId).toLowerCase() || c.username?.toLowerCase() === String(r.cId).toLowerCase())) ||
+              (r.name && c.name?.toLowerCase() === String(r.name).toLowerCase())
+            );
+          }
+
+          if (client) {
+            r.clientId = client.id;
+            r.clientUsername = client.username;
+            if (!r.name && client.name) r.name = client.name;
+            if (!r.cId && client.username) r.cId = client.username;
+
+            const updatedCard = {
+              ...client,
+              name: r.name || client.name,
+              baseAmount: amountVal > 0 ? (Number(client.baseAmount) || amountVal) : client.baseAmount,
+              area: (r as any).area || client.area || sheetPayload.area || area || 'MAIN',
+              dealerId: tenantId || 'main'
+            };
+            clientsToUpsertMap.set(client.id, updatedCard);
+          } else {
+            const cleanName = String(r.name || r.cId || 'New Client').trim();
+            const rawUser = String(r.cId || r.clientUsername || cleanName).trim();
+            const cleanUser = rawUser.replace(/\s+/g, '_').toLowerCase() || `user_${Date.now()}`;
+            const newClientId = r.clientId || `client_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+            r.clientId = newClientId;
+            r.clientUsername = cleanUser;
+            if (!r.cId) r.cId = cleanUser;
+            if (!r.name) r.name = cleanName;
+
+            client = {
+              id: newClientId,
+              name: cleanName,
+              username: cleanUser,
+              number: String(r.cId || ''),
+              mobileNumber: '',
+              seriesNumber: '',
+              area: String((r as any).area || sheetPayload.area || area || 'MAIN'),
+              pkgDetails: String(r.comments || ''),
+              userNearby: '',
+              baseAmount: amountVal > 0 ? amountVal : 1000,
+              createdBy: currentUser?.username || 'admin',
+              createdAt: Date.now(),
+              dealerId: tenantId || 'main'
+            };
+            clientsToUpsertMap.set(newClientId, client);
+          }
+        });
+      });
+
+      // Step 3: Run connected recovery sheet matching/updating using the updated/linked sheet rows
+      sheetPayloads.forEach((sheetPayload) => {
+        const resolvedSheetId = sheetPayload.id;
+        const targetFolderId = sheetPayload.folderId;
+        if (!targetFolderId) return;
 
         const folderObj = folders.find(f => f.id === targetFolderId);
         const targetMonthId = (targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined) || currentMonthId;
@@ -1677,22 +2057,6 @@ export default function EntrySheet({
           }
 
           try {
-            const isExcludedName = (nameStr?: string) => {
-              if (!nameStr) return false;
-              const lower = nameStr.trim().toLowerCase();
-              return [
-                'bank',
-                'panel balance',
-                'panel',
-                'cash hand',
-                'hand cash',
-                'cash in hand',
-                'unspecified entry',
-                'expense',
-                'expenses'
-              ].includes(lower);
-            };
-
             const updatedBillingRows = targetMonthRows.filter((br: any) => !isExcludedName(br.name));
 
             let updatedCount = 0;
@@ -1709,11 +2073,13 @@ export default function EntrySheet({
               const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr);
 
               const hasId = Boolean(r.cId && String(r.cId).trim());
-              let hasName = Boolean(r.name && String(r.name).trim());
-              const hasAmount = amountVal > 0 || isStatusString;
+              const hasName = Boolean(r.name && String(r.name).trim());
 
               if (!hasId && !hasName) return;
               if (isExcludedName(r.name)) return;
+
+              // Find the customer card in upserts map or original list
+              const client = clientsToUpsertMap.get(r.clientId) || clients.find((c: any) => c.id === r.clientId);
 
               let matchedIdx = -1;
 
@@ -1782,6 +2148,8 @@ export default function EntrySheet({
 
                 updatedBillingRows[matchedIdx] = {
                   ...row,
+                  clientId: client?.id || row.clientId || r.clientId || '',
+                  username: client?.username || row.username || r.clientUsername || '',
                   _originalCr: savedOrigCr,
                   cr: savedOrigCr,
                   totalAmount: totalAmount,
@@ -1799,18 +2167,7 @@ export default function EntrySheet({
                   allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr}`);
                 }
               } else {
-                const client = clients.find((c: any) => 
-                  (r.clientId && c.id === r.clientId) ||
-                  (r.clientUsername && c.username?.toLowerCase() === String(r.clientUsername).toLowerCase()) ||
-                  (r.cId && (c.id?.toLowerCase() === String(r.cId).toLowerCase() || c.username?.toLowerCase() === String(r.cId).toLowerCase())) ||
-                  (r.name && c.name?.toLowerCase() === String(r.name).toLowerCase())
-                );
-
-                if (!client) {
-                  if (!r.name && !r.cId) return;
-                } else {
-                  if (isExcludedName(client.name) || isExcludedName(client.username)) return;
-                }
+                if (client && (isExcludedName(client.name) || isExcludedName(client.username))) return;
 
                 const baseAmount = client ? (Number(client.baseAmount) || 0) : amountVal;
                 const cr = client ? (Number(client.cr) || 0) : 0;
@@ -1832,11 +2189,11 @@ export default function EntrySheet({
                 const clientKey = client?.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                 const newRow = {
                   id: clientKey,
-                  clientId: client?.id || r.cId || '',
+                  clientId: client?.id || r.clientId || r.cId || '',
                   name: client?.name || r.name || 'Unknown',
                   username: client?.username || r.clientUsername || r.cId || '',
                   mobileNumber: client?.mobileNumber || '',
-                  area: client?.area || r.area || area || '',
+                  area: client?.area || (r as any).area || area || '',
                   rt: client?.rt || '',
                   baseAmount: baseAmount,
                   cr: cr,
@@ -1871,7 +2228,7 @@ export default function EntrySheet({
             console.error("Failed to auto-update billing status:", billingErr);
           }
         }
-      }
+      });
 
       // --- INSTANT OPTIMISTIC UI STATE SYNCHRONIZATION ---
 
@@ -1910,25 +2267,32 @@ export default function EntrySheet({
         }
       }
 
-      // 4. Update currently loaded sheet references in editor
+      // 4. Update currently loaded sheet references in editor with updated rows (with linked client details!)
       const lastSavedId = currentLoadedId || currentSyncSheets[activeSheetIdx]?.id;
       if (lastSavedId) {
         setLoadedSheetId(lastSavedId);
       }
       setSheets(prev => {
         return prev.map((sh, idx) => {
-          const matchingPayload = currentSyncSheets[idx];
+          const matchingPayload = sheetPayloads[idx];
           if (matchingPayload) {
             const savedLocal = savedSheetsToLocal.find(s => s.id === matchingPayload.id);
             return {
               ...sh,
               id: matchingPayload.id,
-              folderId: savedLocal?.folderId || matchingPayload.folderId || sh.folderId || ''
+              folderId: savedLocal?.folderId || matchingPayload.folderId || sh.folderId || '',
+              table1Rows: matchingPayload.table1Rows,
+              table2Rows: matchingPayload.table2Rows,
             };
           }
           return sh;
         });
       });
+
+      const activeSavedPayload = sheetPayloads[activeSheetIdx];
+      if (activeSavedPayload) {
+        setTable1Rows(activeSavedPayload.table1Rows);
+      }
 
       const activeRows = table1Rows.filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
       setOriginalActiveRows(activeRows.map(r => ({
@@ -1937,28 +2301,46 @@ export default function EntrySheet({
         comments: (r.comments || '').trim()
       })));
 
-      // 6. SYNCHRONOUS DATABASE SYNC (Wait to ensure it's saved to the cloud)
+      // 6. PARALLEL FAST DATABASE SYNC (Save A4 sheets and connected recovery rows concurrently)
       try {
-        // A. Save A4 sheets to pocketbase
-        for (const payload of sheetPayloads) {
-          await pocketbaseService.saveLedgerSheet(payload);
+        const dbTasks: Promise<any>[] = [];
+
+        // A. Batch save A4 sheets to database
+        if (sheetPayloads.length > 0) {
+          dbTasks.push(pocketbaseService.saveLedgerSheetsBatch(sheetPayloads, tenantId));
         }
 
-        // B. Save synced billing months to pocketbase
+        // B. Save synced billing months to database concurrently
         for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
           const changedIndices = accumulatedChangedIndicesMap[monthId] 
             ? Array.from(accumulatedChangedIndicesMap[monthId]) 
             : undefined;
 
-          await pocketbaseService.saveBillingMonth(
-            monthId, 
-            accumulatedRows, 
-            currentUser?.username || 'admin',
-            activeDealerId,
-            true,
-            changedIndices
+          dbTasks.push(
+            pocketbaseService.saveBillingMonth(
+              monthId, 
+              accumulatedRows, 
+              currentUser?.username || 'admin',
+              activeDealerId,
+              true,
+              changedIndices
+            )
           );
         }
+
+        // C. Save created/updated Customer Cards concurrently
+        const clientsToSave = Array.from(clientsToUpsertMap.values());
+        if (clientsToSave.length > 0) {
+          dbTasks.push(pocketbaseService.saveClientsBatch(clientsToSave, tenantId));
+          setClients(prev => {
+            const map = new Map<string, any>();
+            prev.forEach(c => map.set(c.id, c));
+            clientsToSave.forEach(c => map.set(c.id, c));
+            return Array.from(map.values());
+          });
+        }
+
+        await Promise.all(dbTasks);
       } catch (dbError) {
         console.error("DB persistence failed:", dbError);
         throw new Error("Failed to save to database. Please check your network and try again.");
@@ -2016,7 +2398,7 @@ export default function EntrySheet({
     setDateLabel(sheet.dateLabel || 'DATE');
 
     // Restore table 1rows
-    const reT1 = (Array.isArray(sheet.table1Rows) ? sheet.table1Rows : []).map((r: any) => ({
+    const reT1 = parseRowsArray(sheet.table1Rows).map((r: any) => ({
       sr: r.sr,
       cId: r.cId || '',
       name: r.name || '',
@@ -2035,6 +2417,7 @@ export default function EntrySheet({
         comments: '',
         amount: 0,
         ch: false,
+        originalAmount: 0,
         clientId: '',
         clientUsername: ''
       });
@@ -2042,7 +2425,7 @@ export default function EntrySheet({
     setTable1Rows(reT1);
 
     // Restore table 2rows
-    const reT2 = (Array.isArray(sheet.table2Rows) ? sheet.table2Rows : []).map((r: any) => ({
+    const reT2 = parseRowsArray(sheet.table2Rows).map((r: any) => ({
       sr: r.sr,
       name: r.name || '',
       amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
@@ -2119,22 +2502,34 @@ export default function EntrySheet({
     setSheetToDeleteId(sheetId);
   };
 
+  const [isDeletingSheet, setIsDeletingSheet] = useState(false);
+
   const confirmDeleteHistorySheet = async () => {
-    if (!sheetToDeleteId) return;
+    if (!sheetToDeleteId || isDeletingSheet) return;
+    setIsDeletingSheet(true);
+    const targetId = sheetToDeleteId;
+    const previousHistory = [...ledgerHistory];
+
+    // Optimistically update UI
+    setLedgerHistory(prev => prev.filter(s => s.id !== targetId));
+
     try {
-      const sheetObj = ledgerHistory.find(s => s.id === sheetToDeleteId);
+      const sheetObj = previousHistory.find(s => s.id === targetId);
       const author = currentUser?.fullName || currentUser?.username || 'admin';
       const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined) || 'main';
 
-      await pocketbaseService.deleteLedgerSheet(sheetToDeleteId, author, scopeId, sheetObj);
+      await pocketbaseService.deleteLedgerSheet(targetId, author, scopeId, sheetObj);
       toast.success("Ledger card moved to Recycle Bin!");
-      if (loadedSheetId === sheetToDeleteId) {
+      if (loadedSheetId === targetId) {
         resetToBlank();
         setLoadedSheetId(null);
       }
     } catch (err: any) {
+      // Roll back optimistic UI state if server operation fails
+      setLedgerHistory(previousHistory);
       toast.error(getCleanErrorMessage(err));
     } finally {
+      setIsDeletingSheet(false);
       setSheetToDeleteId(null);
     }
   };

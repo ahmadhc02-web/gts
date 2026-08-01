@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Send, CheckCircle2, AlertCircle, Clock, User, Plus, Search, RefreshCw, FileText, Sparkles, Check, ChevronRight, HardDrive, Wifi, ShieldAlert } from 'lucide-react';
 import { gmailService, GmailMessage } from '../services/gmailService';
 import { googleSheetsService } from '../services/googleSheetsService';
-import { pocketbaseService } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { UserProfile } from '../types';
 
 interface GmailPanelProps {

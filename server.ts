@@ -12,7 +12,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 
 dotenv.config();
 
-// Allow self-signed certificates when proxying or fetching from self-hosted PocketBase servers
+// Allow self-signed certificates when proxying or fetching from self-hosted servers
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 // Handle socket reset and aborted request errors globally to prevent Node server crashes
@@ -40,39 +40,27 @@ process.on("unhandledRejection", (reason: any) => {
   console.warn("Unhandled Rejection:", reason);
 });
 
-function getCleanPocketBaseUrl(): string {
-  const raw = process.env.POCKETBASE_URL || process.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090";
-  let url = raw.trim().replace(/^['"]|['"]$/g, "");
-  // Remove trailing PocketBase admin dashboard path `/_` or trailing slashes
-  url = url.replace(/\/_*\/*$/, "").replace(/\/+$/, "");
-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    url = "http://" + url;
-  }
-  // Convert https:// to http:// if targeting 167.233.41.7 or port 8090 (since PocketBase runs on plain HTTP)
-  if (url.startsWith("https://167.233.41.7") || (url.startsWith("https://") && url.includes(":8090"))) {
-    url = url.replace(/^https:\/\//, "http://");
-  }
-  // If targeting 167.233.41.7 without a port, append :8090 where PocketBase is listening
-  if (url.includes("167.233.41.7") && !url.match(/:\d+$/)) {
-    url = url + ":8090";
-  }
-  return url;
-}
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "https://167.233.41.7.sslip.io";
 
-const POCKETBASE_URL = getCleanPocketBaseUrl();
+const getFilename = () => {
+  try {
+    if (typeof import.meta !== "undefined" && import.meta.url) {
+      return fileURLToPath(import.meta.url);
+    }
+  } catch (e) {}
+  return typeof __filename !== "undefined" ? __filename : "";
+};
 
-let _filename = "";
-let _dirname = "";
-try {
-  _filename =
-    typeof __filename !== "undefined"
-      ? __filename
-      : fileURLToPath(import.meta.url);
-  _dirname =
-    typeof __dirname !== "undefined" ? __dirname : path.dirname(_filename);
-} catch (e) {
-  _dirname = process.cwd();
-}
+const getDirname = () => {
+  try {
+    const fname = getFilename();
+    if (fname) return path.dirname(fname);
+  } catch (e) {}
+  return typeof __dirname !== "undefined" ? __dirname : "";
+};
+
+const currentFilename = getFilename();
+const currentDirname = getDirname();
 
 interface MemoryOTP {
   username: string;
@@ -106,24 +94,27 @@ async function startServer() {
     }),
   );
 
-  // --- Secure PocketBase Proxy to prevent Mixed Content (HTTP/HTTPS) blocking ---
+  // --- Secure Supabase Proxy to prevent Mixed Content (HTTP/HTTPS) blocking ---
   app.use(
-    "/api/pb",
+    ["/api/supabase"],
     createProxyMiddleware({
-      target: POCKETBASE_URL,
+      target: SUPABASE_URL,
       changeOrigin: true,
       secure: false,
-      xfwd: false, // Prevent adding x-forwarded-* headers that trigger 301 redirects
+      ws: true,
+      proxyTimeout: 15000,
+      timeout: 15000,
+      xfwd: false,
       pathRewrite: {
-        "^/api/pb": "", // PocketBase SDK calls /api/pb/api/*, so this rewrites to /api/*
+        "^/api/supabase": "",
       },
       on: {
         proxyReq: (proxyReq: any) => {
           try {
-            const parsedTarget = new URL(POCKETBASE_URL);
+            const parsedTarget = new URL(SUPABASE_URL);
             proxyReq.setHeader("host", parsedTarget.host);
           } catch (e) {
-            proxyReq.setHeader("host", "167.233.41.7:8090");
+            proxyReq.setHeader("host", "167.233.41.7.sslip.io");
           }
           proxyReq.removeHeader("x-forwarded-host");
           proxyReq.removeHeader("x-forwarded-proto");
@@ -134,31 +125,16 @@ async function startServer() {
         error: (err: any, req: any, res: any) => {
           const errCode = err?.code || "";
           const errMsg = String(err?.message || err || "");
-          const isAbortOrReset =
-            errCode === "ECONNRESET" ||
-            errCode === "ECONNABORTED" ||
-            errCode === "EPIPE" ||
-            errCode === "ETIMEDOUT" ||
-            errCode === "ERR_STREAM_PREMATURE_CLOSE" ||
-            errMsg.includes("aborted") ||
-            errMsg.includes("socket hang up") ||
-            errMsg.includes("read ECONNRESET");
-
+          const isAbortOrReset = errCode === "ECONNRESET" || errCode === "ECONNABORTED" || errCode === "EPIPE" || errMsg.includes("aborted");
           if (isAbortOrReset) {
-            // Client closed connection, aborted request, or socket reset - handle gracefully
             if (res && !res.headersSent) {
-              try {
-                res.status(499).end();
-              } catch (_) {}
+              try { res.status(499).end(); } catch (_) {}
             }
             return;
           }
-
-          console.warn("[PocketBase Proxy Status]:", errMsg);
+          console.warn("[Supabase Proxy Status]:", errMsg);
           if (res && !res.headersSent) {
-            try {
-              res.status(502).json({ error: "PocketBase Gateway Notice", message: errMsg });
-            } catch (_) {}
+            try { res.status(502).json({ error: "Supabase Gateway Notice", message: errMsg }); } catch (_) {}
           }
         },
       },
@@ -436,20 +412,23 @@ async function startServer() {
   app.get("/api/network-ping", (req, res) => {
     let host = (req.query.host as string) || "8.8.8.8";
 
-    // Clean target url to secure shell arguments against injections
+    // Clean target url to secure arguments against injections
     host = host
       .replace(/^https?:\/\//i, "")
       .split("/")[0]
       .split(":")[0]
       .trim();
-    if (!host || /[&;|`$]/g.test(host)) {
+
+    // Strict validation: host must strictly match a valid hostname or IP address without leading dashes
+    if (!host || !/^[a-zA-Z0-9.-]+$/.test(host) || host.startsWith("-")) {
       return res.status(400).json({ error: "Invalid Host Matrix Protocol" });
     }
 
     const isWin = process.platform === "win32";
-    const execCommand = isWin ? `ping -n 1 ${host}` : `ping -c 1 -W 2 ${host}`;
+    const pingCmd = "ping";
+    const pingArgs = isWin ? ["-n", "1", host] : ["-c", "1", "-W", "2", host];
 
-    exec.exec(execCommand, (err, stdout) => {
+    exec.execFile(pingCmd, pingArgs, { timeout: 3000 }, (err, stdout) => {
       if (err) {
         return res.json({ ms: "Error", status: "offline" });
       }
@@ -517,10 +496,10 @@ async function startServer() {
 
       const SUPABASE_URL =
         (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "") ||
-        "https://jduamzoyllfspdqucncw.supabase.co";
+        "https://167.233.41.7.sslip.io";
       const SUPABASE_ANON_KEY =
         (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "") ||
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
       const BREVO_API_KEY = (rawBrevo
         ? rawBrevo
             .trim()
@@ -528,55 +507,56 @@ async function startServer() {
             .replace(/\s+/g, "")
         : "") || "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";
 
-      // 1. Fetch user from PocketBase first, then Supabase, then Firestore
+      // 1. Fetch user from Supabase (users_data or login_profiles), then Firestore
       let foundUser: any = null;
 
-      // Try PocketBase
       try {
-        const pbRes = await fetch(
-          `${POCKETBASE_URL}/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
-        );
-        if (pbRes.ok) {
-          const pbData = await pbRes.json();
-          if (pbData && pbData.items && pbData.items.length > 0) {
-            const u = pbData.items[0];
-            foundUser = {
-              id: u.id,
-              uid: u.uid || u.id,
-              username: u.username,
-              email: u.email,
-              fullName: u.full_name || u.fullName || u.username,
-              source: "pocketbase"
-            };
-            console.log(`Server: Found user in PocketBase for reset OTP: ${u.username} (${u.email})`);
-          }
+        const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users_data?username=eq.${encodeURIComponent(username.trim())}`, {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+        });
+        const users = await resUser.json();
+        if (users && Array.isArray(users) && users.length > 0) {
+          const u = users[0];
+          foundUser = {
+            id: u.id,
+            uid: u.uid || u.id,
+            username: u.username,
+            email: u.email || '',
+            fullName: u.full_name || u.fullName || u.username,
+            source: "supabase"
+          };
+          console.log(`Server: Found user in Supabase users_data for reset OTP: ${u.username} (${u.email})`);
         }
-      } catch (pbErr) {
-        console.warn("Server: PocketBase user search failed:", pbErr);
+      } catch (suErr) {
+        console.warn("Server: Supabase users_data user check failed:", suErr);
       }
 
-      // Try Supabase if not found in PocketBase
       if (!foundUser) {
         try {
-          const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users?select=*`, {
+          const resUser = await fetch(`${SUPABASE_URL}/rest/v1/login_profiles?username=eq.${encodeURIComponent(username.trim())}`, {
             headers: {
               apikey: SUPABASE_ANON_KEY,
               Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
             },
           });
           const users = await resUser.json();
-          if (users && Array.isArray(users)) {
-            foundUser = users.find(
-              (u: any) =>
-                String(u.username || "").toLowerCase() ===
-                username.trim().toLowerCase(),
-            );
+          if (users && Array.isArray(users) && users.length > 0) {
+            const u = users[0];
+            foundUser = {
+              id: u.id,
+              uid: u.uid || u.id,
+              username: u.username,
+              email: u.email || '',
+              fullName: u.full_name || u.fullName || u.username,
+              source: "supabase"
+            };
+            console.log(`Server: Found user in Supabase login_profiles for reset OTP: ${u.username} (${u.email})`);
           }
         } catch (suErr) {
-          console.warn(
-            "Server: Supabase user check failed, falling back to Firestore:",
-            suErr,
-          );
+          console.warn("Server: Supabase login_profiles user check failed:", suErr);
         }
       }
 
@@ -926,54 +906,21 @@ async function startServer() {
           .json({ error: "Passcode verification mismatch." });
       }
 
-      // 2. Locate user and Update in PocketBase, Supabase, and Firestore
+      // 2. Locate user and Update in Supabase and Firestore
       let foundUser: any = null;
-      let patchedInPocketBase = false;
-
-      // Update in PocketBase
-      try {
-        const pbRes = await fetch(
-          `${POCKETBASE_URL}/api/collections/users/records?filter=(username='${encodeURIComponent(username.trim())}')`
-        );
-        if (pbRes.ok) {
-          const pbData = await pbRes.json();
-          if (pbData && pbData.items && pbData.items.length > 0) {
-            for (const pbRec of pbData.items) {
-              const patchRes = await fetch(
-                `${POCKETBASE_URL}/api/collections/users/records/${pbRec.id}`,
-                {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ password: newPassword }),
-                }
-              );
-              if (patchRes.ok) {
-                patchedInPocketBase = true;
-                foundUser = pbRec;
-                console.log(
-                  `Server: Passcode reset correctly applied to PocketBase layer for ${pbRec.username}`
-                );
-              }
-            }
-          }
-        }
-      } catch (pbErr) {
-        console.warn("Server: PocketBase password patch failed:", pbErr);
-      }
-
       let patchedInSupabase = false;
-      const rawUrl = process.env.SUPABASE_URL;
-      const rawKey = process.env.SUPABASE_ANON_KEY;
+      const rawUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const rawKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
       const SUPABASE_URL =
         (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "") ||
-        "https://jduamzoyllfspdqucncw.supabase.co";
+        "https://167.233.41.7.sslip.io";
       const SUPABASE_ANON_KEY =
         (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "") ||
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
 
       try {
         const suPatch = await fetch(
-          `${SUPABASE_URL}/rest/v1/users?username=ilike.${encodeURIComponent(username.trim())}`,
+          `${SUPABASE_URL}/rest/v1/users_data?username=eq.${encodeURIComponent(username.trim())}`,
           {
             method: "PATCH",
             headers: {
@@ -987,14 +934,14 @@ async function startServer() {
         );
         const suRes = await suPatch.json();
         if (suRes && Array.isArray(suRes) && suRes.length > 0) {
-          if (!foundUser) foundUser = suRes[0];
+          foundUser = suRes[0];
           patchedInSupabase = true;
           console.log(
-            `Server: Passcode reset correctly applied to Supabase layer for ${username}`,
+            `Server: Passcode reset correctly applied to Supabase users_data for ${username}`,
           );
         }
       } catch (suErr) {
-        console.warn("Server: Supabase password patch failed:", suErr);
+        console.warn("Server: Supabase users_data password patch failed:", suErr);
       }
 
       // Also try to patch in Firestore if available
@@ -1843,14 +1790,14 @@ System instructions:
       const rawKey = process.env.SUPABASE_ANON_KEY;
       const SUPABASE_URL =
         (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "") ||
-        "https://jduamzoyllfspdqucncw.supabase.co";
+        "https://167.233.41.7.sslip.io";
       const SUPABASE_ANON_KEY =
         (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "") ||
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdWFtem95bGxmc3BkcXVjbmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNzc0MzcsImV4cCI6MjA5NTg1MzQzN30.7H-fW0weeqVu9Pr0_KHxOZkmbnypZSdXi1YsIcYlkVM";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
 
       try {
         const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/branding_config?id=eq.google_sheets&select=dashboard_subtext`,
+          `${SUPABASE_URL}/rest/v1/branding_config?config_type=eq.google_sheets&select=dashboard_subtext`,
           {
             headers: {
               apikey: SUPABASE_ANON_KEY,
@@ -3073,7 +3020,7 @@ System instructions:
     // If we're running from inside dist/ already (bundled server.js),
     // or if the dist folder isn't where we expect, try to find it relative to this file
     if (!fs.existsSync(path.join(distPath, "index.html"))) {
-      distPath = _dirname;
+      distPath = currentDirname;
       if (!fs.existsSync(path.join(distPath, "index.html"))) {
         // Fallback or log error
         console.warn(

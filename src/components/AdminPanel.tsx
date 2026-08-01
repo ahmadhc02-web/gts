@@ -31,7 +31,7 @@ import HighFrequencyNodes from './HighFrequencyNodes';
 import MapViewer from './MapViewer';
 import EditorPanel from './EditorPanel';
 import { googleSheetsService } from '../services/googleSheetsService';
-import { pocketbaseService, fromDb } from '../lib/pocketbaseService';
+import { supabaseService as pocketbaseService, fromDb } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { AppConfig } from '../constants';
@@ -42,6 +42,7 @@ import EntrySheet from './EntrySheet';
 import ReceiptManager from './ReceiptManager';
 import BatchPrintModal from './BatchPrintModal';
 import { getAvatarUrl } from '../utils/avatar';
+import SupabaseMigrationPanel from './SupabaseMigrationPanel';
 
 interface AdminPanelProps {
   complaints: Complaint[];
@@ -161,8 +162,8 @@ export default function AdminPanel({
   const [isFormVisible, setIsFormVisible] = useState(true);
 
   const [isSyncingPB, setIsSyncingPB] = useState(false);
-  const syncAllToPocketBase = async () => {
-    if (!confirm("This will synchronize all data (Billing, Ledger, Complaints) from the Cloud to your custom Server/PocketBase. Proceed?")) return;
+  const syncAllToDatabase = async () => {
+    if (!confirm("This will synchronize all data (Billing, Ledger, Complaints) with your database. Proceed?")) return;
     setIsSyncingPB(true);
     try {
       toast.loading("Syncing Billing Months...", { id: "pb-sync" });
@@ -179,7 +180,7 @@ export default function AdminPanel({
         await pocketbaseService.saveComplaint(c, activeDealerId || 'main').catch(()=>{});
       }
       
-      toast.success("Sync completed successfully! Your Server/PocketBase is up to date.");
+      toast.success("Sync completed successfully! Your database is up to date.");
     } catch(e) {
       console.error(e);
       toast.error("Sync failed. Check console for details.");
@@ -539,6 +540,7 @@ export default function AdminPanel({
   const [masterClients, setMasterClients] = useState<any[]>([]);
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
   const savingMonthIds = React.useRef<Set<string>>(new Set());
+  const deletingMonthIds = React.useRef<Set<string>>(new Set());
 
   
   const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false, changedIndices?: number[] | Set<number>) => {
@@ -605,7 +607,7 @@ export default function AdminPanel({
         return;
       }
 
-      // 2. Fetch current complaints from PocketBase
+      // 2. Fetch current complaints from database
       const pbComplaints = await pocketbaseService.getComplaints('all');
       const pbComplaintsMap = new Map(pbComplaints.map(c => [c.id, c]));
 
@@ -621,7 +623,7 @@ export default function AdminPanel({
         }
 
         if (!pbComplaintsMap.has(id)) {
-          // We found a missing complaint in PocketBase!
+          // We found a missing complaint in database!
           const customerName = row[3] || 'N/A';
           const category = row[6] || 'N/A';
           
@@ -650,13 +652,13 @@ export default function AdminPanel({
           scannedCount: rows.length,
           missingFound: 0,
           fixedCount: 0,
-          details: ['All records in Google Sheets match perfectly with PocketBase collection! Database is fully consistent.']
+          details: ['All records in Google Sheets match perfectly with database collection! Database is fully consistent.']
         });
         setIsReconciling(false);
         return;
       }
 
-      // 4. Fix missing records by writing them to PocketBase
+      // 4. Fix missing records by writing them to database
       let fixedCount = 0;
       for (const mc of missingRecords) {
         try {
@@ -792,7 +794,7 @@ export default function AdminPanel({
 
   const [isEditingMypc, setIsEditingMypc] = useState(false);
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
-  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | null>(null);
+  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'supabase_migrate' | null>(null);
   const [activePortalId, setActivePortalId] = useState<string | null>(null);
   const [isAddingNewPortal, setIsAddingNewPortal] = useState(false);
   
@@ -1029,7 +1031,8 @@ export default function AdminPanel({
   // Real-time sub for billing months (subscribes only once)
   useEffect(() => {
     const unsubscribe = pocketbaseService.subscribeBillingMonths((data) => {
-      const sorted = [...data].sort((a, b) => {
+      const filtered = data.filter((m: any) => !deletingMonthIds.current.has(m.id));
+      const sorted = [...filtered].sort((a, b) => {
         // Sort newest first by parsing e.g. "MAY-26" or using epoch createdAt
         return (b.createdAt || 0) - (a.createdAt || 0);
       });
@@ -1767,6 +1770,8 @@ export default function AdminPanel({
       return;
     }
 
+    deletingMonthIds.current.add(selectedMonthId);
+
     try {
       await pocketbaseService.deleteBillingMonth(selectedMonthId, activeDealerId);
       
@@ -1782,7 +1787,14 @@ export default function AdminPanel({
     } catch (err: any) {
       console.error(err);
       toast.error("Purge month failed", { description: getCleanErrorMessage(err) });
+      deletingMonthIds.current.delete(selectedMonthId);
+      return;
     }
+
+    // Keep guarding against stale in-flight fetches for a few seconds after deletion
+    setTimeout(() => {
+      deletingMonthIds.current.delete(selectedMonthId);
+    }, 10000);
   };
 
   const handlePurgeAllBillingData = async () => {
@@ -2307,58 +2319,33 @@ export default function AdminPanel({
     return billingMonths.find(m => m.id === currentMonthId);
   }, [billingMonths, currentMonthId]);
 
-  // Auto-sync missing clients to current billing sheet
+  // Auto-sync missing clients to current billing sheet without deleting existing records
   useEffect(() => {
     if (!currentMonthId || !activeMonthDoc || !masterClients || masterClients.length === 0) return;
     
-    // Disable auto-sync if we don't have the dealer loaded properly, though we generally want all clients
-    const tenantId = pocketbaseService.getReadTenantId(currentUser);
-    const dbClients = masterClients; // masterClients is already populated via real-time
-    
-    const masterClientIds = new Set(dbClients.map(c => c.id).filter(Boolean));
-    const masterUsernames = new Set(dbClients.map(c => c.username?.toLowerCase().trim()).filter(Boolean));
-    
+    const dbClients = masterClients;
     const existingRows = activeMonthDoc.rows || [];
+    if (existingRows.length === 0) return;
 
-    // Check for clients that were deleted
-    let hasRemovals = false;
-    const filteredRows = existingRows.filter((row: any) => {
-      // Safeguard: Never automatically delete a row if it has an active payment or custom payment status (paid, partial, dc, tdc, comments)
-      if (Number(row.paymentReceived) > 0 || (row.paymentStatus && row.paymentStatus !== 'unpaid') || (row.comments && row.comments.trim() !== '')) {
-        return true;
-      }
-
-      const rowClientId = row.clientId || row.id;
-      // Do not delete new rows that haven't been linked or saved yet
-      if (rowClientId && !String(rowClientId).startsWith('new_row_')) {
-        if (!masterClientIds.has(rowClientId)) {
-          hasRemovals = true;
-          return false;
-        }
-      } else if (row.username) {
-        if (!masterUsernames.has(row.username?.toLowerCase().trim())) {
-          hasRemovals = true;
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const existingKeys = new Set(filteredRows.map((r: any) => r.username ? `u_${r.username?.toLowerCase().trim()}` : (r.clientId ? `i_${r.clientId}` : null)).filter(Boolean));
+    // Build existing keys set
+    const existingKeys = new Set(existingRows.map((r: any) => 
+      r.username ? `u_${String(r.username).toLowerCase().trim()}` : (r.clientId ? `i_${String(r.clientId)}` : null)
+    ).filter(Boolean));
     
+    // Find missing clients (registered clients not in current month sheet)
     const missingClients = dbClients.filter(c => {
       if (!c) return false;
-      const key = c.username ? `u_${c.username?.toLowerCase().trim()}` : (c.id ? `i_${c.id}` : null);
+      const key = c.username ? `u_${String(c.username).toLowerCase().trim()}` : (c.id ? `i_${String(c.id)}` : null);
       return key && !existingKeys.has(key);
     });
     
     let hasUpdates = false;
-    const updatedRows = [...filteredRows];
+    const updatedRows = [...existingRows];
     
-    // Check for profile updates in existing rows
+    // Check for profile updates in existing rows without deleting ANY row
     for (let i = 0; i < updatedRows.length; i++) {
       const row = updatedRows[i];
-      const match = dbClients.find(c => c.id === row.clientId || (c.username && c.username.toLowerCase() === row.username?.toLowerCase()));
+      const match = dbClients.find(c => String(c.id) === String(row.clientId) || (c.username && String(c.username).toLowerCase().trim() === String(row.username || '').toLowerCase().trim()));
       if (match) {
         let changed = false;
         if ((row.name || '') !== (match.name || '')) { row.name = match.name || ''; changed = true; }
@@ -2387,8 +2374,8 @@ export default function AdminPanel({
       }
     }
 
-    if (missingClients.length > 0 || hasUpdates || hasRemovals) {
-      console.log(`[Billing Auto-Sync] Adding ${missingClients.length} missing, Removing ${hasRemovals ? 'some' : '0'} deleted, Updating. Sheet ${currentMonthId}`);
+    if (missingClients.length > 0 || hasUpdates) {
+      console.log(`[Billing Auto-Sync] Appending ${missingClients.length} missing clients and updating profile info for sheet ${currentMonthId}`);
       
       const newRows = missingClients.map((c: any) => {
         let cleanBase = (c.baseAmount && Number(c.baseAmount) > 0) ? Number(c.baseAmount) : 1000;
@@ -2432,17 +2419,13 @@ export default function AdminPanel({
       
       const finalRows = [...updatedRows, ...newRows];
       
-      // Update local state instantly
-      if (currentMonthId) {
-              }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: finalRows } : m));
       
-      // Persist in background silently
-      saveBillingMonthTracked(currentMonthId, finalRows, currentUser?.username || 'admin', activeDealerId).catch(err => {
-         console.warn("Background auto-sync for missing/deleted clients failed:", err);
+      saveBillingMonthTracked(currentMonthId, finalRows, currentUser?.username || 'admin', activeDealerId, true).catch(err => {
+         console.warn("Background auto-sync failed:", err);
       });
     }
-  }, [masterClients, currentMonthId, activeDealerId]); // Only trigger when masterClients changes or month changes
+  }, [masterClients, currentMonthId, activeDealerId]);
 
 
   const activeRows = useMemo(() => {
@@ -5116,7 +5099,8 @@ export default function AdminPanel({
                   { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
                   { id: 'integrations', icon: CloudUpload, title: 'Google Sheet Link', desc: 'One-Time Enterprise Sync' },
                   { id: 'branding_panel', icon: Palette, title: 'CUSTOMIZATION', desc: 'Design aesthetics & app layouts' },
-                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' }
+                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' },
+                  { id: 'supabase_migrate', icon: Database, title: 'Supabase Hub', desc: 'Manage Supabase connection & database tables' }
                 ].map((item) => (
                   <motion.div
                     key={item.id}
@@ -5165,6 +5149,7 @@ export default function AdminPanel({
                           mypcOpenedFile === 'dealers_data_view' ? 'Dealers Network Intelligence Audit Matrix' :
                           mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
                           mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
+                          mypcOpenedFile === 'supabase_migrate' ? 'Supabase Connection & Database Control Hub' :
                           'Cloud Sheets Sync Nodes Proxy'
                         }
                       </span>
@@ -7080,6 +7065,11 @@ export default function AdminPanel({
                       branding={branding}
                     />
                   )}
+
+                  {/* Subview 15: Supabase Migration supabase_migrate */}
+                  {mypcOpenedFile === 'supabase_migrate' && (
+                    <SupabaseMigrationPanel />
+                  )}
                 </div>
               </div>
             )}
@@ -7095,7 +7085,7 @@ export default function AdminPanel({
                   <span>Enterprise Sync Hub</span>
                 </h2>
                 <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                  Monitor and govern data synchronization pipelines between client nodes and PocketBase collections
+                  Monitor and govern data synchronization pipelines between client nodes and database collections
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -7139,7 +7129,7 @@ export default function AdminPanel({
                     <div className="space-y-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Successful Syncs</p>
                       <p className="text-3xl font-black tracking-tighter text-slate-900 dark:text-white">{success}</p>
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Writes confirmed by PB</p>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Writes confirmed by DB</p>
                     </div>
                     <div className="w-14 h-14 rounded-2xl bg-teal-500/10 flex items-center justify-center text-teal-500">
                       <CheckCircle size={28} />
@@ -7187,7 +7177,7 @@ export default function AdminPanel({
                   </div>
                   <h3 className="text-2xl font-black uppercase tracking-tight">Bulk Recovery Sheet Consolidation & Migration</h3>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    This administrative utility performs an exhaustive deep scan across all local caches, memory sheets, and existing individual row databases (<code className="text-amber-400 font-mono">billing_rows</code> & <code className="text-amber-400 font-mono">users_data</code>) to automatically group, structure, and migrate them as consolidated monthly sheets inside the primary PocketBase <code className="text-emerald-400 font-mono">billing_months</code> collection. All future edits will automatically sync to both single rows and consolidated month collections.
+                    This administrative utility performs an exhaustive deep scan across all local caches, memory sheets, and existing individual row databases (<code className="text-amber-400 font-mono">billing_rows</code> & <code className="text-amber-400 font-mono">users_data</code>) to automatically group, structure, and migrate them as consolidated monthly sheets inside the primary database <code className="text-emerald-400 font-mono">billing_months</code> collection. All future edits will automatically sync to both single rows and consolidated month collections.
                   </p>
                 </div>
 
@@ -7237,9 +7227,9 @@ export default function AdminPanel({
                     <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-pulse" />
                     <span>Active Alignment System</span>
                   </div>
-                  <h3 className="text-2xl font-black uppercase tracking-tight">Google Sheets & PocketBase Alignment Reconciliation</h3>
+                  <h3 className="text-2xl font-black uppercase tracking-tight">Google Sheets & Database Alignment Reconciliation</h3>
                   <p className="text-xs text-slate-300 leading-relaxed">
-                    This live synchronization diagnostics utility performs a robust audit between records stored in Google Sheets and the PocketBase <code className="text-cyan-400 font-mono">complaints</code> collection. It will read the live sheets spreadsheet, identify any missing or desynchronized complaints, and automatically restore/re-register them into your PocketBase database.
+                    This live synchronization diagnostics utility performs a robust audit between records stored in Google Sheets and the database <code className="text-cyan-400 font-mono">complaints</code> collection. It will read the live sheets spreadsheet, identify any missing or desynchronized complaints, and automatically restore/re-register them into your database.
                   </p>
                 </div>
 
