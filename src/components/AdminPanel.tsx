@@ -18,18 +18,13 @@ const isExcludedFromRecovery = (r: any) => {
   return check(r.name) || check(r.username) || check(r.comments);
 };
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
-import ClientManagement from './ClientManagement';
-import RealTimeMonitor from './RealTimeMonitor';
-import DistributionList from './DistributionList';
-import HighFrequencyNodes from './HighFrequencyNodes';
-import MapViewer from './MapViewer';
-import EditorPanel from './EditorPanel';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { supabaseService as pocketbaseService, fromDb } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
@@ -38,11 +33,18 @@ import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
 import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
-import EntrySheet from './EntrySheet';
-import ReceiptManager from './ReceiptManager';
-import BatchPrintModal from './BatchPrintModal';
+import RouteLoadingFallback from './RouteLoadingFallback';
 import { getAvatarUrl } from '../utils/avatar';
-import SupabaseMigrationPanel from './SupabaseMigrationPanel';
+
+const ClientManagement = lazy(() => import('./ClientManagement'));
+const RealTimeMonitor = lazy(() => import('./RealTimeMonitor'));
+const DistributionList = lazy(() => import('./DistributionList'));
+const HighFrequencyNodes = lazy(() => import('./HighFrequencyNodes'));
+const MapViewer = lazy(() => import('./MapViewer'));
+const EditorPanel = lazy(() => import('./EditorPanel'));
+const EntrySheet = lazy(() => import('./EntrySheet'));
+const ReceiptManager = lazy(() => import('./ReceiptManager'));
+const BatchPrintModal = lazy(() => import('./BatchPrintModal'));
 
 interface AdminPanelProps {
   complaints: Complaint[];
@@ -299,7 +301,7 @@ export default function AdminPanel({
 
       return () => unsubscribe();
     }
-  }, [activeTab, currentUser]);
+  }, [activeTab, currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
 
   const handleRestoreItem = async (itemId: string) => {
     setRestoringItemId(itemId);
@@ -765,6 +767,10 @@ export default function AdminPanel({
       }
     };
   }, []);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isEntrySheetRouteOpen = location.pathname.startsWith('/billingmod/entrysheet');
+
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
   const [entrySheetOpenWithUserLedger, setEntrySheetOpenWithUserLedger] = useState(false);
@@ -794,7 +800,7 @@ export default function AdminPanel({
 
   const [isEditingMypc, setIsEditingMypc] = useState(false);
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
-  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'supabase_migrate' | null>(null);
+  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | null>(null);
   const [activePortalId, setActivePortalId] = useState<string | null>(null);
   const [isAddingNewPortal, setIsAddingNewPortal] = useState(false);
   
@@ -968,7 +974,7 @@ export default function AdminPanel({
       setMasterClients(data);
     }, tenantId);
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
 
   useEffect(() => {
     const handleClientsUpdated = (e: Event) => {
@@ -1061,7 +1067,7 @@ export default function AdminPanel({
       });
     }, activeDealerId);
     return () => unsubscribe();
-  }, [currentUser, activeDealerId]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId]);
 
   // Manual recheck operation (triggered via Recheck Users button) is fully supported and robust.
 
@@ -1428,11 +1434,54 @@ export default function AdminPanel({
         editedIndices
       );
       
+      // Also sync all edited recovery rows to Master Client Directory in database and local state
+      const clientsToSync: any[] = [];
+      for (const idx of editedIndices) {
+        const row = activeDoc.rows[idx];
+        if (!row) continue;
+
+        const targetId = row.clientId || row.id;
+        const targetUsername = String(row.username || '').toLowerCase().trim();
+        const targetName = String(row.name || '').toLowerCase().trim();
+
+        const matchedClient = masterClients.find((c: any) =>
+          (targetId && String(c.id) === String(targetId)) ||
+          (targetUsername && String(c.username || '').toLowerCase().trim() === targetUsername) ||
+          (targetName && String(c.name || '').toLowerCase().trim() === targetName)
+        );
+
+        if (matchedClient) {
+          const updatedClient = {
+            ...matchedClient,
+            name: row.name !== undefined && row.name !== '' ? row.name : matchedClient.name,
+            username: row.username !== undefined && row.username !== '' ? row.username : matchedClient.username,
+            mobileNumber: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.mobileNumber),
+            number: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.number),
+            area: row.area !== undefined ? row.area : matchedClient.area,
+            pkgDetails: row.pkgDetails !== undefined ? row.pkgDetails : matchedClient.pkgDetails,
+            baseAmount: row.baseAmount !== undefined ? row.baseAmount : matchedClient.baseAmount,
+            rt: row.rt !== undefined ? row.rt : matchedClient.rt,
+            billingDay: row.billingDay !== undefined ? row.billingDay : matchedClient.billingDay,
+            seriesNumber: (row.serNam !== undefined && row.serNam !== '') ? row.serNam : matchedClient.seriesNumber,
+          };
+          clientsToSync.push(updatedClient);
+        }
+      }
+
+      if (clientsToSync.length > 0) {
+        await pocketbaseService.saveClientsBatch(clientsToSync, activeDealerId || 'main');
+        setMasterClients(prev => {
+          const clientMap = new Map(prev.map(c => [c.id, c]));
+          clientsToSync.forEach(c => clientMap.set(c.id, c));
+          return Array.from(clientMap.values());
+        });
+      }
+
       savedBillingSnapshotRef.current = JSON.parse(JSON.stringify(activeDoc.rows));
       setEditedRowIndices(new Set());
       
       toast.success("Recovery Edits Saved! 🎉", {
-        description: `${count} edited row${count > 1 ? 's' : ''} saved to database.`
+        description: `${count} edited row${count > 1 ? 's' : ''} saved to database & Client Directory.`
       });
 
       setIsSavingRecoveryRows(false);
@@ -1457,6 +1506,49 @@ export default function AdminPanel({
     }
     setEditedRowIndices(new Set());
     toast.info("Unsaved edits discarded", { description: "Recovery rows restored to last saved state." });
+  };
+
+  const syncRecoveryRowToMasterClient = (row: any) => {
+    if (!row) return;
+    const targetId = row.clientId || row.id;
+    const targetUsername = String(row.username || '').toLowerCase().trim();
+    const targetName = String(row.name || '').toLowerCase().trim();
+
+    if (!targetId && !targetUsername && !targetName) return;
+
+    setMasterClients(prev => {
+      if (!prev || prev.length === 0) return prev;
+      const matchIdx = prev.findIndex((c: any) =>
+        (targetId && String(c.id) === String(targetId)) ||
+        (targetUsername && String(c.username || '').toLowerCase().trim() === targetUsername) ||
+        (targetName && String(c.name || '').toLowerCase().trim() === targetName)
+      );
+
+      if (matchIdx === -1) return prev;
+
+      const matchedClient = prev[matchIdx];
+      const updatedClient = {
+        ...matchedClient,
+        name: row.name !== undefined && row.name !== '' ? row.name : matchedClient.name,
+        username: row.username !== undefined && row.username !== '' ? row.username : matchedClient.username,
+        mobileNumber: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.mobileNumber),
+        number: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.number),
+        area: row.area !== undefined ? row.area : matchedClient.area,
+        pkgDetails: row.pkgDetails !== undefined ? row.pkgDetails : matchedClient.pkgDetails,
+        baseAmount: row.baseAmount !== undefined ? row.baseAmount : matchedClient.baseAmount,
+        rt: row.rt !== undefined ? row.rt : matchedClient.rt,
+        billingDay: row.billingDay !== undefined ? row.billingDay : matchedClient.billingDay,
+        seriesNumber: (row.serNam !== undefined && row.serNam !== '') ? row.serNam : matchedClient.seriesNumber,
+      };
+
+      pocketbaseService.saveClientsBatch([updatedClient], activeDealerId || 'main').catch(err => {
+        console.warn("Failed to sync recovery row edit to master client DB:", err);
+      });
+
+      const next = [...prev];
+      next[matchIdx] = updatedClient;
+      return next;
+    });
   };
 
   const handleSaveRowField = (rowIndex: number, field: string, val: any, forceImmediate = false) => {
@@ -1495,10 +1587,18 @@ export default function AdminPanel({
           const received = parseFloat(val) || 0;
           targetRow.paymentReceived = received;
         } else if (field === 'paymentStatus') {
+          targetRow.paymentStatus = val;
           if (val === 'tdc' || val === 'dc') {
             targetRow.baseAmount = 0;
             const crVal = parseFloat(targetRow.cr) || 0;
             targetRow.totalAmount = crVal;
+          } else if (val === 'paid') {
+            const total = parseFloat(targetRow.totalAmount) || 0;
+            if (parseFloat(targetRow.paymentReceived) < total) {
+              targetRow.paymentReceived = total;
+            }
+          } else if (val === 'unpaid') {
+            targetRow.paymentReceived = 0;
           }
         }
 
@@ -1519,6 +1619,8 @@ export default function AdminPanel({
 
         nextRows[rowIndex] = targetRow;
         next[idx] = { ...next[idx], rows: nextRows };
+
+        syncRecoveryRowToMasterClient(targetRow);
 
         if (currentMonthId) {
           saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]).catch(()=>{});
@@ -1873,7 +1975,10 @@ export default function AdminPanel({
 
   useEffect(() => {
     const handleAuthChange = (e: any) => {
-      setGoogleTokens(e.detail);
+      setGoogleTokens(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(e.detail)) return prev;
+        return e.detail;
+      });
     };
     window.addEventListener('google-auth-changed', handleAuthChange);
     return () => window.removeEventListener('google-auth-changed', handleAuthChange);
@@ -2463,7 +2568,7 @@ export default function AdminPanel({
     }
     
     return deduplicatedRows;
-  }, [activeMonthDoc, masterClients, currentUser]);
+  }, [activeMonthDoc, masterClients, currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
 
   const filteredRows = useMemo(() => {
     const query = billingSearchQuery.toLowerCase().trim();
@@ -2647,8 +2752,10 @@ export default function AdminPanel({
       const action = customEvent.detail;
       if (action === 'ledger-vault') {
         setEntrySheetOpenWithUserLedger(true);
+        navigate('/billingmod/entrysheet');
       } else if (action === 'entry-sheet') {
         setIsEntrySheetOpen(true);
+        navigate('/billingmod/entrysheet');
       } else if (action === 'new-month') {
         setIsConfiguringNewMonth(true);
       } else if (action === 'purge-sheet') {
@@ -3156,6 +3263,7 @@ export default function AdminPanel({
         renderHomeSections()
       ) : (
         <>
+          <Suspense fallback={<RouteLoadingFallback />}>
           <motion.div
             key={activeTab}
             initial={{ opacity: 0, y: 5 }}
@@ -5091,7 +5199,7 @@ export default function AdminPanel({
                   ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_data_view', icon: BarChart3, title: 'Dealers Data', desc: 'Audit dealer network metrics' }] : []),
                   { id: 'submit_view', icon: PlusSquare, title: branding?.tabNames?.submit || 'Complain Reg', desc: 'File fresh customer logs' },
                   { id: 'map_view', icon: MapPinned, title: 'Network Map', desc: 'Diagnostic geographic connection grid' },
-                  { id: 'user_details', icon: Users, title: 'User Details', desc: 'Manage logins & clearance level' },
+                  { id: 'user_details', icon: Users, title: 'Users Management', desc: 'Manage logins & clearance level' },
                   { id: 'top10_complainers', icon: BarChart2, title: 'Top 10 Complainer', desc: 'High frequency support identifiers' },
                   { id: 'login_profiles', icon: ShieldCheck, title: 'Login Profiles', desc: 'Active Credentials & Roles Overview' },
                   { id: 'dealers_view', icon: ShieldAlert, title: 'Dealer Section', desc: 'Authorized Dealers Registry Setup' },
@@ -5099,8 +5207,7 @@ export default function AdminPanel({
                   { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
                   { id: 'integrations', icon: CloudUpload, title: 'Google Sheet Link', desc: 'One-Time Enterprise Sync' },
                   { id: 'branding_panel', icon: Palette, title: 'CUSTOMIZATION', desc: 'Design aesthetics & app layouts' },
-                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' },
-                  { id: 'supabase_migrate', icon: Database, title: 'Supabase Hub', desc: 'Manage Supabase connection & database tables' }
+                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' }
                 ].map((item) => (
                   <motion.div
                     key={item.id}
@@ -5149,7 +5256,6 @@ export default function AdminPanel({
                           mypcOpenedFile === 'dealers_data_view' ? 'Dealers Network Intelligence Audit Matrix' :
                           mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
                           mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
-                          mypcOpenedFile === 'supabase_migrate' ? 'Supabase Connection & Database Control Hub' :
                           'Cloud Sheets Sync Nodes Proxy'
                         }
                       </span>
@@ -7065,11 +7171,6 @@ export default function AdminPanel({
                       branding={branding}
                     />
                   )}
-
-                  {/* Subview 15: Supabase Migration supabase_migrate */}
-                  {mypcOpenedFile === 'supabase_migrate' && (
-                    <SupabaseMigrationPanel />
-                  )}
                 </div>
               </div>
             )}
@@ -7841,7 +7942,7 @@ export default function AdminPanel({
                             <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[110px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('username')}>
                               USER ID (PPPoE){getBillingSortIcon('username')}
                             </th>
-                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[110px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('mobileNumber')}>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[145px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('mobileNumber')}>
                               MOBILE #{getBillingSortIcon('mobileNumber')}
                             </th>
                             <th className="py-2 px-1.5 border-r border-slate-200 dark:border-white\/10 min-w-[65px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('area')}>
@@ -7956,7 +8057,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Mobile */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white">
+                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[145px]">
                                   <input
                                     id={`rec_cell_${globalRowIdx}_mobileNumber`}
                                     type="text"
@@ -7965,7 +8066,8 @@ export default function AdminPanel({
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'mobileNumber', activeRows.length)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                    className="w-full bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    className="w-full min-w-[130px] bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-mono font-black tracking-tight whitespace-nowrap overflow-visible hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    placeholder="03XXXXXXXXX"
                                   />
                                 </td>
 
@@ -8453,8 +8555,8 @@ export default function AdminPanel({
                                 disabled={!isBillingUnlocked}
                                 onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
                                 onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[11px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-sans"
-                                placeholder="..."
+                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[12px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-mono tracking-tight select-all"
+                                placeholder="03XXXXXXXXX"
                               />
                             </div>
 
@@ -8771,34 +8873,40 @@ export default function AdminPanel({
             )}
           </div>
         )}
-      </motion.div>
+        </motion.div>
+        </Suspense>
         </>
       )}
 
       {/* Interactive A4 Ledger Entry Sheet Modal overlay */}
-      <EntrySheet
-        isOpen={isEntrySheetOpen || entrySheetOpenWithUserLedger}
-        onClose={() => {
-          setIsEntrySheetOpen(false);
-          setEntrySheetOpenWithUserLedger(false);
-        }}
-        currentUser={currentUser}
-        activeRows={activeRows}
-        currentMonthId={currentMonthId}
-        isBillingUnlocked={isBillingUnlocked}
-        appConfig={appConfig}
-        billingMonths={billingMonths}
-        setBillingMonths={setBillingMonths}
-        savingMonthIds={savingMonthIds}
-        initialShowUserLedger={entrySheetOpenWithUserLedger}
-      />
+      <Suspense fallback={null}>
+        <EntrySheet
+          isOpen={isEntrySheetOpen || entrySheetOpenWithUserLedger || isEntrySheetRouteOpen}
+          onClose={() => {
+            setIsEntrySheetOpen(false);
+            setEntrySheetOpenWithUserLedger(false);
+            if (location.pathname.startsWith('/billingmod/entrysheet')) {
+              navigate('/billingmod');
+            }
+          }}
+          currentUser={currentUser}
+          activeRows={activeRows}
+          currentMonthId={currentMonthId}
+          isBillingUnlocked={isBillingUnlocked}
+          appConfig={appConfig}
+          billingMonths={billingMonths}
+          setBillingMonths={setBillingMonths}
+          savingMonthIds={savingMonthIds}
+          initialShowUserLedger={entrySheetOpenWithUserLedger}
+        />
 
-      {/* Batch Print Multi-month Dialog Overlay */}
-      <BatchPrintModal
-        isOpen={isBatchPrintOpen}
-        onClose={() => setIsBatchPrintOpen(false)}
-        billingMonths={billingMonths}
-      />
+        {/* Batch Print Multi-month Dialog Overlay */}
+        <BatchPrintModal
+          isOpen={isBatchPrintOpen}
+          onClose={() => setIsBatchPrintOpen(false)}
+          billingMonths={billingMonths}
+        />
+      </Suspense>
 
       {/* Recovery Row Details Modal */}
       <AnimatePresence>

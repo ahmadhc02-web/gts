@@ -1099,7 +1099,7 @@ export const supabaseService = {
       return isNaN(num) ? 0 : num;
     };
 
-    const mapRowToDb = (r: any, idx: number) => {
+    const mapRowToDb = (r: any, actualIdx: number) => {
       let rowId = r.clientId || r.id;
       if (!rowId || !String(rowId).trim()) {
         if (r.username && String(r.username).trim()) {
@@ -1107,7 +1107,7 @@ export const supabaseService = {
         } else if (r.name && String(r.name).trim()) {
           rowId = `name_${String(r.name).trim().toLowerCase().replace(/\s+/g, '_')}`;
         } else {
-          rowId = `row_${idx}_${monthId}`;
+          rowId = `row_${actualIdx}_${monthId}`;
         }
       }
       return {
@@ -1139,18 +1139,18 @@ export const supabaseService = {
       };
     };
 
-    let rowsToSync: any[];
+    let itemsToSync: { r: any; actualIndex: number }[];
     const hasChangedIndices = changedIndices && (Array.isArray(changedIndices) ? changedIndices.length > 0 : changedIndices.size > 0);
     if (hasChangedIndices) {
       const indicesArray = Array.isArray(changedIndices) ? changedIndices : Array.from(changedIndices);
-      rowsToSync = indicesArray.map((idx: number) => rows[idx]).filter(Boolean);
+      itemsToSync = indicesArray.map((idx: number) => ({ r: rows[idx], actualIndex: idx })).filter(item => Boolean(item.r));
     } else {
-      rowsToSync = rows;
+      itemsToSync = rows.map((r: any, idx: number) => ({ r, actualIndex: idx }));
     }
 
-    if (rowsToSync.length === 0) return;
+    if (itemsToSync.length === 0) return;
 
-    const dbRows = rowsToSync.map((r, i) => mapRowToDb(r, i));
+    const dbRows = itemsToSync.map(({ r, actualIndex }) => mapRowToDb(r, actualIndex));
 
     try {
       const { error } = await supabase.from('billing_rows').upsert(dbRows, { onConflict: 'id' });
@@ -1868,6 +1868,23 @@ export const supabaseService = {
         }
       });
 
+      // Instantly unmap the sheets from global cache
+      const sheetSyncKeys = [`ledger_sheets_${tenantId || 'all'}`, 'ledger_sheets_all', 'ledger_sheets_main', 'ledger_sheets_'];
+      sheetSyncKeys.forEach(sKey => {
+        if (globalTableCaches[sKey]) {
+          globalTableCaches[sKey] = globalTableCaches[sKey].map(sh => {
+            if (sh.folderId === folderId) {
+              return { ...sh, folderId: '', sort: '', sortFolder: '' };
+            }
+            return sh;
+          });
+          const subs = globalTableSubscribers[sKey];
+          if (subs) {
+            subs.forEach(cb => { try { cb(globalTableCaches[sKey]); } catch(e) {} });
+          }
+        }
+      });
+
       // Update backup in branding_config if present
       const docId = `ledger_folders_data_${tenantId || 'main'}`;
       try {
@@ -1886,6 +1903,9 @@ export const supabaseService = {
       } catch (e) {}
 
       if (supabase) {
+        // Also permanently unmap any sheets attached to this folder directly in the database
+        await supabase.from('ledger_sheets').update({ folder_id: '' }).eq('folder_id', folderId);
+        
         const { error } = await supabase.from('ledger_folders').delete().eq('id', folderId);
         if (error) console.warn("deleteLedgerFolder error:", error.message);
       }

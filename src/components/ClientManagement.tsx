@@ -174,18 +174,18 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
   const handleEdit = (client: Client) => {
     setEditingId(client.id);
-    setName(client.name);
-    setUsername(client.username);
-    setNumber(client.number);
-    setMobileNumber(client.mobileNumber);
-    setSeriesNumber(client.seriesNumber);
+    setName(client.name || '');
+    setUsername(client.username || '');
+    setNumber(client.number || '');
+    setMobileNumber(client.mobileNumber || '');
+    setSeriesNumber(client.seriesNumber || '');
     setPkgDetails(client.pkgDetails || '');
     setUserNearby(client.userNearby || '');
     setPanelDetails(client.panelDetails || '');
     setRt(client.rt || '');
     setBaseAmount(client.baseAmount ?? '');
     setBillingDay(client.billingDay || '5');
-    setArea(client.area);
+    setArea(client.area || '');
     
     // Scroll to form if on mobile
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -243,14 +243,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         const updatedData = {
           name: trimmedName,
           username: trimmedUsername,
-          number: number.trim(),
-          mobileNumber: mobileNumber.trim(),
-          seriesNumber: seriesNumber.trim(),
-          pkgDetails: pkgDetails.trim(),
-          userNearby: userNearby.trim(),
-          panelDetails: panelDetails.trim(),
-          area: area,
-          rt: rt.trim(),
+          number: (number || '').trim(),
+          mobileNumber: (mobileNumber || '').trim(),
+          seriesNumber: (seriesNumber || '').trim(),
+          pkgDetails: (pkgDetails || '').trim(),
+          userNearby: (userNearby || '').trim(),
+          panelDetails: (panelDetails || '').trim(),
+          area: area || '',
+          rt: (rt || '').trim(),
           baseAmount: parseFloat(String(baseAmount)) || 0,
           billingDay: String(billingDay || '5').trim()
         };
@@ -292,14 +292,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         const newClientData = {
           name: trimmedName,
           username: trimmedUsername,
-          number: number.trim(),
-          mobileNumber: mobileNumber.trim(),
-          seriesNumber: seriesNumber.trim(),
-          pkgDetails: pkgDetails.trim(),
-          userNearby: userNearby.trim(),
-          panelDetails: panelDetails.trim(),
-          area: area,
-          rt: rt.trim(),
+          number: (number || '').trim(),
+          mobileNumber: (mobileNumber || '').trim(),
+          seriesNumber: (seriesNumber || '').trim(),
+          pkgDetails: (pkgDetails || '').trim(),
+          userNearby: (userNearby || '').trim(),
+          panelDetails: (panelDetails || '').trim(),
+          area: area || '',
+          rt: (rt || '').trim(),
           baseAmount: parseFloat(String(baseAmount)) || 0,
           billingDay: String(billingDay || '5').trim(),
           createdBy: currentUserId

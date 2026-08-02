@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
+import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
+import { getTabFromPathname, getPathnameFromTab } from './lib/routingUtils';
 import { safeLocalStorage } from './lib/safeLocalStorage';
 import Layout from './components/Layout';
-import LoginForm from './components/LoginForm';
-import AdminPanel from './components/AdminPanel';
-import MemberPanel from './components/MemberPanel';
 import WelcomeOverlay from './components/WelcomeOverlay';
 import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification, BrandingConfig, ComplaintReview } from './types';
 import { pocketbaseService, supabaseService, fromDb } from './lib/supabaseService';
@@ -14,11 +13,16 @@ import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES
 import { AnimatePresence, motion } from 'motion/react';
 import { safeStringify, processScheduledComplaints } from './lib/utils';
 import FiberLoading from './components/FiberLoading';
+import RouteLoadingFallback from './components/RouteLoadingFallback';
 import ServiceMonitor from './components/ServiceMonitor';
 import GlobalProgressLoader from './components/GlobalProgressLoader';
 import { Clock } from 'lucide-react';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
+
+const LoginForm = lazy(() => import('./components/LoginForm'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const MemberPanel = lazy(() => import('./components/MemberPanel'));
 
 export default function App() {
   const isOnline = useOnlineStatus();
@@ -93,7 +97,19 @@ export default function App() {
       return null;
     }
   });
-  const [activeTab, setActiveTab] = useState<string>('complaints');
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activeTab = useMemo(() => {
+    return getTabFromPathname(location.pathname);
+  }, [location.pathname]);
+
+  const handleNavigate = useCallback((tabId: string) => {
+    const targetPath = getPathnameFromTab(tabId);
+    if (location.pathname !== targetPath) {
+      navigate(targetPath);
+    }
+  }, [location.pathname, navigate]);
   const [complaints, setComplaints] = useState<Complaint[]>(() => {
     try {
       const cached = localStorage.getItem('gts_cache_v3_complaints');
@@ -136,7 +152,7 @@ export default function App() {
     }
     
     return false;
-  }, [user, users]);
+  }, [user?.uid, user?.status, user?.dealerId, users]);
   const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>({
@@ -247,6 +263,17 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [isSuspended, isAudioMuted]);
 
+  // Route Guard: Redirect unauthenticated users to /login, and logged in users away from /login
+  useEffect(() => {
+    if (!pbAuthReady) return;
+    const currentPath = location.pathname;
+    if (!user && currentPath !== '/login') {
+      navigate('/login', { replace: true });
+    } else if (user && (currentPath === '/login' || currentPath === '/')) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user?.uid, pbAuthReady, location.pathname, navigate]);
+
   useEffect(() => {
     notificationAudio.load();
     chatAudio.load();
@@ -271,7 +298,7 @@ export default function App() {
       clearTimeout(showTimer);
       clearTimeout(hideTimer);
     };
-  }, [user]);
+  }, [user?.uid]);
 
   const handleToggleAudio = () => {
     const newState = !isAudioMuted;
@@ -457,7 +484,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (wakeLock) wakeLock.release();
     };
-  }, [user]);
+  }, [user?.uid]);
 
   // Sync branding subscriptions
   useEffect(() => {
@@ -687,7 +714,7 @@ export default function App() {
       unsubscribeUsers();
       unsubscribeGroups();
     };
-  }, [user, pbAuthReady]);
+  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady]);
 
   // Fetch complaints only when a user is logged in
   useEffect(() => {
@@ -704,7 +731,7 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, pbAuthReady]);
+  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady]);
 
   // Real-time data fetch functions to instantly synchronize local states from database
   const fetchComplaints = async () => {
@@ -858,7 +885,7 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, pbAuthReady, alertAuthorized, isAudioMuted, notificationAudio]);
+  }, [user?.uid, pbAuthReady, alertAuthorized, isAudioMuted, notificationAudio]);
 
   // Global Chat Notifications
   useEffect(() => {
@@ -935,7 +962,7 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user, pbAuthReady, alertAuthorized, isAudioMuted, chatAudio, userGroups]);
+  }, [user?.uid, pbAuthReady, alertAuthorized, isAudioMuted, chatAudio, userGroups]);
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
@@ -1329,7 +1356,7 @@ export default function App() {
         toast.success(`Access Granted: Welcome back, ${foundUser.username}`);
 
         // Direct redirection to the GTS ISP Management dashboard
-        setActiveTab('complaints');
+        navigate('/dashboard');
 
         // Sync Login details to Google Sheet in background
         googleSheetsService.syncLogin(foundUser, 'Standard Credentials').catch((err) => {
@@ -1376,7 +1403,7 @@ export default function App() {
 
   const handleLogout = () => {
     setUser(null);
-    setActiveTab('complaints');
+    navigate('/login');
     safeLocalStorage.removeItem('complaint_app_user');
     toast.info('Logged out successfully');
   };
@@ -1881,97 +1908,109 @@ export default function App() {
         branding={branding}
         onUpdateBranding={handleUpdateBranding}
         activeTab={activeTab}
-        onNavigate={setActiveTab}
+        onNavigate={handleNavigate}
         appConfig={appConfig}
         onRegisterComplaint={handleRegisterComplaint}
       >
-        {!pbAuthReady ? (
-          <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950">
-            <FiberLoading fullScreen />
-          </div>
-        ) : !user ? (
-        <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
-      ) : user.status === 'pending' ? (
-        <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
-          <div className="absolute inset-0 bg-amber-500/5 dark:bg-amber-500/10" />
-          <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-amber-200/50 dark:border-amber-800/50 shadow-2xl">
-            <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Clock size={40} className="animate-pulse" />
-            </div>
-            <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Registration Pending</h1>
-            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-              Your network node registration is currently under review by the core administration team. Please wait for clearance.
-            </p>
-            <button 
-              onClick={handleLogout} 
-              className="mt-8 px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform uppercase text-xs tracking-widest shadow-xl cursor-pointer"
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
             >
-              Logout
-            </button>
-          </div>
-        </div>
-      ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor') ? (
-        <AdminPanel
-          complaints={processedComplaints}
-          users={users}
-          currentUser={user}
-          isSuspended={isSuspended}
-          onDeleteComplaint={handleDeleteComplaint}
-          onUpdateComplaintStatus={handleUpdateComplaintStatus}
-          onUpdateRemarks={handleUpdateRemarks}
-          onUpdateComplaint={handleUpdateComplaint}
-          onCreateUser={handleCreateUser}
-          onDeleteUser={handleDeleteUser}
-          onUpdateUser={handleUpdateUser}
-          onRegisterComplaint={handleRegisterComplaint}
-          onChangeAdminPass={handleChangeAdminPass}
-          appConfig={appConfig}
-          onUpdateConfig={handleUpdateConfig}
-          onUpdateUserStatus={handleUpdateUserStatus}
-          isLoading={isLoading}
-          alertAuthorized={alertAuthorized}
-          onAuthorizeAlerts={handleAuthorizeAlerts}
-          onSoundTest={handleSoundTest}
-          isAudioMuted={isAudioMuted}
-          onToggleAudio={handleToggleAudio}
-          onLogout={handleLogout}
-          micAuthorized={micAuthorized}
-          onAuthorizeMic={handleAuthorizeMic}
-          isMicMuted={isMicMuted}
-          onToggleMic={handleToggleMic}
-          branding={branding}
-          onUpdateBranding={handleUpdateBranding}
-          activeTab={activeTab}
-          onNavigate={setActiveTab}
-        />
-      ) : (
-        <MemberPanel
-          complaints={processedComplaints}
-          users={users}
-          currentUser={user}
-          isSuspended={isSuspended}
-          onRegisterComplaint={handleRegisterComplaint}
-          onUpdateComplaintStatus={handleUpdateComplaintStatus}
-          onUpdateRemarks={handleUpdateRemarks}
-          onUpdateComplaint={handleUpdateComplaint}
-          onUpdateUser={handleUpdateUser}
-          appConfig={appConfig}
-          isLoading={isLoading}
-          alertAuthorized={alertAuthorized}
-          onAuthorizeAlerts={handleAuthorizeAlerts}
-          onSoundTest={handleSoundTest}
-          isAudioMuted={isAudioMuted}
-          onToggleAudio={handleToggleAudio}
-          onLogout={handleLogout}
-          micAuthorized={micAuthorized}
-          onAuthorizeMic={handleAuthorizeMic}
-          isMicMuted={isMicMuted}
-          onToggleMic={handleToggleMic}
-          branding={branding}
-          activeTab={activeTab}
-          onNavigate={setActiveTab}
-        />
-      )}
+              {!pbAuthReady ? (
+                <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950">
+                  <FiberLoading fullScreen />
+                </div>
+              ) : !user ? (
+                <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
+              ) : user.status === 'pending' ? (
+                <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
+                  <div className="absolute inset-0 bg-amber-500/5 dark:bg-amber-500/10" />
+                  <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-amber-200/50 dark:border-amber-800/50 shadow-2xl">
+                    <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Clock size={40} className="animate-pulse" />
+                    </div>
+                    <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Registration Pending</h1>
+                    <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                      Your network node registration is currently under review by the core administration team. Please wait for clearance.
+                    </p>
+                    <button 
+                      onClick={handleLogout} 
+                      className="mt-8 px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform uppercase text-xs tracking-widest shadow-xl cursor-pointer"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor') ? (
+                <AdminPanel
+                  complaints={processedComplaints}
+                  users={users}
+                  currentUser={user}
+                  isSuspended={isSuspended}
+                  onDeleteComplaint={handleDeleteComplaint}
+                  onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                  onUpdateRemarks={handleUpdateRemarks}
+                  onUpdateComplaint={handleUpdateComplaint}
+                  onCreateUser={handleCreateUser}
+                  onDeleteUser={handleDeleteUser}
+                  onUpdateUser={handleUpdateUser}
+                  onRegisterComplaint={handleRegisterComplaint}
+                  onChangeAdminPass={handleChangeAdminPass}
+                  appConfig={appConfig}
+                  onUpdateConfig={handleUpdateConfig}
+                  onUpdateUserStatus={handleUpdateUserStatus}
+                  isLoading={isLoading}
+                  alertAuthorized={alertAuthorized}
+                  onAuthorizeAlerts={handleAuthorizeAlerts}
+                  onSoundTest={handleSoundTest}
+                  isAudioMuted={isAudioMuted}
+                  onToggleAudio={handleToggleAudio}
+                  onLogout={handleLogout}
+                  micAuthorized={micAuthorized}
+                  onAuthorizeMic={handleAuthorizeMic}
+                  isMicMuted={isMicMuted}
+                  onToggleMic={handleToggleMic}
+                  branding={branding}
+                  onUpdateBranding={handleUpdateBranding}
+                  activeTab={activeTab}
+                  onNavigate={handleNavigate}
+                />
+              ) : (
+                <MemberPanel
+                  complaints={processedComplaints}
+                  users={users}
+                  currentUser={user}
+                  isSuspended={isSuspended}
+                  onRegisterComplaint={handleRegisterComplaint}
+                  onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                  onUpdateRemarks={handleUpdateRemarks}
+                  onUpdateComplaint={handleUpdateComplaint}
+                  onUpdateUser={handleUpdateUser}
+                  appConfig={appConfig}
+                  isLoading={isLoading}
+                  alertAuthorized={alertAuthorized}
+                  onAuthorizeAlerts={handleAuthorizeAlerts}
+                  onSoundTest={handleSoundTest}
+                  isAudioMuted={isAudioMuted}
+                  onToggleAudio={handleToggleAudio}
+                  onLogout={handleLogout}
+                  micAuthorized={micAuthorized}
+                  onAuthorizeMic={handleAuthorizeMic}
+                  isMicMuted={isMicMuted}
+                  onToggleMic={handleToggleMic}
+                  branding={branding}
+                  activeTab={activeTab}
+                  onNavigate={handleNavigate}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </Suspense>
     </Layout>
     </>
   );

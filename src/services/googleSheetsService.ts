@@ -129,6 +129,7 @@ export const googleSheetsService = {
           if (record && record.dashboard_subtext) {
             const parsed = JSON.parse(record.dashboard_subtext);
             
+            const tokensChanged = JSON.stringify(configCache.tokens) !== JSON.stringify(parsed.tokens || null);
             if (parsed.tokens) {
               configCache.tokens = parsed.tokens;
               safeLocalStorage.setItem(TOKEN_KEY, safeStringify(parsed.tokens));
@@ -161,7 +162,9 @@ export const googleSheetsService = {
               safeLocalStorage.removeItem(SHEET_RANGE_KEY);
             }
 
-            window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: parsed.tokens || null }));
+            if (tokensChanged) {
+              window.dispatchEvent(new CustomEvent('google-auth-changed', { detail: parsed.tokens || null }));
+            }
             callback(parsed);
           } else {
             callback(null);
@@ -1025,12 +1028,28 @@ export const googleSheetsService = {
   // Offline Sync Queue for Sheets
   syncQueue: {
     add: (item: any) => {
-      const queue = JSON.parse(safeLocalStorage.getItem('gts_sheet_sync_queue') || '[]');
+      let queue = [];
+      try {
+        const stored = safeLocalStorage.getItem('gts_sheet_sync_queue');
+        if (stored) {
+          queue = JSON.parse(stored);
+          if (!Array.isArray(queue)) queue = [];
+        }
+      } catch (e) {
+        queue = [];
+      }
       queue.push(item);
       safeLocalStorage.setItem('gts_sheet_sync_queue', safeStringify(queue));
     },
     get: () => {
-      return JSON.parse(safeLocalStorage.getItem('gts_sheet_sync_queue') || '[]');
+      try {
+        const stored = safeLocalStorage.getItem('gts_sheet_sync_queue');
+        if (stored) {
+          const queue = JSON.parse(stored);
+          return Array.isArray(queue) ? queue : [];
+        }
+      } catch (e) {}
+      return [];
     },
     clear: () => {
       safeLocalStorage.removeItem('gts_sheet_sync_queue');

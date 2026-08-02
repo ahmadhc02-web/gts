@@ -1,14 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { UserProfile, Notification, BrandingConfig } from '../types';
-import Chat from './Chat';
-import AIHelpPanel from './AIHelpPanel';
 import FloatingMascot from './FloatingMascot';
-import ServiceMonitor from './ServiceMonitor';
-import MapViewer from './MapViewer';
 import RefreshControl from './RefreshControl';
 import FiberLoading from './FiberLoading';
 import InlineTextEditor from './InlineTextEditor';
@@ -16,7 +12,12 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { getAvatarUrl } from '../utils/avatar';
 import { toast } from 'sonner';
-import ComplaintForm from './ComplaintForm';
+
+const Chat = lazy(() => import('./Chat'));
+const AIHelpPanel = lazy(() => import('./AIHelpPanel'));
+const ServiceMonitor = lazy(() => import('./ServiceMonitor'));
+const MapViewer = lazy(() => import('./MapViewer'));
+const ComplaintForm = lazy(() => import('./ComplaintForm'));
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -539,7 +540,7 @@ export default function Layout({
                 { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList },
                 { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
                 { id: 'nodes', label: 'Active Nodes', icon: Flame },
-                { id: 'clients', label: branding?.tabNames?.clients || 'User Details', icon: Contact },
+                { id: 'clients', label: branding?.tabNames?.clients || 'Users Management', icon: Contact },
                 { id: 'mypc', label: 'MY PC', icon: Monitor },
                 { id: 'billing', label: 'Billing Mod', icon: CreditCard },
                 { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Settings },
@@ -1007,12 +1008,14 @@ export default function Layout({
       {/* Chat Sidebar / AI Help Panel */}
       <AnimatePresence>
         {isChatOpen && user && (
-          <AIHelpPanel 
-            currentUser={user} 
-            onClose={() => {
-              setIsChatOpen(false);
-            }} 
-          />
+          <Suspense fallback={null}>
+            <AIHelpPanel 
+              currentUser={user} 
+              onClose={() => {
+                setIsChatOpen(false);
+              }} 
+            />
+          </Suspense>
         )}
       </AnimatePresence>
 
@@ -1954,21 +1957,23 @@ export default function Layout({
 
                 {/* Complaint form wrapper */}
                 <div className="max-h-[75vh] overflow-y-auto pr-2">
-                  <ComplaintForm
-                    onSubmit={async (data) => {
-                      if (onRegisterComplaint) {
-                        await onRegisterComplaint(data);
-                      } else {
-                        toast.error("Complaint registration service unavailable");
-                      }
-                      setIsComplaintSwipeDownOpen(false);
-                    }}
-                    isLoading={isLoading || false}
-                    appConfig={appConfig}
-                    currentUser={user}
-                    branding={branding as any}
-                    compact={true}
-                  />
+                  <Suspense fallback={<FiberLoading />}>
+                    <ComplaintForm
+                      onSubmit={async (data) => {
+                        if (onRegisterComplaint) {
+                          await onRegisterComplaint(data);
+                        } else {
+                          toast.error("Complaint registration service unavailable");
+                        }
+                        setIsComplaintSwipeDownOpen(false);
+                      }}
+                      isLoading={isLoading || false}
+                      appConfig={appConfig}
+                      currentUser={user}
+                      branding={branding as any}
+                      compact={true}
+                    />
+                  </Suspense>
                 </div>
               </div>
             </motion.div>
@@ -2161,22 +2166,24 @@ export default function Layout({
 
       {/* Funny Walking Mascot Removed */}
 
-      <MapViewer 
-        isOpen={isMapOpen} 
-        onClose={() => {
-          setIsMapOpen(false);
-          setFocusedClientId(null);
-        }} 
-        user={user!}
-        focusedClientId={focusedClientId}
-      />
+      <Suspense fallback={null}>
+        <MapViewer 
+          isOpen={isMapOpen} 
+          onClose={() => {
+            setIsMapOpen(false);
+            setFocusedClientId(null);
+          }} 
+          user={user!}
+          focusedClientId={focusedClientId}
+        />
 
-      {/* Service Real-time Monitor */}
-      <ServiceMonitor 
-        isOpen={isMonitorOpen} 
-        onClose={() => setIsMonitorOpen(false)} 
-        user={user}
-      />
+        {/* Service Real-time Monitor */}
+        <ServiceMonitor 
+          isOpen={isMonitorOpen} 
+          onClose={() => setIsMonitorOpen(false)} 
+          user={user}
+        />
+      </Suspense>
 
       {/* Global Inline Editor Trigger for Super Admins */}
       <InlineTextEditor 

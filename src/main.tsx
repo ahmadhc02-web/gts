@@ -110,14 +110,17 @@ if (typeof window !== 'undefined') {
   }
 }
 
+import { BrowserRouter } from 'react-router-dom';
 import { LoadingProvider } from './contexts/LoadingContext.tsx';
 
 if (shouldRender) {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <LoadingProvider>
-        <App />
-      </LoadingProvider>
+      <BrowserRouter>
+        <LoadingProvider>
+          <App />
+        </LoadingProvider>
+      </BrowserRouter>
     </StrictMode>,
   );
 }

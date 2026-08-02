@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
@@ -74,6 +75,15 @@ export default function EntrySheet({
   savingMonthIds
 }: EntrySheetProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const matchSheet = location.pathname.match(/\/billingmod\/entrysheet\/folder\/([^/]+)\/sheet\/([^/]+)/);
+  const matchFolder = location.pathname.match(/\/billingmod\/entrysheet\/folder\/([^/]+)/);
+
+  const urlFolderId = matchSheet ? matchSheet[1] : matchFolder ? matchFolder[1] : null;
+  const urlSheetId = matchSheet ? matchSheet[2] : null;
+
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main');
   const activeDealerId = isDealerTied ? pocketbaseService.getTenantId(currentUser) : undefined;
 
@@ -238,6 +248,7 @@ export default function EntrySheet({
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState('');
   const [openedFolderId, setOpenedFolderId] = useState<string | null>(null);
+  const [loadedSheetId, setLoadedSheetId] = useState<string | null>(null);
   const [folderSortOption, setFolderSortOption] = useState<'a-to-z' | 'amount-high' | 'amount-low' | 'newest'>('newest');
   const [sheetToDeleteId, setSheetToDeleteId] = useState<string | null>(null);
   const [showTerminateMonthModal, setShowTerminateMonthModal] = useState(false);
@@ -292,13 +303,47 @@ export default function EntrySheet({
     setShowUserSearchPopup(true);
   };
 
-  // Whenever Entry Sheet is opened, always reset view to the root folders dashboard view
+  // Sync EntrySheet activeView, openedFolderId, and loadedSheetId with URL parameters
   useEffect(() => {
-    if (isOpen) {
-      setActiveView('dashboard');
-      setOpenedFolderId(null);
+    if (!isOpen) return;
+
+    if (urlSheetId) {
+      if (urlFolderId && urlFolderId !== 'all') {
+        setOpenedFolderId(urlFolderId);
+      }
+      if (loadedSheetId !== urlSheetId) {
+        const foundSheet = ledgerHistory.find(s => s.id === urlSheetId);
+        if (foundSheet) {
+          handleLoadHistorySheet(foundSheet);
+        } else {
+          setLoadedSheetId(urlSheetId);
+          setActiveView('editor');
+        }
+      } else if (activeView !== 'editor') {
+        setActiveView('editor');
+      }
+    } else if (urlFolderId) {
+      if (openedFolderId !== urlFolderId) {
+        setOpenedFolderId(urlFolderId);
+      }
+      if (activeView !== 'dashboard') {
+        setActiveView('dashboard');
+      }
+      if (loadedSheetId !== null) {
+        setLoadedSheetId(null);
+      }
+    } else if (location.pathname.startsWith('/billingmod/entrysheet')) {
+      if (openedFolderId !== null) {
+        setOpenedFolderId(null);
+      }
+      if (activeView !== 'dashboard') {
+        setActiveView('dashboard');
+      }
+      if (loadedSheetId !== null) {
+        setLoadedSheetId(null);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, location.pathname, urlFolderId, urlSheetId, loadedSheetId, activeView, openedFolderId]);
 
   // --- Auto Save Hooks Removed to Prevent Realtime Sync Loops ---
   
@@ -416,6 +461,14 @@ export default function EntrySheet({
         delete nextMap[sheetId];
       }
     });
+
+    // Clear folderId from any active sheets in the editor
+    setSheets(prev => prev.map(sh => {
+      if (sh.folderId === folderId || sheetFolderMap[sh.id] === folderId) {
+        return { ...sh, folderId: '', sort: '', sortFolder: '' };
+      }
+      return sh;
+    }));
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
 
@@ -833,7 +886,6 @@ export default function EntrySheet({
   const [ledgerSearchUser, setLedgerSearchUser] = useState('');
   const [ledgerSelectedFolder, setLedgerSelectedFolder] = useState('all');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
-  const [loadedSheetId, setLoadedSheetId] = useState<string | null>(null);
   const [showConfirmResetModal, setShowConfirmResetModal] = useState(false);
 
   // Backup accounts states
@@ -879,7 +931,7 @@ export default function EntrySheet({
     };
 
     fetchFoldersFromDb();
-  }, [isOpen, currentUser, activeDealerId]);
+  }, [isOpen, currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId]);
 
   // Subeffect to load master clients scoped to the current dealer tenant
   useEffect(() => {
@@ -893,7 +945,7 @@ export default function EntrySheet({
     } catch (e) {
       console.warn("Failed to subscribe to clients in EntrySheet:", e);
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
 
   // Real-time listener for Monthly Ledger Sheets History
   useEffect(() => {
@@ -960,7 +1012,7 @@ export default function EntrySheet({
     } catch (e) {
       console.warn("Failed to subscribe historical ledger sheets:", e);
     }
-  }, [isOpen, currentUser, activeDealerId]);
+  }, [isOpen, currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId]);
 
   useEffect(() => {
     if (openedFolderId && isOpen) {
@@ -1601,7 +1653,7 @@ export default function EntrySheet({
   // Run on load
   useEffect(() => {
     resetToBlank();
-  }, [currentUser]);
+  }, [currentUser?.uid]);
 
   // Handle auto-prefilling from current month database rows (unpaid / partial)
   const autoFillFromDb = () => {
@@ -1739,7 +1791,7 @@ export default function EntrySheet({
 
       // Ensure loadedSheetId is a valid 15-character record ID if not already
       let currentLoadedId = loadedSheetId;
-      if (!currentLoadedId || currentLoadedId.startsWith('sheet_') || !/^[a-z0-9]{15}$/.test(currentLoadedId)) {
+      if (!currentLoadedId || currentLoadedId.startsWith('sheet_') || !/^[a-zA-Z0-9-]{15,36}$/.test(currentLoadedId)) {
         const generatedId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
         
         const nextMap = { ...sheetFolderMap };
@@ -1774,7 +1826,10 @@ export default function EntrySheet({
       for (let i = 0; i < currentSyncSheets.length; i++) {
         const sh = currentSyncSheets[i];
         const hasT1Data = parseRowsArray(sh.table1Rows).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
-        const hasT2Data = parseRowsArray(sh.table2Rows).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT2Data = parseRowsArray(sh.table2Rows).some(r => {
+          const isDefault = ['bank', 'panel balance', 'cash hand'].includes((r.name || '').trim().toLowerCase());
+          return (!isDefault && (r.name || '').trim()) || (Number(r.amount) || 0) > 0;
+        });
         const officerName = sh.recOfficer || '';
         
         if (!officerName.trim()) {
@@ -1812,7 +1867,10 @@ export default function EntrySheet({
         const sh = currentSyncSheets[i];
         
         const hasT1Data = parseRowsArray(sh.table1Rows).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
-        const hasT2Data = parseRowsArray(sh.table2Rows).some(r => (r.name || '').trim() || (r.amount || 0) > 0);
+        const hasT2Data = parseRowsArray(sh.table2Rows).some(r => {
+          const isDefault = ['bank', 'panel balance', 'cash hand'].includes((r.name || '').trim().toLowerCase());
+          return (!isDefault && (r.name || '').trim()) || (Number(r.amount) || 0) > 0;
+        });
         const officerName = sh.recOfficer || '';
         if (!officerName.trim() || (!hasT1Data && !hasT2Data)) continue;
 
@@ -1822,7 +1880,7 @@ export default function EntrySheet({
           : (sh.folderId || openedFolderId || '');
 
         let resolvedSheetId = sh.id;
-        if (!resolvedSheetId || resolvedSheetId.startsWith('sheet_') || !/^[a-z0-9]{15}$/.test(resolvedSheetId)) {
+        if (!resolvedSheetId || resolvedSheetId.startsWith('sheet_') || !/^[a-zA-Z0-9-]{15,36}$/.test(resolvedSheetId)) {
           resolvedSheetId = isCurrentlyLoadedSheet ? currentLoadedId : Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
         }
 
@@ -1960,7 +2018,7 @@ export default function EntrySheet({
 
             const updatedCard = {
               ...client,
-              name: r.name || client.name,
+              name: client.name || r.name,
               baseAmount: amountVal > 0 ? (Number(client.baseAmount) || amountVal) : client.baseAmount,
               area: (r as any).area || client.area || sheetPayload.area || area || 'MAIN',
               dealerId: tenantId || 'main'
@@ -2390,6 +2448,12 @@ export default function EntrySheet({
   // Restores a historical ledger card directly back into the live active A4 view
   const handleLoadHistorySheet = (sheet: any) => {
     setLoadedSheetId(sheet.id);
+    setActiveView('editor');
+    const targetFolder = sheet.folderId || openedFolderId || sheetFolderMap[sheet.id] || 'all';
+    const targetPath = `/billingmod/entrysheet/folder/${targetFolder}/sheet/${sheet.id}`;
+    if (location.pathname !== targetPath) {
+      navigate(targetPath);
+    }
     setRecOfficer(sheet.recOfficer || '');
     setRecOfficerLabel(sheet.recOfficerLabel || 'REC. OFFICER');
     setArea(sheet.area || 'MAIN');
@@ -2760,7 +2824,7 @@ export default function EntrySheet({
 
     updated[index] = {
       ...updated[index],
-      cId: client.username || '',
+      cId: focusedField === 'name' ? '' : (client.username || client.id || ''),
       name: client.name || '',
       amount: amount,
       originalAmount: amount,
@@ -3455,7 +3519,7 @@ export default function EntrySheet({
         {openedFolderId && (
           <div className="flex items-center gap-3 text-left">
             <button
-              onClick={() => setOpenedFolderId(null)}
+              onClick={() => navigate('/billingmod/entrysheet')}
               className="px-3.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
             >
               <ChevronLeft size={16} className="text-slate-505" />
@@ -3495,7 +3559,7 @@ export default function EntrySheet({
                           animate={{ opacity: 1, y: 0 }}
                           whileHover={{ scale: 1.05 }}
                           transition={{ type: "spring", stiffness: 220, damping: 18 }}
-                          onClick={() => setOpenedFolderId(folder.id)}
+                          onClick={() => navigate(`/billingmod/entrysheet/folder/${folder.id}`)}
                           className="group cursor-pointer p-3 bg-transparent border-0 shadow-none hover:bg-slate-100/50 dark:hover:bg-slate-850/30 rounded-2xl flex flex-col items-center justify-start text-center gap-1.5 transition-all duration-300 relative select-none min-h-[170px]"
                         >
                           {/* Folder Settings Gear Button */}
@@ -3816,7 +3880,13 @@ export default function EntrySheet({
                   Portal
                 </button>
                 <button
-                  onClick={() => setActiveView('dashboard')}
+                  onClick={() => {
+                    if (openedFolderId) {
+                      navigate(`/billingmod/entrysheet/folder/${openedFolderId}`);
+                    } else {
+                      navigate('/billingmod/entrysheet');
+                    }
+                  }}
                   className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-455 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 active:scale-95 border border-blue-200 dark:border-blue-900/50 cursor-pointer"
                 >
                   <Folder size={12} className="stroke-[2.5]" />
