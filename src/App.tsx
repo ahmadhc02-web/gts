@@ -677,9 +677,8 @@ export default function App() {
     return () => {};
   }, []);
 
-  // Real-time user updates for presence and management
+  // Real-time config updates
   useEffect(() => {
-    // Only subscribe to real-time user changes when logged in
     if (!user) return;
     if (!pbAuthReady) return;
     
@@ -701,22 +700,58 @@ export default function App() {
       }
     }, tenantId);
 
+    return () => {
+      unsubscribeConfig();
+    };
+  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady]);
+
+  // Real-time user updates for presence and management (Only active when on users/chat/dealers screen)
+  useEffect(() => {
+    if (!user) return;
+    if (!pbAuthReady) return;
+
+    const tenantId = pocketbaseService.getReadTenantId(user);
+    const shouldSubscribeUsers = ['users', 'chat', 'dealers'].includes(activeTab || '');
+
+    if (!shouldSubscribeUsers) {
+      // Offline fallback / warm start: fetch once to ensure suspension rules and names are accurate, without real-time listener overhead
+      pocketbaseService.getUsers(tenantId).then(setUsers).catch(console.error);
+      return;
+    }
+
     const unsubscribeUsers = pocketbaseService.subscribeUsers((updatedUsers) => {
       setUsers(updatedUsers);
     }, tenantId);
+
+    return () => {
+      unsubscribeUsers();
+    };
+  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady, activeTab]);
+
+  // Real-time chat groups updates (Only active when chat screen is opened)
+  useEffect(() => {
+    if (!user) return;
+    if (!pbAuthReady) return;
+
+    const tenantId = pocketbaseService.getReadTenantId(user);
+    const shouldSubscribeGroups = ['chat'].includes(activeTab || '');
+
+    if (!shouldSubscribeGroups) {
+      // Offline fallback / warm start: fetch once
+      pocketbaseService.getGroups(tenantId).then(setUserGroups).catch(console.error);
+      return;
+    }
 
     const unsubscribeGroups = pocketbaseService.subscribeGroups((updatedGroups) => {
       setUserGroups(updatedGroups);
     }, tenantId);
 
     return () => {
-      unsubscribeConfig();
-      unsubscribeUsers();
       unsubscribeGroups();
     };
-  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady]);
+  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady, activeTab]);
 
-  // Fetch complaints only when a user is logged in
+  // Fetch complaints only when a user is logged in and actively viewing complaints or dashboard sections
   useEffect(() => {
     if (!user) {
       setComplaints([]);
@@ -725,13 +760,22 @@ export default function App() {
     if (!pbAuthReady) return;
     
     const tenantId = pocketbaseService.getReadTenantId(user);
+    const isComplaintsTab = ['complaints', 'top10', 'recycle_bin', 'sync_status', 'submit'].includes(activeTab || '');
+
+    if (!isComplaintsTab) {
+      // Offline fallback: load baseline once to keep widgets working, but unsubscribe from live updates
+      pocketbaseService.getComplaints(tenantId).then(data => {
+        setComplaints(data.sort((a, b) => b.createdAt - a.createdAt));
+      }).catch(console.error);
+      return;
+    }
     
     const unsubscribe = pocketbaseService.subscribeComplaints((data) => {
       setComplaints(data);
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady]);
+  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady, activeTab]);
 
   // Real-time data fetch functions to instantly synchronize local states from database
   const fetchComplaints = async () => {

@@ -412,7 +412,7 @@ function subscribeTable(
   const syncKey = `${tableName}_${dealerId || 'all'}`;
 
   try {
-    const cachedData = localStorage.getItem(`gts_cache_v3_${tableName}`);
+    const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`) || localStorage.getItem(`gts_cache_v3_${tableName}`);
     if (cachedData) {
       const parsed = JSON.parse(cachedData);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -458,7 +458,7 @@ function subscribeTable(
           } catch (e) {}
 
           if (mapped.length === 0) {
-            const localSaved = localStorage.getItem(`gts_ledger_folders_${dealerId || 'main'}`) || localStorage.getItem('gts_cache_v3_ledger_folders');
+            const localSaved = localStorage.getItem(`gts_ledger_folders_${dealerId || 'main'}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_${dealerId || 'all'}`) || localStorage.getItem('gts_cache_v3_ledger_folders');
             if (localSaved) {
               try {
                 const parsed = JSON.parse(localSaved);
@@ -479,7 +479,7 @@ function subscribeTable(
       if (mapped.length > 0 || !error) {
         globalTableCaches[syncKey] = mapped;
         try {
-          localStorage.setItem(`gts_cache_v3_${tableName}`, JSON.stringify(mapped));
+          localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(mapped));
         } catch (e) {}
 
         const subscribers = globalTableSubscribers[syncKey];
@@ -498,6 +498,8 @@ function subscribeTable(
     }
   };
 
+  const isFirstSubscriber = !globalTableSubscribers[syncKey] || globalTableSubscribers[syncKey].size === 0;
+
   if (!globalTableSubscribers[syncKey]) {
     globalTableSubscribers[syncKey] = new Set();
   }
@@ -507,11 +509,8 @@ function subscribeTable(
     callback(globalTableCaches[syncKey]);
   }
 
-  if (!globalTableIntervals[syncKey]) {
+  if (isFirstSubscriber) {
     fetchInitial();
-    globalTableIntervals[syncKey] = setInterval(() => {
-      fetchInitial();
-    }, 8000);
   }
 
   if (!globalTableChannels[syncKey]) {
@@ -570,6 +569,40 @@ function saveSyncLogsLocally() {
     localStorage.setItem('gts_sync_logs', JSON.stringify(syncLogs));
     window.dispatchEvent(new CustomEvent('gts-sync-logs-updated', { detail: syncLogs }));
   } catch (e) {}
+}
+
+const globalAppConfigCache: Record<string, { config: any; timestamp: number }> = {};
+const globalAppConfigPromises: Record<string, Promise<any>> = {};
+
+const globalBrandingConfigCache: Record<string, { data: any; timestamp: number }> = {};
+const globalBrandingConfigPromises: Record<string, Promise<any>> = {};
+
+async function fetchBrandingConfigType(configType: string): Promise<any> {
+  const now = Date.now();
+  if (globalBrandingConfigPromises[configType]) {
+    return globalBrandingConfigPromises[configType];
+  }
+  if (globalBrandingConfigCache[configType] && (now - globalBrandingConfigCache[configType].timestamp < 2500)) {
+    return globalBrandingConfigCache[configType].data;
+  }
+
+  const promise = (async () => {
+    try {
+      const { data } = await supabase.from('branding_config').select('*').eq('config_type', configType).limit(1);
+      const res = data && data.length > 0 ? data[0] : null;
+      globalBrandingConfigCache[configType] = { data: res, timestamp: Date.now() };
+      return res;
+    } catch (e) {
+      return null;
+    }
+  })();
+
+  globalBrandingConfigPromises[configType] = promise;
+  try {
+    return await promise;
+  } finally {
+    delete globalBrandingConfigPromises[configType];
+  }
 }
 
 export const supabaseService = {
@@ -1238,30 +1271,61 @@ export const supabaseService = {
   },
 
   getAppConfig: async (tenantId: string = 'main'): Promise<any> => {
-    const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
-    let baseConfig: any = {};
+    const cacheKey = tenantId || 'main';
+    const now = Date.now();
+
+    // 1. Reuse active loading promise if currently fetching (Query Deduplication)
+    if (globalAppConfigPromises[cacheKey]) {
+      return globalAppConfigPromises[cacheKey];
+    }
+
+    // 2. Return cached config if it was fetched within the last 2.5 seconds (Throttle/Debounce)
+    if (globalAppConfigCache[cacheKey] && (now - globalAppConfigCache[cacheKey].timestamp < 2500)) {
+      return globalAppConfigCache[cacheKey].config;
+    }
+
+    const fetchPromise = (async () => {
+      const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
+      let baseConfig: any = {};
+      try {
+        const row = await fetchBrandingConfigType(docId);
+        if (row && row.dashboard_subtext) {
+          try { baseConfig = JSON.parse(row.dashboard_subtext); } catch (e) {}
+        }
+      } catch (e) {}
+
+      const [dbCategories, dbStatuses, dbPriorities, dbZones] = await Promise.all([
+        supabaseService.getCategories(tenantId),
+        supabaseService.getStatuses(tenantId),
+        supabaseService.getPriorities(tenantId),
+        supabaseService.getZones(tenantId),
+      ]);
+
+      const merged = {
+        ...baseConfig,
+        categories: dbCategories.length > 0 ? dbCategories : (baseConfig.categories || DEFAULT_CATEGORIES),
+        statuses: dbStatuses.length > 0 ? dbStatuses : (baseConfig.statuses || DEFAULT_STATUSES),
+        priorities: dbPriorities.length > 0 ? dbPriorities : (baseConfig.priorities || DEFAULT_PRIORITIES),
+        zones: dbZones.length > 0 ? dbZones : (baseConfig.zones || DEFAULT_ZONES),
+        billingSecurityKey: baseConfig.billingSecurityKey || '1239870'
+      };
+
+      globalAppConfigCache[cacheKey] = {
+        config: merged,
+        timestamp: Date.now()
+      };
+
+      return merged;
+    })();
+
+    globalAppConfigPromises[cacheKey] = fetchPromise;
+
     try {
-      const { data } = await supabase.from('branding_config').select('*').eq('config_type', docId).limit(1);
-      if (data && data.length > 0 && data[0].dashboard_subtext) {
-        try { baseConfig = JSON.parse(data[0].dashboard_subtext); } catch (e) {}
-      }
-    } catch (e) {}
-
-    const [dbCategories, dbStatuses, dbPriorities, dbZones] = await Promise.all([
-      supabaseService.getCategories(tenantId),
-      supabaseService.getStatuses(tenantId),
-      supabaseService.getPriorities(tenantId),
-      supabaseService.getZones(tenantId),
-    ]);
-
-    return {
-      ...baseConfig,
-      categories: dbCategories.length > 0 ? dbCategories : (baseConfig.categories || DEFAULT_CATEGORIES),
-      statuses: dbStatuses.length > 0 ? dbStatuses : (baseConfig.statuses || DEFAULT_STATUSES),
-      priorities: dbPriorities.length > 0 ? dbPriorities : (baseConfig.priorities || DEFAULT_PRIORITIES),
-      zones: dbZones.length > 0 ? dbZones : (baseConfig.zones || DEFAULT_ZONES),
-      billingSecurityKey: baseConfig.billingSecurityKey || '1239870'
-    };
+      const result = await fetchPromise;
+      return result;
+    } finally {
+      delete globalAppConfigPromises[cacheKey];
+    }
   },
 
   setTypingStatus: async (uid: string, username: string, isTyping: boolean, fullName?: string) => {},
@@ -1430,9 +1494,7 @@ export const supabaseService = {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => fetchConf())
       .subscribe();
 
-    const timer = setInterval(fetchConf, 2500);
     return () => {
-      clearInterval(timer);
       try {
         supabase.removeChannel(channel);
       } catch (e) {}
@@ -1453,13 +1515,19 @@ export const supabaseService = {
   subscribeBranding: (callback: (branding: BrandingConfig | null) => void) => {
     const fetchB = async () => {
       try {
-        const { data } = await supabase.from('branding_config').select('*').eq('config_type', 'branding').limit(1);
-        if (data && data.length > 0) callback(fromDb('branding_config', data[0]));
+        const row = await fetchBrandingConfigType('branding');
+        if (row) callback(fromDb('branding_config', row));
       } catch (e) {}
     };
     fetchB();
-    const timer = setInterval(fetchB, 10000);
-    return () => clearInterval(timer);
+    const channelName = `branding_rt_${Math.random().toString(36).substring(2, 7)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => fetchB())
+      .subscribe();
+    return () => {
+      try { supabase.removeChannel(channel); } catch (e) {}
+    };
   },
 
   updateBranding: async (branding: BrandingConfig, authorName: string) => {
@@ -1558,6 +1626,20 @@ export const supabaseService = {
 
   subscribeGroups: (callback: (groups: ChatGroup[]) => void, dealerId?: string) => {
     return subscribeTable('chat_groups', callback, r => fromDb('chat_groups', r), dealerId);
+  },
+
+  getGroups: async (dealerId?: string): Promise<ChatGroup[]> => {
+    try {
+      let query = supabase.from('chat_groups').select('*');
+      if (dealerId && dealerId !== 'all') {
+        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
+      }
+      const { data } = await query;
+      if (!data) return [];
+      return data.map(r => fromDb('chat_groups', r));
+    } catch (e) {
+      return [];
+    }
   },
 
   subscribeMessages: (callback: (messages: ChatMessage[]) => void, dealerId?: string) => {
@@ -1727,15 +1809,21 @@ export const supabaseService = {
   subscribeTranslations: (callback: (translations: any) => void) => {
     const fetchT = async () => {
       try {
-        const { data } = await supabase.from('branding_config').select('*').eq('config_type', 'translations').limit(1);
-        if (data && data.length > 0 && data[0].dashboard_subtext) {
-          try { callback(JSON.parse(data[0].dashboard_subtext)); } catch (e) {}
+        const row = await fetchBrandingConfigType('translations');
+        if (row && row.dashboard_subtext) {
+          try { callback(JSON.parse(row.dashboard_subtext)); } catch (e) {}
         }
       } catch (e) {}
     };
     fetchT();
-    const timer = setInterval(fetchT, 10000);
-    return () => clearInterval(timer);
+    const channelName = `trans_rt_${Math.random().toString(36).substring(2, 7)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => fetchT())
+      .subscribe();
+    return () => {
+      try { supabase.removeChannel(channel); } catch (e) {}
+    };
   },
 
   updateTranslations: async (translations: any) => {
@@ -2065,7 +2153,7 @@ export const supabaseService = {
     });
 
     try {
-      localStorage.setItem(`gts_cache_v3_ledger_sheets`, JSON.stringify(globalTableCaches[syncKey] || []));
+      localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(globalTableCaches[syncKey] || []));
     } catch (e) {}
 
     await upsertSupabase('ledger_sheets', 'id', sheet.id, dbRow);
@@ -2100,7 +2188,7 @@ export const supabaseService = {
 
     try {
       const syncKey = `ledger_sheets_${tenantId || 'all'}`;
-      localStorage.setItem(`gts_cache_v3_ledger_sheets`, JSON.stringify(globalTableCaches[syncKey] || []));
+      localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(globalTableCaches[syncKey] || []));
     } catch (e) {}
 
     const { error } = await supabase.from('ledger_sheets').upsert(dbRows, { onConflict: 'id' });

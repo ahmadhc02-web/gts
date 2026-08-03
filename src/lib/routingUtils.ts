@@ -10,7 +10,7 @@ export function getTabFromPathname(pathname: string): string {
   if (pathname === '/config') return 'config';
   if (pathname === '/map') return 'map';
   if (pathname === '/monitor') return 'monitor';
-  if (pathname === '/mypc') return 'mypc';
+  if (pathname === '/mypc' || pathname.startsWith('/mypc/')) return 'mypc';
   if (pathname === '/branding') return 'branding';
   if (pathname === '/integrations') return 'integrations';
   if (pathname === '/critical') return 'critical';

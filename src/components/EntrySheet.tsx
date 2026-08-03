@@ -88,11 +88,53 @@ export default function EntrySheet({
   const activeDealerId = isDealerTied ? pocketbaseService.getTenantId(currentUser) : undefined;
 
   // --- Folders & Dashboard State ---
-  const [activeView, setActiveView] = useState<'dashboard' | 'editor'>('dashboard');
-  const [folders, setFolders] = useState<any[]>([]);
-  const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>({});
-  const [folderMonthMap, setFolderMonthMap] = useState<Record<string, string>>({});
-  const [ledgerHistory, setLedgerHistory] = useState<any[]>([]);
+  const openedFolderId = urlFolderId === 'all' ? null : urlFolderId;
+  const loadedSheetId = urlSheetId;
+  const activeView = (loadedSheetId ? 'editor' : 'dashboard') as 'dashboard' | 'editor';
+  const [folders, setFolders] = useState<any[]>(() => {
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    const saved = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
+  });
+  const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>(() => {
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    const saved = localStorage.getItem(`gts_ledger_sheet_folders_${originalScopeId}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch (e) {}
+    }
+    return {};
+  });
+  const [folderMonthMap, setFolderMonthMap] = useState<Record<string, string>>(() => {
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    const saved = localStorage.getItem(`gts_ledger_folder_months_${originalScopeId}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch (e) {}
+    }
+    return {};
+  });
+  const [ledgerHistory, setLedgerHistory] = useState<any[]>(() => {
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    const saved = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return [];
+  });
   const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
   const [folderToDeleteId, setFolderToDeleteId] = useState<string | null>(null);
   const [editFolderName, setEditFolderName] = useState<string>('');
@@ -111,6 +153,8 @@ export default function EntrySheet({
 
   // Scoped folders loading on user change
   useEffect(() => {
+    if (!isOpen) return;
+
     // Expose migration to window
     (window as any).runMigration = async () => {
       console.log("Migration is no longer needed.");
@@ -163,6 +207,7 @@ export default function EntrySheet({
       
       localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(mergedFolders));
       setFolders(mergedFolders);
+      setIsLoadingFolders(false);
     }, scopeId);
 
     // Subscribe to Sheet Folder Map
@@ -241,18 +286,70 @@ export default function EntrySheet({
       unsubMap();
       unsubFolderMonths();
     };
-  }, [currentUser?.uid, activeDealerId, isDealerTied]);
+  }, [isOpen, currentUser?.uid, activeDealerId, isDealerTied]);
 
   // Folder UI inputs
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState('');
-  const [openedFolderId, setOpenedFolderId] = useState<string | null>(null);
-  const [loadedSheetId, setLoadedSheetId] = useState<string | null>(null);
   const [folderSortOption, setFolderSortOption] = useState<'a-to-z' | 'amount-high' | 'amount-low' | 'newest'>('newest');
   const [sheetToDeleteId, setSheetToDeleteId] = useState<string | null>(null);
   const [showTerminateMonthModal, setShowTerminateMonthModal] = useState(false);
   const [isSavingSheet, setIsSavingSheet] = useState(false);
+  const [isLoadingFolders, setIsLoadingFolders] = useState(() => {
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    const hasCache = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
+    return !hasCache;
+  });
+  const [isLoadingSheets, setIsLoadingSheets] = useState(() => {
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    const hasCache = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`);
+    return !hasCache;
+  });
+
+  // Keep state synchronized and loaded instantly on tenant switch
+  useEffect(() => {
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    
+    // Sync folders from cache
+    const savedFolders = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
+    if (savedFolders) {
+      try {
+        setFolders(JSON.parse(savedFolders));
+        setIsLoadingFolders(false);
+      } catch (e) {}
+    } else {
+      setFolders([]);
+      setIsLoadingFolders(true);
+    }
+
+    // Sync sheets from cache
+    const savedSheets = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`);
+    if (savedSheets) {
+      try {
+        setLedgerHistory(JSON.parse(savedSheets));
+        setIsLoadingSheets(false);
+      } catch (e) {}
+    } else {
+      setLedgerHistory([]);
+      setIsLoadingSheets(true);
+    }
+
+    // Sync maps
+    const savedMap = localStorage.getItem(`gts_ledger_sheet_folders_${originalScopeId}`);
+    if (savedMap) {
+      try { setSheetFolderMap(JSON.parse(savedMap)); } catch (e) {}
+    } else {
+      setSheetFolderMap({});
+    }
+
+    const savedFolderMonths = localStorage.getItem(`gts_ledger_folder_months_${originalScopeId}`);
+    if (savedFolderMonths) {
+      try { setFolderMonthMap(JSON.parse(savedFolderMonths)); } catch (e) {}
+    } else {
+      setFolderMonthMap({});
+    }
+  }, [currentUser?.uid, activeDealerId]);
 
   // User search popup state variables
   const [showUserSearchPopup, setShowUserSearchPopup] = useState(false);
@@ -302,48 +399,6 @@ export default function EntrySheet({
     setUserSearchResults(results);
     setShowUserSearchPopup(true);
   };
-
-  // Sync EntrySheet activeView, openedFolderId, and loadedSheetId with URL parameters
-  useEffect(() => {
-    if (!isOpen) return;
-
-    if (urlSheetId) {
-      if (urlFolderId && urlFolderId !== 'all') {
-        setOpenedFolderId(urlFolderId);
-      }
-      if (loadedSheetId !== urlSheetId) {
-        const foundSheet = ledgerHistory.find(s => s.id === urlSheetId);
-        if (foundSheet) {
-          handleLoadHistorySheet(foundSheet);
-        } else {
-          setLoadedSheetId(urlSheetId);
-          setActiveView('editor');
-        }
-      } else if (activeView !== 'editor') {
-        setActiveView('editor');
-      }
-    } else if (urlFolderId) {
-      if (openedFolderId !== urlFolderId) {
-        setOpenedFolderId(urlFolderId);
-      }
-      if (activeView !== 'dashboard') {
-        setActiveView('dashboard');
-      }
-      if (loadedSheetId !== null) {
-        setLoadedSheetId(null);
-      }
-    } else if (location.pathname.startsWith('/billingmod/entrysheet')) {
-      if (openedFolderId !== null) {
-        setOpenedFolderId(null);
-      }
-      if (activeView !== 'dashboard') {
-        setActiveView('dashboard');
-      }
-      if (loadedSheetId !== null) {
-        setLoadedSheetId(null);
-      }
-    }
-  }, [isOpen, location.pathname, urlFolderId, urlSheetId, loadedSheetId, activeView, openedFolderId]);
 
   // --- Auto Save Hooks Removed to Prevent Realtime Sync Loops ---
   
@@ -628,7 +683,6 @@ export default function EntrySheet({
         };
 
         // Set editor fields
-        setLoadedSheetId(newSheetId);
         setRecOfficer(blankSheet.recOfficer);
         setArea(blankSheet.area);
         setSheetDate(blankSheet.sheetDate);
@@ -653,7 +707,8 @@ export default function EntrySheet({
         setSheetFolderMap(newMap);
         saveMapToDb(newMap);
 
-        setActiveView('editor');
+        const targetFolder = folderId || 'all';
+        navigate(`/billingmod/entrysheet/folder/${targetFolder}/sheet/${newSheetId}`);
         toast.success("📄 Created empty sheet inside selected folder! Let's fill it.");
       }
     } catch (err: any) {
@@ -894,44 +949,7 @@ export default function EntrySheet({
   const [isBackingUp, setIsBackingUp] = useState(false);
 
 
-  useEffect(() => {
-    if (!isOpen) return;
 
-    // Load folders directly from Supabase ledger_folders table
-    const fetchFoldersFromDb = async () => {
-      try {
-        const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
-        let query = supabase.from('ledger_folders').select('*');
-        if (tenantId === 'main') {
-           query = query.or('tenant_id.eq.main,tenant_id.is.null,tenant_id.eq.');
-        } else {
-           query = query.eq('tenant_id', tenantId);
-        }
-        
-        const { data, error } = await query.order('created', { ascending: true });
-        
-        if (error) {
-           console.error("Failed to explicitly fetch ledger_folders:", error);
-           return;
-        }
-
-        if (data) {
-           console.log("Explicitly fetched folders from DB:", data);
-           const mappedFolders = data.map(f => ({
-             id: f.id,
-             name: f.name || '',
-             tenantId: f.tenant_id,
-             createdAt: f.created_at || f.created ? new Date(f.created_at || f.created).getTime() : Date.now()
-           }));
-           setFolders(mappedFolders);
-        }
-      } catch (err) {
-        console.error("Unexpected error fetching folders:", err);
-      }
-    };
-
-    fetchFoldersFromDb();
-  }, [isOpen, currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId]);
 
   // Subeffect to load master clients scoped to the current dealer tenant
   useEffect(() => {
@@ -951,62 +969,11 @@ export default function EntrySheet({
   useEffect(() => {
     if (!isOpen) return;
 
-    const fetchSheetsFromDb = async () => {
-      try {
-        const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
-        let query = supabase.from('ledger_sheets').select('*');
-        if (tenantId === 'main') {
-           query = query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.');
-        } else {
-           query = query.eq('dealer_id', tenantId);
-        }
-
-        const { data, error } = await query.order('created', { ascending: true });
-
-        if (error) {
-           console.error("Failed to explicitly fetch ledger_sheets:", error);
-           return;
-        }
-
-        if (data) {
-           console.log("Explicitly fetched sheets from DB:", data);
-           const mappedSheets = data.map(r => ({
-              id: r.id || r.sheet_id,
-              folderId: r.folder_id,
-              recOfficer: r.rec_officer,
-              recOfficerLabel: r.rec_officer_label,
-              area: r.area,
-              areaLabel: r.area_label,
-              sheetDate: r.sheet_date,
-              dateLabel: r.date_label,
-              table1Rows: parseRowsArray(r.table1_rows),
-              table2Rows: parseRowsArray(r.table2_rows),
-              cashReceived: r.cash_received,
-              sign: r.sign,
-              submitted: r.submitted,
-              cashReceivedLabel: r.cash_received_label,
-              signLabel: r.sign_label,
-              submittedLabel: r.submitted_label,
-              footnoteLeft: r.footnote_left,
-              footnoteRight: r.footnote_right,
-              dealerId: r.dealer_id,
-              sheetSubtext: r.sheet_subtext || '',
-              createdAt: r.created_at || r.created ? new Date(r.created_at || r.created).getTime() : Date.now()
-           }));
-           setLedgerHistory(mappedSheets);
-        }
-      } catch (err) {
-        console.error("Unexpected error fetching sheets:", err);
-      }
-    };
-
-    fetchSheetsFromDb();
-    
     try {
       const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
       const unsubscribe = pocketbaseService.subscribeLedgerSheets((data) => {
-        // Only update if it brings newer info or keep fallback
         setLedgerHistory(prev => data.length > 0 ? data : prev);
+        setIsLoadingSheets(false);
       }, tenantId);
       return () => unsubscribe();
     } catch (e) {
@@ -1801,7 +1768,6 @@ export default function EntrySheet({
         }
         setSheetFolderMap(nextMap);
         saveMapToDb(nextMap);
-        setLoadedSheetId(generatedId);
         
         if (currentSyncSheets[activeSheetIdx]) {
           currentSyncSheets[activeSheetIdx].id = generatedId;
@@ -2325,10 +2291,14 @@ export default function EntrySheet({
         }
       }
 
-      // 4. Update currently loaded sheet references in editor with updated rows (with linked client details!)
+      // 4. Update currently loaded sheet references in editor with updated rows (with linked client details!) and sync URL
       const lastSavedId = currentLoadedId || currentSyncSheets[activeSheetIdx]?.id;
       if (lastSavedId) {
-        setLoadedSheetId(lastSavedId);
+        const targetFolder = openedFolderId || sheetFolderMap[lastSavedId] || 'all';
+        const targetPath = `/billingmod/entrysheet/folder/${targetFolder}/sheet/${lastSavedId}`;
+        if (location.pathname !== targetPath) {
+          navigate(targetPath, { replace: true });
+        }
       }
       setSheets(prev => {
         return prev.map((sh, idx) => {
@@ -2446,14 +2416,7 @@ export default function EntrySheet({
   };
 
   // Restores a historical ledger card directly back into the live active A4 view
-  const handleLoadHistorySheet = (sheet: any) => {
-    setLoadedSheetId(sheet.id);
-    setActiveView('editor');
-    const targetFolder = sheet.folderId || openedFolderId || sheetFolderMap[sheet.id] || 'all';
-    const targetPath = `/billingmod/entrysheet/folder/${targetFolder}/sheet/${sheet.id}`;
-    if (location.pathname !== targetPath) {
-      navigate(targetPath);
-    }
+  const loadSheetIntoEditor = (sheet: any) => {
     setRecOfficer(sheet.recOfficer || '');
     setRecOfficerLabel(sheet.recOfficerLabel || 'REC. OFFICER');
     setArea(sheet.area || 'MAIN');
@@ -2547,10 +2510,39 @@ export default function EntrySheet({
     setTimeout(() => {
       isSwappingRef.current = false;
     }, 50);
-
-    toast.info(`Loaded sheet card for recovery officer: ${sheet.recOfficer}`);
-    setActiveView('editor');
   };
+
+  const handleLoadHistorySheet = (sheet: any) => {
+    loadSheetIntoEditor(sheet);
+    const targetFolder = sheet.folderId || openedFolderId || sheetFolderMap[sheet.id] || 'all';
+    const targetPath = `/billingmod/entrysheet/folder/${targetFolder}/sheet/${sheet.id}`;
+    if (location.pathname !== targetPath) {
+      navigate(targetPath);
+    }
+    toast.info(`Loaded sheet card for recovery officer: ${sheet.recOfficer}`);
+  };
+
+  const lastLoadedSheetIdRef = useRef<string | null>(null);
+
+  // Sync URL parameter sheetId with Editor state loading
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (urlSheetId) {
+      if (lastLoadedSheetIdRef.current !== urlSheetId) {
+        const foundSheet = ledgerHistory.find(s => s.id === urlSheetId);
+        if (foundSheet) {
+          loadSheetIntoEditor(foundSheet);
+          lastLoadedSheetIdRef.current = urlSheetId;
+        }
+      }
+    } else {
+      if (lastLoadedSheetIdRef.current !== null) {
+        resetToBlank();
+        lastLoadedSheetIdRef.current = null;
+      }
+    }
+  }, [urlSheetId, ledgerHistory, isOpen]);
 
   // Delete a single historical card from registry logs
   const handleDeleteHistorySheet = (sheetId: string, e: React.MouseEvent) => {
@@ -2586,7 +2578,7 @@ export default function EntrySheet({
       toast.success("Ledger card moved to Recycle Bin!");
       if (loadedSheetId === targetId) {
         resetToBlank();
-        setLoadedSheetId(null);
+        navigate(`/billingmod/entrysheet/folder/${openedFolderId || 'all'}`);
       }
     } catch (err: any) {
       // Roll back optimistic UI state if server operation fails
@@ -2681,7 +2673,7 @@ export default function EntrySheet({
       toast.dismiss("terminate-proc");
       toast.success("Month terminated cleanly! Sheet cards moved to Recycle Bin.");
       resetToBlank();
-      setLoadedSheetId(null);
+      navigate('/billingmod/entrysheet');
     } catch (e: any) {
       toast.dismiss("terminate-proc");
       toast.error("Failed to terminate month: " + getCleanErrorMessage(e));
@@ -2710,7 +2702,7 @@ export default function EntrySheet({
         toast.success("Active workspace fields reset successfully!");
       }
       resetToBlank();
-      setLoadedSheetId(null);
+      navigate('/billingmod/entrysheet');
       setShowConfirmResetModal(false);
     } catch (e: any) {
       toast.dismiss("reset-all-proc");
@@ -2742,6 +2734,10 @@ export default function EntrySheet({
 
   // Render nothing if closed
   if (!isOpen) return null;
+
+  // Workspace and Editor Loading indicators
+  const isEditorWaitingForSheet = activeView === 'editor' && (!sheets || sheets.length === 0 || sheets[activeSheetIdx]?.id !== urlSheetId);
+  const isWorkspaceLoading = isLoadingSheets || isEditorWaitingForSheet;
 
   // Calculators
   const totalAmount1 = table1Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
@@ -3381,7 +3377,7 @@ export default function EntrySheet({
                 <button
                   onClick={() => {
                     if (openedFolderId) {
-                      setOpenedFolderId(null);
+                      navigate('/billingmod/entrysheet');
                     } else {
                       onClose();
                     }
@@ -3537,28 +3533,38 @@ export default function EntrySheet({
           </div>
         )}
 
-        {!openedFolderId || !activeFolder ? (
+        {!openedFolderId ? (
           /* ================= ROOT DIRECTORY (PC DESKTOP FOLDERS) ================= */
           <div className="flex flex-col gap-4 text-left">
-            {/* Folders grid styled as real PC drive folder icons */}
-            <div className="mt-1">
-              {(() => {
-                const sortedFolders = [...folders].sort((a, b) => {
-                  const timeA = a.createdAt || (a.id.startsWith('folder_') ? parseInt(a.id.split('_')[1]) || 0 : 0);
-                  const timeB = b.createdAt || (b.id.startsWith('folder_') ? parseInt(b.id.split('_')[1]) || 0 : 0);
-                  return timeB - timeA;
-                });
-                return (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
-                    {sortedFolders.map((folder) => {
-                      const folderSheets = ledgerHistory.filter(sh => (sh.folderId === folder.id || sheetFolderMap[sh.id] === folder.id) && doesMatchSearch(sh));
-                      return (
-                        <motion.div
-                          key={folder.id}
-                          initial={{ opacity: 0, y: 15 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          whileHover={{ scale: 1.05 }}
-                          transition={{ type: "spring", stiffness: 220, damping: 18 }}
+            {isLoadingFolders ? (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
+                {[1, 2, 3, 4, 5].map((idx) => (
+                  <div key={idx} className="animate-pulse p-3 flex flex-col items-center gap-2">
+                    <div className="w-20 h-14 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+                    <div className="w-14 h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Folders grid styled as real PC drive folder icons */
+              <div className="mt-1">
+                {(() => {
+                  const sortedFolders = [...folders].sort((a, b) => {
+                    const timeA = a.createdAt || (a.id.startsWith('folder_') ? parseInt(a.id.split('_')[1]) || 0 : 0);
+                    const timeB = b.createdAt || (b.id.startsWith('folder_') ? parseInt(b.id.split('_')[1]) || 0 : 0);
+                    return timeB - timeA;
+                  });
+                  return (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
+                      {sortedFolders.map((folder) => {
+                        const folderSheets = ledgerHistory.filter(sh => (sh.folderId === folder.id || sheetFolderMap[sh.id] === folder.id) && doesMatchSearch(sh));
+                        return (
+                          <motion.div
+                            key={folder.id}
+                            initial={{ opacity: 0, y: 0 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            whileHover={{ scale: 1.05 }}
+                            transition={{ type: "spring", stiffness: 220, damping: 18 }}
                           onClick={() => navigate(`/billingmod/entrysheet/folder/${folder.id}`)}
                           className="group cursor-pointer p-3 bg-transparent border-0 shadow-none hover:bg-slate-100/50 dark:hover:bg-slate-850/30 rounded-2xl flex flex-col items-center justify-start text-center gap-1.5 transition-all duration-300 relative select-none min-h-[170px]"
                         >
@@ -3708,9 +3714,24 @@ export default function EntrySheet({
                   </p>
                 </div>
               )}
-            </div>
+            </div>)}
 
 
+          </div>
+        ) : (isLoadingFolders || isWorkspaceLoading) ? (
+          /* Loading folder state or not found */
+          <div className="flex flex-col items-center justify-center p-12 text-center min-h-[300px] w-full bg-transparent">
+            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Loading directory content...</p>
+          </div>
+        ) : !activeFolder ? (
+          /* Folder not found */
+          <div className="flex flex-col items-center justify-center p-12 text-center min-h-[300px] w-full bg-transparent">
+            <FolderPlus size={32} className="text-slate-400 dark:text-slate-600 mb-3" />
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">Directory Not Found</p>
+            <button onClick={() => navigate('/billingmod/entrysheet')} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
+              Go To Dashboard
+            </button>
           </div>
         ) : (
           /* ================= INSIDE OPENED DIRECTORY VIEW ================= */
@@ -3718,12 +3739,10 @@ export default function EntrySheet({
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {/* Creator Card (the "+" option card explicitly requested) */}
               <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                whileHover={{ scale: 1.02, y: -3 }}
-                transition={{ type: "spring", stiffness: 350, damping: 22 }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
                 onClick={() => activeFolder && handleCreateSheetInFolder(activeFolder.id)}
-                className="group cursor-pointer border-2 border-dashed border-blue-400/50 dark:border-blue-900/40 hover:border-blue-500 dark:hover:border-blue-400 rounded-3xl p-6 bg-blue-50/10 dark:bg-blue-950/5 hover:bg-blue-50/25 flex flex-col items-center justify-center text-center gap-4 min-h-[180px] transition-all duration-300"
+                className="group cursor-pointer border-2 border-dashed border-blue-400/50 dark:border-blue-900/40 hover:border-blue-500 dark:hover:border-blue-400 rounded-3xl p-6 bg-blue-50/10 dark:bg-blue-950/5 hover:bg-blue-50/25 flex flex-col items-center justify-center text-center gap-4 min-h-[180px] transition-all duration-200 hover:scale-[1.02] hover:-translate-y-1"
               >
                 <div className="p-3 bg-blue-600 dark:bg-blue-500 text-white rounded-2xl group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/20 group-hover:shadow-blue-500/30">
                   <Plus className="w-5 h-5 stroke-[3]" />
@@ -3757,13 +3776,10 @@ export default function EntrySheet({
 
                   return (
                     <motion.div
-                      layout
                       key={sh.id}
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      whileHover={{ y: -4, scale: 1.015 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                      className="p-5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/90 dark:to-slate-950/90 border border-slate-200/80 dark:border-white/10 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-3xl flex flex-col justify-between gap-5 shadow-sm hover:shadow-xl hover:shadow-blue-550/[0.03] group relative select-none"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="p-5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/90 dark:to-slate-950/90 border border-slate-200/80 dark:border-white/10 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-3xl flex flex-col justify-between gap-5 shadow-sm hover:shadow-xl hover:shadow-blue-550/[0.03] group relative select-none transition-all duration-200 hover:scale-[1.015] hover:-translate-y-1"
                     >
                       {/* Visual paper-sheet card layout */}
                       <div className="flex items-start justify-between min-w-0">
@@ -4151,8 +4167,16 @@ export default function EntrySheet({
           }
         `}} />
 
-        {/* Main Integrated Workspace (No more double screen scrolling or nested popups!) */}
-        <div className="flex-1 w-full flex flex-row items-stretch overflow-hidden print:block print:p-0 print:overflow-visible print:h-auto relative">
+        {isWorkspaceLoading ? (
+          <div className="flex-1 w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-12 text-center min-h-[500px]">
+            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Loading ledger workspace details...</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-widest font-semibold">Synchronizing with secure cloud cluster</p>
+          </div>
+        ) : (
+          <>
+            {/* Main Integrated Workspace (No more double screen scrolling or nested popups!) */}
+            <div className="flex-1 w-full flex flex-row items-stretch overflow-hidden print:block print:p-0 print:overflow-visible print:h-auto relative">
           {/* Left Inline Sizing Designer Panel with custom enter animations */}
           <AnimatePresence mode="popLayout">
           {showSizingPanel && (
@@ -4538,9 +4562,9 @@ export default function EntrySheet({
 
                           {/* A4 Paper Mockup Sheet Container */}
                           <motion.div 
-                            initial={{ opacity: 0, y: 30, scale: 0.99 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            transition={{ delay: 0.15, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                            initial={{ opacity: 0, scale: 0.985 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.1, duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                             style={{ 
                               paddingLeft: `${paperPaddingX}mm`, 
                               paddingRight: `${paperPaddingX}mm`, 
@@ -6008,7 +6032,9 @@ export default function EntrySheet({
             </div>
           </motion.div>
         )}
-        </div> {/* Main Integrated Workspace ends */}
+            </div> {/* Main Integrated Workspace ends */}
+          </>
+        )}
           </>
         )}
       </motion.div> {/* print-overlay-wrapper ends */}

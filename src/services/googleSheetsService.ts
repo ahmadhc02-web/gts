@@ -177,12 +177,7 @@ export const googleSheetsService = {
 
     fetchConfig();
 
-    // Use standard HTTP polling interval instead of WebSockets
-    const interval = setInterval(fetchConfig, 10000);
-
-    return () => {
-      clearInterval(interval);
-    };
+    return () => {};
   },
 
   getTokens: (): GoogleTokens | null => {

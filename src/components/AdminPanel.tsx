@@ -46,6 +46,40 @@ const EntrySheet = lazy(() => import('./EntrySheet'));
 const ReceiptManager = lazy(() => import('./ReceiptManager'));
 const BatchPrintModal = lazy(() => import('./BatchPrintModal'));
 
+const MYPC_SLUG_TO_FILE: Record<string, string> = {
+  'active-nodes': 'nodes_view',
+  'dealers-data': 'dealers_data_view',
+  'complain-reg': 'submit_view',
+  'network-map': 'map_view',
+  'users-management': 'user_details',
+  'top10-complainer': 'top10_complainers',
+  'login-profiles': 'login_profiles',
+  'dealer-section': 'dealers_view',
+  'workflow-config': 'system_config',
+  'security': 'settings_info',
+  'google-sheet-link': 'integrations',
+  'customization': 'branding_panel',
+  'print': 'print_receipt_view',
+  'complaints': 'complaints_view',
+};
+
+const MYPC_FILE_TO_SLUG: Record<string, string> = {
+  'nodes_view': 'active-nodes',
+  'dealers_data_view': 'dealers-data',
+  'submit_view': 'complain-reg',
+  'map_view': 'network-map',
+  'user_details': 'users-management',
+  'top10_complainers': 'top10-complainer',
+  'login_profiles': 'login-profiles',
+  'dealers_view': 'dealer-section',
+  'system_config': 'workflow-config',
+  'settings_info': 'security',
+  'integrations': 'google-sheet-link',
+  'branding_panel': 'customization',
+  'print_receipt_view': 'print',
+  'complaints_view': 'complaints',
+};
+
 interface AdminPanelProps {
   complaints: Complaint[];
   users: UserProfile[];
@@ -801,6 +835,19 @@ export default function AdminPanel({
   const [isEditingMypc, setIsEditingMypc] = useState(false);
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
   const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | null>(null);
+
+  // Sync /mypc sub-routes with opened file state
+  useEffect(() => {
+    if (location.pathname.startsWith('/mypc/')) {
+      const slug = location.pathname.replace('/mypc/', '').split('/')[0];
+      const targetFile = MYPC_SLUG_TO_FILE[slug];
+      if (targetFile) {
+        setMypcOpenedFile(targetFile as any);
+      }
+    } else if (location.pathname === '/mypc') {
+      setMypcOpenedFile(null);
+    }
+  }, [location.pathname]);
   const [activePortalId, setActivePortalId] = useState<string | null>(null);
   const [isAddingNewPortal, setIsAddingNewPortal] = useState(false);
   
@@ -970,11 +1017,19 @@ export default function AdminPanel({
   // Real-time sub for master clients (scoped to tenant)
   useEffect(() => {
     const tenantId = pocketbaseService.getReadTenantId(currentUser);
+    const isTargetTab = ['clients', 'nodes', 'billing', 'mypc', 'dealers_data'].includes(activeTab || '');
+
+    if (!isTargetTab) {
+      // Offline fallback / warm start: fetch once to ensure baseline lists are populated without persistent WebSocket connection
+      pocketbaseService.getClients(tenantId).then(setMasterClients).catch(console.error);
+      return;
+    }
+
     const unsubscribe = pocketbaseService.subscribeClients((data) => {
       setMasterClients(data);
     }, tenantId);
     return () => unsubscribe();
-  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeTab]);
 
   useEffect(() => {
     const handleClientsUpdated = (e: Event) => {
@@ -1034,8 +1089,19 @@ export default function AdminPanel({
     };
   }, []);
 
-  // Real-time sub for billing months (subscribes only once)
+  // Real-time sub for billing months (subscribes when billing section is open)
   useEffect(() => {
+    if (activeTab !== 'billing') {
+      // Baseline warm start: fetch once so dropdowns or quick references work
+      const tenantId = pocketbaseService.getReadTenantId(currentUser);
+      pocketbaseService.getBillingMonths(activeDealerId).then(data => {
+        const sorted = [...data].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        setBillingMonths(sorted);
+        setCurrentMonthId(prev => (!prev && sorted.length > 0 ? sorted[0].id : prev));
+      }).catch(console.error);
+      return;
+    }
+
     const unsubscribe = pocketbaseService.subscribeBillingMonths((data) => {
       const filtered = data.filter((m: any) => !deletingMonthIds.current.has(m.id));
       const sorted = [...filtered].sort((a, b) => {
@@ -1067,7 +1133,7 @@ export default function AdminPanel({
       });
     }, activeDealerId);
     return () => unsubscribe();
-  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId, activeTab]);
 
   // Manual recheck operation (triggered via Recheck Users button) is fully supported and robust.
 
@@ -1987,6 +2053,9 @@ export default function AdminPanel({
   const [lastAutoBackupTime, setLastAutoBackupTime] = useState<number | null>(null);
 
   useEffect(() => {
+    const isIntegrationsTab = ['integrations', 'settings'].includes(activeTab || '');
+    if (!isIntegrationsTab) return;
+
     const unsubscribe = googleSheetsService.subscribeGoogleSheetsConfig((data) => {
       if (data) {
         if (data.spreadsheetId) setSpreadsheetId(data.spreadsheetId);
@@ -1996,7 +2065,7 @@ export default function AdminPanel({
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [activeTab]);
 
   const [spreadsheetId, setSpreadsheetId] = useState(googleSheetsService.getSpreadsheetId() || '');
   const [sheetName, setSheetName] = useState(googleSheetsService.getSheetName());
@@ -5213,7 +5282,14 @@ export default function AdminPanel({
                     key={item.id}
                     whileHover={{ y: -4, scale: 1.01 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => setMypcOpenedFile(item.id as any)}
+                    onClick={() => {
+                      const slug = MYPC_FILE_TO_SLUG[item.id];
+                      if (slug) {
+                        navigate(`/mypc/${slug}`);
+                      } else {
+                        setMypcOpenedFile(item.id as any);
+                      }
+                    }}
                     className="group cursor-pointer p-5 sm:p-6 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-white\/10/70 rounded-[2rem] shadow-[0_2px_10px_-3px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.3)] hover:border-blue-500/30 dark:hover:border-blue-500/30 flex flex-col items-center sm:items-start text-center sm:text-left space-y-4 transition-all duration-300 relative overflow-hidden"
                   >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all duration-300 -mr-12 -mt-12 pointer-events-none" />
@@ -5234,7 +5310,7 @@ export default function AdminPanel({
                 <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-900 px-5 py-4 rounded-2xl border border-slate-200 dark:border-white\/10">
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => setMypcOpenedFile(null)}
+                      onClick={() => navigate('/mypc')}
                       className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest bg-white dark:bg-slate-950 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-lg border border-slate-205 dark:border-white\/10 cursor-pointer shadow-sm transition-all"
                     >
                       ◀ Close Application
@@ -7051,7 +7127,7 @@ export default function AdminPanel({
                                 whileTap={{ scale: 0.98 }}
                                 onClick={() => {
                                   setSelectedDealerId(dealer.uid);
-                                  setMypcOpenedFile('complaints_view');
+                                  navigate('/mypc/complaints');
                                 }}
                                 className={cn(
                                   "p-6 rounded-2xl border-2 transition-all cursor-pointer group",
@@ -7143,7 +7219,7 @@ export default function AdminPanel({
                           <ComplaintForm 
                             onSubmit={async (data) => {
                               await onRegisterComplaint(data);
-                              setMypcOpenedFile('complaints_view');
+                              navigate('/mypc/complaints');
                             }} 
                             isLoading={isLoading || false} 
                             appConfig={appConfig}
@@ -7159,7 +7235,7 @@ export default function AdminPanel({
                   {mypcOpenedFile === 'map_view' && (
                     <MapViewer
                       isOpen={mypcOpenedFile === 'map_view'}
-                      onClose={() => setMypcOpenedFile(null)}
+                      onClose={() => navigate('/mypc')}
                       user={currentUser}
                     />
                   )}
@@ -8879,8 +8955,9 @@ export default function AdminPanel({
       )}
 
       {/* Interactive A4 Ledger Entry Sheet Modal overlay */}
-      <Suspense fallback={null}>
-        <EntrySheet
+      {(isEntrySheetOpen || entrySheetOpenWithUserLedger || isEntrySheetRouteOpen) && (
+        <Suspense fallback={null}>
+          <EntrySheet
           isOpen={isEntrySheetOpen || entrySheetOpenWithUserLedger || isEntrySheetRouteOpen}
           onClose={() => {
             setIsEntrySheetOpen(false);
@@ -8898,15 +8975,18 @@ export default function AdminPanel({
           setBillingMonths={setBillingMonths}
           savingMonthIds={savingMonthIds}
           initialShowUserLedger={entrySheetOpenWithUserLedger}
-        />
+          />
+        </Suspense>
+      )}
 
         {/* Batch Print Multi-month Dialog Overlay */}
-        <BatchPrintModal
-          isOpen={isBatchPrintOpen}
-          onClose={() => setIsBatchPrintOpen(false)}
-          billingMonths={billingMonths}
-        />
-      </Suspense>
+        <Suspense fallback={null}>
+          <BatchPrintModal
+            isOpen={isBatchPrintOpen}
+            onClose={() => setIsBatchPrintOpen(false)}
+            billingMonths={billingMonths}
+          />
+        </Suspense>
 
       {/* Recovery Row Details Modal */}
       <AnimatePresence>
