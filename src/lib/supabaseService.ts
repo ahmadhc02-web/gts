@@ -923,6 +923,7 @@ export const supabaseService = {
               comments: r.comments || '',
               occ: r.occ || '',
               serNam: r.ser_nam || '',
+              panelDetails: r.panel_details || r.ser_nam || '',
               pkgDetails: r.pkg_details || '',
               sag: r.sag || '',
               lai: r.lai || '',
@@ -1009,14 +1010,13 @@ export const supabaseService = {
           paymentStatus: r.payment_status || 'unpaid',
           comments: r.comments || '',
           occ: r.occ || '',
-          serNam: r.ser_nam || '',
+          panelDetails: r.panel_details || r.ser_nam || '',
           pkgDetails: r.pkg_details || '',
           sag: r.sag || '',
           lai: r.lai || '',
           connectionDate: r.connection_date || '',
           devicePrice: r.device_price || '',
           abl: r.abl || '',
-          network: r.network || ''
         }));
       }
       return [];
@@ -1236,14 +1236,15 @@ export const supabaseService = {
         payment_status: String(r.paymentStatus ?? r.payment_status ?? 'unpaid'),
         comments: String(r.comments || ''),
         occ: String(r.occ || ''),
-        ser_nam: String(r.serNam || r.ser_nam || ''),
+        ser_nam: String(r.panelDetails || r.serNam || ''),
         pkg_details: String(r.pkgDetails || r.pkg_details || ''),
         sag: String(r.sag || ''),
         lai: String(r.lai || ''),
         connection_date: String(r.connectionDate || r.connection_date || ''),
         device_price: sanitizeNum(r.devicePrice ?? r.device_price),
         abl: sanitizeNum(r.abl),
-        network: String(r.network || '')
+        network: '',
+        panel_details: String(r.panelDetails || '')
       };
     };
 
@@ -1263,8 +1264,20 @@ export const supabaseService = {
       try {
         const { error } = await supabase.from('billing_rows').upsert(dbRows, { onConflict: 'id' });
         if (error) {
-          console.warn("syncBillingRows batch upsert error:", error.message);
-          throw error;
+          if (error.message?.includes('panel_details') || error.message?.includes('column')) {
+            const fallbackRows = dbRows.map(row => {
+              const { panel_details, ...rest } = row as any;
+              return rest;
+            });
+            const { error: retryError } = await supabase.from('billing_rows').upsert(fallbackRows, { onConflict: 'id' });
+            if (retryError) {
+              console.warn("syncBillingRows retry upsert error:", retryError.message);
+              throw retryError;
+            }
+          } else {
+            console.warn("syncBillingRows batch upsert error:", error.message);
+            throw error;
+          }
         }
       } catch (err) {
         console.warn("syncBillingRows error:", err);

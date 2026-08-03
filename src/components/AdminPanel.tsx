@@ -1188,13 +1188,15 @@ export default function AdminPanel({
           const unpaid = Math.max(0, prevTotal - prevReceived);
           const isTdcOrDc = r.paymentStatus === 'tdc' || r.paymentStatus === 'dc';
           const newBase = isTdcOrDc ? 0 : (parseFloat(r.baseAmount) || 0);
+          const matchingClient = currentMasterClients.find(c => c.id === r.clientId || (r.username && c.username && c.username.toLowerCase() === r.username.toLowerCase()));
           return {
             ...r,
             cr: unpaid,
             baseAmount: newBase,
             totalAmount: newBase + unpaid,
             paymentReceived: 0,
-            paymentStatus: isTdcOrDc ? r.paymentStatus : 'unpaid'
+            paymentStatus: isTdcOrDc ? r.paymentStatus : 'unpaid',
+            panelDetails: r.panelDetails || r.serNam || matchingClient?.panelDetails || ''
           };
         });
         
@@ -1241,7 +1243,8 @@ export default function AdminPanel({
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            network: 'GN CITY'
+            network: 'GN CITY',
+            panelDetails: c.panelDetails || ''
           };
         });
         rows = [...rows, ...newRows];
@@ -1283,7 +1286,8 @@ export default function AdminPanel({
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            network: 'GN CITY'
+            network: 'GN CITY',
+            panelDetails: c.panelDetails || ''
           };
         });
       }
@@ -1411,7 +1415,8 @@ export default function AdminPanel({
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            network: 'GN CITY'
+            network: 'GN CITY',
+            panelDetails: c.panelDetails || ''
           });
           newCount++;
         } else {
@@ -1428,6 +1433,10 @@ export default function AdminPanel({
               row.totalAmount = targetBase + (parseFloat(row.cr) || 0); 
             }
             changed = true; 
+          }
+          if ((row.panelDetails || '') !== (c.panelDetails || '')) {
+            row.panelDetails = c.panelDetails || '';
+            changed = true;
           }
           if (changed) {
             existingRows[existingIdx] = row;
@@ -2427,6 +2436,10 @@ export default function AdminPanel({
           row.billingDay = String(match.billingDay);
           changed = true;
         }
+        if ((row.panelDetails || '') !== (match.panelDetails || '')) {
+          row.panelDetails = match.panelDetails || '';
+          changed = true;
+        }
         if (changed) {
           updatedRows[i] = { ...row };
           hasUpdates = true;
@@ -2473,7 +2486,8 @@ export default function AdminPanel({
           connectionDate: '',
           devicePrice: 0,
           abl: 0,
-          network: ''
+          network: '',
+          panelDetails: c.panelDetails || ''
         };
       });
       
@@ -7499,6 +7513,9 @@ export default function AdminPanel({
                             <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[145px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('mobileNumber')}>
                               MOBILE #{getBillingSortIcon('mobileNumber')}
                             </th>
+                            <th className="py-2 px-2 border-r border-slate-200 dark:border-white/10 min-w-[130px] cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('panelDetails')}>
+                              PANEL DETAILS{getBillingSortIcon('panelDetails')}
+                            </th>
                             <th className="py-2 px-1.5 border-r border-slate-200 dark:border-white\/10 min-w-[65px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('area')}>
                               AREA{getBillingSortIcon('area')}
                             </th>
@@ -7529,12 +7546,10 @@ export default function AdminPanel({
                                   COMMENTS{getBillingSortIcon('comments')}
                                 </th>
                                 <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[100px]">OCCUPATION</th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[110px]">SER NAM</th>
                                 <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[95px]">PKG DETAILS</th>
                                 <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[90px] text-center">DATE</th>
                                 <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[80px] text-right">DEVICE</th>
                                 <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[80px] text-right">ABL</th>
-                                <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[95px]">NETWORK</th>
                               </>
                             )}
                             <th className="py-2 px-1.5 text-center min-w-[50px]">ACT</th>
@@ -7620,6 +7635,21 @@ export default function AdminPanel({
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
                                     className="w-full min-w-[130px] bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap overflow-visible hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                     placeholder="03XXXXXXXXX"
+                                  />
+                                </td>
+
+                                {/* Panel Details */}
+                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[130px]">
+                                  <input
+                                    id={`rec_cell_${globalRowIdx}_panelDetails`}
+                                    type="text"
+                                    value={rowRef.panelDetails || ''}
+                                    disabled={!isBillingUnlocked}
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase())}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'panelDetails', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase(), true)}
+                                    className="w-full min-w-[115px] bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    placeholder="Panel Details"
                                   />
                                 </td>
 
@@ -7783,20 +7813,6 @@ export default function AdminPanel({
                                       />
                                     </td>
 
-                                    {/* Serial / PPPoE Username */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[11px]">
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_serNam`}
-                                        type="text"
-                                        value={rowRef.serNam || ''}
-                                        disabled={!isBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'serNam', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value, true)}
-                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black text-[12px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                      />
-                                    </td>
-
                                     {/* PKG details */}
                                     <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-blue-900 dark:text-blue-250 font-black font-sans">
                                       <input
@@ -7851,20 +7867,6 @@ export default function AdminPanel({
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'abl', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
                                         className="w-16 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black text-[12.5px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                      />
-                                    </td>
-
-                                    {/* Network name */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[11px]">
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_network`}
-                                        type="text"
-                                        value={rowRef.network || ''}
-                                        disabled={!isBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'network', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value, true)}
-                                        className="w-full bg-transparent px-1 py-0.5 border-none rounded text-black dark:text-white text-[12px] font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       />
                                     </td>
                                   </>
@@ -8113,6 +8115,20 @@ export default function AdminPanel({
                               />
                             </div>
 
+                            {/* Panel Details */}
+                            <div className="space-y-0.5">
+                              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Panel Details</span>
+                              <input
+                                type="text"
+                                value={rowRef.panelDetails || ''}
+                                disabled={!isBillingUnlocked}
+                                onChange={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase())}
+                                onBlur={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase(), true)}
+                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[12px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-sans tracking-tight"
+                                placeholder="Panel Details"
+                              />
+                            </div>
+
                             {/* Area & RT */}
                             <div className="grid grid-cols-2 gap-1 font-sans">
                               <div className="space-y-0.5">
@@ -8216,27 +8232,15 @@ export default function AdminPanel({
                           {/* Advance params block shown only when isAdvanceMode toggled on */}
                           {isAdvanceMode && (
                             <div className="mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-white\/10 space-y-2 text-[11px] bg-slate-50/50 dark:bg-black/10 p-2 rounded-xl font-sans">
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-0.5">
-                                  <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Occupation</span>
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.occ}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded font-sans text-black dark:text-white font-black"
-                                  />
-                                </div>
-                                <div className="space-y-0.5">
-                                  <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Ser Nam</span>
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.serNam}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'serNam', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded font-sans text-black dark:text-white"
-                                  />
-                                </div>
+                              <div className="space-y-0.5">
+                                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Occupation</span>
+                                <input
+                                  type="text"
+                                  defaultValue={rowRef.occ}
+                                  disabled={!isBillingUnlocked}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
+                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded font-sans text-black dark:text-white font-black"
+                                />
                               </div>
 
                               <div className="space-y-0.5">
@@ -8299,18 +8303,7 @@ export default function AdminPanel({
                                 </div>
                               </div>
 
-                              <div className="flex items-center justify-between gap-1 mt-1 pt-1.5 border-t border-slate-200/60 dark:border-white\/10/50">
-                                <div className="space-y-0.5 flex-1 max-w-[65%]">
-                                  <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase block leading-none">Network</span>
-                                  <input
-                                    type="text"
-                                    defaultValue={rowRef.network}
-                                    disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'network', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-[11px] font-sans text-black dark:text-white font-black"
-                                  />
-                                </div>
-                                
+                              <div className="flex items-center justify-end gap-1 mt-1 pt-1.5 border-t border-slate-200/60 dark:border-white\/10/50">
                                 {isBillingUnlocked && (
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     <button
