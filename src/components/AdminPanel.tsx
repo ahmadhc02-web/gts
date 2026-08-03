@@ -163,36 +163,12 @@ export default function AdminPanel({
   const [localActiveTab, setLocalActiveTab] = useState<'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing'>('complaints');
   const activeTab = activeTabProp !== undefined ? activeTabProp as any : localActiveTab;
   
-  // Unsaved changes tracking for Recovery Rows
-  const [editedRowIndices, _setEditedRowIndices] = useState<Set<number>>(new Set());
-  const editedRowIndicesRef = React.useRef<Set<number>>(new Set());
-  const setEditedRowIndices = (val: any) => {
-    _setEditedRowIndices(prev => {
-      const next = typeof val === 'function' ? val(prev) : val;
-      editedRowIndicesRef.current = next;
-      return next;
-    });
-  };
-  const [isSavingRecoveryRows, setIsSavingRecoveryRows] = useState(false);
-  const savedBillingSnapshotRef = React.useRef<any[]>([]);
-  const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
-  const [pendingNavigationAction, setPendingNavigationAction] = useState<(() => void) | null>(null);
-
   const setActiveTab = (tabId: 'complaints' | 'users' | 'settings' | 'integrations' | 'submit' | 'critical' | 'config' | 'clients' | 'monitor' | 'dealers' | 'branding' | 'dealers_data' | 'nodes' | 'top10' | 'billing') => {
-    const doNavigate = () => {
-      if (onNavigateProp) {
-        onNavigateProp(tabId);
-      } else {
-        setLocalActiveTab(tabId);
-      }
-    };
-
-    if (activeTab === 'billing' && tabId !== 'billing' && editedRowIndices.size > 0) {
-      setPendingNavigationAction(() => doNavigate);
-      setIsUnsavedModalOpen(true);
-      return;
+    if (onNavigateProp) {
+      onNavigateProp(tabId);
+    } else {
+      setLocalActiveTab(tabId);
     }
-    doNavigate();
   };
   const customNames = branding.customNames || {};
   const [isFormVisible, setIsFormVisible] = useState(true);
@@ -806,7 +782,6 @@ export default function AdminPanel({
   const isEntrySheetRouteOpen = location.pathname.startsWith('/billingmod/entrysheet');
 
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
-  const [isEntrySheetOpen, setIsEntrySheetOpen] = useState(false);
   const [entrySheetOpenWithUserLedger, setEntrySheetOpenWithUserLedger] = useState(false);
   const [isBatchPrintOpen, setIsBatchPrintOpen] = useState(false);
   const [isBillingDropdownOpen, setIsBillingDropdownOpen] = useState(false);
@@ -852,7 +827,6 @@ export default function AdminPanel({
   const [isAddingNewPortal, setIsAddingNewPortal] = useState(false);
   
   // Custom states for Client Infrastructure Directory
-  const [mypcUserSubTab, setMypcUserSubTab] = useState<'client_directory' | 'infrastructure'>('client_directory');
   const [mypcClientSearch, setMypcClientSearch] = useState('');
   const [mypcClientArea, setMypcClientArea] = useState('ALL');
   const [pingingClientId, setPingingClientId] = useState<string | null>(null);
@@ -1089,6 +1063,13 @@ export default function AdminPanel({
     };
   }, []);
 
+  // Proactively preload EntrySheet chunk as soon as billing section or route is active
+  useEffect(() => {
+    if (activeTab === 'billing' || location.pathname.startsWith('/billingmod')) {
+      import('./EntrySheet').catch(() => {});
+    }
+  }, [activeTab, location.pathname]);
+
   // Real-time sub for billing months (subscribes when billing section is open)
   useEffect(() => {
     if (activeTab !== 'billing') {
@@ -1111,7 +1092,7 @@ export default function AdminPanel({
       
       setBillingMonths(prev => {
         return sorted.map(incomingMonth => {
-          if (savingMonthIds.current.has(incomingMonth.id) || (incomingMonth.id === currentMonthIdRef.current && editedRowIndicesRef.current.size > 0)) {
+          if (savingMonthIds.current.has(incomingMonth.id)) {
             const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
             if (currentLocalMonth) {
               console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save in progress)`);
@@ -1467,112 +1448,7 @@ export default function AdminPanel({
     }
   };
 
-      // Maintain pristine snapshot when month changes or when no unsaved edits exist
-  useEffect(() => {
-    if (currentMonthId && editedRowIndices.size === 0) {
-      const activeDoc = billingMonths.find(m => m.id === currentMonthId);
-      if (activeDoc && activeDoc.rows) {
-        savedBillingSnapshotRef.current = JSON.parse(JSON.stringify(activeDoc.rows));
-      }
-    }
-  }, [currentMonthId, billingMonths, editedRowIndices.size]);
 
-  const handleBatchSaveRecoveryRows = async (): Promise<boolean> => {
-    if (!currentMonthId || editedRowIndices.size === 0) return true;
-    try {
-      setIsSavingRecoveryRows(true);
-      const activeDoc = billingMonths.find(m => m.id === currentMonthId);
-      if (!activeDoc || !activeDoc.rows) {
-        setIsSavingRecoveryRows(false);
-        return false;
-      }
-
-      const editedIndices: number[] = Array.from(editedRowIndicesRef.current);
-      const count = editedIndices.length;
-
-      // Save to cloud FIRST passing only edited indices for ultra-fast sync, then clear local edits state
-      await saveBillingMonthTracked(
-        currentMonthId,
-        activeDoc.rows,
-        currentUser?.username || 'admin',
-        activeDealerId || 'main',
-        true,
-        editedIndices
-      );
-      
-      // Also sync all edited recovery rows to Master Client Directory in database and local state
-      const clientsToSync: any[] = [];
-      for (const idx of editedIndices) {
-        const row = activeDoc.rows[idx];
-        if (!row) continue;
-
-        const targetId = row.clientId || row.id;
-        const targetUsername = String(row.username || '').toLowerCase().trim();
-        const targetName = String(row.name || '').toLowerCase().trim();
-
-        const matchedClient = masterClients.find((c: any) =>
-          (targetId && String(c.id) === String(targetId)) ||
-          (targetUsername && String(c.username || '').toLowerCase().trim() === targetUsername) ||
-          (targetName && String(c.name || '').toLowerCase().trim() === targetName)
-        );
-
-        if (matchedClient) {
-          const updatedClient = {
-            ...matchedClient,
-            name: row.name !== undefined && row.name !== '' ? row.name : matchedClient.name,
-            username: row.username !== undefined && row.username !== '' ? row.username : matchedClient.username,
-            mobileNumber: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.mobileNumber),
-            number: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.number),
-            area: row.area !== undefined ? row.area : matchedClient.area,
-            pkgDetails: row.pkgDetails !== undefined ? row.pkgDetails : matchedClient.pkgDetails,
-            baseAmount: row.baseAmount !== undefined ? row.baseAmount : matchedClient.baseAmount,
-            rt: row.rt !== undefined ? row.rt : matchedClient.rt,
-            billingDay: row.billingDay !== undefined ? row.billingDay : matchedClient.billingDay,
-            seriesNumber: (row.serNam !== undefined && row.serNam !== '') ? row.serNam : matchedClient.seriesNumber,
-          };
-          clientsToSync.push(updatedClient);
-        }
-      }
-
-      if (clientsToSync.length > 0) {
-        await pocketbaseService.saveClientsBatch(clientsToSync, activeDealerId || 'main');
-        setMasterClients(prev => {
-          const clientMap = new Map(prev.map(c => [c.id, c]));
-          clientsToSync.forEach(c => clientMap.set(c.id, c));
-          return Array.from(clientMap.values());
-        });
-      }
-
-      savedBillingSnapshotRef.current = JSON.parse(JSON.stringify(activeDoc.rows));
-      setEditedRowIndices(new Set());
-      
-      toast.success("Recovery Edits Saved! 🎉", {
-        description: `${count} edited row${count > 1 ? 's' : ''} saved to database & Client Directory.`
-      });
-
-      setIsSavingRecoveryRows(false);
-      return true;
-    } catch (err: any) {
-      setIsSavingRecoveryRows(false);
-      console.error("Failed to batch save recovery rows:", err);
-      toast.error("Failed to save recovery rows", { description: getCleanErrorMessage(err) });
-      return false;
-    }
-  };
-
-  const handleDiscardRecoveryEdits = () => {
-    if (!currentMonthId) return;
-    if (savedBillingSnapshotRef.current && savedBillingSnapshotRef.current.length > 0) {
-      setBillingMonths(prev => prev.map(m => {
-        if (m.id === currentMonthId) {
-          return { ...m, rows: JSON.parse(JSON.stringify(savedBillingSnapshotRef.current)) };
-        }
-        return m;
-      }));
-    }
-    setEditedRowIndices(new Set());
-    toast.info("Unsaved edits discarded", { description: "Recovery rows restored to last saved state." });
-  };
 
   const syncRecoveryRowToMasterClient = (row: any) => {
     if (!row) return;
@@ -1689,19 +1565,16 @@ export default function AdminPanel({
         syncRecoveryRowToMasterClient(targetRow);
 
         if (currentMonthId) {
-          saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]).catch(()=>{});
+          saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]).catch((err)=>{
+            toast.error("Cloud Sync Failed", { description: "Failed to save recovery cell changes. Check connection." });
+            console.error("Auto-sync cell change failed:", err);
+          });
         }
 
         return next;
       });
 
-      setEditedRowIndices(prev => {
-        const next = new Set(prev);
-        next.add(rowIndex);
-        return next;
-      });
-      
-    } catch (err: any) {
+      } catch (err: any) {
       console.error(err);
     }
   };
@@ -2823,7 +2696,6 @@ export default function AdminPanel({
         setEntrySheetOpenWithUserLedger(true);
         navigate('/billingmod/entrysheet');
       } else if (action === 'entry-sheet') {
-        setIsEntrySheetOpen(true);
         navigate('/billingmod/entrysheet');
       } else if (action === 'new-month') {
         setIsConfiguringNewMonth(true);
@@ -2845,18 +2717,7 @@ export default function AdminPanel({
       const customEvent = e as CustomEvent;
       const newMonthId = customEvent.detail;
       if (newMonthId === currentMonthId) return;
-
-      const doSwitchMonth = () => {
-        setCurrentMonthId(newMonthId);
-        setEditedRowIndices(new Set());
-      };
-
-      if (editedRowIndices.size > 0) {
-        setPendingNavigationAction(() => doSwitchMonth);
-        setIsUnsavedModalOpen(true);
-      } else {
-        doSwitchMonth();
-      }
+      setCurrentMonthId(newMonthId);
     };
 
     window.addEventListener('gts-billing-action', handleBillingAction);
@@ -2866,20 +2727,7 @@ export default function AdminPanel({
       window.removeEventListener('gts-billing-action', handleBillingAction);
       window.removeEventListener('gts-billing-month-selected', handleMonthSelected);
     };
-  }, [currentMonthId, billingMonths, activeRows, editedRowIndices.size]);
-
-  // Window beforeunload prompt if unsaved Recovery Rows edits exist
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (editedRowIndices.size > 0 && activeTab === 'billing') {
-        e.preventDefault();
-        e.returnValue = 'You have unsaved changes in Recovery Rows. Are you sure you want to leave?';
-        return e.returnValue;
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [editedRowIndices.size, activeTab]);
+  }, [currentMonthId, billingMonths, activeRows]);
 
   const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white\/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
@@ -5343,35 +5191,6 @@ export default function AdminPanel({
                   {/* Subview 1: Client Infrastructure Directory */}
                   {mypcOpenedFile === 'user_details' && (
                     <div className="max-w-7xl mx-auto space-y-6 text-left">
-                      {/* Sub-view Segment Toggle Tabs */}
-                      <div className="flex border-b border-slate-205 dark:border-white\/10 pb-2 gap-4">
-                        <button
-                          type="button"
-                          onClick={() => setMypcUserSubTab('client_directory')}
-                          className={cn(
-                            "px-4 py-2 text-xs font-black uppercase tracking-wider transition-all border-b-2 cursor-pointer pb-2.5",
-                            mypcUserSubTab === 'client_directory'
-                              ? "border-blue-500 text-blue-600 dark:text-blue-400 font-extrabold"
-                              : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                          )}
-                        >
-                          User Details Management
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setMypcUserSubTab('infrastructure')}
-                          className={cn(
-                            "px-4 py-2 text-xs font-black uppercase tracking-wider transition-all border-b-2 cursor-pointer pb-2.5",
-                            mypcUserSubTab === 'infrastructure'
-                              ? "border-blue-500 text-blue-600 dark:text-blue-400 font-extrabold"
-                              : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                          )}
-                        >
-                          CPE Infrastructure Diagnostics
-                        </button>
-                      </div>
-
-                      {mypcUserSubTab === 'client_directory' ? (
                         <div className="animate-fade-in bg-white dark:bg-slate-950 p-6 rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-xl">
                           <ClientManagement 
                             appConfig={appConfig} 
@@ -5381,344 +5200,6 @@ export default function AdminPanel({
                             isBillingUnlocked={isBillingUnlocked}
                           />
                         </div>
-                      ) : (
-                        <div className="space-y-6">
-                          {/* KPI Summary Cards */}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div className={cn("p-5 flex items-center justify-between", getCardStyle(branding.cardStyle))}>
-                              <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Registered Capacity</p>
-                                <p className="text-2xl font-black text-slate-900 dark:text-white mt-1 font-sans">490 Registered</p>
-                                <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-wider flex items-center gap-1 mt-1 font-mono">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  Operational Matrix Active
-                                </span>
-                              </div>
-                              <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
-                                <Monitor size={18} />
-                              </div>
-                            </div>
-
-                            <div className={cn("p-5 flex items-center justify-between", getCardStyle(branding.cardStyle))}>
-                              <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 font-mono">Active Online CPEs</p>
-                                <p className="text-2xl font-black text-slate-900 dark:text-white mt-1 font-sans">
-                                  {masterClients.length ? masterClients.length : 5} Nodes
-                                </p>
-                                <span className="text-[9px] text-blue-500 font-bold uppercase tracking-wider mt-1 block font-mono">
-                                  Transit Gateway Online
-                                </span>
-                              </div>
-                              <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-500">
-                                <Cloud size={18} />
-                              </div>
-                            </div>
-
-                            <div className={cn("p-5 flex items-center justify-between", getCardStyle(branding.cardStyle))}>
-                              <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 font-mono">Link Bandwidth Pools</p>
-                                <p className="text-2xl font-black text-slate-900 dark:text-white mt-1 font-sans">1.45 Gbps</p>
-                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mt-1 block font-mono">
-                                  Average Latency 11ms
-                                </span>
-                              </div>
-                              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-550">
-                                <TrendingUp size={18} />
-                              </div>
-                            </div>
-
-                            <div className={cn("p-5 flex items-center justify-between", getCardStyle(branding.cardStyle))}>
-                              <div>
-                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 font-mono">Main Power status</p>
-                                <p className="text-2xl font-black text-slate-900 dark:text-white mt-1 font-sans">100% Core</p>
-                                <span className="text-[9px] text-amber-500 font-bold uppercase tracking-wider mt-1 block font-mono">
-                                  Mains Voltage Grid OK
-                                </span>
-                              </div>
-                              <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
-                                <Zap size={18} />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Client Infrastructure Directory Header & Controls */}
-                          <div className={cn("p-6", getCardStyle(branding.cardStyle), "space-y-4")}>
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                              <div>
-                                <h3 className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-slate-50">
-                                  Client Infrastructure Directory
-                                </h3>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                                  Global Administrator View • Operational Matrix Active
-                                </p>
-                              </div>
-
-                              {/* Filters Action Panel */}
-                              <div className="flex flex-wrap items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={mypcClientSearch}
-                                  onChange={(e) => setMypcClientSearch(e.target.value)}
-                                  placeholder="Search SSID, Client Name, ID, Area..."
-                                  className="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-205 dark:border-white\/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 w-60"
-                                />
-
-                                <select
-                                  value={mypcClientArea}
-                                  onChange={(e) => setMypcClientArea(e.target.value)}
-                                  className="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-205 dark:border-white\/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                                >
-                                  <option value="ALL">All Covered Sectors</option>
-                                  {mypcUniqueAreas.map((area) => (
-                                    <option key={area} value={area}>{area}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* List grid of Clients */}
-                            <div className="overflow-x-auto border border-slate-100 dark:border-slate-900 rounded-xl shadow-inner scrollbar-thin">
-                              <table className="w-full text-left border-collapse">
-                                <thead>
-                                  <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-150 dark:border-slate-900">
-                                    <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">CPE Link Identity</th>
-                                    <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Sector / Area</th>
-                                    <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">IP Configuration</th>
-                                    <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 font-mono">Bandwidth Link</th>
-                                    <th className="px-5 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Operational Diagnostics Tools</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-900 bg-white dark:bg-slate-950/20">
-                                  {clientsToShow.map((c) => {
-                                    const isPinging = pingingClientId === c.id;
-                                    const isRebooting = rebootingClientId === c.id;
-                                    const isBursting = burstingClientId === c.id;
-                                    const isTracing = routeTracingClientId === c.id;
-                                    const hasPingResult = pingResults[c.id];
-                                    const hasTraceLogs = routeTraceLogs[c.id];
-                                    
-                                    const staticSuffix = (c.seriesNumber || c.id.slice(-2)).replace(/\D/g, '') || '54';
-                                    const ipAddress = `10.150.12.${parseInt(staticSuffix) % 250 || 45}`;
-                                    const signalStrength = -50 - (parseInt(staticSuffix) % 35);
-                                    
-                                    return (
-                                      <React.Fragment key={`myclient-${c.id}`}>
-                                        <tr className={cn(
-                                          "hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition-colors",
-                                          isBursting && "bg-amber-500/10 dark:bg-amber-500/5 border-l border-amber-500"
-                                        )}>
-                                          <td className="px-5 py-4">
-                                            <div className="flex items-center gap-2.5">
-                                              <div className="relative shrink-0">
-                                                <span className={cn(
-                                                  "w-2.5 h-2.5 rounded-full block border border-white dark:border-slate-900",
-                                                  isRebooting ? "bg-red-500 animate-spin" : "bg-emerald-500"
-                                                )} />
-                                                {!isRebooting && (
-                                                  <span className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping opacity-60 pointer-events-none" />
-                                                )}
-                                              </div>
-                                              <div>
-                                                <div className="flex items-center gap-1.5">
-                                                  <p className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-zinc-105">
-                                                    {c.name}
-                                                  </p>
-                                                  <span className="text-[8px] font-black font-mono bg-slate-100 dark:bg-slate-900/80 px-1.5 py-0.5 rounded text-slate-400 dark:text-slate-500">
-                                                    SN-{c.seriesNumber || '10xx'}
-                                                  </span>
-                                                </div>
-                                                <p className="text-[10px] font-semibold text-slate-400 font-mono mt-0.5">
-                                                  SSID: {c.username}
-                                                </p>
-                                              </div>
-                                            </div>
-                                          </td>
-
-                                          <td className="px-5 py-4">
-                                            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-350 font-bold">
-                                              <MapPin size={12} className="text-slate-400 shrink-0" />
-                                              <p className="text-xs uppercase tracking-wider truncate max-w-[120px]">{c.area || 'Corporate Core'}</p>
-                                            </div>
-                                            <p className="text-[9px] font-medium text-slate-400/80 uppercase mt-0.5 font-mono">
-                                              {c.userNearby || 'Tower Sector A5'}
-                                            </p>
-                                          </td>
-
-                                          <td className="px-5 py-4">
-                                            <p className="text-xs font-mono font-black text-slate-800 dark:text-slate-300">
-                                              {ipAddress}
-                                            </p>
-                                            <p className="text-[9px] font-mono text-slate-400">
-                                              Signal: <span className={cn(
-                                                "font-bold font-sans",
-                                                signalStrength > -70 ? "text-emerald-500" : "text-amber-500"
-                                              )}>{signalStrength} dBm</span>
-                                            </p>
-                                          </td>
-
-                                          <td className="px-5 py-4">
-                                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100 font-mono">
-                                              {c.pkgDetails || '10 Mbps Std'}
-                                            </p>
-                                            {isBursting ? (
-                                              <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 text-[8px] font-black rounded uppercase bg-amber-500 text-white animate-pulse">
-                                                ⚡ BURSTING 100M
-                                              </span>
-                                            ) : (
-                                              <span className="text-[9px] font-bold text-emerald-500 uppercase flex items-center gap-1 mt-0.5 font-mono">
-                                                Standard Link
-                                              </span>
-                                            )}
-                                          </td>
-
-                                          <td className="px-5 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-1.5">
-                                              {/* Ping Button */}
-                                              <button
-                                                type="button"
-                                                disabled={isPinging || isRebooting}
-                                                onClick={() => {
-                                                  setPingingClientId(c.id);
-                                                  setPingResults(prev => ({ ...prev, [c.id]: 'Running ICMP Echo payload...' }));
-                                                  setTimeout(() => {
-                                                    const latency = Math.floor(Math.random() * 8) + 8;
-                                                    setPingingClientId(null);
-                                                    setPingResults(prev => ({
-                                                      ...prev,
-                                                      [c.id]: `PING SUCCESS: 10.150.12.${staticSuffix} - Echo reply ${latency}ms, TTL=64 (100% stable, 0% drop)`
-                                                    }));
-                                                    toast.success(`Ping successfully finalized for client ${c.name}`);
-                                                  }, 1200);
-                                                }}
-                                                className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 hover:bg-blue-500 hover:text-white dark:hover:bg-blue-600 outline-none text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-350 transition-all border border-slate-205 dark:border-white\/10 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
-                                              >
-                                                {isPinging ? (
-                                                  <span className="w-2 h-2 rounded-full bg-blue-400 border-t border-r border-white animate-spin shrink-0" />
-                                                ) : (
-                                                  <Activity size={10} />
-                                                )}
-                                                <span>Ping Link</span>
-                                              </button>
-
-                                              {/* Speed Burst Button */}
-                                              <button
-                                                type="button"
-                                                disabled={isBursting || isRebooting}
-                                                onClick={() => {
-                                                  setBurstingClientId(c.id);
-                                                  toast.info(`Authorized Speed Burst Profile (100Mbps Unlimited) configured for client ${c.name}`);
-                                                  setTimeout(() => {
-                                                    setBurstingClientId(null);
-                                                    toast.success(`Bandwidth burst threshold expired. Client reverted cleanly.`);
-                                                  }, 4000);
-                                                }}
-                                                className={cn(
-                                                  "px-2.5 py-1.5 rounded-lg outline-none text-[9px] font-black uppercase tracking-widest transition-all border cursor-pointer inline-flex items-center gap-1",
-                                                  isBursting 
-                                                    ? "bg-amber-500 text-white border-amber-500 shadow-lg shadow-amber-500/20" 
-                                                    : "bg-slate-50 dark:bg-slate-900 hover:bg-amber-550 hover:text-white dark:hover:bg-amber-600 text-slate-600 dark:text-slate-350 border-slate-205 dark:border-white\/10"
-                                                )}
-                                              >
-                                                <Flame size={10} />
-                                                <span>Speed Burst</span>
-                                              </button>
-
-                                              {/* Trace Route Button */}
-                                              <button
-                                                type="button"
-                                                disabled={isTracing || isRebooting}
-                                                onClick={() => {
-                                                  setRouteTracingClientId(c.id);
-                                                  setRouteTraceLogs(prev => ({ ...prev, [c.id]: ['Starting traceroute to CPE ONT router...', `1. core-gw-01.gts-isp.net.pk (10.150.12.1) - 1.2ms`] }));
-                                                  
-                                                  setTimeout(() => {
-                                                    setRouteTraceLogs(prev => ({
-                                                      ...prev,
-                                                      [c.id]: [...(prev[c.id] || []), `2. sector-antenna-node-04.gts-backhaul (10.150.12.15) - 4.5ms`]
-                                                    }));
-                                                  }, 600);
-                                                  
-                                                  setTimeout(() => {
-                                                    setRouteTraceLogs(prev => ({
-                                                      ...prev,
-                                                      [c.id]: [...(prev[c.id] || []), `3. client-ont-gateway (${ipAddress}) - 9.1ms`, `Traceroute finalized successfully without packet loss.`]
-                                                    }));
-                                                    setRouteTracingClientId(null);
-                                                    toast.success(`Hops traceback path generated.`);
-                                                  }, 1300);
-                                                }}
-                                                className="px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 hover:bg-indigo-500 hover:text-white dark:hover:bg-indigo-600 outline-none text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-350 transition-all border border-slate-205 dark:border-white\/10 cursor-pointer inline-flex items-center gap-1"
-                                              >
-                                                <MapPinned size={10} />
-                                                <span>Trace Path</span>
-                                              </button>
-
-                                              {/* Reboot Router */}
-                                              <button
-                                                type="button"
-                                                disabled={isRebooting}
-                                                onClick={() => {
-                                                  setRebootingClientId(c.id);
-                                                  toast.warning(`Sending remote reboot CLI payload signal to ONT device for ${c.name}...`);
-                                                  setTimeout(() => {
-                                                    setRebootingClientId(null);
-                                                    toast.success(`Remote CPE Router for ${c.name} safely initialized & online.`);
-                                                  }, 2050);
-                                                }}
-                                                className="px-2 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-500 hover:text-white text-rose-500 dark:hover:text-white transition-all border border-rose-100 dark:border-rose-900/30 cursor-pointer"
-                                                title="Power restart customer ONT router"
-                                              >
-                                                <LogOut size={10} className="rotate-90" />
-                                              </button>
-                                            </div>
-                                          </td>
-                                        </tr>
-                                        
-                                        {/* Console Log Panel below row (if running any operation) */}
-                                        {(hasPingResult || hasTraceLogs) && (
-                                          <tr>
-                                            <td colSpan={5} className="px-6 py-4 bg-slate-950 text-emerald-400 font-mono text-[10px] space-y-1 relative border-l-4 border-l-blue-500">
-                                              <button 
-                                                onClick={() => {
-                                                  setPingResults(prev => {
-                                                    const copy = { ...prev };
-                                                    delete copy[c.id];
-                                                    return copy;
-                                                  });
-                                                  setRouteTraceLogs(prev => {
-                                                    const copy = { ...prev };
-                                                    delete copy[c.id];
-                                                    return copy;
-                                                  });
-                                                }}
-                                                className="absolute right-3 top-3 hover:text-white font-sans text-[8px] uppercase tracking-wider font-extrabold text-slate-500 cursor-pointer"
-                                              >
-                                                [Dismiss Log]
-                                              </button>
-                                              {hasPingResult && <div className="leading-relaxed">{hasPingResult}</div>}
-                                              {hasTraceLogs && hasTraceLogs.map((logLine, idx) => (
-                                                <div key={idx} className="leading-relaxed">{logLine}</div>
-                                              ))}
-                                            </td>
-                                          </tr>
-                                        )}
-                                      </React.Fragment>
-                                    );
-                                  })}
-
-                                  {clientsToShow.length === 0 && (
-                                    <tr>
-                                      <td colSpan={5} className="py-12 text-center text-slate-400/80 font-bold uppercase tracking-widest text-[11px] font-mono">
-                                        No infrastructure matching clients located in active memory.
-                                      </td>
-                                    </tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -7898,22 +7379,6 @@ export default function AdminPanel({
                       
                       {/* Header Save Changes Button */}
                       <AnimatePresence>
-                        {editedRowIndices.size > 0 && (
-                          <motion.button
-                            initial={{ scale: 0.8, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.8, opacity: 0 }}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={handleBatchSaveRecoveryRows}
-                            disabled={isSavingRecoveryRows}
-                            className="ml-2 px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white text-[10.5px] font-black uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-500/25 flex items-center gap-1.5 cursor-pointer border border-emerald-400/40 animate-pulse"
-                            title="Click to save all modified recovery rows to database"
-                          >
-                            <Save size={13} className={cn(isSavingRecoveryRows && "animate-spin")} />
-                            <span>{isSavingRecoveryRows ? "Saving..." : `Save Changes (${editedRowIndices.size})`}</span>
-                          </motion.button>
-                        )}
                       </AnimatePresence>
 
                       <motion.button
@@ -8062,10 +7527,12 @@ export default function AdminPanel({
                             <th className="py-2 px-1.5 text-center min-w-[50px]">ACT</th>
                           </tr>
                         </thead>
-                        <tbody className={cn(
-                          "divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[13.5px] font-black text-slate-950 dark:text-zinc-50",
-                          !isBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none"
-                        )}>
+                        <tbody 
+                          style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}
+                          className={cn(
+                            "divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[13.5px] font-black text-slate-950 dark:text-zinc-50",
+                            !isBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none"
+                          )}>
                           {paginatedRows.map((rowRef, localIdx) => {
                             // Find corresponding absolute row index in full month rows array
                             const globalRowIdx = rowRef._originalIndex;
@@ -8086,8 +7553,7 @@ export default function AdminPanel({
                                   "hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors whitespace-nowrap",
                                   !isBillingUnlocked && "cursor-pointer",
                                   isTdc && "bg-rose-500/5 text-rose-500",
-                                  isDc && "bg-neutral-500/10 text-neutral-500",
-                                  editedRowIndices.has(globalRowIdx) && "bg-amber-500/15 dark:bg-amber-500/20 border-l-4 border-l-amber-500"
+                                  isDc && "bg-neutral-500/10 text-neutral-500"
                                 )}
                                 onClick={(e) => {
                                   if (!isBillingUnlocked) {
@@ -8099,9 +7565,6 @@ export default function AdminPanel({
                                 <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10 text-center select-none font-sans text-[11px] font-bold">
                                   <div className="flex items-center justify-center gap-1">
                                     <span>{localIdx + 1}</span>
-                                    {editedRowIndices.has(globalRowIdx) && (
-                                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" title="Row Modified (Unsaved)" />
-                                    )}
                                   </div>
                                 </td>
                                 <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black">
@@ -8525,7 +7988,7 @@ export default function AdminPanel({
                   </div>
 
                   {/* Compact ultra-premium responsive Mobile Frames view for Android/mobile screens */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
                     {paginatedRows.map((rowRef, localIdx) => {
                       const globalRowIdx = rowRef._originalIndex;
                       if (globalRowIdx === undefined || globalRowIdx === -1) return null;
@@ -8541,10 +8004,11 @@ export default function AdminPanel({
                       return (
                         <motion.div 
                           key={`mobile-billing-frame-${rowRef.clientId || rowRef.username || 'idx'}-${localIdx}`}
-                          initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                          initial={false}
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           whileHover={{ scale: 1.01 }}
-                          transition={{ duration: 0.25, delay: Math.min(localIdx * 0.05, 0.4) }}
+                          transition={{ duration: 0.15 }}
+                          style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
                           onClick={(e) => {
                             if (!isBillingUnlocked) {
                               setSelectedRecoveryRow(rowRef);
@@ -8955,12 +8419,15 @@ export default function AdminPanel({
       )}
 
       {/* Interactive A4 Ledger Entry Sheet Modal overlay */}
-      {(isEntrySheetOpen || entrySheetOpenWithUserLedger || isEntrySheetRouteOpen) && (
-        <Suspense fallback={null}>
+      {isEntrySheetRouteOpen && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 select-none">
+            <RouteLoadingFallback />
+          </div>
+        }>
           <EntrySheet
-          isOpen={isEntrySheetOpen || entrySheetOpenWithUserLedger || isEntrySheetRouteOpen}
+          isOpen={isEntrySheetRouteOpen}
           onClose={() => {
-            setIsEntrySheetOpen(false);
             setEntrySheetOpenWithUserLedger(false);
             if (location.pathname.startsWith('/billingmod/entrysheet')) {
               navigate('/billingmod');
@@ -9143,127 +8610,7 @@ export default function AdminPanel({
         )}
       </AnimatePresence>
 
-      {/* Floating Sticky Save Bar */}
-      <AnimatePresence>
-        {activeTab === 'billing' && editedRowIndices.size > 0 && (
-          <motion.div
-            initial={{ y: 60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 60, opacity: 0 }}
-            className="fixed bottom-6 right-6 z-[100] flex items-center gap-3 bg-slate-900/95 dark:bg-slate-950/95 text-white p-3 px-5 rounded-2xl shadow-2xl border border-emerald-500/40 backdrop-blur-xl"
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-              <span className="text-xs font-black uppercase tracking-wider text-slate-200">
-                {editedRowIndices.size} Row{editedRowIndices.size > 1 ? 's' : ''} Modified
-              </span>
-            </div>
 
-            <div className="h-4 w-px bg-slate-700/80 mx-1" />
-
-            <button
-              type="button"
-              onClick={handleDiscardRecoveryEdits}
-              className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
-            >
-              Discard
-            </button>
-
-            <button
-              type="button"
-              onClick={handleBatchSaveRecoveryRows}
-              disabled={isSavingRecoveryRows}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-500/30 flex items-center gap-2 cursor-pointer transition-all active:scale-95"
-            >
-              <Save size={14} className={cn(isSavingRecoveryRows && "animate-spin")} />
-              <span>{isSavingRecoveryRows ? "Saving..." : "Save Changes"}</span>
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Unsaved Changes Confirmation Popup Modal */}
-      <AnimatePresence>
-        {isUnsavedModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-white\/10 rounded-2xl shadow-2xl overflow-hidden p-6 space-y-5 font-sans"
-            >
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0 text-amber-500">
-                  <AlertTriangle size={24} />
-                </div>
-                <div className="space-y-1 flex-1">
-                  <h3 className="text-base font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                    Unsaved Recovery Changes
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-                    You have <span className="font-extrabold text-amber-600 dark:text-amber-400">{editedRowIndices.size} modified row{editedRowIndices.size > 1 ? 's' : ''}</span> in Recovery Rows that have not been saved to the database.
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200/60 dark:border-white\/10 font-sans">
-                Do you want to save your changes to the database now, or discard changes before leaving?
-              </p>
-
-              <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleDiscardRecoveryEdits();
-                    setIsUnsavedModalOpen(false);
-                    if (pendingNavigationAction) {
-                      pendingNavigationAction();
-                      setPendingNavigationAction(null);
-                    }
-                  }}
-                  className="w-full sm:w-auto px-4 py-2.5 text-xs font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 rounded-xl transition-colors cursor-pointer"
-                >
-                  Discard
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsUnsavedModalOpen(false);
-                    setPendingNavigationAction(null);
-                  }}
-                  className="w-full sm:w-auto px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const saved = await handleBatchSaveRecoveryRows();
-                    if (saved) {
-                      setIsUnsavedModalOpen(false);
-                      if (pendingNavigationAction) {
-                        pendingNavigationAction();
-                        setPendingNavigationAction(null);
-                      }
-                    }
-                  }}
-                  className="w-full sm:w-auto px-5 py-2.5 text-xs font-black uppercase tracking-wider bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Save size={14} />
-                  <span>Save & Continue</span>
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
     </>
   );

@@ -357,8 +357,11 @@ const globalTableCaches: Record<string, any[]> = {};
 const globalTableIntervals: Record<string, any> = {};
 const globalTableChannels: Record<string, any> = {};
 
-async function upsertSupabase(collectionName: string, idField: string, idValue: string, data: any) {
-  if (!supabase) return;
+async function upsertSupabase(collectionName: string, idField: string, idValue: string, data: any, throwOnError = false) {
+  if (!supabase) {
+    if (throwOnError) throw new Error("Supabase client not initialized");
+    return;
+  }
   const targetTable = collectionName === 'users' ? 'users_data' : collectionName;
   const cleanData = { ...data };
   delete cleanData.updated_at;
@@ -381,13 +384,16 @@ async function upsertSupabase(collectionName: string, idField: string, idValue: 
       // Fallback to old select-then-insert/update path only if native upsert fails
       const { data: existingSup, error: findErr } = await supabase.from(targetTable).select(idField).eq(idField, idValue).limit(1);
       if (!findErr && existingSup && existingSup.length > 0) {
-        await supabase.from(targetTable).update(cleanData).eq(idField, idValue);
+        const { error: updateErr } = await supabase.from(targetTable).update(cleanData).eq(idField, idValue);
+        if (updateErr && throwOnError) throw updateErr;
       } else {
-        await supabase.from(targetTable).insert([cleanData]);
+        const { error: insertErr } = await supabase.from(targetTable).insert([cleanData]);
+        if (insertErr && throwOnError) throw insertErr;
       }
     }
   } catch (e: any) {
     console.warn(`upsertSupabase error for ${targetTable}:`, e?.message || e);
+    if (throwOnError) throw e;
   }
 }
 
@@ -411,15 +417,17 @@ function subscribeTable(
 ) {
   const syncKey = `${tableName}_${dealerId || 'all'}`;
 
-  try {
-    const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`) || localStorage.getItem(`gts_cache_v3_${tableName}`);
-    if (cachedData) {
-      const parsed = JSON.parse(cachedData);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        callback(parsed);
+  if (!globalTableCaches[syncKey]) {
+    try {
+      const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`) || localStorage.getItem(`gts_cache_v3_${tableName}`);
+      if (cachedData) {
+        const parsed = JSON.parse(cachedData);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          globalTableCaches[syncKey] = parsed;
+        }
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
 
   const fetchInitial = async () => {
     try {
@@ -477,20 +485,25 @@ function subscribeTable(
       }
 
       if (mapped.length > 0 || !error) {
+        // Prevent double re-render if fetched data is identical to cache
+        const isIdentical = globalTableCaches[syncKey] && JSON.stringify(globalTableCaches[syncKey]) === JSON.stringify(mapped);
+        
         globalTableCaches[syncKey] = mapped;
         try {
           localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(mapped));
         } catch (e) {}
 
-        const subscribers = globalTableSubscribers[syncKey];
-        if (subscribers) {
-          subscribers.forEach((cb) => {
-            try {
-              cb(mapped);
-            } catch (cbErr) {
-              console.error("Error in subscriber callback:", cbErr);
-            }
-          });
+        if (!isIdentical) {
+          const subscribers = globalTableSubscribers[syncKey];
+          if (subscribers) {
+            subscribers.forEach((cb) => {
+              try {
+                cb(mapped);
+              } catch (cbErr) {
+                console.error("Error in subscriber callback:", cbErr);
+              }
+            });
+          }
         }
       }
     } catch (err) {
@@ -983,13 +996,17 @@ export const supabaseService = {
 
   _saveBillingMonthTimers: {} as Record<string, any>,
   _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: number[] | Set<number> }>,
+  _billingMonthSaveCounter: {} as Record<string, number>,
 
   async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>) {
     const key = `${monthId}_${dealerId}`;
     if (!this._saveBillingMonthLatestRows) this._saveBillingMonthLatestRows = {};
-
+    if (!this._billingMonthSaveCounter) this._billingMonthSaveCounter = {};
+    
     this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices };
-
+    const currentCounter = (this._billingMonthSaveCounter[key] || 0) + 1;
+    this._billingMonthSaveCounter[key] = currentCounter;
+    
     if (!this._saveBillingMonthTimers) this._saveBillingMonthTimers = {};
 
     if (forceImmediate) {
@@ -1001,7 +1018,7 @@ export const supabaseService = {
       const latest = this._saveBillingMonthLatestRows[key];
       if (latest) {
         delete this._saveBillingMonthLatestRows[key];
-        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices);
+        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter);
       }
       return;
     }
@@ -1017,7 +1034,7 @@ export const supabaseService = {
           const latest = this._saveBillingMonthLatestRows[key];
           if (latest) {
             delete this._saveBillingMonthLatestRows[key];
-            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices);
+            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter);
           }
           resolve();
         } catch (err) {
@@ -1034,11 +1051,20 @@ export const supabaseService = {
   _billingMonthExecutionLocks: {} as Record<string, Promise<void>>,
   _syncingMonths: new Set<string>(),
 
-  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>) {
+  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, executeCounter?: number) {
     const syncKey = `${monthId}_${dealerId}`;
     if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
+    
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
-    const run = previous.then(() => this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices));
+    
+    const run = previous.then(() => {
+      if (executeCounter !== undefined && this._billingMonthSaveCounter[syncKey] !== executeCounter) {
+        // Skip this execution because a newer save has already been triggered
+        return Promise.resolve();
+      }
+      return this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices);
+    });
+    
     this._billingMonthExecutionLocks[syncKey] = run.catch(() => {});
     return run;
   },
@@ -1054,7 +1080,7 @@ export const supabaseService = {
         dealer_id: dealerId,
         rows_data: rows,
         updated_by: updatedBy
-      });
+      }, true);
 
       try {
         const cacheKey = `gts_cache_v3_billing_months`;
@@ -1073,6 +1099,7 @@ export const supabaseService = {
       await this.syncBillingRows(monthId, dealerId, rows, changedIndices);
     } catch (e: any) {
       console.error("Failed to save billing month:", e);
+      throw e;
     } finally {
       if (this._syncingMonths) {
         this._syncingMonths.delete(syncKey);
@@ -1189,9 +1216,11 @@ export const supabaseService = {
       const { error } = await supabase.from('billing_rows').upsert(dbRows, { onConflict: 'id' });
       if (error) {
         console.warn("syncBillingRows batch upsert error:", error.message);
+        throw error;
       }
     } catch (err) {
       console.warn("syncBillingRows error:", err);
+      throw err;
     }
   },
 

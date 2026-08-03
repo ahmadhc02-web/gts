@@ -206,7 +206,7 @@ export default function EntrySheet({
       }
       
       localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(mergedFolders));
-      setFolders(mergedFolders);
+      setFolders(prev => JSON.stringify(prev) === JSON.stringify(mergedFolders) ? prev : mergedFolders);
       setIsLoadingFolders(false);
     }, scopeId);
 
@@ -242,7 +242,7 @@ export default function EntrySheet({
         pocketbaseService.updateLedgerSheetFolderMap(mergedMap, scopeId).catch(console.error);
       }
       
-      setSheetFolderMap(mergedMap);
+      setSheetFolderMap(prev => JSON.stringify(prev) === JSON.stringify(mergedMap) ? prev : mergedMap);
     }, scopeId);
 
     // Subscribe to Folder Month Map
@@ -278,7 +278,7 @@ export default function EntrySheet({
         pocketbaseService.updateFolderMonthMap(mergedMap, scopeId).catch(console.error);
       }
       
-      setFolderMonthMap(mergedMap);
+      setFolderMonthMap(prev => JSON.stringify(prev) === JSON.stringify(mergedMap) ? prev : mergedMap);
     }, scopeId);
 
     return () => {
@@ -315,11 +315,12 @@ export default function EntrySheet({
     const savedFolders = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
     if (savedFolders) {
       try {
-        setFolders(JSON.parse(savedFolders));
+        const parsed = JSON.parse(savedFolders);
+        setFolders(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed);
         setIsLoadingFolders(false);
       } catch (e) {}
     } else {
-      setFolders([]);
+      setFolders(prev => prev.length === 0 ? prev : []);
       setIsLoadingFolders(true);
     }
 
@@ -327,27 +328,34 @@ export default function EntrySheet({
     const savedSheets = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`);
     if (savedSheets) {
       try {
-        setLedgerHistory(JSON.parse(savedSheets));
+        const parsed = JSON.parse(savedSheets);
+        setLedgerHistory(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed);
         setIsLoadingSheets(false);
       } catch (e) {}
     } else {
-      setLedgerHistory([]);
+      setLedgerHistory(prev => prev.length === 0 ? prev : []);
       setIsLoadingSheets(true);
     }
 
     // Sync maps
     const savedMap = localStorage.getItem(`gts_ledger_sheet_folders_${originalScopeId}`);
     if (savedMap) {
-      try { setSheetFolderMap(JSON.parse(savedMap)); } catch (e) {}
+      try {
+        const parsed = JSON.parse(savedMap);
+        setSheetFolderMap(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed);
+      } catch (e) {}
     } else {
-      setSheetFolderMap({});
+      setSheetFolderMap(prev => Object.keys(prev).length === 0 ? prev : {});
     }
 
     const savedFolderMonths = localStorage.getItem(`gts_ledger_folder_months_${originalScopeId}`);
     if (savedFolderMonths) {
-      try { setFolderMonthMap(JSON.parse(savedFolderMonths)); } catch (e) {}
+      try {
+        const parsed = JSON.parse(savedFolderMonths);
+        setFolderMonthMap(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed);
+      } catch (e) {}
     } else {
-      setFolderMonthMap({});
+      setFolderMonthMap(prev => Object.keys(prev).length === 0 ? prev : {});
     }
   }, [currentUser?.uid, activeDealerId]);
 
@@ -1826,7 +1834,6 @@ export default function EntrySheet({
       const sheetPayloads: any[] = [];
       const savedSheetsToLocal: any[] = [];
       const updatedFolderMap = { ...sheetFolderMap };
-      const clientsToUpsertMap = new Map<string, any>();
 
       // Step 1: Build basic payloads and local copies
       for (let i = 0; i < currentSyncSheets.length; i++) {
@@ -1962,61 +1969,16 @@ export default function EntrySheet({
           if (isExcludedName(r.name)) return;
 
           // Find existing customer card
-          let client = clients.find((c: any) => 
+          const client = clients.find((c: any) => 
             (r.clientId && c.id === r.clientId) ||
             (r.clientUsername && c.username?.toLowerCase() === String(r.clientUsername).toLowerCase()) ||
-            (r.cId && (c.id?.toLowerCase() === String(r.cId).toLowerCase() || c.username?.toLowerCase() === String(r.cId).toLowerCase())) ||
-            (r.name && c.name?.toLowerCase() === String(r.name).toLowerCase())
+            (r.cId && (c.id?.toLowerCase() === String(r.cId).toLowerCase() || c.username?.toLowerCase() === String(r.cId).toLowerCase()))
           );
-
-          if (!client && clientsToUpsertMap.size > 0) {
-            client = Array.from(clientsToUpsertMap.values()).find((c: any) =>
-              (r.cId && (c.id?.toLowerCase() === String(r.cId).toLowerCase() || c.username?.toLowerCase() === String(r.cId).toLowerCase())) ||
-              (r.name && c.name?.toLowerCase() === String(r.name).toLowerCase())
-            );
-          }
 
           if (client) {
             r.clientId = client.id;
             r.clientUsername = client.username;
             if (!r.name && client.name) r.name = client.name;
-            if (!r.cId && client.username) r.cId = client.username;
-
-            const updatedCard = {
-              ...client,
-              name: client.name || r.name,
-              baseAmount: amountVal > 0 ? (Number(client.baseAmount) || amountVal) : client.baseAmount,
-              area: (r as any).area || client.area || sheetPayload.area || area || 'MAIN',
-              dealerId: tenantId || 'main'
-            };
-            clientsToUpsertMap.set(client.id, updatedCard);
-          } else {
-            const cleanName = String(r.name || r.cId || 'New Client').trim();
-            const rawUser = String(r.cId || r.clientUsername || cleanName).trim();
-            const cleanUser = rawUser.replace(/\s+/g, '_').toLowerCase() || `user_${Date.now()}`;
-            const newClientId = r.clientId || `client_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-
-            r.clientId = newClientId;
-            r.clientUsername = cleanUser;
-            if (!r.cId) r.cId = cleanUser;
-            if (!r.name) r.name = cleanName;
-
-            client = {
-              id: newClientId,
-              name: cleanName,
-              username: cleanUser,
-              number: String(r.cId || ''),
-              mobileNumber: '',
-              seriesNumber: '',
-              area: String((r as any).area || sheetPayload.area || area || 'MAIN'),
-              pkgDetails: String(r.comments || ''),
-              userNearby: '',
-              baseAmount: amountVal > 0 ? amountVal : 1000,
-              createdBy: currentUser?.username || 'admin',
-              createdAt: Date.now(),
-              dealerId: tenantId || 'main'
-            };
-            clientsToUpsertMap.set(newClientId, client);
           }
         });
       });
@@ -2102,8 +2064,8 @@ export default function EntrySheet({
               if (!hasId && !hasName) return;
               if (isExcludedName(r.name)) return;
 
-              // Find the customer card in upserts map or original list
-              const client = clientsToUpsertMap.get(r.clientId) || clients.find((c: any) => c.id === r.clientId);
+              // Find the customer card in original list
+              const client = clients.find((c: any) => c.id === r.clientId);
 
               let matchedIdx = -1;
 
@@ -2354,18 +2316,6 @@ export default function EntrySheet({
               changedIndices
             )
           );
-        }
-
-        // C. Save created/updated Customer Cards concurrently
-        const clientsToSave = Array.from(clientsToUpsertMap.values());
-        if (clientsToSave.length > 0) {
-          dbTasks.push(pocketbaseService.saveClientsBatch(clientsToSave, tenantId));
-          setClients(prev => {
-            const map = new Map<string, any>();
-            prev.forEach(c => map.set(c.id, c));
-            clientsToSave.forEach(c => map.set(c.id, c));
-            return Array.from(map.values());
-          });
         }
 
         await Promise.all(dbTasks);
@@ -3387,7 +3337,7 @@ export default function EntrySheet({
                 >
                   <ArrowLeft size={16} className="sm:size-[20px]" />
                 </button>
-                <FolderOpen className="text-blue-500 animate-pulse shrink-0 sm:size-[26px]" size={18} />
+                <FolderOpen className="text-blue-500 shrink-0 sm:size-[26px]" size={18} />
                 <span className="truncate">Data Folders</span>
               </h1>
               {openedFolderId && (
@@ -3466,7 +3416,7 @@ export default function EntrySheet({
                   className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-650 via-emerald-600 to-teal-600 hover:from-emerald-500 hover:via-emerald-555 hover:to-teal-500 text-white font-black text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-emerald-500/20 active:scale-95 shadow-md shadow-emerald-600/10 shrink-0"
                   title="Search User Entry"
                 >
-                  <Sparkles size={11} className="text-white animate-pulse" />
+                  <Sparkles size={11} className="text-white" />
                   <span>Search Entry</span>
                 </button>
               </div>
@@ -3536,7 +3486,7 @@ export default function EntrySheet({
         {!openedFolderId ? (
           /* ================= ROOT DIRECTORY (PC DESKTOP FOLDERS) ================= */
           <div className="flex flex-col gap-4 text-left">
-            {isLoadingFolders ? (
+            {isLoadingFolders && folders.length === 0 ? (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
                 {[1, 2, 3, 4, 5].map((idx) => (
                   <div key={idx} className="animate-pulse p-3 flex flex-col items-center gap-2">
@@ -3555,19 +3505,20 @@ export default function EntrySheet({
                     return timeB - timeA;
                   });
                   return (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
                       {sortedFolders.map((folder) => {
                         const folderSheets = ledgerHistory.filter(sh => (sh.folderId === folder.id || sheetFolderMap[sh.id] === folder.id) && doesMatchSearch(sh));
                         return (
                           <motion.div
                             key={folder.id}
-                            initial={{ opacity: 0, y: 0 }}
+                            initial={false}
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
                             transition={{ type: "spring", stiffness: 220, damping: 18 }}
-                          onClick={() => navigate(`/billingmod/entrysheet/folder/${folder.id}`)}
-                          className="group cursor-pointer p-3 bg-transparent border-0 shadow-none hover:bg-slate-100/50 dark:hover:bg-slate-850/30 rounded-2xl flex flex-col items-center justify-start text-center gap-1.5 transition-all duration-300 relative select-none min-h-[170px]"
-                        >
+                            style={{ contentVisibility: 'auto', containIntrinsicSize: '170px' }}
+                            onClick={() => navigate(`/billingmod/entrysheet/folder/${folder.id}`)}
+                            className="group cursor-pointer p-3 bg-transparent border-0 shadow-none hover:bg-slate-100/50 dark:hover:bg-slate-850/30 rounded-2xl flex flex-col items-center justify-start text-center gap-1.5 transition-all duration-300 relative select-none min-h-[170px]"
+                          >
                           {/* Folder Settings Gear Button */}
                           <button
                             onClick={(e) => {
@@ -3615,7 +3566,7 @@ export default function EntrySheet({
                             ) : (
                               /* Empty Folder Placement Glow */
                               <div className="absolute w-14 h-11 bg-transparent border border-dashed border-amber-500/40 rounded-md -top-1 left-7 opacity-0 group-hover:opacity-100 group-hover:-translate-y-4.5 group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 flex items-center justify-center">
-                                <Plus size={12} className="text-amber-600 animate-pulse stroke-[3]" />
+                                <Plus size={12} className="text-amber-600 stroke-[3]" />
                               </div>
                             )}
 
@@ -3644,7 +3595,7 @@ export default function EntrySheet({
                                 if (connId) {
                                   return (
                                     <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/40 px-2 py-0.5 rounded-full select-none mb-1 border border-blue-100 dark:border-blue-900/30">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse shrink-0" />
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
                                       {connId}
                                     </span>
                                   );
@@ -3718,7 +3669,7 @@ export default function EntrySheet({
 
 
           </div>
-        ) : (isLoadingFolders || isWorkspaceLoading) ? (
+        ) : (isLoadingFolders && folders.length === 0) ? (
           /* Loading folder state or not found */
           <div className="flex flex-col items-center justify-center p-12 text-center min-h-[300px] w-full bg-transparent">
             <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
@@ -3736,10 +3687,10 @@ export default function EntrySheet({
         ) : (
           /* ================= INSIDE OPENED DIRECTORY VIEW ================= */
           <div className="flex flex-col gap-6 text-left">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
               {/* Creator Card (the "+" option card explicitly requested) */}
               <motion.div
-                initial={{ opacity: 0 }}
+                initial={false}
                 animate={{ opacity: 1 }}
                 onClick={() => activeFolder && handleCreateSheetInFolder(activeFolder.id)}
                 className="group cursor-pointer border-2 border-dashed border-blue-400/50 dark:border-blue-900/40 hover:border-blue-500 dark:hover:border-blue-400 rounded-3xl p-6 bg-blue-50/10 dark:bg-blue-950/5 hover:bg-blue-50/25 flex flex-col items-center justify-center text-center gap-4 min-h-[180px] transition-all duration-200 hover:scale-[1.02] hover:-translate-y-1"
@@ -3777,8 +3728,9 @@ export default function EntrySheet({
                   return (
                     <motion.div
                       key={sh.id}
-                      initial={{ opacity: 0 }}
+                      initial={false}
                       animate={{ opacity: 1 }}
+                      style={{ contentVisibility: 'auto', containIntrinsicSize: '220px' }}
                       className="p-5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/90 dark:to-slate-950/90 border border-slate-200/80 dark:border-white/10 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-3xl flex flex-col justify-between gap-5 shadow-sm hover:shadow-xl hover:shadow-blue-550/[0.03] group relative select-none transition-all duration-200 hover:scale-[1.015] hover:-translate-y-1"
                     >
                       {/* Visual paper-sheet card layout */}
@@ -3911,7 +3863,7 @@ export default function EntrySheet({
                 <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 hidden sm:block" />
                 <div>
                   <h2 className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${isLocked ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`} />
+                <span className={`w-2 h-2 rounded-full ${isLocked ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                 Ledger Workspace
               </h2>
               <div className="flex items-center gap-1.5 mt-0.5">
@@ -4167,7 +4119,7 @@ export default function EntrySheet({
           }
         `}} />
 
-        {isWorkspaceLoading ? (
+        {isWorkspaceLoading && (!sheets || sheets.length === 0) ? (
           <div className="flex-1 w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-12 text-center min-h-[500px]">
             <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Loading ledger workspace details...</p>
@@ -4407,7 +4359,7 @@ export default function EntrySheet({
               {isLocked && (
                 <div className="w-full max-w-[800px] bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden animate-in fade-in slide-in-from-top-2 duration-300 select-text shrink-0">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 animate-pulse shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shrink-0">
                       <Shield size={18} className="stroke-[2.5]" />
                     </div>
                     <div className="text-left">
@@ -4803,7 +4755,7 @@ export default function EntrySheet({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
                 {table1Rows.map((row, index) => {
                   const isSearchResultMatch = !!(historySearchQuery.trim() && (
                     (row.cId && row.cId.toLowerCase().includes(historySearchQuery.toLowerCase())) ||
@@ -5104,7 +5056,7 @@ export default function EntrySheet({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
                 {table2Rows.map((row, index) => (
                   <tr key={index} className="border-b border-slate-400 font-mono">
                     {/* Sr */}
@@ -5300,7 +5252,7 @@ export default function EntrySheet({
               {/* Header / Title block */}
               <div className="flex items-center justify-between pb-2 border-b border-slate-205 dark:border-white/10">
                 <div className="flex items-center gap-2">
-                  <Printer className="text-brand-accent h-5 w-5 animate-pulse" />
+                  <Printer className="text-brand-accent h-5 w-5" />
                   <div>
                     <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 font-mono">Receipt Panel</h3>
                     <p className="text-[10px] text-slate-400">Live printer & pdf queue</p>
@@ -5812,7 +5764,7 @@ export default function EntrySheet({
               }}
               className="flex items-center gap-2 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-wider text-[11px] rounded-2xl shadow-2xl transition-all duration-150 active:scale-95 border-none cursor-pointer"
             >
-              <Printer size={15} className="animate-pulse" />
+              <Printer size={15} />
               <span>Pending Receipt</span>
               <span className="flex h-2.5 w-2.5 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -5834,7 +5786,7 @@ export default function EntrySheet({
             {/* Title */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
-                <History className="text-brand-accent h-5 w-5 animate-pulse" />
+                <History className="text-brand-accent h-5 w-5" />
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 font-mono">Ledger Registry</h3>
                   <p className="text-[10px] text-slate-400">Monthly recovery historical cards</p>
@@ -5882,7 +5834,7 @@ export default function EntrySheet({
                     🟢 Ready
                   </span>
                 ) : (
-                  <span className="text-[9px] bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded-full font-black uppercase border border-rose-500/10 animate-pulse">
+                  <span className="text-[9px] bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded-full font-black uppercase border border-rose-500/10">
                     ⚠️ Off-line
                   </span>
                 )}
@@ -6017,7 +5969,7 @@ export default function EntrySheet({
                       </div>
                       
                       {isLoaded && (
-                        <div className="absolute bottom-1 right-2 text-[8px] uppercase tracking-widest font-black text-brand-accent animate-pulse">
+                        <div className="absolute bottom-1 right-2 text-[8px] uppercase tracking-widest font-black text-brand-accent">
                           Active Panel
                         </div>
                       )}
@@ -6112,7 +6064,7 @@ export default function EntrySheet({
               <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-500 shrink-0 border border-emerald-100 dark:border-emerald-900/50">
-                    <Sparkles size={20} className="animate-pulse text-emerald-500" />
+                    <Sparkles size={20} className="text-emerald-500" />
                   </div>
                   <div>
                     <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-emerald-500 font-mono">
@@ -6266,7 +6218,7 @@ export default function EntrySheet({
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
                   <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center text-rose-500 shrink-0">
-                    <AlertCircle size={20} className="animate-pulse text-rose-500" />
+                    <AlertCircle size={20} className="text-rose-500" />
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-rose-500 font-mono">
@@ -6337,7 +6289,7 @@ export default function EntrySheet({
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
                   <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center text-rose-500 shrink-0">
-                    <Trash2 size={20} className="animate-pulse text-rose-500" />
+                    <Trash2 size={20} className="text-rose-500" />
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-rose-500 font-mono">
@@ -6410,7 +6362,7 @@ export default function EntrySheet({
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
                   <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center text-amber-500 shrink-0">
-                    <AlertCircle size={20} className="animate-pulse text-amber-500" />
+                    <AlertCircle size={20} className="text-amber-500" />
                   </div>
                   <div className="space-y-0.5">
                     <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-amber-500 font-mono">
