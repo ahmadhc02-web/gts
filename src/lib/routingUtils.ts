@@ -15,6 +15,7 @@ export function getTabFromPathname(pathname: string): string {
   if (pathname === '/integrations') return 'integrations';
   if (pathname === '/critical') return 'critical';
   if (pathname === '/top10') return 'top10';
+  if (pathname === '/recyclebin' || pathname === '/recycle_bin') return 'recycle_bin';
   if (pathname === '/' || pathname === '/dashboard') return 'complaints';
   return 'complaints';
 }
@@ -38,6 +39,7 @@ export function getPathnameFromTab(tabId: string): string {
     case 'integrations': return '/integrations';
     case 'critical': return '/critical';
     case 'top10': return '/top10';
+    case 'recycle_bin': return '/recyclebin';
     case 'complaints':
     case 'ops':
     default:

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
@@ -375,6 +375,58 @@ export default function Layout({
 
   const brandingText = getBrandingText();
   const isColoredHeader = branding?.sidebarTheme && branding.sidebarTheme !== 'light';
+
+  // Typewriter animation state for footer
+  const fullFooterText = useMemo(() => brandingText.toUpperCase(), [brandingText]);
+  const [footerTypedText, setFooterTypedText] = useState('');
+  const [showFooterCursor, setShowFooterCursor] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    let charIndex = 0;
+    let isDeleting = false;
+    let timeoutId: NodeJS.Timeout;
+
+    const typeStep = () => {
+      if (!isMounted) return;
+
+      if (!isDeleting) {
+        if (charIndex < fullFooterText.length) {
+          charIndex++;
+          setFooterTypedText(fullFooterText.slice(0, charIndex));
+          timeoutId = setTimeout(typeStep, 75 + Math.random() * 35);
+        } else {
+          timeoutId = setTimeout(() => {
+            isDeleting = true;
+            typeStep();
+          }, 3200);
+        }
+      } else {
+        if (charIndex > 0) {
+          charIndex--;
+          setFooterTypedText(fullFooterText.slice(0, charIndex));
+          timeoutId = setTimeout(typeStep, 35);
+        } else {
+          isDeleting = false;
+          timeoutId = setTimeout(typeStep, 600);
+        }
+      }
+    };
+
+    typeStep();
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [fullFooterText]);
+
+  useEffect(() => {
+    const cursorInterval = setInterval(() => {
+      setShowFooterCursor(prev => !prev);
+    }, 450);
+    return () => clearInterval(cursorInterval);
+  }, []);
 
   useEffect(() => {
     if (isOnline) {
@@ -2002,161 +2054,122 @@ export default function Layout({
       {/* Footer */}
       {user && (
       <footer className={cn(
-        "relative w-full overflow-hidden border-t border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 py-4 sm:py-5 transition-colors",
+        "relative w-full overflow-hidden border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950 py-5 sm:py-6 transition-colors",
         user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
       )}>
-        <div className="max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Main Footer Graphic Box with Outlined branding text */}
-          <div className="relative w-full flex flex-col items-center justify-center min-h-[60px] sm:min-h-[90px] my-2 overflow-visible">
+        <div className="max-w-[1850px] w-full mx-auto px-3 sm:px-6 lg:px-8">
+          {/* Main Footer Graphic Box with Black Outlined & Transparent Inner Branding Text */}
+          <div className="relative w-full flex flex-col items-center justify-center min-h-[70px] sm:min-h-[110px] my-1 sm:my-2 overflow-visible">
             <svg
-              viewBox="0 0 1200 110"
-              className="w-full max-w-4xl mx-auto h-auto select-none pointer-events-none overflow-visible"
+              viewBox="0 0 1200 120"
+              className="w-full max-w-7xl mx-auto h-auto select-none pointer-events-none overflow-visible relative z-10"
               preserveAspectRatio="xMidYMid meet"
             >
               <defs>
-                {/* Frosted glass style linear gradient */}
-                <linearGradient id="gtsGlassGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="rgba(255, 255, 255, 0.95)" />
-                  <stop offset="30%" stopColor="rgba(241, 245, 249, 0.65)" />
-                  <stop offset="70%" stopColor="rgba(226, 232, 240, 0.55)" />
-                  <stop offset="100%" stopColor="rgba(203, 213, 225, 0.75)" />
-                </linearGradient>
-
-                <linearGradient id="gtsGlassDarkGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="rgba(30, 41, 59, 0.9)" />
-                  <stop offset="30%" stopColor="rgba(15, 23, 42, 0.7)" />
-                  <stop offset="70%" stopColor="rgba(2, 6, 17, 0.55)" />
-                  <stop offset="100%" stopColor="rgba(15, 23, 42, 0.8)" />
-                </linearGradient>
-
-                {/* Subtle outer drop shadow filter to pop against the background */}
-                <filter id="gtsGlassShadow" x="-10%" y="-10%" width="120%" height="120%">
-                  <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#000000" floodOpacity="0.25" />
+                {/* Light mode drop shadow */}
+                <filter id="gtsOutlinedShadowLight" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#0f172a" floodOpacity="0.12" />
+                </filter>
+                {/* Dark mode drop shadow */}
+                <filter id="gtsOutlinedShadowDark" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#000000" floodOpacity="0.8" />
                 </filter>
               </defs>
 
-              {/* Back Layer: Thick, robust, pitch black outline for ultimate clarity and contrast */}
+              {/* Light Mode Outlined Text (Black Edges, Transparent Inside with Typewriter Effect) */}
               <motion.text
                 x="50%"
-                y="52%"
+                y="55%"
                 dominantBaseline="central"
                 textAnchor="middle"
                 fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                fontSize="64"
+                fontSize="68"
                 fontWeight="900"
-                letterSpacing="0.12em"
+                letterSpacing="0.14em"
                 fill="none"
                 stroke="#020617"
-                strokeWidth="5.5"
-                filter="url(#gtsGlassShadow)"
-                className="opacity-95 dark:opacity-100"
-              >
-                {brandingText.toUpperCase()}
-              </motion.text>
-
-              {/* Mid Layer: Crisp dark slate stroke for precise corners/lines */}
-              <motion.text
-                x="50%"
-                y="52%"
-                dominantBaseline="central"
-                textAnchor="middle"
-                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                fontSize="64"
-                fontWeight="900"
-                letterSpacing="0.12em"
-                fill="none"
-                stroke="#0f172a"
-                strokeWidth="2.5"
-              >
-                {brandingText.toUpperCase()}
-              </motion.text>
-
-              {/* Front Layer: Translucent Frosted Glass fill with subtle animated light shift */}
-              <motion.text
-                x="50%"
-                y="52%"
-                dominantBaseline="central"
-                textAnchor="middle"
-                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                fontSize="64"
-                fontWeight="900"
-                letterSpacing="0.12em"
-                fill="url(#gtsGlassGrad)"
+                strokeWidth="3.2"
+                strokeLinejoin="round"
+                filter="url(#gtsOutlinedShadowLight)"
                 className="block dark:hidden"
                 animate={{
-                  opacity: [0.85, 1, 0.85],
+                  opacity: [0.88, 1, 0.88],
                   scale: [1, 1.003, 1]
                 }}
                 transition={{
-                  duration: 6,
+                  duration: 4,
                   repeat: Infinity,
                   ease: "easeInOut"
                 }}
               >
-                {brandingText.toUpperCase()}
+                {footerTypedText}{showFooterCursor ? '|' : '\u00A0'}
               </motion.text>
 
+              {/* Dark Mode Outlined Text (Crisp White/Slate Edges, Transparent Inside with Typewriter Effect) */}
               <motion.text
                 x="50%"
-                y="52%"
+                y="55%"
                 dominantBaseline="central"
                 textAnchor="middle"
                 fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                fontSize="64"
+                fontSize="68"
                 fontWeight="900"
-                letterSpacing="0.12em"
-                fill="url(#gtsGlassDarkGrad)"
+                letterSpacing="0.14em"
+                fill="none"
+                stroke="#f8fafc"
+                strokeWidth="3.2"
+                strokeLinejoin="round"
+                filter="url(#gtsOutlinedShadowDark)"
                 className="hidden dark:block"
                 animate={{
-                  opacity: [0.85, 1, 0.85],
+                  opacity: [0.88, 1, 0.88],
                   scale: [1, 1.003, 1]
                 }}
                 transition={{
-                  duration: 6,
+                  duration: 4,
                   repeat: Infinity,
                   ease: "easeInOut"
                 }}
               >
-                {brandingText.toUpperCase()}
+                {footerTypedText}{showFooterCursor ? '|' : '\u00A0'}
               </motion.text>
             </svg>
           </div>
 
           {/* Bottom Row containing GTS Logo, Company Name, ISP MANAGEMENT PRO, Copyright & Powered By */}
-          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200/80 dark:border-white/10">
+          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             {/* Left/Center: GTS Logo + Brand Info + Copyright */}
-            <div className="flex flex-col sm:flex-row items-center gap-2.5 text-center sm:text-left">
+            <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
               {/* GTS Logo */}
               <div className="relative group shrink-0">
-                <div className="absolute -inset-1 bg-blue-500/20 rounded-lg blur-xs group-hover:opacity-100 transition duration-300" />
-                <div className="relative w-8 h-8 rounded-lg bg-slate-950 flex items-center justify-center shadow-md border border-white/20 overflow-hidden">
-                  <span className="text-white font-black text-xs tracking-tighter italic leading-none">
-                    G<span className="text-blue-500">TS</span>
+                <div className="relative w-8 h-8 rounded-lg bg-slate-900 dark:bg-slate-100 flex items-center justify-center shadow-md border border-slate-800 dark:border-white/20 overflow-hidden">
+                  <span className="text-white dark:text-slate-950 font-black text-xs tracking-tighter italic leading-none">
+                    GTS
                   </span>
                 </div>
               </div>
 
               {/* Brand & Copyright Text Block */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2.5">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs sm:text-sm tracking-tight">
+                  <span className="font-black text-xs sm:text-sm tracking-tight text-slate-900 dark:text-slate-100">
                     {brandingText}
                   </span>
-                  <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-200/60 dark:border-blue-800/60">
+                  <span className="text-[9px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider bg-slate-100 dark:bg-slate-800/90 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700 shadow-2xs">
                     ISP MANAGEMENT PRO
                   </span>
                 </div>
 
                 <span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
 
-                <span className="text-[10px] sm:text-[11px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">
+                <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium tracking-wide">
                   © {new Date().getFullYear()} {brandingText} Operations. Enterprise Edition.
                 </span>
               </div>
             </div>
 
             {/* Right: Powered by Green Net pill */}
-            <div className="shrink-0 inline-flex items-center px-3.5 py-1 rounded-full border border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-slate-900/80 text-[8px] sm:text-[9.5px] uppercase font-black tracking-widest text-slate-500 dark:text-slate-400 shadow-2xs cursor-default">
+            <div className="shrink-0 inline-flex items-center px-3.5 py-1 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/90 text-[8.5px] sm:text-[9.5px] uppercase font-black tracking-widest text-slate-800 dark:text-slate-200 shadow-2xs cursor-default">
               POWERED BY GREEN NET
             </div>
           </div>

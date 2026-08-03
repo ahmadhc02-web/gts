@@ -555,12 +555,22 @@ export default function AdminPanel({
   const deletingMonthIds = React.useRef<Set<string>>(new Set());
 
   
+  const savingMonthCounts = React.useRef<Record<string, number>>({});
+  
   const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false, changedIndices?: number[] | Set<number>) => {
     savingMonthIds.current.add(monthId);
+    savingMonthCounts.current[monthId] = (savingMonthCounts.current[monthId] || 0) + 1;
     try {
       await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate, changedIndices);
     } finally {
-      savingMonthIds.current.delete(monthId);
+      savingMonthCounts.current[monthId] = Math.max(0, (savingMonthCounts.current[monthId] || 1) - 1);
+      if (savingMonthCounts.current[monthId] === 0) {
+        setTimeout(() => {
+          if ((savingMonthCounts.current[monthId] || 0) === 0) {
+            savingMonthIds.current.delete(monthId);
+          }
+        }, 500);
+      }
     }
   };
 
@@ -1469,6 +1479,7 @@ export default function AdminPanel({
       if (matchIdx === -1) return prev;
 
       const matchedClient = prev[matchIdx];
+      const isRowTdcOrDc = row.paymentStatus === 'tdc' || row.paymentStatus === 'dc';
       const updatedClient = {
         ...matchedClient,
         name: row.name !== undefined && row.name !== '' ? row.name : matchedClient.name,
@@ -1477,7 +1488,7 @@ export default function AdminPanel({
         number: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.number),
         area: row.area !== undefined ? row.area : matchedClient.area,
         pkgDetails: row.pkgDetails !== undefined ? row.pkgDetails : matchedClient.pkgDetails,
-        baseAmount: row.baseAmount !== undefined ? row.baseAmount : matchedClient.baseAmount,
+        baseAmount: (row.baseAmount !== undefined && !isRowTdcOrDc) ? row.baseAmount : matchedClient.baseAmount,
         rt: row.rt !== undefined ? row.rt : matchedClient.rt,
         billingDay: row.billingDay !== undefined ? row.billingDay : matchedClient.billingDay,
         seriesNumber: (row.serNam !== undefined && row.serNam !== '') ? row.serNam : matchedClient.seriesNumber,
@@ -2404,10 +2415,12 @@ export default function AdminPanel({
         }
         if ((row.rt || '') !== (match.rt || '')) { row.rt = match.rt || ''; changed = true; }
         if (match.baseAmount !== undefined && match.baseAmount !== null && Number(match.baseAmount) > 0) {
-          if (Number(row.baseAmount || 0) !== Number(match.baseAmount)) {
-            row.baseAmount = Number(match.baseAmount);
-            row.totalAmount = (Number(row.baseAmount) || 0) + (Number(row.cr) || 0);
-            changed = true;
+          if (row.paymentStatus !== 'tdc' && row.paymentStatus !== 'dc') {
+            if (Number(row.baseAmount || 0) !== Number(match.baseAmount)) {
+              row.baseAmount = Number(match.baseAmount);
+              row.totalAmount = (Number(row.baseAmount) || 0) + (Number(row.cr) || 0);
+              changed = true;
+            }
           }
         }
         if (match.billingDay && String(row.billingDay || '') !== String(match.billingDay)) {
@@ -7605,7 +7618,7 @@ export default function AdminPanel({
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'mobileNumber', activeRows.length)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                    className="w-full min-w-[130px] bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-mono font-black tracking-tight whitespace-nowrap overflow-visible hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    className="w-full min-w-[130px] bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap overflow-visible hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                     placeholder="03XXXXXXXXX"
                                   />
                                 </td>
@@ -7717,7 +7730,7 @@ export default function AdminPanel({
                                   <select
                                     value={rowRef.paymentStatus}
                                     disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value)}
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
                                     className={cn(
                                       "px-2 py-0.5 text-[12px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full bg-slate-100 dark:bg-slate-900 disabled:opacity-100  font-sans",
                                       isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
@@ -7923,7 +7936,7 @@ export default function AdminPanel({
                     {/* Premium Pagination controls */}
                     {totalPages > 1 && (
                       <div className="flex items-center justify-between border-t border-slate-200 dark:border-white\/10 bg-slate-50 dark:bg-slate-900/60 p-3 sm:px-6 select-none flex-wrap gap-3">
-                        <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider">
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500 font-sans font-bold uppercase tracking-wider">
                           Showing <span className="text-slate-600 dark:text-slate-400 font-sans">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="text-slate-600 dark:text-slate-400 font-sans">{Math.min(currentPage * itemsPerPage, filteredRows.length)}</span> of <span className="text-slate-600 dark:text-slate-400 font-sans">{filteredRows.length}</span> rows
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -7953,7 +7966,7 @@ export default function AdminPanel({
                             ◀ Prev
                           </button>
                           
-                          <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-900/30 font-mono">
+                          <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-900/30 font-sans">
                             Page {currentPage} of {totalPages}
                           </div>
 
@@ -8044,7 +8057,7 @@ export default function AdminPanel({
                                   className="w-full bg-transparent px-1 py-0.5 border-none rounded text-xs font-black focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white truncate font-sans"
                                   placeholder="Name"
                                 />
-                                <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold mt-0.5 uppercase tracking-wider flex items-center gap-1">
+                                <div className="text-[10px] text-slate-400 dark:text-slate-500 font-sans font-bold mt-0.5 uppercase tracking-wider flex items-center gap-1">
                                   <span className="shrink-0">ID:</span>
                                   <input
                                     type="text"
@@ -8063,7 +8076,7 @@ export default function AdminPanel({
                               <select
                                 value={rowRef.paymentStatus}
                                 disabled={!isBillingUnlocked}
-                                onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value)}
+                                onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
                                 className={cn(
                                   "px-2 py-0.5 text-[9px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full bg-slate-50 dark:bg-slate-950 disabled:opacity-100 font-sans",
                                   isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
@@ -8095,7 +8108,7 @@ export default function AdminPanel({
                                 disabled={!isBillingUnlocked}
                                 onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
                                 onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[12px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-mono tracking-tight select-all"
+                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[12px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-sans tracking-tight select-all"
                                 placeholder="03XXXXXXXXX"
                               />
                             </div>

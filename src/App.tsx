@@ -1734,8 +1734,8 @@ export default function App() {
       // Optimistic UI update
       setUsers(prev => prev.filter(u => u.uid !== uid));
 
-      await pocketbaseService.deleteUser(uid, username, user.fullName || user.username);
-      toast.success('User deleted successfully');
+      await pocketbaseService.deleteUser(uid, username, user.fullName || user.username, targetUser);
+      toast.success('User moved to Recycle Bin!');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to delete user.');

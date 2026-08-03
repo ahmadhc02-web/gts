@@ -567,6 +567,28 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
         return; // Let the next real-time update handle the clean list
       }
 
+      // 1b. Purge duplicate target records in DB if multiple exist for the same domain
+      const seenDomainIds = new Map<string, string>();
+      const duplicateIdsToPurge: string[] = [];
+      for (const t of data) {
+        const k = (t.domain || '').toLowerCase().trim();
+        if (k) {
+          if (seenDomainIds.has(k)) {
+            duplicateIdsToPurge.push(t.id);
+          } else {
+            seenDomainIds.set(k, t.id);
+          }
+        }
+      }
+      if (duplicateIdsToPurge.length > 0) {
+        for (const dupId of duplicateIdsToPurge) {
+          try {
+            await pocketbaseService.deleteMonitorTarget(dupId);
+          } catch (e) {}
+        }
+        return;
+      }
+
       // 2. See if we are missing any of our new 4 default targets and seed them sequentially
       const currentKeys = data.map(t => (t.domain || '').toLowerCase().trim());
       const missingDefaults = DEFAULT_TARGETS.filter(dt => !currentKeys.includes(dt.key.toLowerCase().trim()));
@@ -604,12 +626,19 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
 
       setDbTargets(data);
 
-      const mappedTargets: Target[] = data.map(t => ({
-        id: t.id,
-        key: (t.domain || '').toLowerCase(),
-        url: t.domain,
-        domain: t.label || t.domain
-      }));
+      const seenKeys = new Set<string>();
+      const mappedTargets: Target[] = [];
+      for (const t of data) {
+        const k = (t.domain || '').toLowerCase().trim();
+        if (!k || seenKeys.has(k)) continue;
+        seenKeys.add(k);
+        mappedTargets.push({
+          id: t.id,
+          key: k,
+          url: t.domain,
+          domain: t.label || t.domain
+        });
+      }
 
       if (mappedTargets.length === 0) {
         setTargets([]);

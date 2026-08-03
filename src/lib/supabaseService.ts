@@ -863,6 +863,17 @@ export const supabaseService = {
 
   // --- BILLING CONFIG & RECOVERY SHEETS ---
   async getBillingMonths(dealerId: string = 'main') {
+    const parseRowsData = (val: any): any[] => {
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string' && val.trim()) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+      }
+      return [];
+    };
+
     try {
       const monthMap = new Map<string, any>();
 
@@ -872,12 +883,12 @@ export const supabaseService = {
         const { data: supMonths } = await query;
         if (supMonths) {
           for (const em of supMonths) {
-            const rowsFromData = Array.isArray(em.rows_data) ? em.rows_data : (Array.isArray(em.rows) ? em.rows : []);
+            const rowsFromData = parseRowsData(em.rows_data ?? em.rows);
             monthMap.set(em.month_id, {
               id: em.month_id,
               dealerId: em.dealer_id || dealerId,
               rows: rowsFromData,
-              hasAuthoritativeRowsData: true,
+              hasAuthoritativeRowsData: rowsFromData.length > 0,
               updatedAt: em.updated ? new Date(em.updated).getTime() : Date.now(),
               createdAt: em.created ? new Date(em.created).getTime() : Date.now()
             });
@@ -934,8 +945,32 @@ export const supabaseService = {
               });
             } else {
               const existingMonth = monthMap.get(mId)!;
-              if (!existingMonth.rows || existingMonth.rows.length === 0 || (rowList && rowList.length > existingMonth.rows.length)) {
+              if (!existingMonth.rows || existingMonth.rows.length === 0) {
                 existingMonth.rows = rowList;
+              } else {
+                const rowByClientId = new Map<string, any>();
+                const rowByUsername = new Map<string, any>();
+                for (const r of rowList) {
+                  if (r.clientId) rowByClientId.set(String(r.clientId).toLowerCase(), r);
+                  if (r.username) rowByUsername.set(String(r.username).toLowerCase(), r);
+                }
+                existingMonth.rows = existingMonth.rows.map((r: any, idx: number) => {
+                  const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
+                                (r.username && rowByUsername.get(String(r.username).toLowerCase())) ||
+                                rowList[idx];
+                  if (dbRow) {
+                    return {
+                      ...r,
+                      ...dbRow,
+                      baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
+                      cr: dbRow.cr ?? r.cr ?? 0,
+                      totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
+                      paymentReceived: dbRow.paymentReceived ?? r.paymentReceived ?? 0,
+                      paymentStatus: dbRow.paymentStatus ?? r.paymentStatus ?? 'unpaid'
+                    };
+                  }
+                  return r;
+                });
               }
             }
           }
@@ -995,7 +1030,7 @@ export const supabaseService = {
   },
 
   _saveBillingMonthTimers: {} as Record<string, any>,
-  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: number[] | Set<number> }>,
+  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: Set<number> }>,
   _billingMonthSaveCounter: {} as Record<string, number>,
 
   async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>) {
@@ -1003,7 +1038,20 @@ export const supabaseService = {
     if (!this._saveBillingMonthLatestRows) this._saveBillingMonthLatestRows = {};
     if (!this._billingMonthSaveCounter) this._billingMonthSaveCounter = {};
     
-    this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices };
+    // Safely accumulate changedIndices into a Set so multiple fast cell updates retain all changed row indices
+    const existing = this._saveBillingMonthLatestRows[key];
+    let mergedChangedIndices: Set<number> | undefined = undefined;
+    if (changedIndices && existing && existing.changedIndices !== undefined) {
+      mergedChangedIndices = new Set<number>(existing.changedIndices);
+      const newIndices = Array.isArray(changedIndices) ? changedIndices : Array.from(changedIndices);
+      newIndices.forEach(i => mergedChangedIndices!.add(i));
+    } else if (changedIndices) {
+      mergedChangedIndices = new Set<number>(Array.isArray(changedIndices) ? changedIndices : Array.from(changedIndices));
+    } else {
+      mergedChangedIndices = undefined;
+    }
+
+    this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices: mergedChangedIndices };
     const currentCounter = (this._billingMonthSaveCounter[key] || 0) + 1;
     this._billingMonthSaveCounter[key] = currentCounter;
     
@@ -1208,19 +1256,36 @@ export const supabaseService = {
       itemsToSync = rows.map((r: any, idx: number) => ({ r, actualIndex: idx }));
     }
 
-    if (itemsToSync.length === 0) return;
+    const allDbRows = rows.map((r: any, idx: number) => mapRowToDb(r, idx));
 
-    const dbRows = itemsToSync.map(({ r, actualIndex }) => mapRowToDb(r, actualIndex));
-
-    try {
-      const { error } = await supabase.from('billing_rows').upsert(dbRows, { onConflict: 'id' });
-      if (error) {
-        console.warn("syncBillingRows batch upsert error:", error.message);
-        throw error;
+    if (itemsToSync.length > 0) {
+      const dbRows = itemsToSync.map(({ r, actualIndex }) => mapRowToDb(r, actualIndex));
+      try {
+        const { error } = await supabase.from('billing_rows').upsert(dbRows, { onConflict: 'id' });
+        if (error) {
+          console.warn("syncBillingRows batch upsert error:", error.message);
+          throw error;
+        }
+      } catch (err) {
+        console.warn("syncBillingRows error:", err);
+        throw err;
       }
-    } catch (err) {
-      console.warn("syncBillingRows error:", err);
-      throw err;
+    }
+
+    // Purge deleted rows from billing_rows table if doing a full sync
+    if (!hasChangedIndices && supabase) {
+      try {
+        const activeIds = new Set(allDbRows.map(d => d.id));
+        const { data: existingDbRows } = await supabase.from('billing_rows').select('id').eq('month_id', monthId);
+        if (existingDbRows && existingDbRows.length > 0) {
+          const idsToDelete = existingDbRows.map(r => r.id).filter(id => !activeIds.has(id));
+          if (idsToDelete.length > 0) {
+            await supabase.from('billing_rows').delete().in('id', idsToDelete);
+          }
+        }
+      } catch (delErr) {
+        console.warn("Error purging deleted billing_rows:", delErr);
+      }
     }
   },
 
@@ -1283,8 +1348,24 @@ export const supabaseService = {
     await upsertSupabase('users', 'uid', uid, { status });
   },
 
-  deleteUser: async (uid: string, username: string, authorName: string) => {
-    await supabase.from('users_data').delete().eq('uid', uid);
+  deleteUser: async (uid: string, username: string, authorName: string, fullUserData?: any) => {
+    try {
+      if (fullUserData) {
+        await supabaseService.createNotification({
+          type: 'recycle_bin',
+          message: `Deleted User: ${username || uid}`,
+          authorName: authorName || 'System',
+          dealerId: fullUserData.dealerId || 'main',
+          details: {
+            originalTable: 'users',
+            originalId: uid,
+            originalData: fullUserData,
+            deletedAt: Date.now()
+          }
+        });
+      }
+      await supabase.from('users_data').delete().eq('uid', uid);
+    } catch (e) {}
   },
 
   updateUserPassword: async (uid: string, username: string, newPass: string, authorName: string) => {
@@ -1460,8 +1541,24 @@ export const supabaseService = {
   deleteComplaint: async (id: string, customerName: string, authorName: string, fullComplaintData?: Complaint) => {
     return globalLoading.wrap(async () => {
       try {
+        if (fullComplaintData) {
+          await supabaseService.createNotification({
+            type: 'recycle_bin',
+            message: `Deleted Complaint: ${customerName || id}`,
+            authorName: authorName || 'System',
+            dealerId: fullComplaintData.dealerId || 'main',
+            details: {
+              originalTable: 'complaints',
+              originalId: id,
+              originalData: fullComplaintData,
+              deletedAt: Date.now()
+            }
+          });
+        }
         await supabase.from('complaints').delete().eq('id', id);
-      } catch (e) {}
+      } catch (e) {
+        console.error("Error in deleteComplaint:", e);
+      }
     }, 'Deleting complaint...');
   },
 
@@ -1753,6 +1850,20 @@ export const supabaseService = {
 
   deleteClient: async (id: string, clientName: string, authorName: string, fullClientData?: Client) => {
     try {
+      if (fullClientData) {
+        await supabaseService.createNotification({
+          type: 'recycle_bin',
+          message: `Deleted Client: ${clientName || id}`,
+          authorName: authorName || 'System',
+          dealerId: fullClientData.dealerId || 'main',
+          details: {
+            originalTable: 'clients',
+            originalId: id,
+            originalData: fullClientData,
+            deletedAt: Date.now()
+          }
+        });
+      }
       await supabase.from('clients').delete().eq('id', id);
     } catch (e) {}
   },
@@ -1826,10 +1937,20 @@ export const supabaseService = {
   },
 
   subscribeBillingMonths: (callback: (months: any[]) => void, dealerId?: string) => {
+    const parseRowsData = (val: any): any[] => {
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string' && val.trim()) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+      }
+      return [];
+    };
     return subscribeTable('billing_months', callback, (row: any) => ({
       id: row.month_id,
       dealerId: row.dealer_id,
-      rows: Array.isArray(row.rows_data) ? row.rows_data : (Array.isArray(row.rows) ? row.rows : []),
+      rows: parseRowsData(row.rows_data ?? row.rows),
       updatedAt: row.updated ? new Date(row.updated).getTime() : Date.now(),
       createdAt: row.created ? new Date(row.created).getTime() : Date.now()
     }), dealerId);
@@ -2235,6 +2356,20 @@ export const supabaseService = {
 
   deleteLedgerSheet: async (sheetId: string, authorName: string = 'admin', tenantId: string = 'main', fullSheetData?: any) => {
     try {
+      if (fullSheetData) {
+        await supabaseService.createNotification({
+          type: 'recycle_bin',
+          message: `Deleted Entry Sheet: ${fullSheetData.username || fullSheetData.userLedgerName || sheetId}`,
+          authorName: authorName || 'System',
+          dealerId: tenantId || 'main',
+          details: {
+            originalTable: 'ledger_sheets',
+            originalId: sheetId,
+            originalData: fullSheetData,
+            deletedAt: Date.now()
+          }
+        });
+      }
       await supabase.from('ledger_sheets').delete().eq('id', sheetId);
     } catch (e) {}
   },
@@ -2242,12 +2377,25 @@ export const supabaseService = {
   // --- RECYCLE BIN ---
   saveToRecycleBin: async (tableName: string, recordId: string, authorName: string, dealerId?: string, extraData?: any) => {
     try {
+      const itemTitle = extraData?.customerName || extraData?.username || extraData?.clientName || extraData?.name || extraData?.title || recordId;
+      await supabaseService.createNotification({
+        type: 'recycle_bin',
+        message: `Deleted ${tableName.replace('_', ' ')}: ${itemTitle}`,
+        authorName: authorName || 'System',
+        dealerId: dealerId || 'main',
+        details: {
+          originalTable: tableName,
+          originalId: recordId,
+          originalData: extraData || { id: recordId },
+          deletedAt: Date.now()
+        }
+      });
       await supabase.from('recycle_bin').insert([{
         table_name: tableName,
         record_id: recordId,
         author_name: authorName,
         dealer_id: dealerId || 'main',
-        data: extraData ? JSON.stringify(extraData) : null,
+        data: extraData ? (typeof extraData === 'string' ? extraData : JSON.stringify(extraData)) : null,
         created_at: Date.now()
       }]);
     } catch (e) {}
@@ -2268,18 +2416,60 @@ export const supabaseService = {
 
   restoreFromRecycleBin: async (recycleBinItemId: string) => {
     try {
+      let details: any = null;
+      const { data: notif } = await supabase.from('notifications').select('*').eq('id', recycleBinItemId).maybeSingle();
+      if (notif) {
+        details = typeof notif.details === 'string' ? JSON.parse(notif.details) : notif.details;
+      }
+      if (!details) {
+        const { data: rbItem } = await supabase.from('recycle_bin').select('*').eq('id', recycleBinItemId).maybeSingle();
+        if (rbItem && rbItem.data) {
+          details = {
+            originalTable: rbItem.table_name,
+            originalId: rbItem.record_id,
+            originalData: typeof rbItem.data === 'string' ? JSON.parse(rbItem.data) : rbItem.data
+          };
+        }
+      }
+
+      if (details && details.originalTable && details.originalData) {
+        const table = details.originalTable;
+        const data = details.originalData;
+
+        if (table === 'complaints') {
+          await upsertSupabase('complaints', 'id', data.id, toDb('complaints', data));
+        } else if (table === 'users' || table === 'users_data') {
+          await upsertSupabase('users_data', 'uid', data.uid || data.id, toDb('users_data', data));
+        } else if (table === 'clients') {
+          await upsertSupabase('clients', 'id', data.id, toDb('clients', data));
+        } else if (table === 'ledger_sheets') {
+          await upsertSupabase('ledger_sheets', 'id', data.id, toDb('ledger_sheets', data));
+        } else if (table === 'billing_rows') {
+          await upsertSupabase('billing_rows', 'id', data.id, toDb('billing_rows', data));
+        } else {
+          try {
+            await supabase.from(table).upsert([data]);
+          } catch (err) {}
+        }
+      }
+
+      await supabase.from('notifications').delete().eq('id', recycleBinItemId);
       await supabase.from('recycle_bin').delete().eq('id', recycleBinItemId);
-    } catch (e) {}
+    } catch (e) {
+      console.error("Error restoring item from recycle bin:", e);
+    }
   },
 
   permanentlyDeleteFromRecycleBin: async (recycleBinItemId: string) => {
     try {
+      await supabase.from('notifications').delete().eq('id', recycleBinItemId);
       await supabase.from('recycle_bin').delete().eq('id', recycleBinItemId);
     } catch (e) {}
   },
 
   emptyRecycleBin: async () => {
     try {
+      await supabase.from('notifications').delete().eq('type', 'recycle_bin');
       await supabase.from('recycle_bin').delete().neq('id', '');
     } catch (e) {}
   },
@@ -2287,6 +2477,7 @@ export const supabaseService = {
   cleanOldRecycleBinItems: async (days: number = 30) => {
     try {
       const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      await supabase.from('notifications').delete().eq('type', 'recycle_bin').lt('created_at', cutoff);
       await supabase.from('recycle_bin').delete().lt('created_at', cutoff);
     } catch (e) {}
   },
