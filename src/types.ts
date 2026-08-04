@@ -39,6 +39,7 @@ export interface Complaint {
   remarkAuthorName?: string;
   customerReview?: string; // Deprecated single review field, but kept for database mapping
   reviews?: ComplaintReview[]; // Chronological array of reviews
+  protocols?: ComplaintReview[]; // Chronological array of resolution protocols
   dealerId?: string; // Multi-tenancy support
   scheduledAt?: number; // millisecond timestamp
 }

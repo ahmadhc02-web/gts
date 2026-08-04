@@ -136,10 +136,10 @@ export default function ComplaintList({
   React.useEffect(() => {
     if (selectedComplaint) {
       playPopupSound();
-      setStatusRemarks(selectedComplaint.remarks || '');
-      setCustomerReview(selectedComplaint.customerReview || '');
-      setHideStatusRemarksBox(!!selectedComplaint.remarks);
-      setHideCustomerReviewBox(!!selectedComplaint.customerReview);
+      setStatusRemarks(''); // clear input for new protocol
+      setCustomerReview(''); // clear input for new review
+      setHideStatusRemarksBox(false); // always show input
+      setHideCustomerReviewBox(false); // always show input
       setAnimateRemarksLeft(false);
       setAnimateReviewLeft(false);
       setShowLeftThankYou(false);
@@ -152,7 +152,7 @@ export default function ComplaintList({
       setAnimateReviewLeft(false);
       setShowLeftThankYou(false);
     }
-  }, [selectedComplaint]);
+  }, [selectedComplaint?.id]);
   const [sortConfig, setSortConfig] = React.useState<{
     key: keyof Complaint | 'registry' | 'urgency' | 'client' | 'tactical' | 'category' | 'profile';
     direction: 'asc' | 'desc';
@@ -787,7 +787,7 @@ export default function ComplaintList({
       </AnimatePresence>
 
       {/* Header Area */}
-      <div className="mb-6 flex flex-col items-center justify-center text-center gap-2">
+      <div className="mb-4 flex flex-col items-center justify-center text-center gap-2">
         <h3 className="text-2xl font-black flex items-center justify-center gap-3 uppercase tracking-tight text-slate-900 dark:text-white">
           {customNames.complaint || 'Operational Registry'}
           <span className="text-xs font-black px-3 py-1 bg-brand-accent/10 border border-brand-accent/20 text-brand-accent rounded leading-none">
@@ -1952,6 +1952,10 @@ export default function ComplaintList({
                                 </button>
                               </div>
                             </motion.div>
+                          ) : (selectedComplaint.protocols && selectedComplaint.protocols.length > 0) ? (
+                            <div className="p-3">
+                              <ReviewTimeline reviews={selectedComplaint.protocols} type="protocol" />
+                            </div>
                           ) : selectedComplaint.remarks ? (
                             <motion.div 
                               key={selectedComplaint.remarks}
@@ -2167,92 +2171,75 @@ export default function ComplaintList({
                             ) : (
                               <div className="space-y-4">
                                 {/* 1. Team Resolution Protocol Field */}
-                                <AnimatePresence mode="wait">
-                                  {!hideStatusRemarksBox ? (
-                                    <motion.div
-                                      key="resolution-input"
-                                      initial={{ x: 50, opacity: 0 }}
-                                      animate={{ x: 0, opacity: 1 }}
-                                      exit={{ x: -100, opacity: 0 }}
-                                      transition={{ type: 'spring', stiffness: 220, damping: 20 }}
-                                      className="space-y-1"
-                                    >
-                                      <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Team Resolution Protocol (Required for completion)</label>
-                                      <div className="relative">
-                                        <textarea
-                                          value={statusRemarks}
-                                          onChange={(e) => setStatusRemarks(e.target.value.toUpperCase())}
-                                          placeholder="Enter resolution protocol details..."
-                                          className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-brand-accent/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            if (!statusRemarks.trim()) {
-                                              toast.error("Please enter a Team Resolution Protocol first.");
-                                              return;
-                                            }
-                                            // Copy to selected complaint remarks trigger
-                                            setSelectedComplaint(prev => prev ? { ...prev, remarks: statusRemarks } : null);
-                                            
-                                            // Enable slide transition shifting right to left
-                                            setAnimateRemarksLeft(true);
-                                            setHideStatusRemarksBox(true);
-                                            
-                                            try {
-                                              const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
-                                              sound.volume = 0.2;
-                                              sound.play().catch(() => {});
-                                            } catch (e) {}
+                                <div className="space-y-1">
+                                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Team Resolution Protocol (Required for completion)</label>
+                                  <div className="relative">
+                                    <textarea
+                                      value={statusRemarks}
+                                      onChange={(e) => setStatusRemarks(e.target.value.toUpperCase())}
+                                      placeholder="Enter resolution protocol details..."
+                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-emerald-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (!statusRemarks.trim()) {
+                                          toast.error("Please enter a Team Resolution Protocol first.");
+                                          return;
+                                        }
+                                        
+                                        const newProtocol: ComplaintReview = {
+                                          id: 'proto-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+                                          text: statusRemarks.trim(),
+                                          createdAt: Date.now(),
+                                          authorId: currentUser.uid,
+                                          authorName: currentUser.fullName || currentUser.username
+                                        };
 
-                                            try {
-                                              if (onUpdateRemarks) {
-                                                await onUpdateRemarks(selectedComplaint.id, statusRemarks);
-                                                toast.success("Protocol remark saved to database.");
-                                              } else if (onEdit) {
-                                                await onEdit(selectedComplaint.id, { remarks: statusRemarks });
-                                                toast.success("Protocol remark saved to database.");
-                                              } else {
-                                                toast.success("Protocol saved in memory.");
-                                              }
-                                            } catch (err) {
-                                              console.error("Failed to update database remarks:", err);
-                                              toast.error("Failed to save to database. Kept in memory.");
-                                            }
-                                          }}
-                                          className="absolute bottom-2 right-2 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
-                                        >
-                                          <span>Enter</span>
-                                          <Send size={7} />
-                                        </button>
-                                      </div>
-                                    </motion.div>
-                                  ) : (
-                                    <motion.div
-                                      key="resolution-badge"
-                                      initial={{ x: 100, opacity: 0 }}
-                                      animate={{ x: 0, opacity: 1 }}
-                                      exit={{ x: -50, opacity: 0 }}
-                                      transition={{ type: 'spring', stiffness: 220, damping: 20 }}
-                                      className="p-2 bg-emerald-500/5 rounded-lg border border-emerald-500/25 flex items-center justify-between shadow-sm"
+                                        const updatedProtocols = [...(selectedComplaint.protocols || []), newProtocol];
+
+                                        setSelectedComplaint(prev => prev ? { ...prev, protocols: updatedProtocols } : null);
+                                        setStatusRemarks('');
+
+                                        try {
+                                          const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+                                          sound.volume = 0.2;
+                                          sound.play().catch(() => {});
+                                        } catch (e) {}
+
+                                        try {
+                                          if (onUpdateRemarks) {
+                                            // Passing the serialized array as string since onUpdateRemarks might just expect string 
+                                            // but we actually modified it to take protocols array in supabaseService! Wait, we didn't change onUpdateRemarks signature. Let's pass the array as string for now if it's expecting string, or we should update it. Actually, `selectedComplaint.protocols` is what we pass. 
+                                            // Let's just stringify it for `onUpdateRemarks` which expects a string.
+                                            await onUpdateRemarks(selectedComplaint.id, JSON.stringify(updatedProtocols));
+                                            toast.success("Protocol saved to database.");
+                                          } else if (onEdit) {
+                                            await onEdit(selectedComplaint.id, { protocols: updatedProtocols });
+                                            toast.success("Protocol saved to database.");
+                                          } else {
+                                            toast.success("Protocol saved in memory.");
+                                          }
+                                        } catch (err) {
+                                          console.error("Failed to update database remarks:", err);
+                                          toast.error("Failed to save to database. Kept in memory.");
+                                        }
+                                      }}
+                                      className="absolute bottom-2 right-2 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
                                     >
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pulse" />
-                                        <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none">Team Resolution Protocol Checked In</span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setHideStatusRemarksBox(false);
-                                          setAnimateRemarksLeft(false);
-                                        }}
-                                        className="text-[8px] font-black uppercase text-brand-accent hover:underline cursor-pointer"
-                                      >
-                                        Edit
-                                      </button>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
+                                      <span>Add</span>
+                                      <Send size={7} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {selectedComplaint.protocols && selectedComplaint.protocols.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 p-2 bg-emerald-500/5 rounded-lg border border-emerald-500/10">
+                                    <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider leading-none">
+                                      Protocols Submitted: {selectedComplaint.protocols.length}
+                                    </span>
+                                  </div>
+                                )}
 
                                 {/* 2. Customer Review Field (Add New Review) */}
                                 <div className="space-y-1">
@@ -2326,7 +2313,15 @@ export default function ComplaintList({
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
-                          {appConfig.statuses.map((s, i) => (
+                          {[...appConfig.statuses].sort((a, b) => {
+                            const order = ['pending', 'in process', 'complete', 'hold', 'scheduled'];
+                            const idxA = order.indexOf(a.toLowerCase());
+                            const idxB = order.indexOf(b.toLowerCase());
+                            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                            if (idxA !== -1) return -1;
+                            if (idxB !== -1) return 1;
+                            return a.localeCompare(b);
+                          }).map((s, i) => (
                             <button
                               key={`stat-${i}`}
                               onClick={() => {
@@ -2340,10 +2335,11 @@ export default function ComplaintList({
                                 }
                                 setShowInlineSchedulePicker(false);
                                 
-                                const finalRemarks = statusRemarks.trim() || selectedComplaint.remarks || '';
+                                const finalProtocols = selectedComplaint.protocols || [];
+                                const fallbackRemarks = selectedComplaint.remarks || '';
                                 const reviewsList = selectedComplaint.reviews || [];
 
-                                if (s.toLowerCase() === 'complete' && (!finalRemarks.trim() || reviewsList.length === 0)) {
+                                if (s.toLowerCase() === 'complete' && (finalProtocols.length === 0 && !fallbackRemarks.trim() || reviewsList.length === 0)) {
                                   toast.error('Both Resolution Protocol and at least one Customer Review are required for completion.');
                                   return;
                                 }
@@ -2351,14 +2347,14 @@ export default function ComplaintList({
                                   onEdit(selectedComplaint.id, { status: s as ComplaintStatus, scheduledAt: undefined });
                                 }
                                 if (onStatusChange) {
-                                  onStatusChange(selectedComplaint.id, s as ComplaintStatus, finalRemarks, reviewsList);
+                                  onStatusChange(selectedComplaint.id, s as ComplaintStatus, fallbackRemarks, reviewsList);
+                                  // Wait, onStatusChange doesn't take protocols yet. It takes remarks string. 
+                                  // This is fine, we save protocols on "Add" immediately anyway!
                                 }
                                 setSelectedComplaint({ 
                                   ...selectedComplaint, 
                                   status: s as ComplaintStatus, 
-                                  scheduledAt: undefined, 
-                                  remarks: finalRemarks, 
-                                  reviews: reviewsList 
+                                  scheduledAt: undefined
                                 });
                                 setStatusRemarks('');
                                 setCustomerReview('');

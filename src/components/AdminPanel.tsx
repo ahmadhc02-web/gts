@@ -475,15 +475,16 @@ export default function AdminPanel({
     reader.onload = (event) => {
       try {
         const pkg = JSON.parse(event.target?.result as string);
-        if (pkg.version !== "2.0-full" || !pkg.data) {
-          toast.error("Format mismatch", { description: "The uploaded file is not compatible with our premium console restore system." });
+        const hasData = pkg && typeof pkg === 'object' && (pkg.data || pkg.complaints || pkg.users || pkg.clients || pkg.billingMonths || pkg.version);
+        if (!hasData) {
+          toast.error("Format mismatch", { description: "The uploaded file is not compatible with our restore system." });
           setRestoreFile(null);
           setUploadedBackupData(null);
           return;
         }
         setUploadedBackupData(pkg);
         toast.info("Validation Complete!", {
-          description: `Backup verified. Original compilation date: ${new Date(pkg.exportedAt).toLocaleString()}`
+          description: `Backup verified. ${pkg.exportedAt ? `Original compilation date: ${new Date(pkg.exportedAt).toLocaleString()}` : ''}`
         });
       } catch (err) {
         toast.error("Compilation error", { description: "Failed to parse the backup file. File might be truncated or corrupted." });
@@ -1196,7 +1197,7 @@ export default function AdminPanel({
             totalAmount: newBase + unpaid,
             paymentReceived: 0,
             paymentStatus: isTdcOrDc ? r.paymentStatus : 'unpaid',
-            panelDetails: r.panelDetails || r.serNam || matchingClient?.panelDetails || ''
+            panelDetails: r.panelDetails || matchingClient?.panelDetails || ''
           };
         });
         
@@ -1236,14 +1237,12 @@ export default function AdminPanel({
             paymentStatus: 'unpaid',
             comments: '',
             occ: 'personal',
-            serNam: c.username || '',
             pkgDetails: c.pkgDetails || '8Mb',
             sag: '0',
             lai: 'GN',
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            network: 'GN CITY',
             panelDetails: c.panelDetails || ''
           };
         });
@@ -1279,14 +1278,12 @@ export default function AdminPanel({
             paymentStatus: 'unpaid',
             comments: '',
             occ: 'personal',
-            serNam: c.username || '',
             pkgDetails: c.pkgDetails || '8Mb',
             sag: '0',
             lai: 'GN',
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            network: 'GN CITY',
             panelDetails: c.panelDetails || ''
           };
         });
@@ -1408,14 +1405,12 @@ export default function AdminPanel({
             paymentStatus: 'unpaid',
             comments: '',
             occ: 'personal',
-            serNam: c.username,
             pkgDetails: c.pkgDetails || '8Mb',
             sag: '0',
             lai: 'GN',
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            network: 'GN CITY',
             panelDetails: c.panelDetails || ''
           });
           newCount++;
@@ -1500,7 +1495,7 @@ export default function AdminPanel({
         baseAmount: (row.baseAmount !== undefined && !isRowTdcOrDc) ? row.baseAmount : matchedClient.baseAmount,
         rt: row.rt !== undefined ? row.rt : matchedClient.rt,
         billingDay: row.billingDay !== undefined ? row.billingDay : matchedClient.billingDay,
-        seriesNumber: (row.serNam !== undefined && row.serNam !== '') ? row.serNam : matchedClient.seriesNumber,
+        panelDetails: row.panelDetails !== undefined ? row.panelDetails : matchedClient.panelDetails,
       };
 
       pocketbaseService.saveClientsBatch([updatedClient], activeDealerId || 'main').catch(err => {
@@ -2282,14 +2277,13 @@ export default function AdminPanel({
           );
         case 'charts':
           return (
-            <div key={`section-${section.id}`} className="space-y-6">
+            <div key={`section-${section.id}`} className="space-y-4">
               <div 
-                className="text-center space-y-2 mb-10 cursor-pointer select-none group"
+                className="text-center mb-4 cursor-pointer select-none group"
                 onDoubleClick={() => setIsChartsVisible(!isChartsVisible)}
                 title="Double-click to toggle analytics"
               >
                 <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 group-hover:scale-105 transition-transform duration-500">Chart Analytics</h2>
-                <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Real-time operational data visualization</p>
               </div>
 
               <AnimatePresence mode="wait">
@@ -2328,7 +2322,7 @@ export default function AdminPanel({
           );
         case 'registry':
           return (activeTab === 'complaints') ? (
-            <div key={`section-${section.id}`} className="space-y-12">
+            <div key={`section-${section.id}`} className="space-y-6">
               <motion.div
                 key="complaints-list"
                 initial={{ opacity: 0, y: 5 }}
@@ -2479,14 +2473,12 @@ export default function AdminPanel({
           paymentStatus: 'unpaid',
           comments: '',
           occ: '',
-          serNam: '',
           pkgDetails: c.pkgDetails || '',
           sag: '',
           lai: '',
           connectionDate: '',
           devicePrice: 0,
           abl: 0,
-          network: '',
           panelDetails: c.panelDetails || ''
         };
       });
@@ -2548,7 +2540,7 @@ export default function AdminPanel({
         row.username?.toLowerCase().includes(query) || 
         row.mobileNumber?.includes(query) ||
         row.paymentStatus?.toLowerCase().includes(query) ||
-        row.serNam?.toLowerCase().includes(query);
+        row.panelDetails?.toLowerCase().includes(query);
       
       const matchesStatus = billingStatusFilter === 'all' || 
         (billingStatusFilter === 'extra' 
@@ -2659,8 +2651,8 @@ export default function AdminPanel({
     if (!currentMonthId || !activeRows.length) return;
     const headers = [
       "Sr#", "NAME", "USER ID", "MOBILE #", "AREA", "RT", "B. AMOUNT", "CR.", "T. AMOUNT", 
-      "BD", "MAY RECOVERY", "STATUS", "COMMENTS", "OCC.", "SER NAM", "PKG", "DATE", 
-      "DEVICE PRICE", "ABL CHARGES", "NETWORK"
+      "BD", "MAY RECOVERY", "STATUS", "COMMENTS", "OCC.", "PANEL DETAILS", "PKG", "DATE", 
+      "DEVICE PRICE", "ABL CHARGES"
     ];
     
     const csvRows = [headers.join(",")];
@@ -2681,12 +2673,11 @@ export default function AdminPanel({
         `"${r.paymentStatus || ''}"`,
         `"${(r.comments || '').replace(/"/g, '""')}"`,
         `"${r.occ || ''}"`,
-        `"${r.serNam || ''}"`,
+        `"${r.panelDetails || ''}"`,
         `"${r.pkgDetails || ''}"`,
         `"${r.connectionDate || ''}"`,
         r.devicePrice || 0,
-        r.abl || 0,
-        `"${r.network || ''}"`
+        r.abl || 0
       ];
       csvRows.push(rowData.join(","));
     });
@@ -4194,7 +4185,7 @@ export default function AdminPanel({
                     <input 
                       type="text" 
                       placeholder="Add Category..." 
-                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900 dark:text-white"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value.trim();
@@ -4205,6 +4196,22 @@ export default function AdminPanel({
                         }
                       }}
                     />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                        if (inputEl) {
+                          const val = inputEl.value.trim();
+                          if (val && !appConfig.categories.includes(val)) {
+                            onUpdateConfig({ ...appConfig, categories: [...appConfig.categories, val] });
+                            inputEl.value = '';
+                          }
+                        }
+                      }}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <Plus size={14} /> Add
+                    </button>
                   </div>
                   
                   <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
@@ -4241,7 +4248,7 @@ export default function AdminPanel({
                     <input 
                       type="text" 
                       placeholder="Add Status..." 
-                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-white"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value.trim();
@@ -4252,6 +4259,22 @@ export default function AdminPanel({
                         }
                       }}
                     />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                        if (inputEl) {
+                          const val = inputEl.value.trim();
+                          if (val && !appConfig.statuses.includes(val)) {
+                            onUpdateConfig({ ...appConfig, statuses: [...appConfig.statuses, val] });
+                            inputEl.value = '';
+                          }
+                        }
+                      }}
+                      className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <Plus size={14} /> Add
+                    </button>
                   </div>
                   
                   <div className="flex flex-wrap gap-2">
@@ -4288,7 +4311,7 @@ export default function AdminPanel({
                     <input 
                       type="text" 
                       placeholder="Add Priority..." 
-                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-900 dark:text-white"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value.trim();
@@ -4299,6 +4322,22 @@ export default function AdminPanel({
                         }
                       }}
                     />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                        if (inputEl) {
+                          const val = inputEl.value.trim();
+                          if (val && !appConfig.priorities.includes(val)) {
+                            onUpdateConfig({ ...appConfig, priorities: [...appConfig.priorities, val] });
+                            inputEl.value = '';
+                          }
+                        }
+                      }}
+                      className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <Plus size={14} /> Add
+                    </button>
                   </div>
                   
                   <div className="flex flex-wrap gap-2">
@@ -4335,7 +4374,7 @@ export default function AdminPanel({
                     <input 
                       type="text" 
                       placeholder="Add Zone..." 
-                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white\/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value.trim();
@@ -4346,6 +4385,22 @@ export default function AdminPanel({
                         }
                       }}
                     />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                        if (inputEl) {
+                          const val = inputEl.value.trim();
+                          if (val && !appConfig.zones?.includes(val)) {
+                            onUpdateConfig({ ...appConfig, zones: [...(appConfig.zones || []), val] });
+                            inputEl.value = '';
+                          }
+                        }
+                      }}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                    >
+                      <Plus size={14} /> Add
+                    </button>
                   </div>
                   
                   <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
@@ -5641,6 +5696,22 @@ export default function AdminPanel({
                                   }
                                 }}
                               />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                  if (inputEl) {
+                                    const val = inputEl.value.trim();
+                                    if (val && !appConfig.categories.includes(val)) {
+                                      onUpdateConfig({ ...appConfig, categories: [...appConfig.categories, val] });
+                                      inputEl.value = '';
+                                    }
+                                  }
+                                }}
+                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                              >
+                                <Plus size={14} /> Add
+                              </button>
                             </div>
                             
                             <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
@@ -5688,6 +5759,22 @@ export default function AdminPanel({
                                   }
                                 }}
                               />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                  if (inputEl) {
+                                    const val = inputEl.value.trim();
+                                    if (val && !appConfig.statuses.includes(val)) {
+                                      onUpdateConfig({ ...appConfig, statuses: [...appConfig.statuses, val] });
+                                      inputEl.value = '';
+                                    }
+                                  }
+                                }}
+                                className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                              >
+                                <Plus size={14} /> Add
+                              </button>
                             </div>
                             
                             <div className="flex flex-wrap gap-2">
@@ -5735,6 +5822,22 @@ export default function AdminPanel({
                                   }
                                 }}
                               />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                  if (inputEl) {
+                                    const val = inputEl.value.trim();
+                                    if (val && !appConfig.priorities.includes(val)) {
+                                      onUpdateConfig({ ...appConfig, priorities: [...appConfig.priorities, val] });
+                                      inputEl.value = '';
+                                    }
+                                  }
+                                }}
+                                className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                              >
+                                <Plus size={14} /> Add
+                              </button>
                             </div>
                             
                             <div className="flex flex-wrap gap-2">
@@ -5782,6 +5885,22 @@ export default function AdminPanel({
                                   }
                                 }}
                               />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                  if (inputEl) {
+                                    const val = inputEl.value.trim();
+                                    if (val && !appConfig.zones?.includes(val)) {
+                                      onUpdateConfig({ ...appConfig, zones: [...(appConfig.zones || []), val] });
+                                      inputEl.value = '';
+                                    }
+                                  }
+                                }}
+                                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                              >
+                                <Plus size={14} /> Add
+                              </button>
                             </div>
                             
                             <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
@@ -8585,8 +8704,8 @@ export default function AdminPanel({
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.occ || '—'}</div>
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Service Name</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.serviceName || '—'}</div>
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Panel Details</div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.panelDetails || '—'}</div>
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Package Details</div>
@@ -8603,10 +8722,6 @@ export default function AdminPanel({
                     <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
                       <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">ABL</div>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.abl || '—'}</div>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Network / Node</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.network || '—'}</div>
                     </div>
                   </div>
                 </div>

@@ -197,6 +197,9 @@ export function toDb(table: string, obj: any): any {
       }
       if (table === 'complaints' && clientKey === 'reviews') {
         result[dbKey] = Array.isArray(obj[clientKey]) ? JSON.stringify(obj[clientKey]) : obj[clientKey];
+      } else if (table === 'complaints' && clientKey === 'protocols') {
+        // map protocols to remarks
+        result['remarks'] = Array.isArray(obj[clientKey]) ? JSON.stringify(obj[clientKey]) : obj[clientKey];
       } else {
         result[dbKey] = obj[clientKey];
       }
@@ -318,6 +321,29 @@ export function fromDb(table: string, obj: any): any {
       }
     } else {
       result.reviews = [];
+    }
+    
+    if (obj.remarks) {
+      const rm = String(obj.remarks).trim();
+      if (rm.startsWith('[')) {
+        try {
+          result.protocols = JSON.parse(rm);
+        } catch (e) {
+          result.protocols = [{
+            id: 'legacy-err',
+            text: String(obj.remarks),
+            createdAt: obj.created_at || Date.now()
+          }];
+        }
+      } else {
+        result.protocols = [{
+          id: 'legacy-1',
+          text: String(obj.remarks),
+          createdAt: obj.created_at || Date.now()
+        }];
+      }
+    } else {
+      result.protocols = [];
     }
   }
 
@@ -922,15 +948,13 @@ export const supabaseService = {
               paymentStatus: r.payment_status || 'unpaid',
               comments: r.comments || '',
               occ: r.occ || '',
-              serNam: r.ser_nam || '',
-              panelDetails: r.panel_details || r.ser_nam || '',
+              panelDetails: r.panel_details || '',
               pkgDetails: r.pkg_details || '',
               sag: r.sag || '',
               lai: r.lai || '',
               connectionDate: r.connection_date || '',
               devicePrice: r.device_price || '',
-              abl: r.abl || '',
-              network: r.network || ''
+              abl: r.abl || ''
             });
           }
 
@@ -1010,7 +1034,7 @@ export const supabaseService = {
           paymentStatus: r.payment_status || 'unpaid',
           comments: r.comments || '',
           occ: r.occ || '',
-          panelDetails: r.panel_details || r.ser_nam || '',
+          panelDetails: r.panel_details || '',
           pkgDetails: r.pkg_details || '',
           sag: r.sag || '',
           lai: r.lai || '',
@@ -1236,14 +1260,12 @@ export const supabaseService = {
         payment_status: String(r.paymentStatus ?? r.payment_status ?? 'unpaid'),
         comments: String(r.comments || ''),
         occ: String(r.occ || ''),
-        ser_nam: String(r.panelDetails || r.serNam || ''),
         pkg_details: String(r.pkgDetails || r.pkg_details || ''),
         sag: String(r.sag || ''),
         lai: String(r.lai || ''),
         connection_date: String(r.connectionDate || r.connection_date || ''),
         device_price: sanitizeNum(r.devicePrice ?? r.device_price),
         abl: sanitizeNum(r.abl),
-        network: '',
         panel_details: String(r.panelDetails || '')
       };
     };
@@ -1426,10 +1448,10 @@ export const supabaseService = {
 
       const merged = {
         ...baseConfig,
-        categories: dbCategories.length > 0 ? dbCategories : (baseConfig.categories || DEFAULT_CATEGORIES),
-        statuses: dbStatuses.length > 0 ? dbStatuses : (baseConfig.statuses || DEFAULT_STATUSES),
-        priorities: dbPriorities.length > 0 ? dbPriorities : (baseConfig.priorities || DEFAULT_PRIORITIES),
-        zones: dbZones.length > 0 ? dbZones : (baseConfig.zones || DEFAULT_ZONES),
+        categories: (baseConfig.categories && baseConfig.categories.length > 0) ? baseConfig.categories : (dbCategories.length > 0 ? dbCategories : DEFAULT_CATEGORIES),
+        statuses: (baseConfig.statuses && baseConfig.statuses.length > 0) ? baseConfig.statuses : (dbStatuses.length > 0 ? dbStatuses : DEFAULT_STATUSES),
+        priorities: (baseConfig.priorities && baseConfig.priorities.length > 0) ? baseConfig.priorities : (dbPriorities.length > 0 ? dbPriorities : DEFAULT_PRIORITIES),
+        zones: (baseConfig.zones && baseConfig.zones.length > 0) ? baseConfig.zones : (dbZones.length > 0 ? dbZones : DEFAULT_ZONES),
         billingSecurityKey: baseConfig.billingSecurityKey || '1239870'
       };
 
@@ -1575,11 +1597,11 @@ export const supabaseService = {
     }, 'Deleting complaint...');
   },
 
-  updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, remarks?: string, reviews?: ComplaintReview[]) => {
+  updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, protocols?: ComplaintReview[] | string, reviews?: ComplaintReview[]) => {
     return globalLoading.wrap(async () => {
       const updates: any = { status, updated_at: Date.now() };
-      if (remarks) {
-        updates.remarks = remarks;
+      if (protocols) {
+        updates.remarks = typeof protocols === 'string' ? protocols : JSON.stringify(protocols);
         updates.remark_author_id = authorId;
         updates.remark_author_name = authorName;
       }
@@ -1590,9 +1612,9 @@ export const supabaseService = {
     }, 'Updating complaint status...');
   },
 
-  updateComplaintRemarks: async (id: string, remarks: string, customerName: string, authorName: string, authorId: string) => {
+  updateComplaintRemarks: async (id: string, protocols: string | ComplaintReview[], customerName: string, authorName: string, authorId: string) => {
     await upsertSupabase('complaints', 'id', id, {
-      remarks,
+      remarks: typeof protocols === 'string' ? protocols : JSON.stringify(protocols),
       remark_author_id: authorId,
       remark_author_name: authorName,
       updated_at: Date.now()
@@ -1642,6 +1664,10 @@ export const supabaseService = {
 
   updateConfig: async (config: any, authorName: string, tenantId: string = 'main') => {
     const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
+    delete globalAppConfigCache[tenantId || 'main'];
+    delete globalAppConfigCache['main'];
+    delete globalBrandingConfigCache[docId];
+
     const payload = {
       config_type: docId,
       dashboard_subtext: typeof config === 'string' ? config : JSON.stringify(config),
@@ -1649,6 +1675,10 @@ export const supabaseService = {
     };
     await upsertSupabase('branding_config', 'config_type', docId, payload);
     await supabaseService.syncAppConfig(config, tenantId);
+
+    delete globalAppConfigCache[tenantId || 'main'];
+    delete globalAppConfigCache['main'];
+    delete globalBrandingConfigCache[docId];
   },
 
   subscribeBranding: (callback: (branding: BrandingConfig | null) => void) => {
@@ -1918,34 +1948,248 @@ export const supabaseService = {
 
   // --- SYSTEM BACKUP & RESTORE ---
   getFullSystemBackup: async (exportedBy: string): Promise<any> => {
-    const users = await supabaseService.getUsers();
-    const complaints = await supabaseService.getComplaints();
-    const clients = await supabaseService.getClients();
-    return {
-      version: '3.0',
-      exportedBy,
-      exportedAt: Date.now(),
-      users,
-      complaints,
-      clients
-    };
+    try {
+      const [
+        usersData,
+        complaintsData,
+        clientsData,
+        billingMonthsData,
+        billingRowsData,
+        ledgerFoldersData,
+        ledgerSheetsData,
+        brandingConfigData,
+        chatMessagesData,
+        chatGroupsData,
+        notificationsData,
+        recycleBinData,
+        monitorTargetsData,
+        googleSheetLinksData,
+        categoriesConfigData,
+        statusesConfigData,
+        priorityConfigData,
+        zoneConfigData
+      ] = await Promise.all([
+        supabase.from('users_data').select('*').then(res => res.data || []),
+        supabase.from('complaints').select('*').then(res => res.data || []),
+        supabase.from('clients').select('*').then(res => res.data || []),
+        supabase.from('billing_months').select('*').then(res => res.data || []),
+        supabase.from('billing_rows').select('*').then(res => res.data || []),
+        supabase.from('ledger_folders').select('*').then(res => res.data || []),
+        supabase.from('ledger_sheets').select('*').then(res => res.data || []),
+        supabase.from('branding_config').select('*').then(res => res.data || []),
+        supabase.from('chat_messages').select('*').then(res => res.data || []),
+        supabase.from('chat_groups').select('*').then(res => res.data || []),
+        supabase.from('notifications').select('*').then(res => res.data || []),
+        supabase.from('recycle_bin').select('*').then(res => res.data || []),
+        supabase.from('monitor_targets').select('*').then(res => res.data || []),
+        supabase.from('google_sheet_links').select('*').then(res => res.data || []),
+        supabase.from('categories_config').select('*').then(res => res.data || []),
+        supabase.from('statuses_config').select('*').then(res => res.data || []),
+        supabase.from('priority_config').select('*').then(res => res.data || []),
+        supabase.from('zone_config').select('*').then(res => res.data || [])
+      ]);
+
+      const parsedUsers = (usersData || []).map((r: any) => fromDb('users', r));
+      const parsedComplaints = (complaintsData || []).map((r: any) => fromDb('complaints', r));
+      const parsedClients = (clientsData || []).map((r: any) => fromDb('clients', r));
+
+      const dataObj = {
+        users: parsedUsers,
+        rawUsers: usersData,
+        complaints: parsedComplaints,
+        rawComplaints: complaintsData,
+        clients: parsedClients,
+        rawClients: clientsData,
+        billingMonths: billingMonthsData,
+        billingRows: billingRowsData,
+        ledgerFolders: ledgerFoldersData,
+        ledgerSheets: ledgerSheetsData,
+        brandingConfig: brandingConfigData,
+        chatMessages: chatMessagesData,
+        chatGroups: chatGroupsData,
+        notifications: notificationsData,
+        recycleBin: recycleBinData,
+        monitorTargets: monitorTargetsData,
+        googleSheetLinks: googleSheetLinksData,
+        categoriesConfig: categoriesConfigData,
+        statusesConfig: statusesConfigData,
+        priorityConfig: priorityConfigData,
+        zoneConfig: zoneConfigData
+      };
+
+      return {
+        version: '2.0-full',
+        exportedBy,
+        exportedAt: Date.now(),
+        data: dataObj,
+        ...dataObj
+      };
+    } catch (e: any) {
+      console.error("getFullSystemBackup error:", e);
+      throw e;
+    }
   },
 
   restoreFullSystemBackup: async (backupPkg: any, authorName: string): Promise<void> => {
-    if (backupPkg.users && Array.isArray(backupPkg.users)) {
-      for (const u of backupPkg.users) {
-        await upsertSupabase('users', 'uid', u.uid, toDb('users', u));
+    if (!backupPkg) return;
+    const pkgData = backupPkg.data || backupPkg;
+
+    // 1. Users
+    const users = pkgData.users || pkgData.rawUsers || pkgData.users_data;
+    if (users && Array.isArray(users)) {
+      for (const u of users) {
+        if (u.uid || u.id) {
+          const dbRow = u.role !== undefined ? toDb('users', u) : u;
+          await upsertSupabase('users_data', 'uid', u.uid || u.id, dbRow);
+        }
       }
     }
-    if (backupPkg.complaints && Array.isArray(backupPkg.complaints)) {
-      for (const c of backupPkg.complaints) {
-        await upsertSupabase('complaints', 'id', c.id, toDb('complaints', c));
+
+    // 2. Complaints
+    const complaints = pkgData.complaints || pkgData.rawComplaints;
+    if (complaints && Array.isArray(complaints)) {
+      for (const c of complaints) {
+        if (c.id) {
+          const dbRow = c.createdAt !== undefined ? toDb('complaints', c) : c;
+          await upsertSupabase('complaints', 'id', c.id, dbRow);
+        }
       }
     }
-    if (backupPkg.clients && Array.isArray(backupPkg.clients)) {
-      for (const cl of backupPkg.clients) {
-        await upsertSupabase('clients', 'id', cl.id, toDb('clients', cl));
+
+    // 3. Clients
+    const clients = pkgData.clients || pkgData.rawClients;
+    if (clients && Array.isArray(clients)) {
+      for (const cl of clients) {
+        if (cl.id) {
+          const dbRow = cl.clientName !== undefined || cl.name !== undefined ? toDb('clients', cl) : cl;
+          await upsertSupabase('clients', 'id', cl.id, dbRow);
+        }
       }
+    }
+
+    // 4. Billing Months
+    const billingMonths = pkgData.billingMonths || pkgData.billing_months;
+    if (billingMonths && Array.isArray(billingMonths)) {
+      for (const bm of billingMonths) {
+        const monthId = bm.month_id || bm.id;
+        if (!monthId) continue;
+        const dealerId = bm.dealer_id || bm.dealerId || 'main';
+        const rowsVal = bm.rows_data ?? bm.rows;
+        const rowsStr = typeof rowsVal === 'string' ? rowsVal : JSON.stringify(rowsVal || []);
+        await supabase.from('billing_months').upsert([{
+          month_id: monthId,
+          dealer_id: dealerId,
+          rows_data: rowsStr,
+          updated: bm.updated || new Date().toISOString(),
+          created: bm.created || new Date().toISOString()
+        }], { onConflict: 'month_id,dealer_id' });
+      }
+    }
+
+    // 5. Billing Rows
+    const billingRows = pkgData.billingRows || pkgData.billing_rows;
+    if (billingRows && Array.isArray(billingRows)) {
+      for (const br of billingRows) {
+        if (br.id) {
+          const dbRow = br.month_id ? br : toDb('billing_rows', br);
+          await supabase.from('billing_rows').upsert([dbRow], { onConflict: 'id' });
+        }
+      }
+    }
+
+    // 6. Ledger Folders
+    const ledgerFolders = pkgData.ledgerFolders || pkgData.ledger_folders;
+    if (ledgerFolders && Array.isArray(ledgerFolders)) {
+      for (const lf of ledgerFolders) {
+        if (lf.id) {
+          await supabase.from('ledger_folders').upsert([lf], { onConflict: 'id' });
+        }
+      }
+    }
+
+    // 7. Ledger Sheets
+    const ledgerSheets = pkgData.ledgerSheets || pkgData.ledger_sheets;
+    if (ledgerSheets && Array.isArray(ledgerSheets)) {
+      for (const ls of ledgerSheets) {
+        if (ls.id) {
+          const dbRow = ls.sheet_name !== undefined ? ls : toDb('ledger_sheets', ls);
+          await supabase.from('ledger_sheets').upsert([dbRow], { onConflict: 'id' });
+        }
+      }
+    }
+
+    // 8. Branding / System Config
+    const brandingConfig = pkgData.brandingConfig || pkgData.branding_config;
+    if (brandingConfig && Array.isArray(brandingConfig)) {
+      for (const bc of brandingConfig) {
+        if (bc.config_type) {
+          await supabase.from('branding_config').upsert([bc], { onConflict: 'config_type' });
+        }
+      }
+    }
+
+    // 9. Chat Messages
+    const chatMessages = pkgData.chatMessages || pkgData.chat_messages;
+    if (chatMessages && Array.isArray(chatMessages)) {
+      for (const cm of chatMessages) {
+        if (cm.id) {
+          await supabase.from('chat_messages').upsert([cm], { onConflict: 'id' });
+        }
+      }
+    }
+
+    // 10. Chat Groups
+    const chatGroups = pkgData.chatGroups || pkgData.chat_groups;
+    if (chatGroups && Array.isArray(chatGroups)) {
+      for (const cg of chatGroups) {
+        if (cg.id) {
+          await supabase.from('chat_groups').upsert([cg], { onConflict: 'id' });
+        }
+      }
+    }
+
+    // 11. Notifications
+    const notifications = pkgData.notifications;
+    if (notifications && Array.isArray(notifications)) {
+      for (const n of notifications) {
+        if (n.id) {
+          await supabase.from('notifications').upsert([n], { onConflict: 'id' });
+        }
+      }
+    }
+
+    // 12. Recycle Bin
+    const recycleBin = pkgData.recycleBin || pkgData.recycle_bin;
+    if (recycleBin && Array.isArray(recycleBin)) {
+      for (const rb of recycleBin) {
+        if (rb.id) {
+          await supabase.from('recycle_bin').upsert([rb], { onConflict: 'id' });
+        }
+      }
+    }
+
+    // 13. Monitor Targets
+    const monitorTargets = pkgData.monitorTargets || pkgData.monitor_targets;
+    if (monitorTargets && Array.isArray(monitorTargets)) {
+      for (const mt of monitorTargets) {
+        if (mt.id) {
+          await supabase.from('monitor_targets').upsert([mt], { onConflict: 'id' });
+        }
+      }
+    }
+
+    // 14. Config Tables (categories, statuses, priorities, zones)
+    if (pkgData.categoriesConfig && Array.isArray(pkgData.categoriesConfig)) {
+      await supabase.from('categories_config').upsert(pkgData.categoriesConfig);
+    }
+    if (pkgData.statusesConfig && Array.isArray(pkgData.statusesConfig)) {
+      await supabase.from('statuses_config').upsert(pkgData.statusesConfig);
+    }
+    if (pkgData.priorityConfig && Array.isArray(pkgData.priorityConfig)) {
+      await supabase.from('priority_config').upsert(pkgData.priorityConfig);
+    }
+    if (pkgData.zoneConfig && Array.isArray(pkgData.zoneConfig)) {
+      await supabase.from('zone_config').upsert(pkgData.zoneConfig);
     }
   },
 
@@ -2467,7 +2711,13 @@ export const supabaseService = {
       }
 
       await supabase.from('notifications').delete().eq('id', recycleBinItemId);
-      await supabase.from('recycle_bin').delete().eq('id', recycleBinItemId);
+      if (details && details.originalTable && details.originalId) {
+        await supabase.from('recycle_bin').delete()
+          .eq('table_name', details.originalTable)
+          .eq('record_id', details.originalId);
+      } else {
+        await supabase.from('recycle_bin').delete().eq('id', recycleBinItemId);
+      }
     } catch (e) {
       console.error("Error restoring item from recycle bin:", e);
     }
@@ -2475,9 +2725,22 @@ export const supabaseService = {
 
   permanentlyDeleteFromRecycleBin: async (recycleBinItemId: string) => {
     try {
-      await supabase.from('notifications').delete().eq('id', recycleBinItemId);
-      await supabase.from('recycle_bin').delete().eq('id', recycleBinItemId);
-    } catch (e) {}
+      const { data: notif } = await supabase.from('notifications').select('*').eq('id', recycleBinItemId).maybeSingle();
+      if (notif) {
+        let details = typeof notif.details === 'string' ? JSON.parse(notif.details) : notif.details;
+        await supabase.from('notifications').delete().eq('id', recycleBinItemId);
+        if (details && details.originalTable && details.originalId) {
+          await supabase.from('recycle_bin').delete()
+            .eq('table_name', details.originalTable)
+            .eq('record_id', details.originalId);
+        }
+      } else {
+        await supabase.from('notifications').delete().eq('id', recycleBinItemId);
+        await supabase.from('recycle_bin').delete().eq('id', recycleBinItemId);
+      }
+    } catch (e) {
+      console.error("Error permanently deleting:", e);
+    }
   },
 
   emptyRecycleBin: async () => {

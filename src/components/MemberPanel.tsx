@@ -271,14 +271,13 @@ export default function MemberPanel({
       </div>
 
       {/* Analytics Dashboards - Below Stat Boxes */}
-      <div className="space-y-6 mb-6">
+      <div className="space-y-4 mb-4">
         <div 
-          className="text-center space-y-2 mb-10 cursor-pointer select-none group"
+          className="text-center mb-4 cursor-pointer select-none group"
           onDoubleClick={() => setIsChartsVisible(!isChartsVisible)}
           title="Double-click to toggle analytics"
         >
           <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 group-hover:scale-105 transition-transform duration-500">Chart Analytics</h2>
-          <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Real-time operational data visualization</p>
         </div>
 
         <AnimatePresence mode="wait">
@@ -323,10 +322,10 @@ export default function MemberPanel({
         transition={{ duration: 0.2 }}
       >
         {activeTab === 'ops' && (
-          <div className="space-y-12">
+          <div className="space-y-6">
             <section>
               <div 
-                className="text-center space-y-2 mb-10 cursor-pointer select-none group"
+                className="text-center mb-6 cursor-pointer select-none group"
                 onDoubleClick={() => setIsFormVisible(!isFormVisible)}
                 title="Double-click to toggle form"
               >

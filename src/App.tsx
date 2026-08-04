@@ -155,12 +155,21 @@ export default function App() {
   }, [user?.uid, user?.status, user?.dealerId, users]);
   const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [appConfig, setAppConfig] = useState<AppConfig>({
-    categories: DEFAULT_CATEGORIES,
-    statuses: DEFAULT_STATUSES,
-    priorities: DEFAULT_PRIORITIES,
-    zones: DEFAULT_ZONES,
-    billingSecurityKey: '1239870'
+  const [appConfig, setAppConfig] = useState<AppConfig>(() => {
+    try {
+      const cached = safeLocalStorage.getItem('gts_app_config');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {}
+    return {
+      categories: DEFAULT_CATEGORIES,
+      statuses: DEFAULT_STATUSES,
+      priorities: DEFAULT_PRIORITIES,
+      zones: DEFAULT_ZONES,
+      billingSecurityKey: '1239870'
+    };
   });
   const [branding, setBranding] = useState<BrandingConfig>(() => {
     try {
@@ -1845,6 +1854,9 @@ export default function App() {
   const handleUpdateConfig = (newConfig: AppConfig) => {
     if (!user) return;
     setAppConfig(newConfig);
+    try {
+      safeLocalStorage.setItem('gts_app_config', JSON.stringify(newConfig));
+    } catch (e) {}
     const tenantId = pocketbaseService.getTenantId(user);
     pocketbaseService.updateConfig(newConfig, user.fullName || user.username, tenantId);
     toast.success('System configuration updated');

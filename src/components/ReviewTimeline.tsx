@@ -5,13 +5,16 @@ import { cn } from '../lib/utils';
 
 interface ReviewTimelineProps {
   reviews?: ComplaintReview[];
+  type?: 'review' | 'protocol';
 }
 
-export default function ReviewTimeline({ reviews }: ReviewTimelineProps) {
+export default function ReviewTimeline({ reviews, type = 'review' }: ReviewTimelineProps) {
+  const isProtocol = type === 'protocol';
+  
   if (!reviews || reviews.length === 0) {
     return (
       <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-dashed border-slate-200 dark:border-white/10 text-xs text-slate-400 dark:text-slate-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1.5">
-        <span>💬 Awaiting Telemetry / No Review Logged</span>
+        <span>{isProtocol ? "⚠️ Protocol Outstanding" : "💬 Awaiting Telemetry / No Review Logged"}</span>
       </div>
     );
   }
@@ -19,6 +22,8 @@ export default function ReviewTimeline({ reviews }: ReviewTimelineProps) {
   // Sort reviews chronologically (ascending, so older at the top, newer at the bottom, and highlight the last/most recent)
   const sortedReviews = [...reviews].sort((a, b) => a.createdAt - b.createdAt);
   const latestReviewId = sortedReviews[sortedReviews.length - 1]?.id;
+
+  const colorClass = isProtocol ? "emerald" : "indigo";
 
   return (
     <div className="relative pl-4 border-l-2 border-slate-150 dark:border-white/10 space-y-4">
@@ -33,7 +38,7 @@ export default function ReviewTimeline({ reviews }: ReviewTimelineProps) {
             className={cn(
               "relative p-3 rounded-lg border transition-all duration-300",
               isLatest
-                ? "bg-indigo-500/[0.04] dark:bg-indigo-500/10 border-indigo-500/30 shadow-inner"
+                ? (isProtocol ? "bg-emerald-500/[0.04] dark:bg-emerald-500/10 border-emerald-500/30 shadow-inner" : "bg-indigo-500/[0.04] dark:bg-indigo-500/10 border-indigo-500/30 shadow-inner")
                 : "bg-white dark:bg-slate-950 border-slate-200/60 dark:border-slate-900"
             )}
           >
@@ -42,7 +47,7 @@ export default function ReviewTimeline({ reviews }: ReviewTimelineProps) {
               className={cn(
                 "absolute -left-[21px] top-4 w-2 h-2 rounded-full border",
                 isLatest
-                  ? "bg-indigo-500 border-indigo-500 scale-125 shadow-sm shadow-indigo-500/50"
+                  ? (isProtocol ? "bg-emerald-500 border-emerald-500 scale-125 shadow-sm shadow-emerald-500/50" : "bg-indigo-500 border-indigo-500 scale-125 shadow-sm shadow-indigo-500/50")
                   : "bg-slate-300 dark:bg-slate-700 border-white dark:border-slate-900"
               )}
             />

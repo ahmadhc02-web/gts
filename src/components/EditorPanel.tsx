@@ -208,6 +208,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
 
   // Ensure config has new structures
   if (!config.tabNames) config.tabNames = {};
+  if (!config.mascotPos) config.mascotPos = { x: 92, y: 85 };
   if (!config.homeSections || config.homeSections.length === 0) {
     config.homeSections = [
       { id: 'stats', visible: true, order: 0 },

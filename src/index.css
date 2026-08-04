@@ -26,23 +26,23 @@
 @layer base {
   .dark {
     /* Modern Soft Charcoal Theme (Lighter, premium feel) */
-    --color-slate-950: #22252c;
-    --color-slate-900: #2b2e37;
-    --color-slate-850: #353944;
-    --color-slate-800: #414552;
-    --color-slate-700: #505564;
-    --color-slate-600: #606676;
+    --color-slate-950: #2a2e37;
+    --color-slate-900: #343944;
+    --color-slate-850: #3f4452;
+    --color-slate-800: #4a5061;
+    --color-slate-700: #596073;
+    --color-slate-600: #687085;
 
     /* Text and contrast colors, crisp and modern */
-    --color-slate-500: #858c99;
-    --color-slate-400: #abb1bd;
-    --color-slate-300: #d8dce4;
-    --color-slate-200: #eef1f5;
-    --color-slate-100: #f7f9fa;
+    --color-slate-500: #8d95ab;
+    --color-slate-400: #b2b9cb;
+    --color-slate-300: #dee2ec;
+    --color-slate-200: #f2f4f8;
+    --color-slate-100: #f9fbfd;
     --color-slate-50:  #ffffff;
     
     /* Branding specific adjustments for contrast */
-    --color-brand-border: #3c404d;
+    --color-brand-border: #444a59;
   }
 
   html {
