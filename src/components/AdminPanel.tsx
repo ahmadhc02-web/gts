@@ -796,10 +796,10 @@ export default function AdminPanel({
   }, []);
   const location = useLocation();
   const navigate = useNavigate();
-  const isEntrySheetRouteOpen = location.pathname.startsWith('/billingmod/entrysheet');
+  const isEntrySheetRouteOpen = location.pathname.startsWith('/billingmod/entrysheet') || location.pathname.startsWith('/billingmod/ledger');
 
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
-  const [entrySheetOpenWithUserLedger, setEntrySheetOpenWithUserLedger] = useState(false);
+  const entrySheetOpenWithUserLedger = location.pathname.startsWith('/billingmod/ledger');
   const [isBatchPrintOpen, setIsBatchPrintOpen] = useState(false);
   const [isBillingDropdownOpen, setIsBillingDropdownOpen] = useState(false);
   const [showGalaxyPortal, setShowGalaxyPortal] = useState(false);
@@ -2717,8 +2717,7 @@ export default function AdminPanel({
       const customEvent = e as CustomEvent;
       const action = customEvent.detail;
       if (action === 'ledger-vault') {
-        setEntrySheetOpenWithUserLedger(true);
-        navigate('/billingmod/entrysheet');
+        navigate('/billingmod/ledger');
       } else if (action === 'entry-sheet') {
         navigate('/billingmod/entrysheet');
       } else if (action === 'new-month') {
@@ -8559,8 +8558,8 @@ export default function AdminPanel({
           <EntrySheet
           isOpen={isEntrySheetRouteOpen}
           onClose={() => {
-            setEntrySheetOpenWithUserLedger(false);
-            if (location.pathname.startsWith('/billingmod/entrysheet')) {
+            
+            if (location.pathname.startsWith('/billingmod/entrysheet') || location.pathname.startsWith('/billingmod/ledger')) {
               navigate('/billingmod');
             }
           }}

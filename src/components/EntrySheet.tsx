@@ -78,8 +78,8 @@ export default function EntrySheet({
   const location = useLocation();
   const navigate = useNavigate();
 
-  const matchSheet = location.pathname.match(/\/billingmod\/entrysheet\/folder\/([^/]+)\/sheet\/([^/]+)/);
-  const matchFolder = location.pathname.match(/\/billingmod\/entrysheet\/folder\/([^/]+)/);
+  const matchSheet = location.pathname.match(/\/billingmod\/(?:entrysheet|ledger)\/folder\/([^/]+)\/sheet\/([^/]+)/);
+  const matchFolder = location.pathname.match(/\/billingmod\/(?:entrysheet|ledger)\/folder\/([^/]+)/);
 
   const urlFolderId = matchSheet ? matchSheet[1] : matchFolder ? matchFolder[1] : null;
   const urlSheetId = matchSheet ? matchSheet[2] : null;
@@ -668,7 +668,7 @@ export default function EntrySheet({
         saveMapToDb(newMap);
 
         const targetFolder = folderId || 'all';
-        navigate(`/billingmod/entrysheet/folder/${targetFolder}/sheet/${newSheetId}`);
+        navigate(`${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${targetFolder}/sheet/${newSheetId}`);
         toast.success("📄 Created empty sheet inside selected folder! Let's fill it.");
       }
     } catch (err: any) {
@@ -2236,7 +2236,7 @@ export default function EntrySheet({
       const lastSavedId = currentLoadedId || currentSyncSheets[activeSheetIdx]?.id;
       if (lastSavedId) {
         const targetFolder = openedFolderId || sheetFolderMap[lastSavedId] || 'all';
-        const targetPath = `/billingmod/entrysheet/folder/${targetFolder}/sheet/${lastSavedId}`;
+        const targetPath = `${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${targetFolder}/sheet/${lastSavedId}`;
         if (location.pathname !== targetPath) {
           navigate(targetPath, { replace: true });
         }
@@ -2449,7 +2449,7 @@ export default function EntrySheet({
   const handleLoadHistorySheet = (sheet: any) => {
     loadSheetIntoEditor(sheet);
     const targetFolder = sheet.folderId || openedFolderId || sheetFolderMap[sheet.id] || 'all';
-    const targetPath = `/billingmod/entrysheet/folder/${targetFolder}/sheet/${sheet.id}`;
+    const targetPath = `${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${targetFolder}/sheet/${sheet.id}`;
     if (location.pathname !== targetPath) {
       navigate(targetPath);
     }
@@ -2512,7 +2512,7 @@ export default function EntrySheet({
       toast.success("Ledger card moved to Recycle Bin!");
       if (loadedSheetId === targetId) {
         resetToBlank();
-        navigate(`/billingmod/entrysheet/folder/${openedFolderId || 'all'}`);
+        navigate(`${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${openedFolderId || 'all'}`);
       }
     } catch (err: any) {
       // Roll back optimistic UI state if server operation fails
@@ -2607,7 +2607,7 @@ export default function EntrySheet({
       toast.dismiss("terminate-proc");
       toast.success("Month terminated cleanly! Sheet cards moved to Recycle Bin.");
       resetToBlank();
-      navigate('/billingmod/entrysheet');
+      navigate(initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet');
     } catch (e: any) {
       toast.dismiss("terminate-proc");
       toast.error("Failed to terminate month: " + getCleanErrorMessage(e));
@@ -2636,7 +2636,7 @@ export default function EntrySheet({
         toast.success("Active workspace fields reset successfully!");
       }
       resetToBlank();
-      navigate('/billingmod/entrysheet');
+      navigate(initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet');
       setShowConfirmResetModal(false);
     } catch (e: any) {
       toast.dismiss("reset-all-proc");
@@ -3041,7 +3041,7 @@ export default function EntrySheet({
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 pb-4 print:hidden">
              <div className="flex items-center gap-3">
                <button onClick={() => {
-                 setShowUserLedger(false);
+                 if (!initialShowUserLedger) { setShowUserLedger(false); }
                  onClose();
                }} className="p-2 bg-slate-200 dark:bg-slate-800 rounded-xl hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
                  <ArrowLeft size={18} />
@@ -3311,7 +3311,7 @@ export default function EntrySheet({
                 <button
                   onClick={() => {
                     if (openedFolderId) {
-                      navigate('/billingmod/entrysheet');
+                      navigate(initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet');
                     } else {
                       onClose();
                     }
@@ -3449,7 +3449,7 @@ export default function EntrySheet({
         {openedFolderId && (
           <div className="flex items-center gap-3 text-left">
             <button
-              onClick={() => navigate('/billingmod/entrysheet')}
+              onClick={() => navigate(initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet')}
               className="px-3.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
             >
               <ChevronLeft size={16} className="text-slate-505" />
@@ -3500,7 +3500,7 @@ export default function EntrySheet({
                             whileHover={{ scale: 1.05 }}
                             transition={{ type: "spring", stiffness: 220, damping: 18 }}
                             style={{ contentVisibility: 'auto', containIntrinsicSize: '170px' }}
-                            onClick={() => navigate(`/billingmod/entrysheet/folder/${folder.id}`)}
+                            onClick={() => navigate(`${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${folder.id}`)}
                             className="group cursor-pointer p-3 bg-transparent border-0 shadow-none hover:bg-slate-100/50 dark:hover:bg-slate-850/30 rounded-2xl flex flex-col items-center justify-start text-center gap-1.5 transition-all duration-300 relative select-none min-h-[170px]"
                           >
                           {/* Folder Settings Gear Button */}
@@ -3664,7 +3664,7 @@ export default function EntrySheet({
           <div className="flex flex-col items-center justify-center p-12 text-center min-h-[300px] w-full bg-transparent">
             <FolderPlus size={32} className="text-slate-400 dark:text-slate-600 mb-3" />
             <p className="text-xs font-black uppercase tracking-widest text-slate-500">Directory Not Found</p>
-            <button onClick={() => navigate('/billingmod/entrysheet')} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
+            <button onClick={() => navigate(initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet')} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
               Go To Dashboard
             </button>
           </div>
@@ -3834,9 +3834,9 @@ export default function EntrySheet({
                 <button
                   onClick={() => {
                     if (openedFolderId) {
-                      navigate(`/billingmod/entrysheet/folder/${openedFolderId}`);
+                      navigate(`${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${openedFolderId}`);
                     } else {
-                      navigate('/billingmod/entrysheet');
+                      navigate(initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet');
                     }
                   }}
                   className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-455 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 active:scale-95 border border-blue-200 dark:border-blue-900/50 cursor-pointer"
