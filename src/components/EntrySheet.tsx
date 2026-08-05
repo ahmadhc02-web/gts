@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
@@ -102,17 +102,9 @@ export default function EntrySheet({
     }
     return [];
   });
-  const [sheetFolderMap, setSheetFolderMap] = useState<Record<string, string>>(() => {
-    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const saved = localStorage.getItem(`gts_ledger_sheet_folders_${originalScopeId}`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') return parsed;
-      } catch (e) {}
-    }
-    return {};
-  });
+  const setSheetFolderMap = (val: any) => {
+    // Deprecated: rely exclusively on ledger_sheets.folder_id column
+  };
   const [folderMonthMap, setFolderMonthMap] = useState<Record<string, string>>(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
     const saved = localStorage.getItem(`gts_ledger_folder_months_${originalScopeId}`);
@@ -135,6 +127,15 @@ export default function EntrySheet({
     }
     return [];
   });
+  const sheetFolderMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    ledgerHistory.forEach(sh => {
+      if (sh.id) {
+        map[sh.id] = sh.folderId || '';
+      }
+    });
+    return map;
+  }, [ledgerHistory]);
   const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
   const [folderToDeleteId, setFolderToDeleteId] = useState<string | null>(null);
   const [editFolderName, setEditFolderName] = useState<string>('');
@@ -210,41 +211,6 @@ export default function EntrySheet({
       setIsLoadingFolders(false);
     }, scopeId);
 
-    // Subscribe to Sheet Folder Map
-    const unsubMap = pocketbaseService.subscribeLedgerSheetFolderMap((data) => {
-      let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
-      let didMerge = false;
-
-      const migrationFlag = `migrated_local_map_${scopeId || 'main'}`;
-      if (data && Object.keys(data).length > 0) {
-        localStorage.setItem(migrationFlag, 'true');
-      }
-
-      if (!localStorage.getItem(migrationFlag)) {
-        const savedMap = localStorage.getItem(sheetFoldersKey);
-        if (savedMap) {
-          try {
-            const parsed = JSON.parse(savedMap);
-            if (parsed && typeof parsed === 'object') {
-              Object.keys(parsed).forEach(k => {
-                if (!mergedMap[k]) {
-                  mergedMap[k] = parsed[k];
-                  didMerge = true;
-                }
-              });
-            }
-          } catch (e) { console.error("Migration map parse error", e); }
-        }
-        localStorage.setItem(migrationFlag, 'true');
-      }
-
-      if (didMerge) {
-        pocketbaseService.updateLedgerSheetFolderMap(mergedMap, scopeId).catch(console.error);
-      }
-      
-      setSheetFolderMap(prev => JSON.stringify(prev) === JSON.stringify(mergedMap) ? prev : mergedMap);
-    }, scopeId);
-
     // Subscribe to Folder Month Map
     const unsubFolderMonths = pocketbaseService.subscribeFolderMonthMap((data) => {
       let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
@@ -283,7 +249,6 @@ export default function EntrySheet({
 
     return () => {
       unsubFolders();
-      unsubMap();
       unsubFolderMonths();
     };
   }, [isOpen, currentUser?.uid, activeDealerId, isDealerTied]);
@@ -338,15 +303,6 @@ export default function EntrySheet({
     }
 
     // Sync maps
-    const savedMap = localStorage.getItem(`gts_ledger_sheet_folders_${originalScopeId}`);
-    if (savedMap) {
-      try {
-        const parsed = JSON.parse(savedMap);
-        setSheetFolderMap(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed);
-      } catch (e) {}
-    } else {
-      setSheetFolderMap(prev => Object.keys(prev).length === 0 ? prev : {});
-    }
 
     const savedFolderMonths = localStorage.getItem(`gts_ledger_folder_months_${originalScopeId}`);
     if (savedFolderMonths) {
@@ -420,11 +376,7 @@ export default function EntrySheet({
   };
 
   const saveMapToDb = async (newMap: Record<string, string>) => {
-    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-    await pocketbaseService.updateLedgerSheetFolderMap(newMap, scopeId);
-
-    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(newMap));
+    // Deprecated: rely exclusively on ledger_sheets.folder_id column
   };
 
   const saveFolderMonthMapToDb = async (newMap: Record<string, string>) => {
@@ -1145,31 +1097,45 @@ export default function EntrySheet({
     t2WidthSr, t2WidthName, t2WidthAmount, t2WidthCh
   ]);
 
-  // Zoom & Auto-Fit scaling states
-  const [zoomOption, setZoomOption] = useState<'fit' | '100%' | '85%' | '75%'>(() => {
-    const saved = localStorage.getItem('gts_ledger_zoomOption');
-    return (saved as 'fit' | '100%' | '85%' | '75%') || 'fit';
-  });
+  // Zoom & Auto-Fit scaling states: strictly defaults to 'fit' (Auto)
+  const [zoomOption, setZoomOption] = useState<'fit' | '100%' | '85%' | '75%'>('fit');
   const [calculatedScale, setCalculatedScale] = useState(1);
   const [isInputFocused, setIsInputFocused] = useState(false);
 
+  // Remove any legacy saved zoomOption key so every fresh session forces 'fit' (Auto) mode by default
+  useEffect(() => {
+    try {
+      localStorage.removeItem('gts_ledger_zoomOption');
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  const paperContainerRef = useRef<HTMLDivElement | null>(null);
+  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const handlePaperFocus = (e: React.FocusEvent) => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
     setIsInputFocused(true);
     const targetEl = e.target as HTMLElement;
     if (targetEl && typeof targetEl.scrollIntoView === 'function') {
       setTimeout(() => {
         targetEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-      }, 150);
+      }, 80);
     }
   };
 
   const handlePaperBlur = (e: React.FocusEvent) => {
     const currentTarget = e.currentTarget;
-    setTimeout(() => {
-      if (!currentTarget.contains(document.activeElement)) {
+    if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    blurTimeoutRef.current = setTimeout(() => {
+      if (!currentTarget || !currentTarget.contains(document.activeElement)) {
         setIsInputFocused(false);
       }
-    }, 100);
+    }, 150);
   };
 
   useEffect(() => {
@@ -1179,34 +1145,37 @@ export default function EntrySheet({
       if (zoomOption !== 'fit') {
         if (zoomOption === '100%') baseScale = 1.0;
         else if (zoomOption === '85%') baseScale = 0.85;
-        else if (zoomOption === '75%') baseScale = 0.72;
+        else if (zoomOption === '75%') baseScale = 0.75;
       } else {
         let availableWidth = window.innerWidth;
         let availableHeight = window.innerHeight - (window.innerWidth < 640 ? 100 : 80);
 
         if (workspaceRef.current) {
-          availableWidth = workspaceRef.current.clientWidth || window.innerWidth;
-          availableHeight = workspaceRef.current.clientHeight || (window.innerHeight - (window.innerWidth < 640 ? 100 : 80));
+          const clientW = workspaceRef.current.clientWidth;
+          const clientH = workspaceRef.current.clientHeight;
+          if (clientW > 0) availableWidth = clientW;
+          if (clientH > 0) availableHeight = clientH;
         }
 
-        const padX = window.innerWidth < 640 ? 12 : 24;
-        const padY = window.innerWidth < 640 ? 12 : 24;
+        const padX = window.innerWidth < 640 ? 16 : 32;
+        const padY = window.innerWidth < 640 ? 16 : 32;
 
         const safeWidth = Math.max(150, availableWidth - padX);
         const safeHeight = Math.max(150, availableHeight - padY);
 
-        const paperWidth = 793.7;
-        const paperHeight = 1122.5;
+        const paperEl = paperContainerRef.current;
+        const paperWidth = paperEl ? Math.max(793.7, paperEl.offsetWidth || 793.7) : 793.7;
+        const paperHeight = paperEl ? Math.max(1122.5, paperEl.scrollHeight || paperEl.offsetHeight || 1122.5) : 1122.5;
 
         const fitScaleWidth = safeWidth / paperWidth;
         const fitScaleHeight = safeHeight / paperHeight;
 
         baseScale = Math.min(fitScaleWidth, fitScaleHeight);
-        baseScale = Math.max(0.18, Math.min(1.0, baseScale * 0.97));
+        baseScale = Math.max(0.18, Math.min(1.0, baseScale * 0.96));
       }
 
       if (isInputFocused) {
-        const minComfortZoom = 0.88;
+        const minComfortZoom = window.innerWidth < 640 ? 0.85 : 0.88;
         setCalculatedScale(Math.max(minComfortZoom, Math.min(1.15, baseScale * 1.35)));
       } else {
         setCalculatedScale(baseScale);
@@ -1217,11 +1186,12 @@ export default function EntrySheet({
     window.addEventListener('resize', handleResize);
 
     let resizeObserver: ResizeObserver | null = null;
-    if (workspaceRef.current && typeof ResizeObserver !== 'undefined') {
+    if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
         handleResize();
       });
-      resizeObserver.observe(workspaceRef.current);
+      if (workspaceRef.current) resizeObserver.observe(workspaceRef.current);
+      if (paperContainerRef.current) resizeObserver.observe(paperContainerRef.current);
     }
 
     return () => {
@@ -1230,7 +1200,7 @@ export default function EntrySheet({
         resizeObserver.disconnect();
       }
     };
-  }, [zoomOption, isLocked, isOpen, showSizingPanel, showHistoryPanel, isInputFocused, activeView]);
+  }, [zoomOption, isLocked, isOpen, showSizingPanel, showHistoryPanel, isInputFocused, activeView, rowPadding, tableFontSize, headerFontSize, paperPaddingY, paperPaddingX]);
 
    // Function to reset all lines & boxes sizing parameters to default
   const resetSizingToDefault = () => {
@@ -1984,10 +1954,10 @@ export default function EntrySheet({
       });
 
       // Step 3: Run connected recovery sheet matching/updating using the updated/linked sheet rows
-      sheetPayloads.forEach((sheetPayload) => {
+      for (const sheetPayload of sheetPayloads) {
         const resolvedSheetId = sheetPayload.id;
         const targetFolderId = sheetPayload.folderId;
-        if (!targetFolderId) return;
+        if (!targetFolderId) continue;
 
         const folderObj = folders.find(f => f.id === targetFolderId);
         const targetMonthId = (targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined) || currentMonthId;
@@ -1998,6 +1968,19 @@ export default function EntrySheet({
           if (targetMonthRows.length === 0) {
             const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
             targetMonthRows = targetMonthDoc?.rows || [];
+          }
+
+          // REQUIREMENT 1: Direct network call straight to Supabase before assuming month is empty
+          if (targetMonthRows.length === 0) {
+            try {
+              const directMonth = await pocketbaseService.getBillingMonthDirect(targetMonthId, activeDealerId || 'main');
+              if (directMonth && Array.isArray(directMonth.rows) && directMonth.rows.length > 0) {
+                targetMonthRows = directMonth.rows;
+                accumulatedBillingMonths[targetMonthId] = targetMonthRows;
+              }
+            } catch (err) {
+              console.warn("Direct DB fetch for target month failed:", err);
+            }
           }
 
           if (targetMonthRows.length === 0 && clients && clients.length > 0) {
@@ -2210,7 +2193,7 @@ export default function EntrySheet({
             console.error("Failed to auto-update billing status:", billingErr);
           }
         }
-      });
+      }
 
       // --- INSTANT OPTIMISTIC UI STATE SYNCHRONIZATION ---
 
@@ -2315,9 +2298,14 @@ export default function EntrySheet({
         }
 
         await Promise.all(dbTasks);
-      } catch (dbError) {
+      } catch (dbError: any) {
         console.error("DB persistence failed:", dbError);
-        throw new Error("Failed to save to database. Please check your network and try again.");
+        const errMsg = dbError?.message || "Failed to save to database. Please check your network and try again.";
+        toast.error("Save Blocked — Action Required", {
+          description: errMsg,
+          duration: 8000
+        });
+        throw new Error(errMsg);
       }
 
       // 5. SUCCESS NOTIFICATIONS (Shown only after successful save)
@@ -4470,9 +4458,10 @@ export default function EntrySheet({
                           }`}
                           style={{
                             width: `${793.7 * calculatedScale}px`,
-                            height: `${1122.5 * calculatedScale}px`,
+                            height: `${(paperContainerRef.current ? Math.max(1122.5, paperContainerRef.current.scrollHeight || paperContainerRef.current.offsetHeight || 1122.5) : 1122.5) * calculatedScale}px`,
                             minWidth: `${793.7 * calculatedScale}px`,
                             minHeight: `${1122.5 * calculatedScale}px`,
+                            transition: 'width 0.25s cubic-bezier(0.16, 1, 0.3, 1), height 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                           }}
                         >
                           {/* Floating tools bar in top-right corner of sheet paper */}
@@ -4509,10 +4498,8 @@ export default function EntrySheet({
                           </div>
 
                           {/* A4 Paper Mockup Sheet Container */}
-                          <motion.div 
-                            initial={{ opacity: 0, scale: 0.985 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ delay: 0.1, duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                          <div 
+                            ref={isActive ? paperContainerRef : null}
                             style={{ 
                               paddingLeft: `${paperPaddingX}mm`, 
                               paddingRight: `${paperPaddingX}mm`, 
@@ -4522,7 +4509,8 @@ export default function EntrySheet({
                               transformOrigin: 'top left',
                               position: 'absolute',
                               left: 0,
-                              top: 0
+                              top: 0,
+                              transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                             }}
                             className={`print-paper-container bg-white border border-slate-350 shadow-[0_15px_50px_rgba(0,0,0,0.15)] rounded-lg w-[793.7px] min-h-[1122.5px] flex flex-col text-[#0f172a] font-sans print:p-0 print:m-0 print:border-none print:shadow-none print:static print:transform-none select-text overflow-visible ${isLocked ? 'pointer-events-none opacity-80 select-none' : ''}`}
                             onFocusCapture={handlePaperFocus}
@@ -5216,7 +5204,7 @@ export default function EntrySheet({
             />
           </div>
  
-                          </motion.div> {/* print-paper-container ends */}
+                          </div> {/* print-paper-container ends */}
                         </div>
                       );
                     })}

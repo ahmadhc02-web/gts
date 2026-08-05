@@ -6,7 +6,7 @@ export function getTabFromPathname(pathname: string): string {
   if (pathname === '/nodes') return 'nodes';
   if (pathname === '/dealers/analytics') return 'dealers_data';
   if (pathname === '/dealers') return 'dealers';
-  if (pathname === '/submit') return 'submit';
+  if (pathname === '/servicerequest' || pathname === '/submit') return 'submit';
   if (pathname === '/config') return 'config';
   if (pathname === '/map') return 'map';
   if (pathname === '/monitor') return 'monitor';
@@ -30,7 +30,7 @@ export function getPathnameFromTab(tabId: string): string {
     case 'nodes': return '/nodes';
     case 'dealers_data': return '/dealers/analytics';
     case 'dealers': return '/dealers';
-    case 'submit': return '/submit';
+    case 'submit': return '/servicerequest';
     case 'config': return '/config';
     case 'map': return '/map';
     case 'monitor': return '/monitor';

@@ -563,6 +563,12 @@ export default function AdminPanel({
     savingMonthCounts.current[monthId] = (savingMonthCounts.current[monthId] || 0) + 1;
     try {
       await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate, changedIndices);
+    } catch (err: any) {
+      toast.error("Save Blocked — Action Required", {
+        description: err?.message || "Save blocked: this would erase existing payment records. Please refresh and try again.",
+        duration: 8000
+      });
+      throw err;
     } finally {
       savingMonthCounts.current[monthId] = Math.max(0, (savingMonthCounts.current[monthId] || 1) - 1);
       if (savingMonthCounts.current[monthId] === 0) {

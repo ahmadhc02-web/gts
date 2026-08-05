@@ -1971,7 +1971,7 @@ export default function App() {
         <Suspense fallback={<RouteLoadingFallback />}>
           <AnimatePresence mode="wait">
             <motion.div
-              key={activeTab}
+              key={!pbAuthReady ? 'auth-loading' : !user ? 'login-view' : user.status === 'pending' ? 'pending-view' : `app-view-${user.uid || user.username || user.role}`}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}

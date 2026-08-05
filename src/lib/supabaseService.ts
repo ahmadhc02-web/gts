@@ -1049,6 +1049,46 @@ export const supabaseService = {
     }
   },
 
+  getBillingMonthDirect: async (monthId: string, dealerId: string = 'main') => {
+    try {
+      if (!supabase) return null;
+      const { data } = await supabase
+        .from('billing_months')
+        .select('*')
+        .eq('month_id', monthId)
+        .eq('dealer_id', dealerId)
+        .maybeSingle();
+
+      if (data && data.rows_data) {
+        let rows = data.rows_data;
+        if (typeof rows === 'string') {
+          try { rows = JSON.parse(rows); } catch (e) { rows = []; }
+        }
+        if (Array.isArray(rows) && rows.length > 0) {
+          return {
+            id: data.month_id,
+            rows,
+            updatedAt: data.updated ? new Date(data.updated).getTime() : Date.now()
+          };
+        }
+      }
+
+      const singleRows = await supabaseService.getBillingMonthRowsDirect(monthId, dealerId);
+      if (singleRows && singleRows.length > 0) {
+        return {
+          id: monthId,
+          rows: singleRows,
+          updatedAt: Date.now()
+        };
+      }
+
+      return null;
+    } catch (e) {
+      console.error("Direct fetch for billing month failed:", e);
+      return null;
+    }
+  },
+
   async createBillingMonth(monthId: string, rows: any[], createdBy: string, dealerId?: string) {
     await this.saveBillingMonth(monthId, rows, createdBy, dealerId || 'main');
   },
@@ -1145,6 +1185,57 @@ export const supabaseService = {
     const syncKey = `${monthId}_${dealerId}`;
     if (!this._syncingMonths) this._syncingMonths = new Set<string>();
     this._syncingMonths.add(syncKey);
+
+    const countRecordedPaymentRows = (rowList: any[]) => {
+      if (!Array.isArray(rowList)) return 0;
+      return rowList.filter((r: any) => {
+        const pRec = Number(r.paymentReceived) || 0;
+        const pStat = String(r.paymentStatus || '').trim().toLowerCase();
+        return pRec > 0 || (pStat !== '' && pStat !== 'unpaid');
+      }).length;
+    };
+
+    const incomingTotal = Array.isArray(rows) ? rows.length : 0;
+    const incomingPaidCount = countRecordedPaymentRows(rows);
+
+    // Fetch existing month data from database before saving to validate data integrity
+    let dbTotal = 0;
+    let dbPaidCount = 0;
+    try {
+      const { data: dbData } = await supabase
+        .from('billing_months')
+        .select('rows_data')
+        .eq('month_id', monthId)
+        .eq('dealer_id', dealerId)
+        .maybeSingle();
+
+      if (dbData && dbData.rows_data) {
+        let existingRows = dbData.rows_data;
+        if (typeof existingRows === 'string') {
+          try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
+        }
+        if (Array.isArray(existingRows)) {
+          dbTotal = existingRows.length;
+          dbPaidCount = countRecordedPaymentRows(existingRows);
+        }
+      }
+    } catch (checkErr) {
+      console.warn("Could not fetch previous month data for validation check:", checkErr);
+    }
+
+    // AUDIT LOGGING (Requirement 4): Log incoming vs existing row counts and payment activity
+    console.log(`Saving billing month "${monthId}": incoming ${incomingTotal} rows (paid/recorded: ${incomingPaidCount}), previous ${dbTotal} rows (paid/recorded: ${dbPaidCount})`);
+
+    // HARD SAFETY CHECK (Requirement 2): Prevent silent overwriting/wiping of existing payment records
+    const isWipingPaymentRecords = dbPaidCount > 0 && incomingPaidCount === 0;
+    const isSeverelyReducingPaidRows = dbPaidCount >= 3 && incomingPaidCount < Math.floor(dbPaidCount * 0.4);
+    const isWipingTotalRows = dbTotal >= 5 && incomingTotal === 0;
+
+    if (isWipingPaymentRecords || isSeverelyReducingPaidRows || isWipingTotalRows) {
+      const alertMsg = `Save blocked: this would erase existing payment records for "${monthId}" (${incomingPaidCount} paid/recorded rows incoming vs ${dbPaidCount} currently in database). Please refresh and try again.`;
+      console.error(`🚨 CRITICAL DATA LOSS PREVENTED: ${alertMsg}`);
+      throw new Error(alertMsg);
+    }
 
     try {
       await upsertSupabase('billing_months', 'month_id', monthId, {
@@ -2264,42 +2355,89 @@ export const supabaseService = {
   },
 
   subscribeLedgerSheetFolderMap: (callback: (map: any) => void, dealerId?: string) => {
-    const docId = `ledger_sheet_folder_map_${dealerId || 'main'}`;
-    const fetchM = async () => {
-      try {
-        const { data } = await supabase.from('branding_config').select('*').eq('config_type', docId).limit(1);
-        if (data && data.length > 0 && data[0].dashboard_subtext) {
-          try { callback(JSON.parse(data[0].dashboard_subtext)); } catch (e) {}
-        }
-      } catch (e) {}
-    };
-    fetchM();
-    const timer = setInterval(fetchM, 10000);
-    return () => clearInterval(timer);
+    // Deprecated: rely entirely on ledger_sheets.folder_id column
+    setTimeout(() => callback({}), 0);
+    return () => {};
   },
 
   subscribeFolderMonthMap: (callback: (map: any) => void, dealerId?: string) => {
-    const docId = `folder_month_map_${dealerId || 'main'}`;
+    const tenantId = dealerId || 'main';
+    const prefix = `folder_month_${tenantId}_`;
     const fetchM = async () => {
       try {
-        const { data } = await supabase.from('branding_config').select('*').eq('config_type', docId).limit(1);
-        if (data && data.length > 0 && data[0].dashboard_subtext) {
-          try { callback(JSON.parse(data[0].dashboard_subtext)); } catch (e) {}
+        if (!supabase) return;
+        const { data } = await supabase
+          .from('branding_config')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .like('config_type', `${prefix}%`);
+        
+        const reconstructedMap: Record<string, string> = {};
+        if (data && data.length > 0) {
+          data.forEach(r => {
+            if (r.config_type.startsWith(prefix)) {
+              const folderId = r.config_type.substring(prefix.length);
+              reconstructedMap[folderId] = r.dashboard_subtext || '';
+            }
+          });
         }
-      } catch (e) {}
+        callback(reconstructedMap);
+      } catch (e) {
+        console.warn("Error in subscribeFolderMonthMap fetch:", e);
+      }
     };
     fetchM();
+    let channel: any = null;
+    try {
+      const channelName = `rt_folder_month_${tenantId}_${Math.random().toString(36).substring(2, 7)}`;
+      channel = supabase
+        .channel(channelName)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => {
+          fetchM();
+        })
+        .subscribe();
+    } catch (e) {}
     const timer = setInterval(fetchM, 10000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      if (channel) {
+        try { supabase.removeChannel(channel); } catch (e) {}
+      }
+    };
   },
 
   updateFolderMonthMap: async (map: any, tenantId: string = 'main') => {
-    const docId = `folder_month_map_${tenantId}`;
-    await upsertSupabase('branding_config', 'config_type', docId, {
-      config_type: docId,
-      dashboard_subtext: JSON.stringify(map),
-      tenant_id: tenantId
-    });
+    if (!supabase) return;
+    try {
+      const { data: existingRows } = await supabase
+        .from('branding_config')
+        .select('config_type')
+        .eq('tenant_id', tenantId)
+        .like('config_type', `folder_month_${tenantId}_%`);
+
+      const existingConfigTypes = (existingRows || []).map(r => r.config_type);
+      const incomingConfigTypes = new Set<string>();
+
+      for (const [folderId, monthId] of Object.entries(map)) {
+        if (!folderId) continue;
+        const docId = `folder_month_${tenantId}_${folderId}`;
+        incomingConfigTypes.add(docId);
+        
+        await upsertSupabase('branding_config', 'config_type', docId, {
+          config_type: docId,
+          dashboard_subtext: String(monthId || ''),
+          tenant_id: tenantId
+        });
+      }
+
+      for (const configType of existingConfigTypes) {
+        if (!incomingConfigTypes.has(configType)) {
+          await supabase.from('branding_config').delete().eq('config_type', configType);
+        }
+      }
+    } catch (e) {
+      console.warn("Error in updateFolderMonthMap:", e);
+    }
   },
 
   getLedgerFolders: async (tenantId: string = 'main') => {
@@ -2490,12 +2628,7 @@ export const supabaseService = {
   },
 
   updateLedgerSheetFolderMap: async (map: any, tenantId: string = 'main') => {
-    const docId = `ledger_sheet_folder_map_${tenantId}`;
-    await upsertSupabase('branding_config', 'config_type', docId, {
-      config_type: docId,
-      dashboard_subtext: JSON.stringify(map),
-      tenant_id: tenantId
-    });
+    // Deprecated: rely entirely on ledger_sheets.folder_id column
   },
 
   saveGoogleSheetLink: async (tenantId: string, folderId: string, sheetId: string) => {
@@ -2538,8 +2671,25 @@ export const supabaseService = {
 
   saveLedgerSheet: async (sheet: any, tenantId: string = 'main') => {
     const sortValue = sheet.sort || sheet.sortFolder || sheet.folderName || '';
-    const folderIdValue = sheet.folderId || '';
-    const itemObj = { ...sheet, sort: sortValue, folderId: folderIdValue, dealerId: tenantId };
+    let folderIdValue = sheet.folderId || '';
+
+    // Safety check: prevent orphaned sheets if folder has been concurrently deleted
+    if (folderIdValue && supabase) {
+      try {
+        const { data: folderExists } = await supabase.from('ledger_folders').select('id').eq('id', folderIdValue).maybeSingle();
+        if (!folderExists) {
+          folderIdValue = '';
+        }
+      } catch (e) {
+        const foldersCache = globalTableCaches[`ledger_folders_${tenantId}`] || globalTableCaches[`ledger_folders_all`] || [];
+        const existsInCache = foldersCache.some((f: any) => f.id === folderIdValue);
+        if (!existsInCache) {
+          folderIdValue = '';
+        }
+      }
+    }
+
+    const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId };
     const dbRow = toDb('ledger_sheets', itemObj);
 
     // Update memory caches and notify subscribers immediately
@@ -2569,10 +2719,31 @@ export const supabaseService = {
   saveLedgerSheetsBatch: async (sheets: any[], tenantId: string = 'main') => {
     if (!sheets || sheets.length === 0) return;
 
+    const folderIds = Array.from(new Set(sheets.map(sh => sh.folderId).filter(Boolean)));
+    const validFolderIds = new Set<string>();
+    if (folderIds.length > 0 && supabase) {
+      try {
+        const { data: existingFolders } = await supabase.from('ledger_folders').select('id').in('id', folderIds);
+        if (existingFolders) {
+          existingFolders.forEach(f => validFolderIds.add(f.id));
+        }
+      } catch (e) {
+        const foldersCache = globalTableCaches[`ledger_folders_${tenantId}`] || globalTableCaches[`ledger_folders_all`] || [];
+        foldersCache.forEach((f: any) => {
+          if (folderIds.includes(f.id)) {
+            validFolderIds.add(f.id);
+          }
+        });
+      }
+    }
+
     const dbRows = sheets.map(sheet => {
       const sortValue = sheet.sort || sheet.sortFolder || sheet.folderName || '';
-      const folderIdValue = sheet.folderId || '';
-      const itemObj = { ...sheet, sort: sortValue, folderId: folderIdValue, dealerId: tenantId };
+      let folderIdValue = sheet.folderId || '';
+      if (folderIdValue && !validFolderIds.has(folderIdValue)) {
+        folderIdValue = '';
+      }
+      const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId };
 
       const syncKey = `ledger_sheets_${tenantId || 'all'}`;
       const syncKeys = [syncKey, 'ledger_sheets_all', 'ledger_sheets_main', 'ledger_sheets_'];

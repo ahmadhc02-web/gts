@@ -969,7 +969,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       {/* Structured Client Details Modal */}
       <AnimatePresence>
         {viewingClient && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -981,122 +981,122 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-100 dark:border-white/10 overflow-hidden"
+              className="relative w-full max-w-2xl max-h-[92vh] md:max-h-[85vh] overflow-y-auto bg-white dark:bg-slate-950 rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl border border-slate-100 dark:border-white/10 flex flex-col"
             >
-            <div className="h-32 bg-slate-950 dark:bg-brand-accent relative overflow-hidden">
+            <div className="h-24 sm:h-32 bg-slate-950 dark:bg-brand-accent relative overflow-hidden shrink-0">
                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,white_0%,transparent_100%)]" />
                <div className="absolute -bottom-8 -right-8 p-4 text-white opacity-10 rotate-12">
                   <User size={160} />
                </div>
                <button 
                 onClick={() => setViewingClient(null)}
-                className="absolute top-6 right-6 p-2 rounded-full bg-black/20 text-white hover:bg-black/40 transition-all z-10"
+                className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 rounded-full bg-black/20 text-white hover:bg-black/40 transition-all z-10"
                >
-                <X size={20} />
+                <X size={18} />
                </button>
             </div>
 
-            <div className="px-8 pb-8">
-               <div className="relative -mt-12 mb-6 inline-flex">
-                 <div className="w-24 h-24 rounded-3xl bg-white dark:bg-slate-900 border-4 border-white dark:border-slate-950 shadow-xl flex items-center justify-center text-brand-accent">
-                    <User size={40} />
+            <div className="px-4 pb-6 sm:px-8 sm:pb-8 flex-1">
+               <div className="relative -mt-10 sm:-mt-12 mb-4 sm:mb-6 inline-flex">
+                 <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border-4 border-white dark:border-slate-950 shadow-xl flex items-center justify-center text-brand-accent">
+                    <User size={32} className="sm:size-[40px]" />
                  </div>
-                 <div className="absolute -bottom-1 -right-1 bg-emerald-500 w-6 h-6 rounded-full border-4 border-white dark:border-slate-950" />
+                 <div className="absolute -bottom-1 -right-1 bg-emerald-500 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-4 border-white dark:border-slate-950" />
                </div>
 
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
                   {/* section 1: Identity */}
-                  <div className="space-y-6">
+                  <div className="space-y-4 sm:space-y-6">
                     <div>
-                      <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-accent mb-2">Core Identity</h5>
-                      <p className="text-2xl font-black text-slate-900 dark:text-white leading-tight uppercase">{viewingClient.name}</p>
-                      <p className="text-xs font-bold text-slate-500 tracking-widest mt-1">LINK ACCESS TAG: <span className="text-brand-accent">@{viewingClient.username}</span></p>
+                      <h5 className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-brand-accent mb-1.5">Core Identity</h5>
+                      <p className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-tight uppercase">{viewingClient.name}</p>
+                      <p className="text-[11px] sm:text-xs font-bold text-slate-500 tracking-widest mt-1">LINK ACCESS TAG: <span className="text-brand-accent">@{viewingClient.username}</span></p>
                     </div>
 
-                    <div className="space-y-4 pt-2">
-                       <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400">
-                             <MapPin size={18} />
+                    <div className="space-y-3.5 pt-1">
+                       <div className="flex items-center gap-3 sm:gap-4">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 shrink-0">
+                             <MapPin size={16} />
                           </div>
                           <div>
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Deployment Zone</p>
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{viewingClient.area}</p>
+                            <p className="text-[8px] sm:text-[9px] font-black uppercase text-slate-400 tracking-widest">Deployment Zone</p>
+                            <p className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{viewingClient.area}</p>
                           </div>
                        </div>
                        
-                       <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400">
-                             <Package size={18} />
+                       <div className="flex items-center gap-3 sm:gap-4">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 shrink-0">
+                             <Package size={16} />
                           </div>
                           <div>
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Service Matrix</p>
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{viewingClient.pkgDetails || 'No Active Package'}</p>
+                            <p className="text-[8px] sm:text-[9px] font-black uppercase text-slate-400 tracking-widest">Service Matrix</p>
+                            <p className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{viewingClient.pkgDetails || 'No Active Package'}</p>
                           </div>
                        </div>
 
-                       <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400">
-                             <Tag size={18} />
+                       <div className="flex items-center gap-3 sm:gap-4">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 shrink-0">
+                             <Tag size={16} />
                           </div>
                           <div>
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">RT Code / Fee / Day</p>
-                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">
+                            <p className="text-[8px] sm:text-[9px] font-black uppercase text-slate-400 tracking-widest">RT Code / Fee / Day</p>
+                            <p className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">
                               RT: <span className="text-blue-500 font-black">{viewingClient.rt || 'NONE'}</span> | Fee: <span className="text-emerald-500 font-black">Rs. {viewingClient.baseAmount || 0}</span> | BD: <span className="text-purple-500 font-black">Day {viewingClient.billingDay || '5'}</span>
                             </p>
                           </div>
                        </div>
 
-                       <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400">
-                             <Hash size={18} />
+                       <div className="flex items-center gap-3 sm:gap-4">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 shrink-0">
+                             <Hash size={16} />
                           </div>
                           <div>
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Serial Inventory</p>
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 tracking-widest">{viewingClient.seriesNumber || 'UNASSIGNED'}</p>
+                            <p className="text-[8px] sm:text-[9px] font-black uppercase text-slate-400 tracking-widest">Serial Inventory</p>
+                            <p className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 tracking-widest">{viewingClient.seriesNumber || 'UNASSIGNED'}</p>
                           </div>
                        </div>
                     </div>
                   </div>
 
                   {/* Section 2: Contacts & landmarks */}
-                  <div className="space-y-6">
+                  <div className="space-y-4 sm:space-y-6">
                     <div>
-                      <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-accent mb-2">Connectivity & Navigation</h5>
+                      <h5 className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-brand-accent mb-1.5">Connectivity & Navigation</h5>
                     </div>
 
-                    <div className="space-y-4">
-                       <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-white/10">
-                          <div className="flex items-center gap-3 mb-3">
-                             <Smartphone size={14} className="text-sky-500" />
-                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mobile Terminal</span>
+                    <div className="space-y-3 sm:space-y-4">
+                       <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-white/10">
+                          <div className="flex items-center gap-2 mb-1.5 sm:mb-2">
+                             <Smartphone size={13} className="text-sky-500" />
+                             <span className="text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">Mobile Terminal</span>
                           </div>
-                          <p className="text-lg font-black text-slate-900 dark:text-white tracking-widest">{viewingClient.mobileNumber || 'Protocol Link Unknown'}</p>
+                          <p className="text-sm sm:text-lg font-black text-slate-900 dark:text-white tracking-widest">{viewingClient.mobileNumber || 'Protocol Link Unknown'}</p>
                        </div>
 
-                       <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-white/10">
-                          <div className="flex items-center gap-3 mb-3">
-                             <Phone size={14} className="text-indigo-500" />
-                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fixed Line Archive</span>
+                       <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-white/10">
+                          <div className="flex items-center gap-2 mb-1.5 sm:mb-2">
+                             <Phone size={13} className="text-indigo-500" />
+                             <span className="text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">Fixed Line Archive</span>
                           </div>
-                          <p className="text-lg font-black text-slate-900 dark:text-white tracking-widest">{viewingClient.number || 'Protocol Link Unknown'}</p>
+                          <p className="text-sm sm:text-lg font-black text-slate-900 dark:text-white tracking-widest">{viewingClient.number || 'Protocol Link Unknown'}</p>
                        </div>
 
                        <div className="flex gap-3">
-                          <div className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
+                          <div className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 self-start">
                              <MapPinned size={14} className="text-rose-500" />
                           </div>
                           <div className="flex-1">
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Landmark Intel</p>
+                            <p className="text-[8px] sm:text-[9px] font-black uppercase text-slate-400 tracking-widest mb-0.5">Landmark Intel</p>
                             <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed uppercase">{viewingClient.userNearby || 'No geo-landmarks registered'}</p>
                           </div>
                        </div>
 
                        <div className="flex gap-3">
-                          <div className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
+                          <div className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 self-start">
                              <Layers size={14} className="text-brand-accent/60" />
                           </div>
                           <div className="flex-1">
-                            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Pannal Intel</p>
+                            <p className="text-[8px] sm:text-[9px] font-black uppercase text-slate-400 tracking-widest mb-0.5">Panel Intel</p>
                             <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed uppercase">{viewingClient.panelDetails || 'No panel details registered'}</p>
                           </div>
                        </div>
@@ -1104,20 +1104,20 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   </div>
                </div>
 
-               <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/10 flex justify-between items-center">
-                  <div className="flex items-center gap-2">
+               <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-slate-100 dark:border-white/10 flex flex-col sm:flex-row gap-4 justify-between items-center">
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
                     <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Validated Registry Entry</span>
+                    <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-400">Validated Registry Entry</span>
                   </div>
                   
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 w-full sm:w-auto">
                     {(isAdmin || viewingClient.createdBy === currentUserId) && (
                       <button 
                         onClick={() => {
                           handleEdit(viewingClient);
                           setViewingClient(null);
                         }}
-                        className="px-6 py-3 rounded-xl bg-slate-950 dark:bg-brand-accent text-white text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95"
+                        className="w-full sm:w-auto text-center px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl bg-slate-950 dark:bg-brand-accent text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-sm"
                       >
                         Modify Identity
                       </button>
