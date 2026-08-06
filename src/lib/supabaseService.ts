@@ -558,7 +558,36 @@ function subscribeTable(
       const channelName = `rt_${tableName}_${dealerId || 'all'}_${Math.random().toString(36).substring(2, 7)}`;
       const channel = supabase
         .channel(channelName)
-        .on('postgres_changes', { event: '*', schema: 'public', table: targetTable }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: targetTable }, (payload: any) => {
+          if (payload && payload.new) {
+            try {
+              const mappedRow = mapRow(payload.new);
+              if (mappedRow) {
+                const rowId = mappedRow.id || mappedRow.month_id || mappedRow.sheet_id;
+                let cache = globalTableCaches[syncKey] || [];
+                if (rowId) {
+                  const idx = cache.findIndex((item: any) => (item.id || item.month_id || item.sheet_id) === rowId);
+                  if (idx !== -1) {
+                    cache = [...cache];
+                    cache[idx] = { ...cache[idx], ...mappedRow };
+                  } else {
+                    cache = [mappedRow, ...cache];
+                  }
+                  globalTableCaches[syncKey] = cache;
+                  try {
+                    localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
+                  } catch (e) {}
+
+                  const subscribers = globalTableSubscribers[syncKey];
+                  if (subscribers) {
+                    subscribers.forEach((cb) => {
+                      try { cb(cache); } catch (err) {}
+                    });
+                  }
+                }
+              }
+            } catch (e) {}
+          }
           fetchInitial();
         })
         .subscribe();
@@ -972,7 +1001,7 @@ export const supabaseService = {
               const existingMonth = monthMap.get(mId)!;
               if (!existingMonth.rows || existingMonth.rows.length === 0) {
                 existingMonth.rows = rowList;
-              } else {
+              } else if (!existingMonth.hasAuthoritativeRowsData) {
                 const rowByClientId = new Map<string, any>();
                 const rowByUsername = new Map<string, any>();
                 for (const r of rowList) {
@@ -982,7 +1011,7 @@ export const supabaseService = {
                 existingMonth.rows = existingMonth.rows.map((r: any, idx: number) => {
                   const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
                                 (r.username && rowByUsername.get(String(r.username).toLowerCase())) ||
-                                rowList[idx];
+                                (rowList[idx] && rowList[idx].clientId === r.clientId ? rowList[idx] : null);
                   if (dbRow) {
                     return {
                       ...r,
@@ -1170,10 +1199,6 @@ export const supabaseService = {
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
     
     const run = previous.then(() => {
-      if (executeCounter !== undefined && this._billingMonthSaveCounter[syncKey] !== executeCounter) {
-        // Skip this execution because a newer save has already been triggered
-        return Promise.resolve();
-      }
       return this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices);
     });
     

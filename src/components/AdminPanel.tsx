@@ -1108,7 +1108,7 @@ export default function AdminPanel({
       });
       
       setBillingMonths(prev => {
-        return sorted.map(incomingMonth => {
+        const nextList = sorted.map(incomingMonth => {
           if (savingMonthIds.current.has(incomingMonth.id)) {
             const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
             if (currentLocalMonth) {
@@ -1121,6 +1121,10 @@ export default function AdminPanel({
           }
           return incomingMonth;
         });
+        if (JSON.stringify(prev) === JSON.stringify(nextList)) {
+          return prev;
+        }
+        return nextList;
       });
 
       setCurrentMonthId(prev => {

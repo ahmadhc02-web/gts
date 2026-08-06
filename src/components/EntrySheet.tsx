@@ -1918,7 +1918,6 @@ export default function EntrySheet({
           'cash hand',
           'hand cash',
           'cash in hand',
-          'unspecified entry',
           'expense',
           'expenses'
         ].includes(lower);
@@ -1954,149 +1953,186 @@ export default function EntrySheet({
       });
 
       // Step 3: Run connected recovery sheet matching/updating using the updated/linked sheet rows
-      for (const sheetPayload of sheetPayloads) {
-        const resolvedSheetId = sheetPayload.id;
-        const targetFolderId = sheetPayload.folderId;
-        if (!targetFolderId) continue;
+      // We perform a full recalculation: we gather ALL sheets connected to the affected months,
+      // reset the base rows to unpaid, and sum up all entries. This ensures strong connection,
+      // and guarantees that removing an entry from the A4 sheet will correctly un-pay the recovery row.
+      const targetMonthIdsToUpdate = new Set<string>();
+      sheetPayloads.forEach(sp => {
+        const tFolderId = sp.folderId;
+        if (tFolderId) {
+          const fObj = folders.find(f => f.id === tFolderId);
+          const tMonthId = (folderMonthMap[tFolderId] || fObj?.connectedMonthId) || currentMonthId;
+          if (tMonthId) targetMonthIdsToUpdate.add(tMonthId);
+        }
+      });
 
-        const folderObj = folders.find(f => f.id === targetFolderId);
-        const targetMonthId = (targetFolderId ? (folderMonthMap[targetFolderId] || folderObj?.connectedMonthId) : undefined) || currentMonthId;
+      for (const targetMonthId of Array.from(targetMonthIdsToUpdate)) {
+        if (!targetMonthId) continue;
+        
+        let targetMonthRows: any[] = accumulatedBillingMonths[targetMonthId] || [];
+        
+        if (targetMonthRows.length === 0) {
+          const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
+          targetMonthRows = targetMonthDoc?.rows || [];
+        }
 
-        if (targetMonthId) {
-          let targetMonthRows: any[] = accumulatedBillingMonths[targetMonthId] || [];
-          
-          if (targetMonthRows.length === 0) {
-            const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
-            targetMonthRows = targetMonthDoc?.rows || [];
-          }
-
-          // REQUIREMENT 1: Direct network call straight to Supabase before assuming month is empty
-          if (targetMonthRows.length === 0) {
-            try {
-              const directMonth = await pocketbaseService.getBillingMonthDirect(targetMonthId, activeDealerId || 'main');
-              if (directMonth && Array.isArray(directMonth.rows) && directMonth.rows.length > 0) {
-                targetMonthRows = directMonth.rows;
-                accumulatedBillingMonths[targetMonthId] = targetMonthRows;
-              }
-            } catch (err) {
-              console.warn("Direct DB fetch for target month failed:", err);
+        // REQUIREMENT 1: Direct network call straight to Supabase before assuming month is empty
+        if (targetMonthRows.length === 0) {
+          try {
+            const directMonth = await pocketbaseService.getBillingMonthDirect(targetMonthId, activeDealerId || 'main');
+            if (directMonth && Array.isArray(directMonth.rows) && directMonth.rows.length > 0) {
+              targetMonthRows = directMonth.rows;
             }
+          } catch (err) {
+            console.warn("Direct DB fetch for target month failed:", err);
           }
+        }
 
-          if (targetMonthRows.length === 0 && clients && clients.length > 0) {
-            targetMonthRows = clients.map((c: any) => {
-              let cleanBase = 1000;
-              if (c.pkgDetails) {
-                const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
-                if (digitsMatch && digitsMatch.length > 0) {
-                  cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
-                } else {
-                  const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
-                  if (lowDigits && lowDigits.length >= 3) {
-                    cleanBase = parseInt(lowDigits, 10);
-                  }
+        if (targetMonthRows.length === 0 && clients && clients.length > 0) {
+          targetMonthRows = clients.map((c: any) => {
+            let cleanBase = 1000;
+            if (c.pkgDetails) {
+              const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
+              if (digitsMatch && digitsMatch.length > 0) {
+                cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
+              } else {
+                const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
+                if (lowDigits && lowDigits.length >= 3) {
+                  cleanBase = parseInt(lowDigits, 10);
                 }
               }
-              return {
-                id: c.id,
-                clientId: c.id,
-                name: c.name,
-                username: c.username,
-                mobileNumber: c.mobileNumber || c.number || '',
-                area: c.area || '',
-                rt: c.rt || '',
-                baseAmount: cleanBase,
-                cr: Number(c.cr) || 0,
-                totalAmount: cleanBase + (Number(c.cr) || 0),
-                billingDay: '5',
-                paymentReceived: 0,
-                paymentStatus: 'unpaid',
-                comments: '',
-                occ: '',
-                pkgDetails: c.pkgDetails || '',
-                sag: '',
-                lai: '',
-                connectionDate: '',
-                devicePrice: 0,
-                abl: 0
-              };
-            });
-          }
-
-          try {
-            const updatedBillingRows = targetMonthRows.filter((br: any) => !isExcludedName(br.name));
-
-            let updatedCount = 0;
-            if (!accumulatedChangedIndicesMap[targetMonthId]) {
-              accumulatedChangedIndicesMap[targetMonthId] = new Set<number>();
             }
+            return {
+              id: c.id,
+              clientId: c.id,
+              name: c.name,
+              username: c.username,
+              mobileNumber: c.mobileNumber || c.number || '',
+              area: c.area || '',
+              rt: c.rt || '',
+              baseAmount: cleanBase,
+              cr: Number(c.cr) || 0,
+              totalAmount: cleanBase + (Number(c.cr) || 0),
+              billingDay: '5',
+              paymentReceived: 0,
+              paymentStatus: 'unpaid',
+              comments: '',
+              occ: '',
+              pkgDetails: c.pkgDetails || '',
+              sag: '',
+              lai: '',
+              connectionDate: '',
+              devicePrice: 0,
+              abl: 0
+            };
+          });
+        }
 
-            const batchPaymentsMap = new Map<string, number>();
-            const allSheetRows = Array.isArray(sheetPayload.table1Rows) ? sheetPayload.table1Rows : [];
+        try {
+          // Identify all folders connected to this month
+          const monthFolderIds = new Set<string>();
+          folders.forEach(f => {
+            const tId = folderMonthMap[f.id] || f.connectedMonthId;
+            if (tId === targetMonthId) monthFolderIds.add(f.id);
+          });
+          sheetPayloads.forEach(sp => {
+            const tFolderId = sp.folderId;
+            const fObj = folders.find(f => f.id === tFolderId);
+            const tId = (tFolderId ? (folderMonthMap[tFolderId] || fObj?.connectedMonthId) : undefined) || currentMonthId;
+            if (tId === targetMonthId && tFolderId) monthFolderIds.add(tFolderId);
+          });
 
-            allSheetRows.forEach((r) => {
+          // Collect ALL relevant sheets (historical + currently saving payloads)
+          const allRelevantSheetsMap = new Map<string, any>();
+          ledgerHistory.forEach(sh => {
+            const fId = updatedFolderMap[sh.id] || sheetFolderMap[sh.id] || sh.folderId;
+            if (monthFolderIds.has(fId) || (openedFolderId && fId === openedFolderId)) {
+              allRelevantSheetsMap.set(sh.id, sh);
+            }
+          });
+          sheetPayloads.forEach(sp => {
+            const fId = sp.folderId || openedFolderId;
+            if (monthFolderIds.has(fId) || (openedFolderId && fId === openedFolderId)) {
+              allRelevantSheetsMap.set(sp.id, sp); // Overwrite historical with new unsaved state
+            }
+          });
+
+          // PREPARE: Reset all base rows to 0 to recalculate from scratch
+          // We filter out excluded names (like "bank") so they don't count as clients
+          const baseRecalculatedRows = targetMonthRows.filter((br: any) => !isExcludedName(br.name)).map((row: any) => ({
+            ...row,
+            paymentReceived: 0,
+            paymentStatus: 'unpaid'
+          }));
+
+          let updatedCount = 0;
+          if (!accumulatedChangedIndicesMap[targetMonthId]) {
+            accumulatedChangedIndicesMap[targetMonthId] = new Set<number>();
+          }
+          
+          const batchPaymentsMap = new Map<string, number>();
+
+          // ITERATE OVER ALL SHEETS TO SUM PAYMENTS
+          for (const sh of allRelevantSheetsMap.values()) {
+            const allSheetRows = Array.isArray(sh.table1Rows) ? sh.table1Rows : [];
+            allSheetRows.forEach((r: any) => {
               const amountVal = Number(r.amount) || 0;
               const amountStr = String(r.amount || '').trim().toUpperCase();
               const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr);
-
+              
               const hasId = Boolean(r.cId && String(r.cId).trim());
               const hasName = Boolean(r.name && String(r.name).trim());
-
-              if (!hasId && !hasName) return;
+              
+              if (!hasId && !hasName && amountVal === 0 && !isStatusString) return;
               if (isExcludedName(r.name)) return;
 
-              // Find the customer card in original list
               const client = clients.find((c: any) => c.id === r.clientId);
 
               let matchedIdx = -1;
-
               if (r.clientId || r.clientUsername) {
                 const searchClientId = (r.clientId || '').trim().toLowerCase();
                 const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
-                matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
                   (searchClientId && br.clientId && String(br.clientId).trim().toLowerCase() === searchClientId) ||
                   (searchClientUsername && br.username && String(br.username).trim().toLowerCase() === searchClientUsername) ||
                   (searchClientUsername && br.clientId && String(br.clientId).trim().toLowerCase() === searchClientUsername)
                 );
               }
-
               if (matchedIdx === -1 && hasId) {
                 const searchId = String(r.cId).trim().toLowerCase();
-                matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
                   (br.clientId && String(br.clientId).trim().toLowerCase() === searchId) ||
                   (br.username && String(br.username).trim().toLowerCase() === searchId) ||
                   (br.id && String(br.id).trim().toLowerCase() === searchId)
                 );
               }
-
               if (matchedIdx === -1 && hasName) {
                 const searchName = String(r.name).trim().toLowerCase();
-                matchedIdx = updatedBillingRows.findIndex((br: any) => 
+                matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
                   br.name && String(br.name).trim().toLowerCase() === searchName
                 );
               }
 
               if (matchedIdx !== -1) {
-                const row = updatedBillingRows[matchedIdx];
+                const row = baseRecalculatedRows[matchedIdx];
                 const clientKey = row.id || row.clientId || row.username || `idx_${matchedIdx}`;
-
+                
                 const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
                 const base = parseFloat(row.baseAmount || 0);
                 const totalAmount = base + savedOrigCr;
-
+                
                 let newPaymentReceived = 0;
                 let finalStatus = 'partial';
-
+                
                 if (isStatusString) {
                   finalStatus = amountStr.toLowerCase();
                   newPaymentReceived = finalStatus === 'paid' ? totalAmount : 0;
+                  // If there's already a batch payment, A4 status overrides it entirely for simplicity
+                  batchPaymentsMap.set(clientKey, newPaymentReceived);
                 } else {
-                  const prevBatchPayment = batchPaymentsMap.get(clientKey);
-                  if (prevBatchPayment !== undefined) {
-                    newPaymentReceived = prevBatchPayment + amountVal;
-                  } else {
-                    newPaymentReceived = amountVal;
-                  }
+                  const prevBatchPayment = batchPaymentsMap.get(clientKey) || 0;
+                  newPaymentReceived = prevBatchPayment + amountVal;
+                  
                   batchPaymentsMap.set(clientKey, newPaymentReceived);
 
                   if (r.status) {
@@ -2110,10 +2146,7 @@ export default function EntrySheet({
                   }
                 }
 
-                const isRowChanged = (Number(row.paymentReceived) || 0) !== newPaymentReceived || 
-                                     (row.paymentStatus || 'unpaid').toLowerCase() !== finalStatus.toLowerCase();
-
-                updatedBillingRows[matchedIdx] = {
+                baseRecalculatedRows[matchedIdx] = {
                   ...row,
                   clientId: client?.id || row.clientId || r.clientId || '',
                   username: client?.username || row.username || r.clientUsername || '',
@@ -2124,18 +2157,9 @@ export default function EntrySheet({
                   paymentStatus: finalStatus
                 };
 
-                if (isRowChanged || amountVal > 0) {
-                  accumulatedChangedIndicesMap[targetMonthId].add(matchedIdx);
-                  updatedCount++;
-
-                  const pName = row.name || r.name;
-                  const pUser = row.username || r.clientUsername || r.cId || '';
-                  const detailStr = isStatusString ? finalStatus.toUpperCase() : `PKR ${newPaymentReceived.toLocaleString()}`;
-                  allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr}`);
-                }
               } else {
                 if (client && (isExcludedName(client.name) || isExcludedName(client.username))) return;
-
+                
                 const baseAmount = client ? (Number(client.baseAmount) || 0) : amountVal;
                 const cr = client ? (Number(client.cr) || 0) : 0;
                 const totalAmount = baseAmount + cr;
@@ -2152,7 +2176,7 @@ export default function EntrySheet({
                 } else if (amountVal >= totalAmount) {
                   finalStatus = 'paid';
                 }
-
+                
                 const clientKey = client?.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                 const newRow = {
                   id: clientKey,
@@ -2160,7 +2184,7 @@ export default function EntrySheet({
                   name: client?.name || r.name || 'Unknown',
                   username: client?.username || r.clientUsername || r.cId || '',
                   mobileNumber: client?.mobileNumber || '',
-                  area: client?.area || (r as any).area || area || '',
+                  area: client?.area || r.area || area || '',
                   rt: client?.rt || '',
                   baseAmount: baseAmount,
                   cr: cr,
@@ -2174,24 +2198,36 @@ export default function EntrySheet({
                   devicePrice: client?.devicePrice || '',
                   abl: client?.abl || ''
                 };
-
+                
                 batchPaymentsMap.set(clientKey, newRow.paymentReceived);
-                updatedBillingRows.push(newRow);
-                accumulatedChangedIndicesMap[targetMonthId].add(updatedBillingRows.length - 1);
-                updatedCount++;
-
-                const pName = newRow.name;
-                const pUser = newRow.username || r.cId || '';
-                const detailStr = isStatusString ? finalStatus.toUpperCase() : `PKR ${amountVal.toLocaleString()}`;
-                allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr} (Added to Sheet)`);
+                baseRecalculatedRows.push(newRow);
               }
             });
-
-            totalUpdatedBillingCount += updatedCount;
-            accumulatedBillingMonths[targetMonthId] = updatedBillingRows;
-          } catch (billingErr: any) {
-            console.error("Failed to auto-update billing status:", billingErr);
           }
+
+          // Compare with original targetMonthRows to detect changes and add to allSyncedUsersSummary
+          baseRecalculatedRows.forEach((newRow: any, idx: number) => {
+            const origRow = targetMonthRows.find((br: any) => br.id === newRow.id || br.clientId === newRow.clientId);
+            const origPayment = Number(origRow?.paymentReceived) || 0;
+            const origStatus = (origRow?.paymentStatus || 'unpaid').toLowerCase();
+            const newPayment = Number(newRow.paymentReceived) || 0;
+            const newStatus = (newRow.paymentStatus || 'unpaid').toLowerCase();
+
+            if (origPayment !== newPayment || origStatus !== newStatus || (!origRow && newPayment > 0)) {
+              accumulatedChangedIndicesMap[targetMonthId].add(idx);
+              updatedCount++;
+              
+              const pName = newRow.name;
+              const pUser = newRow.username || newRow.clientId || '';
+              const detailStr = newStatus.toUpperCase();
+              allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr}`);
+            }
+          });
+
+          totalUpdatedBillingCount += updatedCount;
+          accumulatedBillingMonths[targetMonthId] = baseRecalculatedRows;
+        } catch (billingErr: any) {
+          console.error("Failed to auto-update billing status:", billingErr);
         }
       }
 
@@ -4005,7 +4041,8 @@ export default function EntrySheet({
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
               width: 210mm !important;
-              height: 297mm !important;
+              height: auto !important;
+              min-height: 297mm !important;
               overflow: visible !important;
             }
             #root {
@@ -4021,10 +4058,38 @@ export default function EntrySheet({
               width: auto !important;
               height: auto !important;
             }
+            .print-sheet-wrapper-container {
+              display: block !important;
+              width: 100% !important;
+              height: auto !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            .print-sheet-wrapper {
+              position: static !important;
+              width: 210mm !important;
+              height: 297mm !important;
+              min-width: 210mm !important;
+              min-height: 297mm !important;
+              max-width: 210mm !important;
+              max-height: 297mm !important;
+              transform: none !important;
+              margin: 0 auto !important;
+              padding: 0 !important;
+              display: block !important;
+              box-shadow: none !important;
+              border: none !important;
+              page-break-after: always !important;
+              break-after: page !important;
+            }
             .print-paper-container {
               position: relative !important;
               width: 210mm !important;
               height: 297mm !important;
+              min-width: 210mm !important;
+              min-height: 297mm !important;
+              max-width: 210mm !important;
+              max-height: 297mm !important;
               transform: none !important;
               margin: 0 auto 10mm auto !important;
               padding: ${paperPaddingY}mm ${paperPaddingX}mm !important;
@@ -4406,7 +4471,7 @@ export default function EntrySheet({
                   <div className={`flex flex-row justify-start sm:justify-center gap-6 overflow-x-auto min-w-full select-text print:block print:w-auto print:h-auto print:static ${
                     (zoomOption === 'fit' && !isInputFocused) ? 'items-start pb-2 pt-2 my-auto' : 'items-start pb-10 pt-4'
                   }`}>
-                    <div className="flex flex-row gap-6 mx-auto w-max px-2 sm:px-0">
+                    <div className="print-sheet-wrapper-container flex flex-row gap-6 mx-auto w-max px-2 sm:px-0 print:block print:w-auto print:h-auto print:static print:p-0 print:m-0">
                     {sheets.map((sh, sheetIdx) => {
                       const isActive = activeSheetIdx === sheetIdx;
 
@@ -4451,7 +4516,7 @@ export default function EntrySheet({
                               setActiveSheetIdx(sheetIdx);
                             }
                           }}
-                          className={`group relative flex flex-col items-center shrink-0 print:block print:w-auto print:h-auto print:static my-auto transition-all ${
+                          className={`print-sheet-wrapper group relative flex flex-col items-center shrink-0 print:block print:w-auto print:h-auto print:static my-auto transition-all ${
                             isActive 
                               ? `ring-2 ring-indigo-650/40 dark:ring-indigo-400/50 ring-offset-4 ring-offset-slate-100 dark:ring-offset-slate-900 rounded-lg z-10 ${zoomOption === 'fit' ? 'scale-100' : 'scale-102'}` 
                               : 'opacity-70 saturate-75 hover:opacity-95 hover:saturate-100'
