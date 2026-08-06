@@ -552,6 +552,10 @@ export default function AdminPanel({
   // --- Advanced Enterprise Billing & Recovery Module states ---
   const [masterClients, setMasterClients] = useState<any[]>([]);
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
+  const billingMonthsRef = React.useRef<any[]>([]);
+  React.useEffect(() => {
+    billingMonthsRef.current = billingMonths;
+  }, [billingMonths]);
   const savingMonthIds = React.useRef<Set<string>>(new Set());
   const deletingMonthIds = React.useRef<Set<string>>(new Set());
 
@@ -1527,79 +1531,81 @@ export default function AdminPanel({
     if (!currentMonthId) return;
 
     try {
-      setBillingMonths(prev => {
-        const idx = prev.findIndex(m => m.id === currentMonthId);
-        if (idx === -1) return prev;
-        
-        const next = [...prev];
-        const nextRows = [...(next[idx].rows || [])];
-        if (!nextRows[rowIndex]) return prev;
+      const currentMonths = billingMonthsRef.current.length > 0 ? billingMonthsRef.current : billingMonths;
+      const idx = currentMonths.findIndex(m => m.id === currentMonthId);
+      if (idx === -1) return;
 
-        if (nextRows[rowIndex][field] === val) return prev;
+      const currentDoc = currentMonths[idx];
+      const currentRows = currentDoc.rows || [];
+      if (!currentRows[rowIndex]) return;
 
-        const targetRow = { ...nextRows[rowIndex] };
-        targetRow[field] = val;
+      if (currentRows[rowIndex][field] === val && !forceImmediate) return;
 
-        if (field === 'cr') {
-          const crVal = parseFloat(val) || 0;
-          targetRow._originalCr = crVal;
-          targetRow.cr = crVal;
-          const base = parseFloat(targetRow.baseAmount) || 0;
-          targetRow.totalAmount = base + crVal;
-        } else if (field === 'baseAmount') {
-          const baseVal = parseFloat(val) || 0;
+      const targetRow = { ...currentRows[rowIndex] };
+      targetRow[field] = val;
+
+      if (field === 'cr') {
+        const crVal = parseFloat(val) || 0;
+        targetRow._originalCr = crVal;
+        targetRow.cr = crVal;
+        const base = parseFloat(targetRow.baseAmount) || 0;
+        targetRow.totalAmount = base + crVal;
+      } else if (field === 'baseAmount') {
+        const baseVal = parseFloat(val) || 0;
+        const crVal = parseFloat(targetRow.cr) || 0;
+        targetRow.totalAmount = baseVal + crVal;
+      } else if (field === 'paymentReceived') {
+        const received = parseFloat(val) || 0;
+        targetRow.paymentReceived = received;
+      } else if (field === 'paymentStatus') {
+        targetRow.paymentStatus = val;
+        if (val === 'tdc' || val === 'dc') {
+          targetRow.baseAmount = 0;
           const crVal = parseFloat(targetRow.cr) || 0;
-          targetRow.totalAmount = baseVal + crVal;
-        } else if (field === 'paymentReceived') {
-          const received = parseFloat(val) || 0;
-          targetRow.paymentReceived = received;
-        } else if (field === 'paymentStatus') {
-          targetRow.paymentStatus = val;
-          if (val === 'tdc' || val === 'dc') {
-            targetRow.baseAmount = 0;
-            const crVal = parseFloat(targetRow.cr) || 0;
-            targetRow.totalAmount = crVal;
-          } else if (val === 'paid') {
-            const total = parseFloat(targetRow.totalAmount) || 0;
-            if (parseFloat(targetRow.paymentReceived) < total) {
-              targetRow.paymentReceived = total;
-            }
-          } else if (val === 'unpaid') {
-            targetRow.paymentReceived = 0;
-          }
-        }
-
-        if (field === 'paymentReceived' || field === 'baseAmount' || field === 'cr') {
-          const received = parseFloat(targetRow.paymentReceived) || 0;
+          targetRow.totalAmount = crVal;
+        } else if (val === 'paid') {
           const total = parseFloat(targetRow.totalAmount) || 0;
-          
-          if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
-            if (received === 0) {
-              targetRow.paymentStatus = 'unpaid';
-            } else if (received >= total) {
-              targetRow.paymentStatus = 'paid';
-            } else {
-              targetRow.paymentStatus = 'partial';
-            }
+          if (parseFloat(targetRow.paymentReceived) < total) {
+            targetRow.paymentReceived = total;
+          }
+        } else if (val === 'unpaid') {
+          targetRow.paymentReceived = 0;
+        }
+      }
+
+      if (field === 'paymentReceived' || field === 'baseAmount' || field === 'cr') {
+        const received = parseFloat(targetRow.paymentReceived) || 0;
+        const total = parseFloat(targetRow.totalAmount) || 0;
+        
+        if (targetRow.paymentStatus !== 'tdc' && targetRow.paymentStatus !== 'dc') {
+          if (received === 0) {
+            targetRow.paymentStatus = 'unpaid';
+          } else if (received >= total) {
+            targetRow.paymentStatus = 'paid';
+          } else {
+            targetRow.paymentStatus = 'partial';
           }
         }
+      }
 
-        nextRows[rowIndex] = targetRow;
-        next[idx] = { ...next[idx], rows: nextRows };
+      const nextRows = [...currentRows];
+      nextRows[rowIndex] = targetRow;
 
-        syncRecoveryRowToMasterClient(targetRow);
+      const nextMonths = [...currentMonths];
+      nextMonths[idx] = { ...currentDoc, rows: nextRows };
 
-        if (currentMonthId) {
-          saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]).catch((err)=>{
-            toast.error("Cloud Sync Failed", { description: "Failed to save recovery cell changes. Check connection." });
-            console.error("Auto-sync cell change failed:", err);
-          });
-        }
+      // Immediately set the ref synchronously so fast typing or blur across rows retains every edit
+      billingMonthsRef.current = nextMonths;
+      setBillingMonths(nextMonths);
 
-        return next;
+      syncRecoveryRowToMasterClient(targetRow);
+
+      saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]).catch((err)=>{
+        toast.error("Cloud Sync Failed", { description: "Failed to save recovery cell changes. Check connection." });
+        console.error("Auto-sync cell change failed:", err);
       });
 
-      } catch (err: any) {
+    } catch (err: any) {
       console.error(err);
     }
   };
@@ -8359,15 +8365,16 @@ export default function AdminPanel({
 
                           {/* Advance params block shown only when isAdvanceMode toggled on */}
                           {isAdvanceMode && (
-                            <div className="mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-white\/10 space-y-2 text-[11px] bg-slate-50/50 dark:bg-black/10 p-2 rounded-xl font-sans">
+                            <div className="mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-white/10 space-y-2 text-[11px] bg-slate-50/50 dark:bg-black/10 p-2 rounded-xl font-sans">
                               <div className="space-y-0.5">
                                 <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Occupation</span>
                                 <input
                                   type="text"
-                                  defaultValue={rowRef.occ}
+                                  value={rowRef.occ || ''}
                                   disabled={!isBillingUnlocked}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded font-sans text-black dark:text-white font-black"
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value, true)}
+                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded font-sans text-black dark:text-white font-black"
                                 />
                               </div>
 
@@ -8375,11 +8382,12 @@ export default function AdminPanel({
                                 <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Comments</span>
                                 <input
                                   type="text"
-                                  defaultValue={rowRef.comments}
+                                  value={rowRef.comments || ''}
                                   disabled={false}
                                   onClick={(e) => e.stopPropagation()}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
-                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-1 border border-slate-200/50 dark:border-white\/10/80 rounded font-bold text-black dark:text-white font-sans"
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value, true)}
+                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-1 border border-slate-200/50 dark:border-white/10 rounded font-bold text-black dark:text-white font-sans focus:ring-1 focus:ring-blue-500/30"
                                   placeholder="No comment..."
                                 />
                               </div>
@@ -8389,20 +8397,22 @@ export default function AdminPanel({
                                   <span className="text-[8px] text-indigo-400 dark:text-indigo-300 font-bold uppercase tracking-wider block">Pkg Details</span>
                                   <input
                                     type="text"
-                                    defaultValue={rowRef.pkgDetails}
+                                    value={rowRef.pkgDetails || ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-blue-900 dark:text-blue-300 font-bold font-sans"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value, true)}
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-blue-900 dark:text-blue-300 font-bold font-sans"
                                   />
                                 </div>
                                 <div className="space-y-0.5">
                                   <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Date</span>
                                   <input
                                     type="text"
-                                    defaultValue={rowRef.connectionDate}
+                                    value={rowRef.connectionDate || ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-center font-sans text-black dark:text-white"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value, true)}
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-center font-sans text-black dark:text-white"
                                     placeholder="MM/DD/YY"
                                   />
                                 </div>
@@ -8413,20 +8423,22 @@ export default function AdminPanel({
                                   <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Device Price</span>
                                   <input
                                     type="number"
-                                    defaultValue={rowRef.devicePrice}
+                                    value={rowRef.devicePrice ?? ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-right font-sans text-black dark:text-white"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0, true)}
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-right font-sans text-black dark:text-white"
                                   />
                                 </div>
                                 <div className="space-y-0.5">
                                   <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Abl Charges</span>
                                   <input
                                     type="number"
-                                    defaultValue={rowRef.abl}
+                                    value={rowRef.abl ?? ''}
                                     disabled={!isBillingUnlocked}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white\/10/80 rounded text-right font-sans text-black dark:text-white"
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
+                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-right font-sans text-black dark:text-white"
                                   />
                                 </div>
                               </div>
@@ -8476,7 +8488,7 @@ export default function AdminPanel({
                         </div>
                         <div className="flex items-center gap-1">
                           <button
-                            type="button; cursor-pointer"
+                            type="button"
                             disabled={currentPage === 1}
                             onClick={() => {
                               setBillingPage(1);
@@ -8699,13 +8711,30 @@ export default function AdminPanel({
                   
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     {/* Full-width landscape-optimized comments box */}
-                    <div className="col-span-2 sm:col-span-3 bg-slate-50 dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-150 dark:border-white\/10 space-y-2 shadow-sm">
+                    <div className="col-span-2 sm:col-span-3 bg-slate-50 dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-150 dark:border-white/10 space-y-2 shadow-sm">
                       <div className="text-[10px] font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 flex items-center gap-1.5">
                         💬 Comments & Remarks
                       </div>
-                      <div className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-150 dark:border-white/10 shadow-inner leading-relaxed whitespace-pre-wrap select-text min-h-[90px]">
-                        {selectedRecoveryRow.comments || '—'}
-                      </div>
+                      <textarea
+                        value={selectedRecoveryRow.comments || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedRecoveryRow((prev: any) => prev ? { ...prev, comments: val } : null);
+                          const rowIdx = selectedRecoveryRow._originalIndex;
+                          if (rowIdx !== undefined && rowIdx !== -1) {
+                            handleSaveRowField(rowIdx, 'comments', val);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const val = e.target.value;
+                          const rowIdx = selectedRecoveryRow._originalIndex;
+                          if (rowIdx !== undefined && rowIdx !== -1) {
+                            handleSaveRowField(rowIdx, 'comments', val, true);
+                          }
+                        }}
+                        className="w-full text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-white/10 focus:ring-2 focus:ring-blue-500/40 outline-none leading-relaxed resize-y min-h-[90px]"
+                        placeholder="Type comments or remarks..."
+                      />
                     </div>
 
                     <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-white\/10">

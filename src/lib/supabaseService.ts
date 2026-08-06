@@ -1001,7 +1001,7 @@ export const supabaseService = {
               const existingMonth = monthMap.get(mId)!;
               if (!existingMonth.rows || existingMonth.rows.length === 0) {
                 existingMonth.rows = rowList;
-              } else if (!existingMonth.hasAuthoritativeRowsData) {
+              } else {
                 const rowByClientId = new Map<string, any>();
                 const rowByUsername = new Map<string, any>();
                 for (const r of rowList) {
@@ -1016,6 +1016,7 @@ export const supabaseService = {
                     return {
                       ...r,
                       ...dbRow,
+                      comments: (dbRow.comments && dbRow.comments.trim() !== '') ? dbRow.comments : (r.comments || ''),
                       baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
                       cr: dbRow.cr ?? r.cr ?? 0,
                       totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
