@@ -379,7 +379,7 @@ export function fromDb(table: string, obj: any): any {
 }
 
 const globalTableSubscribers: Record<string, Set<(data: any[]) => void>> = {};
-const globalTableCaches: Record<string, any[]> = {};
+export const globalTableCaches: Record<string, any[]> = {};
 const globalTableIntervals: Record<string, any> = {};
 const globalTableChannels: Record<string, any> = {};
 
@@ -1148,6 +1148,34 @@ export const supabaseService = {
     this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices: mergedChangedIndices };
     const currentCounter = (this._billingMonthSaveCounter[key] || 0) + 1;
     this._billingMonthSaveCounter[key] = currentCounter;
+
+    console.log(`[DIAG] saveBillingMonth called: changedIndices=${JSON.stringify(Array.from(changedIndices || []))}, counter assigned=${currentCounter}, timestamp=${Date.now()}`);
+
+    // Synchronously update globalTableCaches and localStorage for instant UI updates
+    const primaryKey = `billing_months_${dealerId || 'main'}`;
+    const syncKeys = [primaryKey, 'billing_months_all', 'billing_months_main', 'billing_months_'];
+    syncKeys.forEach(sKey => {
+      if (!globalTableCaches[sKey]) globalTableCaches[sKey] = [];
+      const idx = globalTableCaches[sKey].findIndex((m: any) => m.id === monthId || m.month_id === monthId);
+      const updatedObj = {
+        id: monthId,
+        month_id: monthId,
+        dealerId: dealerId || 'main',
+        rows,
+        rows_data: rows,
+        updated_by: updatedBy,
+        updatedAt: Date.now()
+      };
+      if (idx !== -1) {
+        globalTableCaches[sKey][idx] = { ...globalTableCaches[sKey][idx], ...updatedObj };
+      } else {
+        globalTableCaches[sKey].unshift(updatedObj);
+      }
+    });
+
+    try {
+      localStorage.setItem('gts_cache_v3_billing_months', JSON.stringify(globalTableCaches[primaryKey] || globalTableCaches['billing_months_main'] || []));
+    } catch (e) {}
     
     if (!this._saveBillingMonthTimers) this._saveBillingMonthTimers = {};
 
@@ -1159,8 +1187,8 @@ export const supabaseService = {
       }
       const latest = this._saveBillingMonthLatestRows[key];
       if (latest) {
-        delete this._saveBillingMonthLatestRows[key];
         await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter);
+        delete this._saveBillingMonthLatestRows[key];
       }
       return;
     }
@@ -1175,8 +1203,8 @@ export const supabaseService = {
         try {
           const latest = this._saveBillingMonthLatestRows[key];
           if (latest) {
-            delete this._saveBillingMonthLatestRows[key];
             await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter);
+            delete this._saveBillingMonthLatestRows[key];
           }
           resolve();
         } catch (err) {
@@ -1197,6 +1225,8 @@ export const supabaseService = {
     const syncKey = `${monthId}_${dealerId}`;
     if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
     
+    console.log(`[DIAG] Counter check: executeCounter=${executeCounter}, storedCounter=${this._billingMonthSaveCounter[syncKey]}, SKIPPED=${executeCounter !== undefined && this._billingMonthSaveCounter[syncKey] !== executeCounter}, timestamp=${Date.now()}`);
+
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
     
     const run = previous.then(() => {
@@ -1264,6 +1294,8 @@ export const supabaseService = {
     }
 
     try {
+      console.log(`[DIAG] ACTUALLY WRITING to billing_months now. Comments in payload:`, rows.map((r, i) => `[${i}]:"${r.comments}"`).join(', '));
+
       await upsertSupabase('billing_months', 'month_id', monthId, {
         month_id: monthId,
         dealer_id: dealerId,

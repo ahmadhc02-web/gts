@@ -26,7 +26,7 @@ import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCa
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
 import { googleSheetsService } from '../services/googleSheetsService';
-import { supabaseService as pocketbaseService, fromDb } from '../lib/supabaseService';
+import { supabaseService as pocketbaseService, fromDb, globalTableCaches } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { AppConfig } from '../constants';
@@ -551,7 +551,20 @@ export default function AdminPanel({
 
   // --- Advanced Enterprise Billing & Recovery Module states ---
   const [masterClients, setMasterClients] = useState<any[]>([]);
-  const [billingMonths, setBillingMonths] = useState<any[]>([]);
+  const [billingMonths, setBillingMonths] = useState<any[]>(() => {
+    try {
+      const syncKey = `billing_months_${activeDealerId || 'main'}`;
+      if (globalTableCaches[syncKey] && globalTableCaches[syncKey].length > 0) {
+        return globalTableCaches[syncKey];
+      }
+      const raw = localStorage.getItem(`gts_cache_v3_billing_months`) || localStorage.getItem(`gts_cache_v3_${syncKey}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   const billingMonthsRef = React.useRef<any[]>([]);
   React.useEffect(() => {
     billingMonthsRef.current = billingMonths;
@@ -572,6 +585,11 @@ export default function AdminPanel({
         description: err?.message || "Save blocked: this would erase existing payment records. Please refresh and try again.",
         duration: 8000
       });
+      // Re-fetch to restore database state if blocked by safety check
+      pocketbaseService.getBillingMonths(dealerId).then(freshMonths => {
+        const sorted = [...freshMonths].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        setBillingMonths(sorted);
+      }).catch(console.error);
       throw err;
     } finally {
       savingMonthCounts.current[monthId] = Math.max(0, (savingMonthCounts.current[monthId] || 1) - 1);
@@ -580,13 +598,26 @@ export default function AdminPanel({
           if ((savingMonthCounts.current[monthId] || 0) === 0) {
             savingMonthIds.current.delete(monthId);
           }
-        }, 500);
+        }, 1500); // 1.5s grace period so real-time events don't race with recent save
       }
     }
   };
 
 
-  const [currentMonthId, _setCurrentMonthId] = useState<string>('');
+  const [currentMonthId, _setCurrentMonthId] = useState<string>(() => {
+    try {
+      const syncKey = `billing_months_${activeDealerId || 'main'}`;
+      let cached: any[] = globalTableCaches[syncKey];
+      if (!cached) {
+        const raw = localStorage.getItem(`gts_cache_v3_billing_months`) || localStorage.getItem(`gts_cache_v3_${syncKey}`);
+        if (raw) cached = JSON.parse(raw);
+      }
+      if (Array.isArray(cached) && cached.length > 0) {
+        return cached[0].id || cached[0].month_id || '';
+      }
+    } catch (e) {}
+    return '';
+  });
   const currentMonthIdRef = React.useRef<string>('');
   const setCurrentMonthId = (val: any) => {
     _setCurrentMonthId(prev => {
@@ -1113,10 +1144,16 @@ export default function AdminPanel({
       
       setBillingMonths(prev => {
         const nextList = sorted.map(incomingMonth => {
-          if (savingMonthIds.current.has(incomingMonth.id)) {
+          const key = `${incomingMonth.id}_${activeDealerId || 'main'}`;
+          const isSaveInProgress = savingMonthIds.current.has(incomingMonth.id) ||
+            (pocketbaseService._syncingMonths && pocketbaseService._syncingMonths.has(key)) ||
+            (pocketbaseService._saveBillingMonthLatestRows && pocketbaseService._saveBillingMonthLatestRows[key]);
+
+          if (isSaveInProgress) {
+            console.log(`[DIAG] isSaveInProgress guard: BLOCKED=true, reason=saving or pending save for ${incomingMonth.id}, timestamp=${Date.now()}`);
             const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
             if (currentLocalMonth) {
-              console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save in progress)`);
+              console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save or pending edit in progress)`);
               return {
                 ...incomingMonth,
                 rows: currentLocalMonth.rows
@@ -1523,6 +1560,8 @@ export default function AdminPanel({
   };
 
   const handleSaveRowField = (rowIndex: number, field: string, val: any, forceImmediate = false) => {
+    console.log(`[DIAG] handleSaveRowField: rowIndex=${rowIndex}, field=${field}, val="${val}", forceImmediate=${forceImmediate}, timestamp=${Date.now()}`);
+
     if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments') {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to edit billing information." });
       return;
@@ -1599,6 +1638,8 @@ export default function AdminPanel({
       setBillingMonths(nextMonths);
 
       syncRecoveryRowToMasterClient(targetRow);
+
+      console.log(`[DIAG] About to save. All comments in nextRows:`, nextRows.map((r, i) => `[${i}]:"${r.comments}"`).join(', '));
 
       saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]).catch((err)=>{
         toast.error("Cloud Sync Failed", { description: "Failed to save recovery cell changes. Check connection." });
@@ -7665,7 +7706,7 @@ export default function AdminPanel({
                             <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[100px] text-right bg-slate-100/50 dark:bg-slate-900/50 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('totalAmount')}>
                               T. AMOUNT{getBillingSortIcon('totalAmount')}
                             </th>
-                            <th className="py-2 px-1.5 border-r border-slate-200 dark:border-white\/10 min-w-[55px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('billingDay')}>
+                            <th className="py-2 px-0.5 border-r border-slate-200 dark:border-white\/10 min-w-[28px] max-w-[34px] w-[30px] text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors" onClick={() => handleBillingSort('billingDay')}>
                               BD{getBillingSortIcon('billingDay')}
                             </th>
                             <th className="py-2 px-2 border-r border-slate-200 dark:border-white\/10 min-w-[100px] text-right bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600 cursor-pointer hover:bg-emerald-500/20 transition-colors" onClick={() => handleBillingSort('paymentReceived')}>
@@ -7858,17 +7899,18 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* BD (Billing Day) */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center select-all font-sans">
+                                <td className="py-1 px-0 border-r border-slate-200 dark:border-white\/10/80 text-center select-all font-sans w-[30px] max-w-[34px]">
                                   <input
                                     id={`rec_cell_${globalRowIdx}_billingDay`}
                                     type="text"
+                                    maxLength={2}
                                     value={rowRef.billingDay || ''}
                                     disabled={false}
                                     onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2))}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'billingDay', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value, true)}
-                                    className="w-12 text-center bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2), true)}
+                                    className="w-5 text-center bg-transparent px-0 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[12px] disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                   />
                                 </td>
 
@@ -8346,12 +8388,13 @@ export default function AdminPanel({
                                 <span>BD Day:</span>
                                 <input
                                   type="text"
+                                  maxLength={2}
                                   value={rowRef.billingDay || ''}
                                   disabled={false}
                                   onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value, true)}
-                                  className="w-6 text-center bg-transparent border-none p-0 text-[9px] font-black focus:ring-0 text-black dark:text-white font-sans"
+                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2))}
+                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2), true)}
+                                  className="w-5 text-center bg-transparent border-none p-0 text-[9px] font-black focus:ring-0 text-black dark:text-white font-sans"
                                 />
                               </div>
                               <div className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg flex items-center justify-between mt-0.5">
