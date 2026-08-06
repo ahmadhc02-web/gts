@@ -21,7 +21,7 @@ const isExcludedFromRecovery = (r: any) => {
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2 } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -572,7 +572,71 @@ export default function AdminPanel({
   const savingMonthIds = React.useRef<Set<string>>(new Set());
   const deletingMonthIds = React.useRef<Set<string>>(new Set());
 
-  
+  const [hasPendingEdits, setHasPendingEdits] = useState<boolean>(false);
+  const [isManualSaving, setIsManualSaving] = useState<boolean>(false);
+
+  const [cellProgress, setCellProgress] = useState<Record<string, number>>({});
+  const cellIntervalsRef = React.useRef<Record<string, NodeJS.Timeout>>({});
+
+  const animateCellProgress = (rowIndex: number, field: string, promise: Promise<any>) => {
+    const cellKey = `${rowIndex}_${field}`;
+    if (cellIntervalsRef.current[cellKey]) {
+      clearInterval(cellIntervalsRef.current[cellKey]);
+    }
+
+    let progress = 0;
+    setCellProgress(prev => ({ ...prev, [cellKey]: 0 }));
+
+    const interval = setInterval(() => {
+      progress += Math.floor(Math.random() * 15) + 5;
+      if (progress >= 95) {
+        progress = 95;
+        clearInterval(interval);
+      }
+      setCellProgress(prev => ({ ...prev, [cellKey]: progress }));
+    }, 120);
+
+    cellIntervalsRef.current[cellKey] = interval;
+
+    promise.then(() => {
+      if (cellIntervalsRef.current[cellKey] === interval) {
+        clearInterval(interval);
+        setCellProgress(prev => ({ ...prev, [cellKey]: 100 }));
+        setTimeout(() => {
+          setCellProgress(prev => {
+            const next = { ...prev };
+            delete next[cellKey];
+            return next;
+          });
+        }, 1200);
+      }
+    }).catch(() => {
+      if (cellIntervalsRef.current[cellKey] === interval) {
+        clearInterval(interval);
+        setCellProgress(prev => {
+          const next = { ...prev };
+          delete next[cellKey];
+          return next;
+        });
+      }
+    });
+  };
+
+  const renderCellProgress = (globalRowIdx: number, field: string) => {
+    const progress = cellProgress[`${globalRowIdx}_${field}`];
+    if (progress === undefined) return null;
+    return (
+      <div 
+        className={`absolute inset-y-0 left-0 pointer-events-none transition-all duration-150 ease-out z-10 ${
+          progress === 100 
+            ? 'bg-emerald-500/25 dark:bg-emerald-400/30 border-l-4 border-emerald-500 animate-pulse' 
+            : 'bg-emerald-500/10 dark:bg-emerald-500/15'
+        }`}
+        style={{ width: `${progress}%` }}
+      />
+    );
+  };
+
   const savingMonthCounts = React.useRef<Record<string, number>>({});
   
   const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false, changedIndices?: number[] | Set<number>) => {
@@ -580,6 +644,7 @@ export default function AdminPanel({
     savingMonthCounts.current[monthId] = (savingMonthCounts.current[monthId] || 0) + 1;
     try {
       await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate, changedIndices);
+      setHasPendingEdits(false);
     } catch (err: any) {
       toast.error("Save Blocked — Action Required", {
         description: err?.message || "Save blocked: this would erase existing payment records. Please refresh and try again.",
@@ -594,12 +659,49 @@ export default function AdminPanel({
     } finally {
       savingMonthCounts.current[monthId] = Math.max(0, (savingMonthCounts.current[monthId] || 1) - 1);
       if (savingMonthCounts.current[monthId] === 0) {
-        setTimeout(() => {
-          if ((savingMonthCounts.current[monthId] || 0) === 0) {
-            savingMonthIds.current.delete(monthId);
-          }
-        }, 1500); // 1.5s grace period so real-time events don't race with recent save
+        savingMonthIds.current.delete(monthId);
       }
+    }
+  };
+
+  const handleManualSaveAllRows = async () => {
+    if (!currentMonthId) {
+      toast.error("No active billing recovery sheet selected.");
+      return;
+    }
+    const currentMonths = billingMonthsRef.current.length > 0 ? billingMonthsRef.current : billingMonths;
+    const currentDoc = currentMonths.find(m => m.id === currentMonthId);
+    if (!currentDoc || !currentDoc.rows || currentDoc.rows.length === 0) {
+      toast.error("No recovery sheet rows found to save.");
+      return;
+    }
+
+    setIsManualSaving(true);
+    const toastId = toast.loading("Saving all rows to database... Please wait!");
+    try {
+      await saveBillingMonthTracked(
+        currentMonthId,
+        currentDoc.rows,
+        currentUser?.username || 'admin',
+        activeDealerId || 'main',
+        true
+      );
+      // Extra 300ms delay to ensure UI smooth transition after DB confirmation
+      await new Promise(r => setTimeout(r, 300));
+      toast.success("✅ Sabhi rows database mein kamyabi se save ho chuki hain!", {
+        id: toastId,
+        description: "All updated comments and recovery rows are now permanently saved."
+      });
+      setHasPendingEdits(false);
+    } catch (err: any) {
+      console.error("Manual save error:", err);
+      toast.error("Save Failed", { id: toastId, description: err?.message || "Could not save rows to database." });
+    } finally {
+      if (currentMonthId) {
+        savingMonthIds.current.delete(currentMonthId);
+      }
+      setIsManualSaving(false);
+      setHasPendingEdits(false);
     }
   };
 
@@ -1150,7 +1252,6 @@ export default function AdminPanel({
             (pocketbaseService._saveBillingMonthLatestRows && pocketbaseService._saveBillingMonthLatestRows[key]);
 
           if (isSaveInProgress) {
-            console.log(`[DIAG] isSaveInProgress guard: BLOCKED=true, reason=saving or pending save for ${incomingMonth.id}, timestamp=${Date.now()}`);
             const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
             if (currentLocalMonth) {
               console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save or pending edit in progress)`);
@@ -1560,8 +1661,6 @@ export default function AdminPanel({
   };
 
   const handleSaveRowField = (rowIndex: number, field: string, val: any, forceImmediate = false) => {
-    console.log(`[DIAG] handleSaveRowField: rowIndex=${rowIndex}, field=${field}, val="${val}", forceImmediate=${forceImmediate}, timestamp=${Date.now()}`);
-
     if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments') {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to edit billing information." });
       return;
@@ -1636,12 +1735,13 @@ export default function AdminPanel({
       // Immediately set the ref synchronously so fast typing or blur across rows retains every edit
       billingMonthsRef.current = nextMonths;
       setBillingMonths(nextMonths);
+      setHasPendingEdits(true);
 
       syncRecoveryRowToMasterClient(targetRow);
 
-      console.log(`[DIAG] About to save. All comments in nextRows:`, nextRows.map((r, i) => `[${i}]:"${r.comments}"`).join(', '));
-
-      saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]).catch((err)=>{
+      const savePromise = saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]);
+      animateCellProgress(rowIndex, field, savePromise);
+      savePromise.catch((err)=>{
         toast.error("Cloud Sync Failed", { description: "Failed to save recovery cell changes. Check connection." });
         console.error("Auto-sync cell change failed:", err);
       });
@@ -7647,21 +7747,6 @@ export default function AdminPanel({
                           <option key={areaName} value={areaName}>{areaName}</option>
                         ))}
                       </select>
-
-                      <button
-                        type="button"
-                        onClick={handleResetAllCRToZero}
-                        className={cn(
-                          "px-3 py-2 border rounded-xl font-bold uppercase tracking-wider text-[11px] transition-all flex items-center gap-1.5 shadow-sm shrink-0",
-                          isBillingUnlocked 
-                            ? "bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/40 cursor-pointer"
-                            : "bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-white\/10 cursor-not-allowed opacity-60"
-                        )}
-                        title={isBillingUnlocked ? "Set CR amount to 0 for all rows in this sheet" : "🔒 Unlock billing to reset all CR"}
-                      >
-                        <RotateCcw size={13} className={cn(!isBillingUnlocked && "text-slate-400")} />
-                        <span>Reset CR to 0</span>
-                      </button>
                     </div>
                   </div>
 
@@ -7770,7 +7855,8 @@ export default function AdminPanel({
                                     <span>{localIdx + 1}</span>
                                   </div>
                                 </td>
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black">
+                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black">
+                                  {renderCellProgress(globalRowIdx, 'name')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_name`}
                                     type="text"
@@ -7785,7 +7871,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* User ID / Username */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black text-black dark:text-white">
+                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black text-black dark:text-white">
+                                  {renderCellProgress(globalRowIdx, 'username')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_username`}
                                     type="text"
@@ -7799,7 +7886,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Mobile */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[145px]">
+                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[145px]">
+                                  {renderCellProgress(globalRowIdx, 'mobileNumber')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_mobileNumber`}
                                     type="text"
@@ -7814,7 +7902,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Panel Details */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[130px]">
+                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[130px]">
+                                  {renderCellProgress(globalRowIdx, 'panelDetails')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_panelDetails`}
                                     type="text"
@@ -7829,7 +7918,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Area */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                  {renderCellProgress(globalRowIdx, 'area')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_area`}
                                     type="text"
@@ -7843,7 +7933,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* RT */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                  {renderCellProgress(globalRowIdx, 'rt')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_rt`}
                                     type="text"
@@ -7857,7 +7948,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Base Amount */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                  {renderCellProgress(globalRowIdx, 'baseAmount')}
                                   <div className="flex items-center justify-end font-black text-black">
                                     <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
                                     <input
@@ -7874,7 +7966,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Cr. Arrears */}
-                                <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                  {renderCellProgress(globalRowIdx, 'cr')}
                                   <div className="flex items-center justify-end">
                                     <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
                                     <input
@@ -7899,7 +7992,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* BD (Billing Day) */}
-                                <td className="py-1 px-0 border-r border-slate-200 dark:border-white\/10/80 text-center select-all font-sans w-[30px] max-w-[34px]">
+                                <td className="relative overflow-hidden py-1 px-0 border-r border-slate-200 dark:border-white\/10/80 text-center select-all font-sans w-[30px] max-w-[34px]">
+                                  {renderCellProgress(globalRowIdx, 'billingDay')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_billingDay`}
                                     type="text"
@@ -7915,7 +8009,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Monthly Paid Recovery */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10 bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
+                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10 bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
+                                  {renderCellProgress(globalRowIdx, 'paymentReceived')}
                                   <div className="flex items-center justify-end">
                                     <span className="text-emerald-900 dark:text-emerald-400 mr-0.5 font-black text-[11px]">PKR</span>
                                     <input
@@ -7932,7 +8027,8 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Status */}
-                                <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                  {renderCellProgress(globalRowIdx, 'paymentStatus')}
                                   <select
                                     value={rowRef.paymentStatus}
                                     disabled={!isBillingUnlocked}
@@ -7960,7 +8056,8 @@ export default function AdminPanel({
                                 {isAdvanceMode && (
                                   <>
                                     {/* Comments */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
+                                    <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
+                                      {renderCellProgress(globalRowIdx, 'comments')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_comments`}
                                         type="text"
@@ -7976,7 +8073,8 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Occupation */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
+                                    <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
+                                      {renderCellProgress(globalRowIdx, 'occ')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_occ`}
                                         type="text"
@@ -7990,7 +8088,8 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* PKG details */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-blue-900 dark:text-blue-250 font-black font-sans">
+                                    <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-blue-900 dark:text-blue-250 font-black font-sans">
+                                      {renderCellProgress(globalRowIdx, 'pkgDetails')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_pkgDetails`}
                                         type="text"
@@ -8004,7 +8103,8 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Connection Date */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans text-[11px]">
+                                    <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans text-[11px]">
+                                      {renderCellProgress(globalRowIdx, 'connectionDate')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_connectionDate`}
                                         type="text"
@@ -8019,7 +8119,8 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Device Price */}
-                                    <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                    <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                      {renderCellProgress(globalRowIdx, 'devicePrice')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_devicePrice`}
                                         type="number"
@@ -8033,7 +8134,8 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* ABL charges */}
-                                    <td className="py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                    <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                      {renderCellProgress(globalRowIdx, 'abl')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_abl`}
                                         type="number"
@@ -8812,6 +8914,48 @@ export default function AdminPanel({
         )}
       </AnimatePresence>
 
+      {/* Floating Bottom-Right Save Button when rows are edited */}
+      <AnimatePresence>
+        {(activeTab === 'billing' || location.pathname.startsWith('/billingmod')) && (hasPendingEdits || isManualSaving) && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="fixed bottom-6 right-6 z-[999] flex items-center gap-2 select-none"
+          >
+            <button
+              type="button"
+              disabled={isManualSaving}
+              onClick={handleManualSaveAllRows}
+              className={cn(
+                "flex items-center gap-3 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider shadow-2xl transition-all duration-300 transform active:scale-95 cursor-pointer border",
+                isManualSaving
+                  ? "bg-blue-600 text-white border-blue-400/50 shadow-blue-600/40 cursor-not-allowed"
+                  : "bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 hover:from-amber-500 hover:to-orange-500 text-white border-amber-400/50 shadow-amber-600/50 hover:shadow-amber-500/70 hover:scale-105"
+              )}
+            >
+              {isManualSaving ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin text-white shrink-0" />
+                  <div className="flex flex-col text-left">
+                    <span className="font-extrabold text-[12px] leading-none">SAVING TO DATABASE...</span>
+                    <span className="text-[9px] text-blue-100 font-medium normal-case tracking-normal opacity-90 mt-0.5">Storing all updated rows safely</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-5 h-5 text-amber-200 shrink-0 animate-bounce" />
+                  <div className="flex flex-col text-left">
+                    <span className="font-extrabold text-[12px] leading-none normal-case">Waiting for saving</span>
+                    <span className="text-[9px] text-amber-100 font-medium normal-case tracking-normal opacity-90 mt-0.5">Click to update database permanently</span>
+                  </div>
+                </>
+              )}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
     </>

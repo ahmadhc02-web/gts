@@ -1149,8 +1149,6 @@ export const supabaseService = {
     const currentCounter = (this._billingMonthSaveCounter[key] || 0) + 1;
     this._billingMonthSaveCounter[key] = currentCounter;
 
-    console.log(`[DIAG] saveBillingMonth called: changedIndices=${JSON.stringify(Array.from(changedIndices || []))}, counter assigned=${currentCounter}, timestamp=${Date.now()}`);
-
     // Synchronously update globalTableCaches and localStorage for instant UI updates
     const primaryKey = `billing_months_${dealerId || 'main'}`;
     const syncKeys = [primaryKey, 'billing_months_all', 'billing_months_main', 'billing_months_'];
@@ -1225,8 +1223,6 @@ export const supabaseService = {
     const syncKey = `${monthId}_${dealerId}`;
     if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
     
-    console.log(`[DIAG] Counter check: executeCounter=${executeCounter}, storedCounter=${this._billingMonthSaveCounter[syncKey]}, SKIPPED=${executeCounter !== undefined && this._billingMonthSaveCounter[syncKey] !== executeCounter}, timestamp=${Date.now()}`);
-
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
     
     const run = previous.then(() => {
@@ -1294,8 +1290,6 @@ export const supabaseService = {
     }
 
     try {
-      console.log(`[DIAG] ACTUALLY WRITING to billing_months now. Comments in payload:`, rows.map((r, i) => `[${i}]:"${r.comments}"`).join(', '));
-
       await upsertSupabase('billing_months', 'month_id', monthId, {
         month_id: monthId,
         dealer_id: dealerId,

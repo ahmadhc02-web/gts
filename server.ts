@@ -73,7 +73,7 @@ const localOtpStore = new Map<string, MemoryOTP>();
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const PORT = 3000;
 
   // Robust CORS Middleware supporting Hugging Face, Netlify, and other external frontends
   app.use(
