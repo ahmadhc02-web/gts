@@ -457,21 +457,32 @@ function subscribeTable(
 
   const fetchInitial = async () => {
     try {
-      const targetTable = tableName === 'users' ? 'users_data' : tableName;
-      let query = supabase.from(targetTable).select('*');
-      if (dealerId && dealerId !== 'all') {
-        if (tableName === 'ledger_folders') {
-          query = dealerId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null,tenant_id.eq.') : query.eq('tenant_id', dealerId);
-        } else if (tableName === 'ledger_sheets') {
-          query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
-        } else if (!['branding_config'].includes(tableName)) {
-          query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
-        }
-      }
-      const { data: records, error } = await query;
       let mapped: any[] = [];
-      if (!error && records) {
-        mapped = records.map(mapRow);
+      let error = null;
+
+      if (tableName === 'billing_months') {
+        try {
+          mapped = await supabaseService.getBillingMonths(dealerId);
+        } catch (fetchErr) {
+          error = fetchErr;
+        }
+      } else {
+        const targetTable = tableName === 'users' ? 'users_data' : tableName;
+        let query = supabase.from(targetTable).select('*');
+        if (dealerId && dealerId !== 'all') {
+          if (tableName === 'ledger_folders') {
+            query = dealerId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null,tenant_id.eq.') : query.eq('tenant_id', dealerId);
+          } else if (tableName === 'ledger_sheets') {
+            query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
+          } else if (!['branding_config'].includes(tableName)) {
+            query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
+          }
+        }
+        const { data: records, error: fetchErr } = await query;
+        error = fetchErr;
+        if (!error && records) {
+          mapped = records.map(mapRow);
+        }
       }
 
       if (tableName === 'ledger_folders' && (error || mapped.length === 0)) {
@@ -1001,7 +1012,7 @@ export const supabaseService = {
               const existingMonth = monthMap.get(mId)!;
               if (!existingMonth.rows || existingMonth.rows.length === 0) {
                 existingMonth.rows = rowList;
-              } else {
+              } else if (!existingMonth.hasAuthoritativeRowsData) {
                 const rowByClientId = new Map<string, any>();
                 const rowByUsername = new Map<string, any>();
                 for (const r of rowList) {
@@ -1010,8 +1021,7 @@ export const supabaseService = {
                 }
                 existingMonth.rows = existingMonth.rows.map((r: any, idx: number) => {
                   const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
-                                (r.username && rowByUsername.get(String(r.username).toLowerCase())) ||
-                                (rowList[idx] && rowList[idx].clientId === r.clientId ? rowList[idx] : null);
+                                (r.username && rowByUsername.get(String(r.username).toLowerCase()));
                   if (dbRow) {
                     return {
                       ...r,

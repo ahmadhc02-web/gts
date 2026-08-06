@@ -993,6 +993,25 @@ export default function EntrySheet({
     }
   }, [openedFolderId, isOpen]);
 
+  // Synchronize ledger history state with browser local storage cache
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    try {
+      localStorage.setItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`, JSON.stringify(ledgerHistory));
+    } catch (e) {}
+  }, [ledgerHistory, activeDealerId, currentUser?.uid, isOpen]);
+
+  // Synchronize folders state with browser local storage cache
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
+    try {
+      localStorage.setItem(`gts_cache_v3_ledger_folders_${originalScopeId}`, JSON.stringify(folders));
+      localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(folders));
+    } catch (e) {}
+  }, [folders, activeDealerId, currentUser?.uid, isOpen]);
+
   // Sync internal backup states with custom storage changes
   useEffect(() => {
     const handleStorageChange = () => {

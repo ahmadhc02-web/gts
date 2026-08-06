@@ -659,7 +659,9 @@ export default function AdminPanel({
     } finally {
       savingMonthCounts.current[monthId] = Math.max(0, (savingMonthCounts.current[monthId] || 1) - 1);
       if (savingMonthCounts.current[monthId] === 0) {
-        savingMonthIds.current.delete(monthId);
+        setTimeout(() => {
+          savingMonthIds.current.delete(monthId);
+        }, 2000);
       }
     }
   };
@@ -1251,16 +1253,30 @@ export default function AdminPanel({
             (pocketbaseService._syncingMonths && pocketbaseService._syncingMonths.has(key)) ||
             (pocketbaseService._saveBillingMonthLatestRows && pocketbaseService._saveBillingMonthLatestRows[key]);
 
+          const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
+
           if (isSaveInProgress) {
-            const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
             if (currentLocalMonth) {
               console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save or pending edit in progress)`);
               return {
                 ...incomingMonth,
-                rows: currentLocalMonth.rows
+                rows: currentLocalMonth.rows,
+                updatedAt: currentLocalMonth.updatedAt
               };
             }
           }
+
+          if (currentLocalMonth && currentLocalMonth.updatedAt && incomingMonth.updatedAt) {
+            if (currentLocalMonth.updatedAt > incomingMonth.updatedAt) {
+              console.log(`[BillingSync] Preserving newer local rows for ${incomingMonth.id} (${currentLocalMonth.updatedAt} > ${incomingMonth.updatedAt})`);
+              return {
+                ...incomingMonth,
+                rows: currentLocalMonth.rows,
+                updatedAt: currentLocalMonth.updatedAt
+              };
+            }
+          }
+
           return incomingMonth;
         });
         if (JSON.stringify(prev) === JSON.stringify(nextList)) {
@@ -1730,7 +1746,7 @@ export default function AdminPanel({
       nextRows[rowIndex] = targetRow;
 
       const nextMonths = [...currentMonths];
-      nextMonths[idx] = { ...currentDoc, rows: nextRows };
+      nextMonths[idx] = { ...currentDoc, rows: nextRows, updatedAt: Date.now() };
 
       // Immediately set the ref synchronously so fast typing or blur across rows retains every edit
       billingMonthsRef.current = nextMonths;
