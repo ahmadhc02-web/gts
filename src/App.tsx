@@ -1687,7 +1687,7 @@ export default function App() {
     }
   };
 
-  const handleCreateUser = async (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string, companyName?: string) => {
+  const handleCreateUser = async (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string, companyName?: string, fullName?: string) => {
     if (!user) return;
     const trimmedName = username.trim();
     if (!trimmedName || !pass.trim()) {
@@ -1707,7 +1707,30 @@ export default function App() {
 
     try {
       const uid = Math.random().toString(36).substr(2, 9);
-      const newUser = await pocketbaseService.createUser(uid, trimmedName, pass, role, user.uid, user.fullName || user.username, dealerId, lineCode, companyName);
+      
+      // Auto-inherit dealer context if created by or under a dealer account
+      const creatorDealerId = user.role === 'dealer' ? user.uid : (user.dealerId && user.dealerId !== 'main' ? user.dealerId : undefined);
+      const creatorDealerObj = users.find(u => u.uid === creatorDealerId);
+      const creatorLineCode = user.role === 'dealer' ? (user.lineCode || '') : (creatorDealerObj?.lineCode || user.lineCode || '');
+      const creatorCompanyName = user.role === 'dealer' ? (user.companyName || '') : (creatorDealerObj?.companyName || user.companyName || '');
+
+      const finalDealerId = dealerId || creatorDealerId || 'main';
+      const finalLineCode = lineCode || creatorLineCode || '';
+      const finalCompanyName = companyName || creatorCompanyName || '';
+
+      const newUser = await pocketbaseService.createUser(
+        uid, 
+        trimmedName, 
+        pass, 
+        role, 
+        user.uid, 
+        user.fullName || user.username, 
+        finalDealerId, 
+        finalLineCode, 
+        finalCompanyName, 
+        'active', 
+        fullName || trimmedName
+      );
       
       // Optimistic UI update
       setUsers(prev => {

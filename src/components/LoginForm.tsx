@@ -361,6 +361,11 @@ export default function LoginForm({
 
       // Email Verified! Proceed to create user record.
       const uid = Math.random().toString(36).substr(2, 9);
+      const matchedDealer = dealersList.find(d => d.uid === selectedDealerId);
+      const targetDealerId = signupType === "dealer" ? (selectedDealerId || "main") : (signupType === "self" && signupArea ? signupArea.trim() : "main");
+      const targetLineCode = signupType === "dealer" ? (matchedDealer?.lineCode || "") : "";
+      const targetCompanyName = signupType === "dealer" ? (matchedDealer?.companyName || "") : "";
+
       await pocketbaseService.createUser(
         uid,
         signupUsername.trim(),
@@ -368,9 +373,9 @@ export default function LoginForm({
         "member",
         signupType === "dealer" ? selectedDealerId : "self_signup",
         signupFullName.trim(),
-        signupType === "self" && signupArea ? signupArea.trim() : "main",
-        undefined,
-        undefined,
+        targetDealerId,
+        targetLineCode,
+        targetCompanyName,
         "pending",
       );
 

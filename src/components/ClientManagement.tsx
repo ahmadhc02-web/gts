@@ -289,6 +289,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           googleSheetsService.syncQueue.add({ tabName: 'Client Database', data: { id: editingId, ...updatedData } });
         }
       } else {
+        const effectiveDealerId = pocketbaseService.getTenantId(currentUser);
+        const effectiveLineCode = currentUser.lineCode || '';
+
         const newClientData = {
           name: trimmedName,
           username: trimmedUsername,
@@ -302,10 +305,12 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           rt: (rt || '').trim(),
           baseAmount: parseFloat(String(baseAmount)) || 0,
           billingDay: String(billingDay || '5').trim(),
-          createdBy: currentUserId
+          createdBy: currentUserId,
+          dealerId: effectiveDealerId,
+          lineCode: effectiveLineCode
         };
 
-        const newClient = await pocketbaseService.createClient(newClientData, currentUserName, pocketbaseService.getTenantId(currentUser));
+        const newClient = await pocketbaseService.createClient(newClientData, currentUserName, effectiveDealerId);
         
         // Optimistic state update
         setClients(prev => {

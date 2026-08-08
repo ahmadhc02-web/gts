@@ -1612,13 +1612,13 @@ export const supabaseService = {
     }
   },
 
-  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string, companyName?: string, status: UserProfile['status'] = 'active'): Promise<UserProfile> => {
+  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string, companyName?: string, status: UserProfile['status'] = 'active', fullName?: string): Promise<UserProfile> => {
     const user: UserProfile = {
       uid,
       username,
       password: pass,
       role,
-      fullName: username,
+      fullName: fullName || username,
       createdAt: Date.now(),
       lastActive: Date.now(),
       dealerId,

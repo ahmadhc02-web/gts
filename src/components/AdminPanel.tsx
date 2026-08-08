@@ -21,7 +21,7 @@ const isExcludedFromRecovery = (r: any) => {
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2 } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -89,7 +89,7 @@ interface AdminPanelProps {
   onUpdateComplaintStatus: (id: string, status: ComplaintStatus, remarks?: string, reviews?: ComplaintReview[]) => Promise<void>;
   onUpdateRemarks: (id: string, remarks: string) => Promise<void>;
   onUpdateComplaint: (id: string, data: Partial<Complaint>) => Promise<void>;
-  onCreateUser: (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string, companyName?: string) => Promise<void>;
+  onCreateUser: (username: string, pass: string, role: UserProfile['role'], dealerId?: string, lineCode?: string, companyName?: string, fullName?: string) => Promise<void>;
   onDeleteUser: (uid: string) => Promise<void>;
   onUpdateUser: (uid: string, username: string, pass: string, lineCode?: string, companyName?: string, fullName?: string, role?: UserProfile['role']) => Promise<void>;
   onRegisterComplaint: (data: {
@@ -223,6 +223,8 @@ export default function AdminPanel({
   const [editCompanyName, setEditCompanyName] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const [selectedDealerForSubAccounts, setSelectedDealerForSubAccounts] = useState<UserProfile | null>(null);
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [adminNewPass, setAdminNewPass] = useState('');
@@ -2413,21 +2415,25 @@ export default function AdminPanel({
 
     setIsCreating(true);
     try {
-      if (activeTab === 'dealers') {
+      if (activeTab === 'dealers' || mypcOpenedFile === 'dealers_view') {
         if (!newLineCode.trim()) {
-          setFormError('Line Code is required for Dealer accounts.');
+          setFormError('Line Code (VLAN Code) is required for Dealer accounts.');
           setIsCreating(false);
           return;
         }
-        await onCreateUser(trimmedName, newPassword, 'dealer', undefined, newLineCode.trim(), newCompanyName.trim());
-        setFormSuccess(`Dealer account "${trimmedName}" created with Line Code: ${newLineCode}`);
+        await onCreateUser(trimmedName, newPassword, 'dealer', undefined, newLineCode.trim(), newCompanyName.trim(), newFullName.trim());
+        setFormSuccess(`Dealer account "${newFullName.trim() || trimmedName}" created with Line Code: ${newLineCode}`);
         setNewLineCode('');
         setNewCompanyName('');
       } else {
-        // Correctly associate the new user with the dealer if the current user is a dealer or a dealer's admin
-        const effectiveDealerId = currentUser.role === 'dealer' ? currentUser.uid : currentUser.dealerId;
+        // Correctly associate the new user with the dealer if the current user is a dealer or creating under a dealer
+        const effectiveDealerId = currentUser.role === 'dealer' ? currentUser.uid : (currentUser.dealerId && currentUser.dealerId !== 'main' ? currentUser.dealerId : undefined);
+        const effectiveDealer = users.find(u => u.uid === effectiveDealerId);
+        const effectiveLineCode = currentUser.role === 'dealer' ? (currentUser.lineCode || '') : (effectiveDealer?.lineCode || currentUser.lineCode || '');
+        const effectiveCompanyName = currentUser.role === 'dealer' ? (currentUser.companyName || '') : (effectiveDealer?.companyName || currentUser.companyName || '');
+
         // @ts-ignore - fullName is added to user management
-        await onCreateUser(trimmedName, newPassword, newUserRole, effectiveDealerId, undefined, undefined, newFullName.trim());
+        await onCreateUser(trimmedName, newPassword, newUserRole, effectiveDealerId, effectiveLineCode, effectiveCompanyName, newFullName.trim());
         setFormSuccess(`${newUserRole.charAt(0).toUpperCase() + newUserRole.slice(1)} account "${trimmedName}" created!`);
       }
       setNewUsername('');
@@ -3756,9 +3762,9 @@ export default function AdminPanel({
                     <input
                       type="text"
                       value={newUsername}
-                      onChange={(e) => setNewUsername(e.target.value.toUpperCase())}
+                      onChange={(e) => setNewUsername(e.target.value)}
                       placeholder="e.g. john_doe"
-                      className={inputClasses}
+                      className={cn(inputClasses, "normal-case")}
                       required
                     />
                   </div>
@@ -3767,9 +3773,9 @@ export default function AdminPanel({
                     <input
                       type="text"
                       value={newFullName}
-                      onChange={(e) => setNewFullName(e.target.value.toUpperCase())}
+                      onChange={(e) => setNewFullName(e.target.value)}
                       placeholder="e.g. John Doe"
-                      className={inputClasses}
+                      className={cn(inputClasses, "normal-case")}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -3779,7 +3785,7 @@ export default function AdminPanel({
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="••••••••"
-                      className={inputClasses}
+                      className={cn(inputClasses, "normal-case")}
                       required
                     />
                   </div>
@@ -4252,57 +4258,68 @@ export default function AdminPanel({
                     {formSuccess}
                   </div>
                 )}
-                <form onSubmit={handleCreateUser} className="space-y-6">
+                <form onSubmit={handleCreateUser} className="space-y-5">
                   <div className="space-y-1.5">
-                    <label className={labelClasses}>Dealer Name</label>
+                    <label className={labelClasses}>Dealer Name (Full Name)</label>
+                    <input
+                      type="text"
+                      value={newFullName}
+                      onChange={(e) => setNewFullName(e.target.value)}
+                      placeholder="e.g. John Doe"
+                      className={cn(inputClasses, "normal-case")}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>Dealer Username</label>
                     <input
                       type="text"
                       value={newUsername}
-                      onChange={(e) => setNewUsername(e.target.value.toUpperCase())}
-                      placeholder="e.g. John Doe"
-                      className={inputClasses}
+                      onChange={(e) => setNewUsername(e.target.value)}
+                      placeholder="e.g. johndoe"
+                      className={cn(inputClasses, "normal-case")}
                       required
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className={labelClasses}>Dealer Passkey</label>
+                    <label className={labelClasses}>Dealer Passkey (Passkey / Password)</label>
                     <input
-                      type="password"
+                      type="text"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className={inputClasses}
+                      placeholder="e.g. Passkey123"
+                      className={cn(inputClasses, "normal-case")}
                       required
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className={labelClasses}>Dealer Line Code</label>
+                    <label className={labelClasses}>Dealer Line Code (Network VLAN Line Code)</label>
                     <input
                       type="text"
                       value={newLineCode}
-                      onChange={(e) => setNewLineCode(e.target.value.toUpperCase())}
+                      onChange={(e) => setNewLineCode(e.target.value)}
                       placeholder="e.g. DLR-99"
-                      className={cn(inputClasses, "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/10")}
+                      className={cn(inputClasses, "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/10 normal-case")}
                       required
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className={labelClasses}>Leader Company Name</label>
+                    <label className={labelClasses}>Dealer Company Name (Business Entity Name)</label>
                     <input
                       type="text"
                       value={newCompanyName}
-                      onChange={(e) => setNewCompanyName(e.target.value.toUpperCase())}
+                      onChange={(e) => setNewCompanyName(e.target.value)}
                       placeholder="e.g. Tech Solutions"
-                      className={inputClasses}
+                      className={cn(inputClasses, "normal-case")}
                       required
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={isCreating}
-                    className="w-full py-4 rounded-lg bg-emerald-600 text-white font-bold uppercase tracking-widest text-[11px] shadow-lg hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-emerald-500/20"
+                    className="w-full py-3.5 mt-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-[11px] shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50 transition-all cursor-pointer block min-h-[44px] border-none"
                   >
-                    {isCreating ? 'Provisioning...' : 'Authorize New Dealer Account'}
+                    {isCreating ? 'Provisioning...' : 'Create Dealer Account'}
                   </button>
                 </form>
               </div>
@@ -4393,9 +4410,9 @@ export default function AdminPanel({
                                   onClick={async () => {
                                     const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
                                     try {
-                                      await pocketbaseService.updateUser(dealer.uid, { status: newStatus }, currentUser.fullName || currentUser.username);
+                                      await onUpdateUserStatus(dealer.uid, newStatus);
                                       toast.success(newStatus === 'blocked' ? '🚫 NODE SUSPENDED' : '✅ NODE ACTIVATED', {
-                                        description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'suspended' : 'activated'}.`
+                                        description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'suspended' : 'activated'} in real-time.`
                                       });
                                     } catch (err: any) {
                                       toast.error('Failed to change dealer status', { description: err.message });
@@ -4404,7 +4421,7 @@ export default function AdminPanel({
                                   className={cn(
                                     "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer border",
                                     dealer.status === 'blocked'
-                                      ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-605 shadow-rose-500/10"
+                                      ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-600 shadow-rose-500/10"
                                       : "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/10"
                                   )}
                                 >
@@ -4430,7 +4447,7 @@ export default function AdminPanel({
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right">
-                             <div className="flex justify-end gap-2">
+                             <div className="flex justify-end items-center gap-2">
                                {editingUserId === dealer.uid ? (
                                  <>
                                    <button
@@ -4451,6 +4468,19 @@ export default function AdminPanel({
                                  </>
                                ) : (
                                  <>
+                                   <button
+                                     type="button"
+                                     onClick={() => setSelectedDealerForSubAccounts(dealer)}
+                                     className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 text-[10px] font-black rounded-lg border border-indigo-100 dark:border-indigo-900/30 tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer mr-1"
+                                     title="View Sub Accounts"
+                                   >
+                                     <Users size={12} />
+                                     SUB ACCOUNTS
+                                     <span className="px-1.5 py-0.5 bg-indigo-600 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center min-w-[16px] h-[16px]">
+                                       {users.filter(u => u.dealerId === dealer.uid && u.role !== 'dealer').length}
+                                     </span>
+                                   </button>
+
                                    <button
                                      onClick={() => {
                                        window.dispatchEvent(new CustomEvent('openChat', { detail: dealer.uid }));
@@ -5677,9 +5707,9 @@ export default function AdminPanel({
                                 <input
                                   type="text"
                                   value={newUsername}
-                                  onChange={(e) => setNewUsername(e.target.value.toUpperCase())}
+                                  onChange={(e) => setNewUsername(e.target.value)}
                                   placeholder="e.g. john_doe"
-                                  className={inputClasses}
+                                  className={cn(inputClasses, "normal-case")}
                                   required
                                 />
                               </div>
@@ -5688,9 +5718,9 @@ export default function AdminPanel({
                                 <input
                                   type="text"
                                   value={newFullName}
-                                  onChange={(e) => setNewFullName(e.target.value.toUpperCase())}
+                                  onChange={(e) => setNewFullName(e.target.value)}
                                   placeholder="e.g. John Doe"
-                                  className={inputClasses}
+                                  className={cn(inputClasses, "normal-case")}
                                 />
                               </div>
                               <div className="space-y-1.5">
@@ -5700,7 +5730,7 @@ export default function AdminPanel({
                                   value={newPassword}
                                   onChange={(e) => setNewPassword(e.target.value)}
                                   placeholder="••••••••"
-                                  className={inputClasses}
+                                  className={cn(inputClasses, "normal-case")}
                                   required
                                 />
                               </div>
@@ -6772,57 +6802,68 @@ export default function AdminPanel({
                                 {formSuccess}
                               </div>
                             )}
-                            <form onSubmit={handleCreateUser} className="space-y-6">
+                            <form onSubmit={handleCreateUser} className="space-y-5">
                               <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Name</label>
+                                <label className={labelClasses}>Dealer Name (Full Name)</label>
+                                <input
+                                  type="text"
+                                  value={newFullName}
+                                  onChange={(e) => setNewFullName(e.target.value)}
+                                  placeholder="e.g. John Doe"
+                                  className={cn(inputClasses, "normal-case")}
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className={labelClasses}>Dealer Username</label>
                                 <input
                                   type="text"
                                   value={newUsername}
-                                  onChange={(e) => setNewUsername(e.target.value.toUpperCase())}
-                                  placeholder="e.g. JOHN DOE"
-                                  className={inputClasses}
+                                  onChange={(e) => setNewUsername(e.target.value)}
+                                  placeholder="e.g. johndoe"
+                                  className={cn(inputClasses, "normal-case")}
                                   required
                                 />
                               </div>
                               <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Passkey</label>
+                                <label className={labelClasses}>Dealer Passkey (Passkey / Password)</label>
                                 <input
-                                  type="password"
+                                  type="text"
                                   value={newPassword}
                                   onChange={(e) => setNewPassword(e.target.value)}
-                                  placeholder="••••••••"
-                                  className={inputClasses}
+                                  placeholder="e.g. Passkey123"
+                                  className={cn(inputClasses, "normal-case")}
                                   required
                                 />
                               </div>
                               <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Line Code</label>
+                                <label className={labelClasses}>Dealer Line Code (Network VLAN Line Code)</label>
                                 <input
                                   type="text"
                                   value={newLineCode}
-                                  onChange={(e) => setNewLineCode(e.target.value.toUpperCase())}
+                                  onChange={(e) => setNewLineCode(e.target.value)}
                                   placeholder="e.g. DLR-99"
-                                  className={cn(inputClasses, "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/10")}
+                                  className={cn(inputClasses, "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/10 normal-case")}
                                   required
                                 />
                               </div>
                               <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Company Name</label>
+                                <label className={labelClasses}>Dealer Company Name (Business Entity Name)</label>
                                 <input
                                   type="text"
                                   value={newCompanyName}
-                                  onChange={(e) => setNewCompanyName(e.target.value.toUpperCase())}
-                                  placeholder="e.g. GALAXY BROADBAND"
-                                  className={inputClasses}
+                                  onChange={(e) => setNewCompanyName(e.target.value)}
+                                  placeholder="e.g. Tech Solutions"
+                                  className={cn(inputClasses, "normal-case")}
                                   required
                                 />
                               </div>
                               <button
                                 type="submit"
                                 disabled={isCreating}
-                                className="w-full py-4 rounded-lg bg-emerald-605 text-white font-bold uppercase tracking-widest text-[11px] hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-lg shadow-emerald-500/20 cursor-pointer border-none"
+                                className="w-full py-3.5 mt-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-[11px] shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50 transition-all cursor-pointer block min-h-[44px] border-none"
                               >
-                                {isCreating ? 'Provisioning...' : 'Authorize New Dealer Account'}
+                                {isCreating ? 'Provisioning...' : 'Create Dealer Account'}
                               </button>
                             </form>
                           </div>
@@ -6914,9 +6955,9 @@ export default function AdminPanel({
                                                 onClick={async () => {
                                                   const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
                                                   try {
-                                                    await pocketbaseService.updateUser(dealer.uid, { status: newStatus }, currentUser.fullName || currentUser.username);
+                                                    await onUpdateUserStatus(dealer.uid, newStatus);
                                                     toast.success(newStatus === 'blocked' ? '🚫 NODE SUSPENDED' : '✅ NODE ACTIVATED', {
-                                                      description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'suspended' : 'activated'}.`
+                                                      description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'suspended' : 'activated'} in real-time.`
                                                     });
                                                   } catch (err: any) {
                                                     toast.error('Failed to change dealer status', { description: err.message });
@@ -6925,7 +6966,7 @@ export default function AdminPanel({
                                                 className={cn(
                                                   "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer border",
                                                   dealer.status === 'blocked'
-                                                    ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-605 shadow-rose-500/10"
+                                                    ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-600 shadow-rose-500/10"
                                                     : "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/10"
                                                 )}
                                               >
@@ -6951,7 +6992,7 @@ export default function AdminPanel({
                                           </div>
                                         </td>
                                         <td className="px-6 py-4 text-right whitespace-normal">
-                                          <div className="flex justify-end gap-2">
+                                          <div className="flex justify-end items-center gap-2">
                                             {editingUserId === dealer.uid ? (
                                               <>
                                                 <button
@@ -6972,6 +7013,19 @@ export default function AdminPanel({
                                               </>
                                             ) : (
                                               <>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setSelectedDealerForSubAccounts(dealer)}
+                                                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 text-[10px] font-black rounded-lg border border-indigo-100 dark:border-indigo-900/30 tracking-wider flex items-center gap-1.5 transition-all shadow-sm cursor-pointer mr-1"
+                                                  title="View Sub Accounts"
+                                                >
+                                                  <Users size={12} />
+                                                  SUB ACCOUNTS
+                                                  <span className="px-1.5 py-0.5 bg-indigo-600 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center min-w-[16px] h-[16px]">
+                                                    {users.filter(u => u.dealerId === dealer.uid && u.role !== 'dealer').length}
+                                                  </span>
+                                                </button>
+
                                                 <button
                                                   onClick={() => {
                                                     window.dispatchEvent(new CustomEvent('openChat', { detail: dealer.uid }));
@@ -9118,6 +9172,342 @@ export default function AdminPanel({
                 </>
               )}
             </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit User / Dealer Modal */}
+      <AnimatePresence>
+        {editingUserId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-6 text-left"
+            >
+              <div className="flex justify-between items-start border-b border-slate-100 dark:border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl">
+                    <ShieldAlert size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                      {editUserRole === 'dealer' ? 'Edit Dealer Account Details' : 'Edit Account Details'}
+                    </h3>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Update credentials, organization info, and VLAN line code
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelEditUser}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+                {/* Username */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <User size={12} />
+                    {editUserRole === 'dealer' ? 'Dealer Username (Login ID)' : 'Username'}
+                  </label>
+                  <input
+                    type="text"
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    placeholder="e.g. JOHN_DOE"
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  />
+                </div>
+
+                {/* Full Name */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <User size={12} />
+                    Full / Contact Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    placeholder="e.g. John Doe"
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* Company Name */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Building2 size={12} />
+                    Company / Franchise Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editCompanyName}
+                    onChange={(e) => setEditCompanyName(e.target.value)}
+                    placeholder="e.g. GALAXY BROADBAND"
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* Line Code / VLAN Code */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 font-extrabold">
+                    <Key size={12} />
+                    Line Code / VLAN Code
+                  </label>
+                  <input
+                    type="text"
+                    value={editLineCode}
+                    onChange={(e) => setEditLineCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. DLR-99 / VLAN-102"
+                    className="w-full px-4 py-2.5 rounded-lg border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/20 dark:bg-emerald-950/20 text-slate-900 dark:text-emerald-300 text-sm font-bold tracking-wider focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                  />
+                  <p className="text-[10px] text-slate-400 font-medium">This VLAN/Line Code will automatically be attached to all accounts created by this dealer.</p>
+                </div>
+
+                {/* Password / Passkey */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Lock size={12} />
+                    Authentication Passkey
+                  </label>
+                  <input
+                    type="text"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  />
+                </div>
+
+                {/* Node Access Role */}
+                {currentUser.role === 'super_admin' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <ShieldAlert size={12} />
+                      Node Access Role
+                    </label>
+                    <select
+                      value={editUserRole}
+                      onChange={(e) => setEditUserRole(e.target.value as any)}
+                      className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="member">Member (Operator)</option>
+                      <option value="editor">Editor (Sub-Admin)</option>
+                      <option value="admin">Admin</option>
+                      <option value="dealer">Dealer Network Node</option>
+                      <option value="super_admin">Super Admin</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-white/10">
+                <button
+                  type="button"
+                  onClick={handleCancelEditUser}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-xs hover:bg-slate-100 dark:hover:bg-slate-900 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleUpdateUser(editingUserId)}
+                  disabled={isUpdating}
+                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-wider text-xs shadow-lg shadow-emerald-500/20 transition-all cursor-pointer border-none flex items-center justify-center gap-2"
+                >
+                  {isUpdating ? 'Saving...' : (
+                    <>
+                      <Check size={16} />
+                      Save Account Details
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Sub Accounts Operator Modal */}
+      <AnimatePresence>
+        {selectedDealerForSubAccounts && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl p-6 sm:p-8 max-w-4xl w-full shadow-2xl space-y-6 text-left flex flex-col max-h-[90vh]"
+            >
+              <div className="flex justify-between items-start border-b border-slate-100 dark:border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-indigo-500/10 text-indigo-500 rounded-xl">
+                    <Users size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                      🏢 {selectedDealerForSubAccounts.companyName || 'No Company Set'} Sub-Accounts
+                    </h3>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Line / VLAN Code: <span className="text-emerald-500 font-mono font-bold">{selectedDealerForSubAccounts.lineCode}</span> | Dealer ID: <span className="font-mono font-bold text-indigo-400">{selectedDealerForSubAccounts.username}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDealerForSubAccounts(null);
+                    setVisiblePasswords({});
+                  }}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 pr-1">
+                {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').length === 0 ? (
+                  <div className="text-center py-12 space-y-3">
+                    <div className="w-12 h-12 bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                      <UserX size={24} />
+                    </div>
+                    <h4 className="text-sm font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">No Sub-Accounts Registered</h4>
+                    <p className="text-xs font-semibold text-slate-400 max-w-xs mx-auto uppercase tracking-wider">
+                      This network line currently has no secondary operator accounts registered under its VLAN.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="border border-slate-100 dark:border-white/10 rounded-xl overflow-hidden">
+                    <table className="w-full text-left whitespace-nowrap">
+                      <thead className="bg-slate-50 dark:bg-slate-900/50">
+                        <tr className="border-b border-slate-100 dark:border-white/10">
+                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Full Name / Login ID</th>
+                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Passkey Credentials</th>
+                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Node Role</th>
+                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Line Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                        {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').map((subUser) => {
+                          const isPassVisible = !!visiblePasswords[subUser.uid];
+                          return (
+                            <tr key={subUser.uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-extrabold text-xs text-slate-600 dark:text-slate-300 uppercase">
+                                    {subUser.username ? subUser.username.substring(0, 2) : 'OP'}
+                                  </div>
+                                  <div>
+                                    <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-wider text-xs block">
+                                      {subUser.fullName || 'No Contact Set'}
+                                    </span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mt-0.5 block select-all">
+                                      @{subUser.username}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-mono font-bold tracking-wider text-slate-700 dark:text-[#00E5FF] select-all bg-slate-50 dark:bg-slate-900/50 px-2.5 py-1 rounded border border-slate-100 dark:border-white/5">
+                                    {isPassVisible ? (subUser.password || '••••••••') : '••••••••'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setVisiblePasswords(prev => ({
+                                        ...prev,
+                                        [subUser.uid]: !prev[subUser.uid]
+                                      }));
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded transition-colors cursor-pointer bg-transparent border-none"
+                                    title={isPassVisible ? "Hide Password" : "Show Password"}
+                                  >
+                                    {isPassVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(subUser.password || '');
+                                      toast.success("Passkey Copied to Clipboard");
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded transition-colors cursor-pointer bg-transparent border-none"
+                                    title="Copy Passkey"
+                                  >
+                                    <Copy size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-white/5 text-slate-500 dark:text-slate-400">
+                                  {subUser.role?.replace('_', ' ')}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const newStatus = subUser.status === 'blocked' ? 'active' : 'blocked';
+                                    try {
+                                      await onUpdateUserStatus(subUser.uid, newStatus);
+                                      toast.success(newStatus === 'blocked' ? '🚫 OPERATOR SUSPENDED' : '✅ OPERATOR RESTORED', {
+                                        description: `@${subUser.username} status has been updated in real-time.`
+                                      });
+                                    } catch (err: any) {
+                                      toast.error('Failed to change status', { description: err.message });
+                                    }
+                                  }}
+                                  className={cn(
+                                    "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer border ml-auto",
+                                    subUser.status === 'blocked'
+                                      ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-600 shadow-rose-500/10"
+                                      : "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/10"
+                                  )}
+                                >
+                                  {subUser.status === 'blocked' ? <UserX size={12} /> : <UserCheck size={12} />}
+                                  <span>{subUser.status === 'blocked' ? 'SUSPENDED' : 'ACTIVE'}</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDealerForSubAccounts(null);
+                    setVisiblePasswords({});
+                  }}
+                  className="px-6 py-3 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-xs hover:bg-slate-100 dark:hover:bg-slate-900 transition-all cursor-pointer"
+                >
+                  Close Operator Registry
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

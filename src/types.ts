@@ -79,6 +79,7 @@ export interface Client {
   createdBy: string;
   createdAt: number;
   dealerId?: string; // Multi-tenancy support
+  lineCode?: string; // VLAN code inherited from dealer
   lat?: number;
   lng?: number;
 }
