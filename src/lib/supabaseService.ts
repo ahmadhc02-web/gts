@@ -382,6 +382,7 @@ const globalTableSubscribers: Record<string, Set<(data: any[]) => void>> = {};
 export const globalTableCaches: Record<string, any[]> = {};
 const globalTableIntervals: Record<string, any> = {};
 const globalTableChannels: Record<string, any> = {};
+const globalPresenceChannels: Record<string, any> = {};
 
 async function upsertSupabase(collectionName: string, idField: string, idValue: string, data: any, throwOnError = false) {
   if (!supabase) {
@@ -685,6 +686,71 @@ async function fetchBrandingConfigType(configType: string): Promise<any> {
 }
 
 export const supabaseService = {
+  // Presence and Cursor Broadcast for Collaboration
+  joinBillingPresence(
+    monthId: string, 
+    userId: string, 
+    userName: string,
+    onSync: (state: any) => void,
+    onCursorMove: (payload: any) => void
+  ) {
+    if (!supabase) return () => {};
+
+    const channelName = `billing-presence-${monthId}`;
+    let channel = globalPresenceChannels[channelName];
+    
+    if (!channel) {
+      channel = supabase.channel(channelName, {
+        config: {
+          presence: {
+            key: userId,
+          },
+        },
+      });
+      globalPresenceChannels[channelName] = channel;
+    }
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        onSync(channel.presenceState());
+      })
+      .on('broadcast', { event: 'cursor-move' }, (payload: any) => {
+        onCursorMove(payload.payload);
+      })
+      .subscribe(async (status: string) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            userId,
+            userName,
+            onlineAt: new Date().toISOString(),
+          });
+        }
+      });
+
+    return () => {
+      // In a real app we might want to reference count channels
+      // but for this, just remove the channel if it's the last subscriber
+      try {
+        channel.unsubscribe();
+        supabase?.removeChannel(channel);
+        delete globalPresenceChannels[channelName];
+      } catch (e) {}
+    };
+  },
+
+  broadcastCursorMove(monthId: string, payload: { userId: string, userName: string, rowIndex: number, field: string | null, action: 'focus' | 'blur' }) {
+    if (!supabase) return;
+    const channelName = `billing-presence-${monthId}`;
+    const channel = globalPresenceChannels[channelName];
+    if (channel) {
+      channel.send({
+        type: 'broadcast',
+        event: 'cursor-move',
+        payload,
+      }).catch(() => {});
+    }
+  },
+
   getSyncLogs(): SyncLog[] {
     return syncLogs;
   },
@@ -1390,10 +1456,15 @@ export const supabaseService = {
         if (r.username && String(r.username).trim()) {
           rowId = `usr_${String(r.username).trim().toLowerCase()}`;
         } else if (r.name && String(r.name).trim()) {
-          rowId = `name_${String(r.name).trim().toLowerCase().replace(/\s+/g, '_')}`;
+          // Make name fallback more unique by appending actualIdx to avoid collisions for same-named clients
+          rowId = `name_${String(r.name).trim().toLowerCase().replace(/\s+/g, '_')}_${actualIdx}`;
         } else {
           rowId = `row_${actualIdx}_${monthId}`;
         }
+      }
+      // Ensure clientId is set in the raw object if it was missing, so it stabilizes
+      if (!r.clientId) {
+        r.clientId = rowId;
       }
       return {
         id: `${monthId}_${rowId}`,
@@ -1435,12 +1506,26 @@ export const supabaseService = {
     const allDbRows = rows.map((r: any, idx: number) => mapRowToDb(r, idx));
 
     if (itemsToSync.length > 0) {
-      const dbRows = itemsToSync.map(({ r, actualIndex }) => mapRowToDb(r, actualIndex));
+      let dbRows = itemsToSync.map(({ r, actualIndex }) => mapRowToDb(r, actualIndex));
+      
+      // LAYER 1: Deduplicate before sending to Supabase to prevent 'ON CONFLICT' errors
+      const dedupedRowsMap = new Map();
+      dbRows.forEach(row => {
+        if (dedupedRowsMap.has(row.id)) {
+          console.warn(`[syncBillingRows] Duplicate ID detected during upsert: ${row.id}`, {
+            previous: dedupedRowsMap.get(row.id),
+            current: row
+          });
+        }
+        dedupedRowsMap.set(row.id, row);
+      });
+      dbRows = Array.from(dedupedRowsMap.values());
+
       try {
         const { error } = await supabase.from('billing_rows').upsert(dbRows, { onConflict: 'id' });
         if (error) {
           if (error.message?.includes('panel_details') || error.message?.includes('column')) {
-            const fallbackRows = dbRows.map(row => {
+            let fallbackRows = dbRows.map(row => {
               const { panel_details, ...rest } = row as any;
               return rest;
             });

@@ -571,6 +571,10 @@ export default function AdminPanel({
   }, [billingMonths]);
   const savingMonthIds = React.useRef<Set<string>>(new Set());
   const deletingMonthIds = React.useRef<Set<string>>(new Set());
+  
+  // Collaborative Editing Cursors:
+  // Key: `${rowIndex}_${field}`, Value: { userId, userName, color }
+  const [activeCursors, setActiveCursors] = useState<Record<string, { userId: string; userName: string; color: string }>>({});
 
   const [hasPendingEdits, setHasPendingEdits] = useState<boolean>(false);
   const [isManualSaving, setIsManualSaving] = useState<boolean>(false);
@@ -624,16 +628,36 @@ export default function AdminPanel({
 
   const renderCellProgress = (globalRowIdx: number, field: string) => {
     const progress = cellProgress[`${globalRowIdx}_${field}`];
-    if (progress === undefined) return null;
+    const cursor = activeCursors[`${globalRowIdx}_${field}`];
+    
+    if (progress === undefined && !cursor) return null;
+    
     return (
-      <div 
-        className={`absolute inset-y-0 left-0 pointer-events-none transition-all duration-150 ease-out z-10 ${
-          progress === 100 
-            ? 'bg-emerald-500/25 dark:bg-emerald-400/30 border-l-4 border-emerald-500 animate-pulse' 
-            : 'bg-emerald-500/10 dark:bg-emerald-500/15'
-        }`}
-        style={{ width: `${progress}%` }}
-      />
+      <>
+        {progress !== undefined && (
+          <div 
+            className={`absolute inset-y-0 left-0 pointer-events-none transition-all duration-150 ease-out z-10 ${
+              progress === 100 
+                ? 'bg-emerald-500/25 dark:bg-emerald-400/30 border-l-4 border-emerald-500 animate-pulse' 
+                : 'bg-emerald-500/10 dark:bg-emerald-500/15'
+            }`}
+            style={{ width: `${progress}%` }}
+          />
+        )}
+        {cursor && (
+          <div 
+            className="absolute inset-0 pointer-events-none z-20 border-[1.5px] rounded transition-all duration-200" 
+            style={{ borderColor: cursor.color, margin: '1px' }}
+          >
+            <div 
+              className="absolute -top-[18px] right-0 text-[9px] font-black px-1.5 py-0.5 rounded text-white shadow-sm whitespace-nowrap transform origin-bottom-right"
+              style={{ backgroundColor: cursor.color }}
+            >
+              {cursor.userName}
+            </div>
+          </div>
+        )}
+      </>
     );
   };
 
@@ -1294,6 +1318,111 @@ export default function AdminPanel({
     }, activeDealerId);
     return () => unsubscribe();
   }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId, activeTab]);
+
+  // Collaborative Presence & Cursor Broadcast
+  useEffect(() => {
+    if (activeTab !== 'billing' || !currentMonthId || !currentUser) return;
+    
+    // Simple hash function for distinct colors based on userId
+    const getColorForUser = (uid: string) => {
+      const colors = ['#f43f5e', '#ec4899', '#d946ef', '#8b5cf6', '#3b82f6', '#0ea5e9', '#10b981', '#84cc16', '#eab308', '#f97316'];
+      let hash = 0;
+      for (let i = 0; i < uid.length; i++) {
+        hash = uid.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      return colors[Math.abs(hash) % colors.length];
+    };
+
+    const cleanup = pocketbaseService.joinBillingPresence(
+      currentMonthId,
+      currentUser.uid,
+      currentUser.username || currentUser.name || 'Unknown',
+      (presenceState) => {
+        // Find which users are online
+        const onlineUserIds = new Set(Object.keys(presenceState));
+        
+        // Remove cursors for users who are no longer online
+        setActiveCursors(prev => {
+          let hasChanges = false;
+          const next = { ...prev };
+          for (const key of Object.keys(next)) {
+            if (!onlineUserIds.has(next[key].userId)) {
+              delete next[key];
+              hasChanges = true;
+            }
+          }
+          return hasChanges ? next : prev;
+        });
+      },
+      (payload) => {
+        if (payload.userId === currentUser.uid) return; // Ignore own broadcasts
+        
+        setActiveCursors(prev => {
+          const next = { ...prev };
+          const cellKey = `${payload.rowIndex}_${payload.field}`;
+          
+          if (payload.action === 'focus') {
+            next[cellKey] = {
+              userId: payload.userId,
+              userName: payload.userName,
+              color: getColorForUser(payload.userId)
+            };
+          } else if (payload.action === 'blur') {
+            if (next[cellKey]?.userId === payload.userId) {
+              delete next[cellKey];
+            }
+          }
+          return next;
+        });
+      }
+    );
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && target.id && target.id.startsWith('rec_cell_')) {
+        const parts = target.id.split('_');
+        if (parts.length >= 4) {
+          const rowIndex = parseInt(parts[2], 10);
+          const field = parts.slice(3).join('_');
+          pocketbaseService.broadcastCursorMove(currentMonthId, {
+            userId: currentUser.uid,
+            userName: currentUser.username || currentUser.name || 'Unknown',
+            rowIndex,
+            field,
+            action: 'focus'
+          });
+        }
+      }
+    };
+    
+    const handleFocusOut = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && target.id && target.id.startsWith('rec_cell_')) {
+        const parts = target.id.split('_');
+        if (parts.length >= 4) {
+          const rowIndex = parseInt(parts[2], 10);
+          const field = parts.slice(3).join('_');
+          pocketbaseService.broadcastCursorMove(currentMonthId, {
+            userId: currentUser.uid,
+            userName: currentUser.username || currentUser.name || 'Unknown',
+            rowIndex,
+            field,
+            action: 'blur'
+          });
+        }
+      }
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+      cleanup();
+      setActiveCursors({});
+    };
+  }, [currentMonthId, activeTab, currentUser]);
 
   // Manual recheck operation (triggered via Recheck Users button) is fully supported and robust.
 
@@ -7871,7 +8000,7 @@ export default function AdminPanel({
                                     <span>{localIdx + 1}</span>
                                   </div>
                                 </td>
-                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black">
+                                <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black">
                                   {renderCellProgress(globalRowIdx, 'name')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_name`}
@@ -7887,7 +8016,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* User ID / Username */}
-                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black text-black dark:text-white">
+                                <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13.5px] font-black text-black dark:text-white">
                                   {renderCellProgress(globalRowIdx, 'username')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_username`}
@@ -7902,7 +8031,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Mobile */}
-                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[145px]">
+                                <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[145px]">
                                   {renderCellProgress(globalRowIdx, 'mobileNumber')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_mobileNumber`}
@@ -7918,7 +8047,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Panel Details */}
-                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[130px]">
+                                <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans text-[13px] font-black text-black dark:text-white min-w-[130px]">
                                   {renderCellProgress(globalRowIdx, 'panelDetails')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_panelDetails`}
@@ -7934,7 +8063,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Area */}
-                                <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                <td className="relative py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
                                   {renderCellProgress(globalRowIdx, 'area')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_area`}
@@ -7949,7 +8078,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* RT */}
-                                <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                <td className="relative py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
                                   {renderCellProgress(globalRowIdx, 'rt')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_rt`}
@@ -7964,7 +8093,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Base Amount */}
-                                <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                <td className="relative py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
                                   {renderCellProgress(globalRowIdx, 'baseAmount')}
                                   <div className="flex items-center justify-end font-black text-black">
                                     <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
@@ -7982,7 +8111,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Cr. Arrears */}
-                                <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                <td className="relative py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
                                   {renderCellProgress(globalRowIdx, 'cr')}
                                   <div className="flex items-center justify-end">
                                     <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
@@ -8008,7 +8137,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* BD (Billing Day) */}
-                                <td className="relative overflow-hidden py-1 px-0 border-r border-slate-200 dark:border-white\/10/80 text-center select-all font-sans w-[30px] max-w-[34px]">
+                                <td className="relative py-1 px-0 border-r border-slate-200 dark:border-white\/10/80 text-center select-all font-sans w-[30px] max-w-[34px]">
                                   {renderCellProgress(globalRowIdx, 'billingDay')}
                                   <input
                                     id={`rec_cell_${globalRowIdx}_billingDay`}
@@ -8025,7 +8154,7 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Monthly Paid Recovery */}
-                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10 bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
+                                <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10 bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
                                   {renderCellProgress(globalRowIdx, 'paymentReceived')}
                                   <div className="flex items-center justify-end">
                                     <span className="text-emerald-900 dark:text-emerald-400 mr-0.5 font-black text-[11px]">PKR</span>
@@ -8043,9 +8172,10 @@ export default function AdminPanel({
                                 </td>
 
                                 {/* Status */}
-                                <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
+                                <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans">
                                   {renderCellProgress(globalRowIdx, 'paymentStatus')}
                                   <select
+                                    id={`rec_cell_${globalRowIdx}_paymentStatus`}
                                     value={rowRef.paymentStatus}
                                     disabled={!isBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
@@ -8072,7 +8202,7 @@ export default function AdminPanel({
                                 {isAdvanceMode && (
                                   <>
                                     {/* Comments */}
-                                    <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
+                                    <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
                                       {renderCellProgress(globalRowIdx, 'comments')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_comments`}
@@ -8089,7 +8219,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Occupation */}
-                                    <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
+                                    <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 font-sans">
                                       {renderCellProgress(globalRowIdx, 'occ')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_occ`}
@@ -8104,7 +8234,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* PKG details */}
-                                    <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-blue-900 dark:text-blue-250 font-black font-sans">
+                                    <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-blue-900 dark:text-blue-250 font-black font-sans">
                                       {renderCellProgress(globalRowIdx, 'pkgDetails')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_pkgDetails`}
@@ -8119,7 +8249,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Connection Date */}
-                                    <td className="relative overflow-hidden py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans text-[11px]">
+                                    <td className="relative py-1 px-1.5 border-r border-slate-200 dark:border-white\/10/80 text-center font-sans text-[11px]">
                                       {renderCellProgress(globalRowIdx, 'connectionDate')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_connectionDate`}
@@ -8135,7 +8265,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* Device Price */}
-                                    <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                    <td className="relative py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
                                       {renderCellProgress(globalRowIdx, 'devicePrice')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_devicePrice`}
@@ -8150,7 +8280,7 @@ export default function AdminPanel({
                                     </td>
 
                                     {/* ABL charges */}
-                                    <td className="relative overflow-hidden py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
+                                    <td className="relative py-1 px-1 border-r border-slate-200 dark:border-white\/10/80 text-right font-sans">
                                       {renderCellProgress(globalRowIdx, 'abl')}
                                       <input
                                         id={`rec_cell_${globalRowIdx}_abl`}
@@ -8370,6 +8500,7 @@ export default function AdminPanel({
                             {/* Select wrapper */}
                             <div className="w-24 shrink-0">
                               <select
+                                id={`rec_cell_${globalRowIdx}_paymentStatus`}
                                 value={rowRef.paymentStatus}
                                 disabled={!isBillingUnlocked}
                                 onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
