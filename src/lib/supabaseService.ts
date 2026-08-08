@@ -571,6 +571,7 @@ function subscribeTable(
       const channel = supabase
         .channel(channelName)
         .on('postgres_changes', { event: '*', schema: 'public', table: targetTable }, (payload: any) => {
+          console.log('[REALTIME] Change event received for table', targetTable, ':', payload);
           if (payload && payload.new) {
             try {
               const mappedRow = mapRow(payload.new);
@@ -1405,6 +1406,20 @@ export const supabaseService = {
         await supabase.from('billing_rows').delete().eq('month_id', monthId).eq('dealer_id', dealerId);
 
         try {
+          const syncKeys = [`billing_months_${dealerId}`, 'billing_months_all', 'billing_months_main', 'billing_months_'];
+          syncKeys.forEach(sKey => {
+            if (globalTableCaches[sKey]) {
+              globalTableCaches[sKey] = globalTableCaches[sKey].filter((m: any) => m.id !== monthId && m.month_id !== monthId);
+              const subs = globalTableSubscribers[sKey];
+              if (subs) {
+                subs.forEach(cb => { try { cb(globalTableCaches[sKey]); } catch(e){} });
+              }
+              try {
+                localStorage.setItem(`gts_cache_v3_${sKey}`, JSON.stringify(globalTableCaches[sKey]));
+              } catch (e) {}
+            }
+          });
+
           const cacheKey = `gts_cache_v3_billing_months`;
           const rawCache = localStorage.getItem(cacheKey);
           if (rawCache) {

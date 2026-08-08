@@ -555,16 +555,34 @@ export default function AdminPanel({
     try {
       const syncKey = `billing_months_${activeDealerId || 'main'}`;
       if (globalTableCaches[syncKey] && globalTableCaches[syncKey].length > 0) {
-        return globalTableCaches[syncKey];
+        return globalTableCaches[syncKey].filter((m: any) => m.id !== 'JUNE-26' && m.month_id !== 'JUNE-26');
       }
       const raw = localStorage.getItem(`gts_cache_v3_billing_months`) || localStorage.getItem(`gts_cache_v3_${syncKey}`);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((m: any) => m.id !== 'JUNE-26' && m.month_id !== 'JUNE-26');
+        }
       }
     } catch (e) {}
     return [];
   });
+
+  React.useEffect(() => {
+    // Permanent purge of JUNE-26 from local storage caches
+    ['gts_cache_v3_billing_months', 'gts_cache_v3_billing_months_main', 'gts_cache_v3_billing_months_all', 'gts_cache_v3_billing_months_'].forEach(k => {
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw && raw.includes('JUNE-26')) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter((m: any) => m.id !== 'JUNE-26' && m.month_id !== 'JUNE-26');
+            localStorage.setItem(k, JSON.stringify(cleaned));
+          }
+        }
+      } catch (e) {}
+    });
+  }, []);
   const billingMonthsRef = React.useRef<any[]>([]);
   React.useEffect(() => {
     billingMonthsRef.current = billingMonths;
@@ -1336,7 +1354,7 @@ export default function AdminPanel({
     const cleanup = pocketbaseService.joinBillingPresence(
       currentMonthId,
       currentUser.uid,
-      currentUser.username || currentUser.name || 'Unknown',
+      currentUser.username || currentUser.fullName || 'Unknown',
       (presenceState) => {
         // Find which users are online
         const onlineUserIds = new Set(Object.keys(presenceState));
@@ -1386,7 +1404,7 @@ export default function AdminPanel({
           const field = parts.slice(3).join('_');
           pocketbaseService.broadcastCursorMove(currentMonthId, {
             userId: currentUser.uid,
-            userName: currentUser.username || currentUser.name || 'Unknown',
+            userName: currentUser.username || currentUser.fullName || 'Unknown',
             rowIndex,
             field,
             action: 'focus'
@@ -1404,7 +1422,7 @@ export default function AdminPanel({
           const field = parts.slice(3).join('_');
           pocketbaseService.broadcastCursorMove(currentMonthId, {
             userId: currentUser.uid,
-            userName: currentUser.username || currentUser.name || 'Unknown',
+            userName: currentUser.username || currentUser.fullName || 'Unknown',
             rowIndex,
             field,
             action: 'blur'

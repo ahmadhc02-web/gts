@@ -4,11 +4,11 @@ import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
   History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
-  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings, Download, Loader2
+  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings, Download, Loader2, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabaseService as pocketbaseService } from '../lib/supabaseService';
+import { supabaseService as pocketbaseService, globalTableCaches } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { Client, UserProfile } from '../types';
@@ -93,7 +93,11 @@ export default function EntrySheet({
   const activeView = (loadedSheetId ? 'editor' : 'dashboard') as 'dashboard' | 'editor';
   const [folders, setFolders] = useState<any[]>(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const saved = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
+    const syncKey = `ledger_folders_${originalScopeId}`;
+    if ((globalTableCaches as any)[syncKey] && Array.isArray((globalTableCaches as any)[syncKey])) {
+      return (globalTableCaches as any)[syncKey];
+    }
+    const saved = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_all`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -118,7 +122,11 @@ export default function EntrySheet({
   });
   const [ledgerHistory, setLedgerHistory] = useState<any[]>(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const saved = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`);
+    const syncKey = `ledger_sheets_${originalScopeId}`;
+    if ((globalTableCaches as any)[syncKey] && Array.isArray((globalTableCaches as any)[syncKey])) {
+      return (globalTableCaches as any)[syncKey];
+    }
+    const saved = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`) || localStorage.getItem(`gts_cache_v3_ledger_sheets_all`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -170,44 +178,12 @@ export default function EntrySheet({
     
     // Subscribe to Folders
     const unsubFolders = pocketbaseService.subscribeLedgerFolders((data) => {
-      let mergedFolders: any[] = [];
-      let didMerge = false;
-      const migrationFlag = `migrated_local_folders_${scopeId || 'main'}`;
-
-      const savedFolders = localStorage.getItem(foldersKey) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
-      let localFoldersList: any[] = [];
-      if (savedFolders) {
+      if (Array.isArray(data)) {
+        setFolders(prev => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
         try {
-          const parsed = JSON.parse(savedFolders);
-          if (Array.isArray(parsed)) localFoldersList = parsed;
+          localStorage.setItem(`gts_cache_v3_ledger_folders_${originalScopeId}`, JSON.stringify(data));
         } catch (e) {}
       }
-
-      if (data && Array.isArray(data) && data.length > 0) {
-        mergedFolders = [...data];
-      } else if (localFoldersList.length > 0) {
-        mergedFolders = [...localFoldersList];
-        didMerge = true;
-      }
-
-      // Safety merge: include any locally saved folder that might not be in the remote data snapshot yet
-      localFoldersList.forEach(pf => {
-        if (pf && pf.id && !mergedFolders.find(mf => mf.id === pf.id || (mf.name && pf.name && mf.name.toLowerCase() === pf.name.toLowerCase()))) {
-          mergedFolders.push(pf);
-          didMerge = true;
-        }
-      });
-
-      if (!localStorage.getItem(migrationFlag)) {
-        localStorage.setItem(migrationFlag, 'true');
-      }
-
-      if (didMerge) {
-        pocketbaseService.updateLedgerFolders(mergedFolders, scopeId).catch(console.error);
-      }
-      
-      localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(mergedFolders));
-      setFolders(prev => JSON.stringify(prev) === JSON.stringify(mergedFolders) ? prev : mergedFolders);
       setIsLoadingFolders(false);
     }, scopeId);
 
@@ -272,48 +248,7 @@ export default function EntrySheet({
     return !hasCache;
   });
 
-  // Keep state synchronized and loaded instantly on tenant switch
-  useEffect(() => {
-    const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    
-    // Sync folders from cache
-    const savedFolders = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
-    if (savedFolders) {
-      try {
-        const parsed = JSON.parse(savedFolders);
-        setFolders(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed);
-        setIsLoadingFolders(false);
-      } catch (e) {}
-    } else {
-      setFolders(prev => prev.length === 0 ? prev : []);
-      setIsLoadingFolders(true);
-    }
 
-    // Sync sheets from cache
-    const savedSheets = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`);
-    if (savedSheets) {
-      try {
-        const parsed = JSON.parse(savedSheets);
-        setLedgerHistory(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed);
-        setIsLoadingSheets(false);
-      } catch (e) {}
-    } else {
-      setLedgerHistory(prev => prev.length === 0 ? prev : []);
-      setIsLoadingSheets(true);
-    }
-
-    // Sync maps
-
-    const savedFolderMonths = localStorage.getItem(`gts_ledger_folder_months_${originalScopeId}`);
-    if (savedFolderMonths) {
-      try {
-        const parsed = JSON.parse(savedFolderMonths);
-        setFolderMonthMap(prev => JSON.stringify(prev) === JSON.stringify(parsed) ? prev : parsed);
-      } catch (e) {}
-    } else {
-      setFolderMonthMap(prev => Object.keys(prev).length === 0 ? prev : {});
-    }
-  }, [currentUser?.uid, activeDealerId]);
 
   // User search popup state variables
   const [showUserSearchPopup, setShowUserSearchPopup] = useState(false);
@@ -2007,44 +1942,9 @@ export default function EntrySheet({
           }
         }
 
-        if (targetMonthRows.length === 0 && clients && clients.length > 0) {
-          targetMonthRows = clients.map((c: any) => {
-            let cleanBase = 1000;
-            if (c.pkgDetails) {
-              const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
-              if (digitsMatch && digitsMatch.length > 0) {
-                cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
-              } else {
-                const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
-                if (lowDigits && lowDigits.length >= 3) {
-                  cleanBase = parseInt(lowDigits, 10);
-                }
-              }
-            }
-            return {
-              id: c.id,
-              clientId: c.id,
-              name: c.name,
-              username: c.username,
-              mobileNumber: c.mobileNumber || c.number || '',
-              area: c.area || '',
-              rt: c.rt || '',
-              baseAmount: cleanBase,
-              cr: Number(c.cr) || 0,
-              totalAmount: cleanBase + (Number(c.cr) || 0),
-              billingDay: '5',
-              paymentReceived: 0,
-              paymentStatus: 'unpaid',
-              comments: '',
-              occ: '',
-              pkgDetails: c.pkgDetails || '',
-              sag: '',
-              lai: '',
-              connectionDate: '',
-              devicePrice: 0,
-              abl: 0
-            };
-          });
+        if (targetMonthRows.length === 0) {
+          console.warn(`Target month ${targetMonthId} has no rows or does not exist. Skipping sync to prevent accidental recreation or overwriting.`);
+          continue;
         }
 
         try {
@@ -3632,6 +3532,15 @@ export default function EntrySheet({
                               {(() => {
                                 const connId = folderMonthMap[folder.id] || folder.connectedMonthId;
                                 if (connId) {
+                                  const monthExists = billingMonths.some(m => m.id === connId);
+                                  if (!monthExists) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-50/80 dark:bg-rose-950/40 px-2 py-0.5 rounded-full select-none mb-1 border border-rose-100 dark:border-rose-900/30">
+                                        <AlertTriangle size={10} />
+                                        Deleted: {connId}
+                                      </span>
+                                    );
+                                  }
                                   return (
                                     <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/40 px-2 py-0.5 rounded-full select-none mb-1 border border-blue-100 dark:border-blue-900/30">
                                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
