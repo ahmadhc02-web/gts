@@ -14,11 +14,12 @@ import { calculateProtocolProgress } from '../utils/protocolProgress';
 import { getAvatarUrl } from '../utils/avatar';
 import ReviewTimeline from './ReviewTimeline';
 import ComplaintPrintPreviewModal from './ComplaintPrintPreviewModal';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface ComplaintListProps {
   complaints: Complaint[];
   users?: UserProfile[];
-  onDelete?: (id: string) => Promise<void>;
+  onDelete?: (id: string, isPermanent?: boolean) => Promise<void>;
   onStatusChange?: (id: string, status: ComplaintStatus, remarks?: string, reviews?: ComplaintReview[]) => Promise<void>;
   onUpdateRemarks?: (id: string, remarks: string) => Promise<void>;
   onEdit?: (id: string, data: Partial<Complaint>) => Promise<void>;
@@ -577,12 +578,22 @@ export default function ComplaintList({
 
   const [complaintToDelete, setComplaintToDelete] = React.useState<string | null>(null);
 
-  const confirmDelete = () => {
+  const handleTrashComplaint = async () => {
     if (complaintToDelete && onDelete) {
-      // Execute deletion without awaiting to make UI feel instant
-      onDelete(complaintToDelete).catch(err => {
+      await onDelete(complaintToDelete, false).catch(err => {
         console.error("Delete failed:", err);
         toast.error("Critical failure during record termination.");
+      });
+      setComplaintToDelete(null);
+      setSelectedComplaint(null);
+    }
+  };
+
+  const handlePermanentDeleteComplaint = async () => {
+    if (complaintToDelete && onDelete) {
+      await onDelete(complaintToDelete, true).catch(err => {
+        console.error("Permanent delete failed:", err);
+        toast.error("Critical failure during record permanent deletion.");
       });
       setComplaintToDelete(null);
       setSelectedComplaint(null);
@@ -738,53 +749,15 @@ export default function ComplaintList({
         </div>
       </div>
 
-      <AnimatePresence>
-        {complaintToDelete && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.1 }}
-              onClick={() => setComplaintToDelete(null)}
-              className="absolute inset-0 bg-slate-950/40 backdrop-blur-[1px]"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.97, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97, y: 10 }}
-              transition={{ duration: 0.1, ease: 'easeOut' }}
-              className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-rose-500/30 overflow-hidden"
-            >
-              <div className="p-8 text-center space-y-6">
-                <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <ShieldAlert size={32} className="text-rose-500 animate-pulse" />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Security Protocol</h3>
-                  <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-loose">
-                    Permanently terminate this operational record from the central registry?
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3">
-                  <button
-                    onClick={confirmDelete}
-                    className="w-full py-3 rounded-xl bg-rose-500 text-white font-black uppercase tracking-widest text-[11px] shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-all active:scale-95"
-                  >
-                    Confirm Termination
-                  </button>
-                  <button
-                    onClick={() => setComplaintToDelete(null)}
-                    className="w-full py-3 rounded-xl border-2 border-slate-100 dark:border-white/10 text-slate-500 font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all"
-                  >
-                    Cancel Action
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <DeleteConfirmationModal
+        isOpen={!!complaintToDelete}
+        onClose={() => setComplaintToDelete(null)}
+        title="Delete Complaint Record"
+        itemType="Complaint"
+        itemName={complaints.find(c => c.id === complaintToDelete)?.customerName || complaintToDelete || undefined}
+        onTrash={handleTrashComplaint}
+        onPermanentDelete={handlePermanentDeleteComplaint}
+      />
 
       {/* Header Area */}
       <div className="mb-4 flex flex-col items-center justify-center text-center gap-2">
@@ -1178,7 +1151,7 @@ export default function ComplaintList({
                 ) : (
                   paginatedComplaints.map((complaint, index) => (
                     <motion.tr
-                      key={complaint.id}
+                      key={`${complaint.id || 'cmp'}-${index}`}
                       layout="position"
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ 
@@ -1498,7 +1471,7 @@ export default function ComplaintList({
 
                   return (
                     <button
-                      key={'page-'+pageNum}
+                      key={`page-${i}-${pageNum}`}
                       onClick={() => setCurrentPage(pageNum)}
                       className={cn(
                         "w-8 h-8 rounded-lg text-[10px] font-black uppercase transition-all",
@@ -1958,7 +1931,7 @@ export default function ComplaintList({
                             </div>
                           ) : selectedComplaint.remarks ? (
                             <motion.div 
-                              key={selectedComplaint.remarks}
+                              key={`remarks-${selectedComplaint.id || 'cmp'}-${selectedComplaint.remarks}`}
                               initial={animateRemarksLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
                               animate={{ x: 0, opacity: 1, scale: 1 }}
                               transition={{ type: "spring", stiffness: 150, damping: 15 }}

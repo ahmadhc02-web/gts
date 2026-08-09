@@ -3061,8 +3061,8 @@ export default function EntrySheet({
                  className="w-full px-4 py-2 border border-slate-200 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-slate-950 text-sm font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 transition-all outline-none"
                >
                  <option value="all">ALL VOLUMES / MONTHS</option>
-                 {folders.map(f => (
-                   <option key={f.id} value={f.id}>{f.name.toUpperCase()}</option>
+                 {folders.map((f, idx) => (
+                   <option key={`folder-opt-${f.id}-${idx}`} value={f.id}>{f.name.toUpperCase()}</option>
                  ))}
                </select>
              </div>
@@ -3475,11 +3475,11 @@ export default function EntrySheet({
                   });
                   return (
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
-                      {sortedFolders.map((folder) => {
+                      {sortedFolders.map((folder, folderIdx) => {
                         const folderSheets = ledgerHistory.filter(sh => (sh.folderId === folder.id || sheetFolderMap[sh.id] === folder.id) && doesMatchSearch(sh));
                         return (
                           <motion.div
-                            key={folder.id}
+                            key={`folder-${folder.id}-${folderIdx}`}
                             initial={false}
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
@@ -3698,14 +3698,14 @@ export default function EntrySheet({
                   </p>
                 </div>
               ) : (
-                openedFolderSheets.map((sh) => {
+                openedFolderSheets.map((sh, shIdx) => {
                   const t1Am = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
                   const sheetTotal = t1Am;
                   const filledLines = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0).length;
 
                   return (
                     <motion.div
-                      key={sh.id}
+                      key={`sheet-${sh.id}-${shIdx}`}
                       initial={false}
                       animate={{ opacity: 1 }}
                       style={{ contentVisibility: 'auto', containIntrinsicSize: '220px' }}
@@ -3778,8 +3778,8 @@ export default function EntrySheet({
                           className="py-1 px-2 border border-slate-205 dark:border-white/10 rounded-xl bg-slate-50 dark:bg-slate-950 text-[9px] font-black uppercase text-slate-500 cursor-pointer outline-none focus:ring-1 focus:ring-blue-500 transition-shadow shrink-0"
                           title="Move to other folder"
                         >
-                          {folders.map(f => (
-                            <option key={f.id} value={f.id}>{f.name}</option>
+                          {folders.map((f, idx) => (
+                            <option key={`f-opt-${f.id}-${idx}`} value={f.id}>{f.name}</option>
                           ))}
                         </select>
 
@@ -4461,7 +4461,7 @@ export default function EntrySheet({
 
                       return (
                         <div 
-                          key={sh.id || sheetIdx}
+                          key={`sh-${sh.id || sheetIdx}-${sheetIdx}`}
                           onMouseDownCapture={() => {
                             if (activeSheetIdx !== sheetIdx) {
                               isSwappingRef.current = true;
@@ -6064,14 +6064,14 @@ export default function EntrySheet({
                   <span>No historical cards match.</span>
                 </div>
               ) : (
-                getFilteredHistory().map((sheet) => {
+                getFilteredHistory().map((sheet, idx) => {
                   const isLoaded = loadedSheetId === sheet.id;
                   const t1Valid = (Array.isArray(sheet.table1Rows) ? sheet.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0);
                   const sumT1 = t1Valid.reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
                   
                   return (
                     <div
-                      key={sheet.id}
+                      key={`sheet-hist-${sheet.id}-${idx}`}
                       onClick={() => handleLoadHistorySheet(sheet)}
                       className={`group relative p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-1.5 ${
                         isLoaded
@@ -6599,10 +6599,10 @@ export default function EntrySheet({
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">-- Not Connected --</option>
-                    {billingMonths.map(m => {
+                    {billingMonths.map((m, mIdx) => {
                       const totalTarget = m.rows?.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0) || 0;
                       return (
-                        <option key={m.id} value={m.id}>{m.id} (Target: {totalTarget.toLocaleString()})</option>
+                        <option key={`m-${m.id}-${mIdx}`} value={m.id}>{m.id} (Target: {totalTarget.toLocaleString()})</option>
                       );
                     })}
                   </select>
@@ -6903,7 +6903,7 @@ export default function EntrySheet({
           {getFilteredSuggestions(focusedField, searchQuery).length === 0 ? (
             <div className="text-[10px] text-slate-500 dark:text-slate-450 py-3 text-center font-medium">No matches found</div>
           ) : (
-            getFilteredSuggestions(focusedField, searchQuery).map((cObj) => {
+            getFilteredSuggestions(focusedField, searchQuery).map((cObj, idx) => {
               const matchingActiveRow = activeRows?.find(r => 
                 (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
                 (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
@@ -6949,7 +6949,7 @@ export default function EntrySheet({
 
               return (
                 <button
-                  key={cObj.id || cObj.username}
+                  key={`cobj-${cObj.id || cObj.username || idx}-${idx}`}
                   type="button"
                   onMouseDown={(e) => {
                     e.preventDefault();

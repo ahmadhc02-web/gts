@@ -23,6 +23,19 @@ const isExcludedFromRecovery = (name?: string, username?: string) => {
   return check(name) || check(username);
 };
 
+const parseExcludedKeys = (em: any): string[] => {
+  if (!em) return [];
+  const raw = em.excluded_client_keys ?? em.excludedClientKeys ?? (typeof em.rows_data === 'object' && em.rows_data !== null && !Array.isArray(em.rows_data) ? em.rows_data?.excludedClientKeys : null);
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (e) {}
+  }
+  return [];
+};
+
 // Unified snake_case/camelCase mappings for GTS ISP schema tables
 export const mappings: Record<string, Record<string, string>> = {
   users: {
@@ -1030,6 +1043,7 @@ export const supabaseService = {
               id: em.month_id,
               dealerId: em.dealer_id || dealerId,
               rows: rowsFromData,
+              excludedClientKeys: parseExcludedKeys(em),
               hasAuthoritativeRowsData: rowsFromData.length > 0,
               updatedAt: em.updated ? new Date(em.updated).getTime() : Date.now(),
               createdAt: em.created ? new Date(em.created).getTime() : Date.now()
@@ -1180,10 +1194,12 @@ export const supabaseService = {
         if (typeof rows === 'string') {
           try { rows = JSON.parse(rows); } catch (e) { rows = []; }
         }
+        const excludedClientKeys = parseExcludedKeys(data);
         if (Array.isArray(rows) && rows.length > 0) {
           return {
             id: data.month_id,
             rows,
+            excludedClientKeys,
             updatedAt: data.updated ? new Date(data.updated).getTime() : Date.now()
           };
         }
@@ -1210,10 +1226,10 @@ export const supabaseService = {
   },
 
   _saveBillingMonthTimers: {} as Record<string, any>,
-  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: Set<number> }>,
+  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: Set<number>, excludedClientKeys?: string[] }>,
   _billingMonthSaveCounter: {} as Record<string, number>,
 
-  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>) {
+  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>, excludedClientKeys?: string[]) {
     const key = `${monthId}_${dealerId}`;
     if (!this._saveBillingMonthLatestRows) this._saveBillingMonthLatestRows = {};
     if (!this._billingMonthSaveCounter) this._billingMonthSaveCounter = {};
@@ -1231,7 +1247,23 @@ export const supabaseService = {
       mergedChangedIndices = undefined;
     }
 
-    this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices: mergedChangedIndices };
+    // Resolve excludedClientKeys: if not explicitly provided, preserve existing from cache or latest rows
+    let finalExcludedKeys = excludedClientKeys;
+    if (finalExcludedKeys === undefined) {
+      if (existing && existing.excludedClientKeys !== undefined) {
+        finalExcludedKeys = existing.excludedClientKeys;
+      } else {
+        const primaryKey = `billing_months_${dealerId || 'main'}`;
+        const cached = (globalTableCaches[primaryKey] || []).find((m: any) => m.id === monthId || m.month_id === monthId);
+        if (cached && cached.excludedClientKeys) {
+          finalExcludedKeys = cached.excludedClientKeys;
+        } else {
+          finalExcludedKeys = [];
+        }
+      }
+    }
+
+    this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices: mergedChangedIndices, excludedClientKeys: finalExcludedKeys };
     const currentCounter = (this._billingMonthSaveCounter[key] || 0) + 1;
     this._billingMonthSaveCounter[key] = currentCounter;
 
@@ -1247,6 +1279,8 @@ export const supabaseService = {
         dealerId: dealerId || 'main',
         rows,
         rows_data: rows,
+        excludedClientKeys: finalExcludedKeys,
+        excluded_client_keys: finalExcludedKeys,
         updated_by: updatedBy,
         updatedAt: Date.now()
       };
@@ -1271,7 +1305,7 @@ export const supabaseService = {
       }
       const latest = this._saveBillingMonthLatestRows[key];
       if (latest) {
-        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter);
+        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys);
         delete this._saveBillingMonthLatestRows[key];
       }
       return;
@@ -1287,7 +1321,7 @@ export const supabaseService = {
         try {
           const latest = this._saveBillingMonthLatestRows[key];
           if (latest) {
-            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter);
+            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys);
             delete this._saveBillingMonthLatestRows[key];
           }
           resolve();
@@ -1305,21 +1339,21 @@ export const supabaseService = {
   _billingMonthExecutionLocks: {} as Record<string, Promise<void>>,
   _syncingMonths: new Set<string>(),
 
-  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, executeCounter?: number) {
+  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, executeCounter?: number, excludedClientKeys?: string[]) {
     const syncKey = `${monthId}_${dealerId}`;
     if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
     
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
     
     const run = previous.then(() => {
-      return this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices);
+      return this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices, excludedClientKeys);
     });
     
     this._billingMonthExecutionLocks[syncKey] = run.catch(() => {});
     return run;
   },
 
-  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>) {
+  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, excludedClientKeys?: string[]) {
     const syncKey = `${monthId}_${dealerId}`;
     if (!this._syncingMonths) this._syncingMonths = new Set<string>();
     this._syncingMonths.add(syncKey);
@@ -1376,19 +1410,33 @@ export const supabaseService = {
     }
 
     try {
-      await upsertSupabase('billing_months', 'month_id', monthId, {
+      const payload: any = {
         month_id: monthId,
         dealer_id: dealerId,
         rows_data: rows,
         updated_by: updatedBy
-      }, true);
+      };
+      if (excludedClientKeys !== undefined) {
+        payload.excluded_client_keys = excludedClientKeys;
+      }
+
+      try {
+        await upsertSupabase('billing_months', 'month_id', monthId, payload, true);
+      } catch (upsertErr: any) {
+        if (payload.excluded_client_keys !== undefined) {
+          delete payload.excluded_client_keys;
+          await upsertSupabase('billing_months', 'month_id', monthId, payload, true);
+        } else {
+          throw upsertErr;
+        }
+      }
 
       try {
         const cacheKey = `gts_cache_v3_billing_months`;
         const rawCache = localStorage.getItem(cacheKey);
         let list: any[] = rawCache ? JSON.parse(rawCache) : [];
         const idx = list.findIndex(m => m.id === monthId || m.month_id === monthId);
-        const updatedObj = { id: monthId, month_id: monthId, dealer_id: dealerId, rows, rows_data: rows, updated_by: updatedBy, updatedAt: Date.now() };
+        const updatedObj = { id: monthId, month_id: monthId, dealer_id: dealerId, rows, rows_data: rows, excludedClientKeys: excludedClientKeys || [], excluded_client_keys: excludedClientKeys || [], updated_by: updatedBy, updatedAt: Date.now() };
         if (idx !== -1) {
           list[idx] = { ...list[idx], ...updatedObj };
         } else {
@@ -1408,9 +1456,12 @@ export const supabaseService = {
     }
   },
 
-  async deleteBillingMonth(monthId: string, dealerId: string = 'main') {
+  async deleteBillingMonth(monthId: string, dealerId: string = 'main', authorName: string = 'admin', fullMonthObj?: any, isPermanent: boolean = false) {
     return globalLoading.wrap(async () => {
       try {
+        if (!isPermanent && fullMonthObj) {
+          await supabaseService.saveToRecycleBin('billing_months', monthId, authorName, dealerId, fullMonthObj);
+        }
         await supabase.from('billing_months').delete().eq('month_id', monthId).eq('dealer_id', dealerId);
         await supabase.from('billing_rows').delete().eq('month_id', monthId).eq('dealer_id', dealerId);
 
@@ -1835,22 +1886,11 @@ export const supabaseService = {
     }
   },
 
-  deleteComplaint: async (id: string, customerName: string, authorName: string, fullComplaintData?: Complaint) => {
+  deleteComplaint: async (id: string, customerName: string, authorName: string, fullComplaintData?: Complaint, isPermanent: boolean = false) => {
     return globalLoading.wrap(async () => {
       try {
-        if (fullComplaintData) {
-          await supabaseService.createNotification({
-            type: 'recycle_bin',
-            message: `Deleted Complaint: ${customerName || id}`,
-            authorName: authorName || 'System',
-            dealerId: fullComplaintData.dealerId || 'main',
-            details: {
-              originalTable: 'complaints',
-              originalId: id,
-              originalData: fullComplaintData,
-              deletedAt: Date.now()
-            }
-          });
+        if (!isPermanent && fullComplaintData) {
+          await supabaseService.saveToRecycleBin('complaints', id, authorName, fullComplaintData.dealerId || 'main', fullComplaintData);
         }
         await supabase.from('complaints').delete().eq('id', id);
       } catch (e) {
@@ -2153,21 +2193,10 @@ export const supabaseService = {
 
   updateClientComplaints: async (originalUsername: string, updatedData: any) => {},
 
-  deleteClient: async (id: string, clientName: string, authorName: string, fullClientData?: Client) => {
+  deleteClient: async (id: string, clientName: string, authorName: string, fullClientData?: Client, isPermanent: boolean = false) => {
     try {
-      if (fullClientData) {
-        await supabaseService.createNotification({
-          type: 'recycle_bin',
-          message: `Deleted Client: ${clientName || id}`,
-          authorName: authorName || 'System',
-          dealerId: fullClientData.dealerId || 'main',
-          details: {
-            originalTable: 'clients',
-            originalId: id,
-            originalData: fullClientData,
-            deletedAt: Date.now()
-          }
-        });
+      if (!isPermanent && fullClientData) {
+        await supabaseService.saveToRecycleBin('clients', id, authorName, fullClientData.dealerId || 'main', fullClientData);
       }
       await supabase.from('clients').delete().eq('id', id);
     } catch (e) {}
@@ -2470,6 +2499,7 @@ export const supabaseService = {
       id: row.month_id,
       dealerId: row.dealer_id,
       rows: parseRowsData(row.rows_data ?? row.rows),
+      excludedClientKeys: parseExcludedKeys(row),
       updatedAt: row.updated ? new Date(row.updated).getTime() : Date.now(),
       createdAt: row.created ? new Date(row.created).getTime() : Date.now()
     }), dealerId);
@@ -2953,21 +2983,10 @@ export const supabaseService = {
     } catch (e) {}
   },
 
-  deleteLedgerSheet: async (sheetId: string, authorName: string = 'admin', tenantId: string = 'main', fullSheetData?: any) => {
+  deleteLedgerSheet: async (sheetId: string, authorName: string = 'admin', tenantId: string = 'main', fullSheetData?: any, isPermanent: boolean = false) => {
     try {
-      if (fullSheetData) {
-        await supabaseService.createNotification({
-          type: 'recycle_bin',
-          message: `Deleted Entry Sheet: ${fullSheetData.username || fullSheetData.userLedgerName || sheetId}`,
-          authorName: authorName || 'System',
-          dealerId: tenantId || 'main',
-          details: {
-            originalTable: 'ledger_sheets',
-            originalId: sheetId,
-            originalData: fullSheetData,
-            deletedAt: Date.now()
-          }
-        });
+      if (!isPermanent && fullSheetData) {
+        await supabaseService.saveToRecycleBin('ledger_sheets', sheetId, authorName, tenantId, fullSheetData);
       }
       await supabase.from('ledger_sheets').delete().eq('id', sheetId);
     } catch (e) {}
@@ -3044,7 +3063,74 @@ export const supabaseService = {
         } else if (table === 'ledger_sheets') {
           await upsertSupabase('ledger_sheets', 'id', data.id, toDb('ledger_sheets', data));
         } else if (table === 'billing_rows') {
-          await upsertSupabase('billing_rows', 'id', data.id, toDb('billing_rows', data));
+          // data is expected to be { originalData, monthId, dealerId } from saveToRecycleBin
+          const rowData = data.originalData || data;
+          const monthId = data.monthId || rowData.month_id;
+          const dealerId = data.dealerId || rowData.dealer_id || 'main';
+          
+          if (monthId && rowData) {
+            let rowId = rowData.clientId || rowData.id;
+            if (!rowId || !String(rowId).trim()) {
+              if (rowData.username && String(rowData.username).trim()) {
+                rowId = `usr_${String(rowData.username).trim().toLowerCase()}`;
+              } else if (rowData.name && String(rowData.name).trim()) {
+                rowId = `name_${String(rowData.name).trim().toLowerCase().replace(/\s+/g, '_')}_restored`;
+              } else {
+                rowId = `row_restored_${Date.now()}`;
+              }
+            }
+            
+            // Ensure clientId is present on the restored object
+            if (!rowData.clientId) {
+              rowData.clientId = rowId;
+            }
+
+            const dbRow = toDb('billing_rows', {
+              ...rowData,
+              id: `${monthId}_${rowId}`,
+              month_id: monthId,
+              dealer_id: dealerId,
+              client_id: rowId,
+            });
+            await upsertSupabase('billing_rows', 'id', dbRow.id, dbRow);
+            
+            // Also append back to the billing_months JSON to reflect in the active UI
+            if (supabase) {
+              const { data: monthData } = await supabase.from('billing_months').select('*').eq('month_id', monthId).eq('dealer_id', dealerId).maybeSingle();
+              if (monthData) {
+                const rowsStr = monthData.rows_data ?? monthData.rows;
+                let currentRows: any[] = [];
+                if (typeof rowsStr === 'string' && rowsStr.trim()) {
+                  try { currentRows = JSON.parse(rowsStr); } catch (e) {}
+                } else if (Array.isArray(rowsStr)) {
+                  currentRows = rowsStr;
+                }
+                
+                // Add if not already present
+                if (!currentRows.some((r: any) => (r.clientId || r.id) === rowId)) {
+                  currentRows.push(rowData);
+                  await supabase.from('billing_months').update({
+                    rows_data: JSON.stringify(currentRows)
+                  }).eq('month_id', monthId).eq('dealer_id', dealerId);
+                  
+                  // Trigger cache update so UI sees it instantly
+                  const syncKeys = [`billing_months_${dealerId}`, 'billing_months_all', 'billing_months_main', 'billing_months_'];
+                  syncKeys.forEach(sKey => {
+                    if (globalTableCaches[sKey]) {
+                      const mIndex = globalTableCaches[sKey].findIndex((m: any) => m.id === monthId && (m.dealerId === dealerId || (!m.dealerId && dealerId === 'main')));
+                      if (mIndex !== -1) {
+                        globalTableCaches[sKey][mIndex].rows = currentRows;
+                      }
+                      const subs = globalTableSubscribers[sKey];
+                      if (subs) {
+                        subs.forEach(cb => { try { cb([...globalTableCaches[sKey]]); } catch(e){} });
+                      }
+                    }
+                  });
+                }
+              }
+            }
+          }
         } else {
           try {
             await supabase.from(table).upsert([data]);

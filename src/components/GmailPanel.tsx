@@ -313,10 +313,10 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                       className="absolute z-50 left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl divide-y divide-slate-100 dark:divide-slate-800"
                     >
                       {filteredComplaints.length > 0 ? (
-                        filteredComplaints.map((c) => (
+                        filteredComplaints.map((c, idx) => (
                           <button
                             type="button"
-                            key={c.id}
+                            key={`c-${c.id || idx}-${idx}`}
                             onClick={() => selectComplaint(c)}
                             className="w-full text-left px-4 py-2.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center justify-between"
                           >
@@ -366,7 +366,7 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                   {availableTemplates.map((tpl, idx) => (
                     <button
                       type="button"
-                      key={tpl.name}
+                      key={`tpl-${tpl.name}-${idx}`}
                       onClick={() => handleApplyTemplate(idx)}
                       className={`px-3 py-2 text-left rounded-xl border text-xs transition-all cursor-pointer ${
                         selectedTemplateIndex === idx
@@ -488,9 +488,9 @@ export default function GmailPanel({ currentUser, appConfig, complaints = [] }: 
                 </div>
               ) : (
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                  {messages.map((msg) => (
+                  {messages.map((msg, idx) => (
                     <div 
-                      key={msg.id}
+                      key={`msg-${msg.id || idx}-${idx}`}
                       className="p-3.5 bg-slate-50/50 dark:bg-slate-950/40 border border-slate-100 dark:border-white/10 rounded-2xl space-y-2 hover:border-slate-200 dark:hover:border-slate-800 transition-all"
                     >
                       <div className="flex items-start justify-between">

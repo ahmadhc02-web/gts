@@ -966,7 +966,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                 
                 <div className="space-y-4">
                   {(config.homeSections || []).sort((a, b) => a.order - b.order).map((section, index) => (
-                    <div key={section.id} className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10">
+                    <div key={`${section.id}-${index}`} className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-white/10">
                       <div className="flex flex-col gap-1">
                         <button 
                           onClick={() => {

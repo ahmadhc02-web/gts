@@ -664,8 +664,8 @@ Provide:
                         }}
                         className="w-full bg-slate-55 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-xs px-3.5 py-3 rounded-2xl focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent text-slate-900 dark:text-white cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 duration-200 font-medium whitespace-nowrap overflow-ellipsis"
                       >
-                        {liveComplaints.map((c) => (
-                          <option key={c.id} value={c.id}>
+                        {liveComplaints.map((c, idx) => (
+                          <option key={`c-${c.id || idx}-${idx}`} value={c.id}>
                             {c.category?.toUpperCase() || 'GENERAL'} - {c.customerName || c.customerUsername} ({c.area || 'Unknown'})
                           </option>
                         ))}
@@ -794,9 +794,9 @@ Provide:
                 exit={{ opacity: 0, y: -15 }}
               >
                 <div className="space-y-4 pb-20 max-h-[calc(100vh-235px)] overflow-y-auto pr-1">
-                  {askHistory.map((msg) => (
+                  {askHistory.map((msg, idx) => (
                     <div 
-                      key={msg.id}
+                      key={`msg-${msg.id || idx}-${idx}`}
                       className={cn(
                         "flex flex-col max-w-[85%] rounded-2xl p-3.5 space-y-1.5 font-sans leading-relaxed shadow-sm block-animation",
                         msg.role === 'user'

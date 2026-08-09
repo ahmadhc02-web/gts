@@ -134,12 +134,12 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                 </p>
               ) : (
                 <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                  {billingMonths.map((month) => {
+                  {billingMonths.map((month, idx) => {
                     const isChecked = selectedMonthIds.includes(month.id);
                     const rowsCount = month.rows?.length || 0;
                     return (
                       <button
-                        key={month.id}
+                        key={`month-${month.id || idx}-${idx}`}
                         onClick={() => toggleMonthSelection(month.id)}
                         className={cn(
                           "w-full text-left p-3 rounded-xl border flex items-center justify-between transition-all cursor-pointer",

@@ -1520,7 +1520,7 @@ export default function App() {
     }
   };
 
-  const handleDeleteComplaint = async (id: string) => {
+  const handleDeleteComplaint = async (id: string, isPermanent: boolean = false) => {
     if (!user) return;
     if (isSuspended) {
       toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
@@ -1536,15 +1536,21 @@ export default function App() {
       // Optimistic state update
       setComplaints(prev => prev.filter(c => c.id !== id));
 
-      await pocketbaseService.deleteComplaint(id, customerName, user.fullName || user.username, complaint);
-      toast.success('Complaint moved to Recycle Bin!');
+      await pocketbaseService.deleteComplaint(id, customerName, user.fullName || user.username, complaint, isPermanent);
+      if (isPermanent) {
+        toast.success('Complaint permanently deleted!');
+      } else {
+        toast.success('Complaint moved to Recycle Bin!');
+      }
 
       // Log deletion activity in Operational Logs
       if (complaint) {
         const deletionLog = { 
           ...complaint, 
-          status: 'RECYCLED/DELETED', 
-          description: `ALERT: Record moved to Recycle Bin by ${user.username}` 
+          status: isPermanent ? 'PERMANENTLY DELETED' : 'RECYCLED/DELETED', 
+          description: isPermanent 
+            ? `ALERT: Record permanently deleted by ${user.username}` 
+            : `ALERT: Record moved to Recycle Bin by ${user.username}` 
         };
         try {
           if (navigator.onLine) {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield, Tag, DollarSign, Calendar } from 'lucide-react';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { Client, UserProfile } from '../types';
 import { supabaseService as pocketbaseService, fromDb } from '../lib/supabaseService';
 import { googleSheetsService } from '../services/googleSheetsService';
@@ -342,14 +343,18 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     }
   };
 
-  const handleDelete = async (id: string, clientName: string) => {
+  const handleDelete = async (id: string, clientName: string, isPermanent: boolean = false) => {
     try {
       const clientObj = clients.find(c => c.id === id);
       // Optimistic update
       setClients(prev => prev.filter(c => c.id !== id));
       
-      await pocketbaseService.deleteClient(id, clientName, currentUserName, clientObj);
-      toast.success('Client record moved to Recycle Bin!');
+      await pocketbaseService.deleteClient(id, clientName, currentUserName, clientObj, isPermanent);
+      if (isPermanent) {
+        toast.success('Client record permanently deleted!');
+      } else {
+        toast.success('Client record moved to Recycle Bin!');
+      }
       setDeletingId(null);
     } catch (error) {
       toast.error('Purge operation failed');
@@ -832,51 +837,27 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                                 <Edit3 size={16} />
                               </button>
                               
-                              {deletingId === client.id ? (
-                                <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-2 duration-200">
-                                  <button
-                                    onClick={() => {
-                                      if (isLocked) {
-                                        toast.error("🔒 MUTATION LOCKED");
-                                        return;
-                                      }
-                                      handleDelete(client.id, client.name);
-                                    }}
-                                    disabled={isLocked}
-                                    className="px-2.5 py-1 text-[9px] font-black text-white bg-rose-600 rounded-md hover:bg-rose-700 shadow-lg shadow-rose-500/20 uppercase tracking-widest"
-                                  >
-                                    Confirm
-                                  </button>
-                                  <button
-                                    onClick={() => setDeletingId(null)}
-                                    className="p-1 px-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (isLocked) {
-                                      toast.error("🔒 MUTATION LOCKED", {
-                                        description: "Please unlock the Billing Security Shield to delete."
-                                      });
-                                      return;
-                                    }
-                                    setDeletingId(client.id);
-                                  }}
-                                  className={cn(
-                                    "p-2 rounded-lg transition-all",
-                                    isLocked 
-                                      ? "text-slate-300 dark:text-slate-700 cursor-not-allowed hover:bg-slate-100/50" 
-                                      : "text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
-                                  )}
-                                  title={isLocked ? "Registry modifications are locked" : "Purge Record"}
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isLocked) {
+                                    toast.error("🔒 MUTATION LOCKED", {
+                                      description: "Please unlock the Billing Security Shield to delete."
+                                    });
+                                    return;
+                                  }
+                                  setDeletingId(client.id);
+                                }}
+                                className={cn(
+                                  "p-2 rounded-lg transition-all",
+                                  isLocked 
+                                    ? "text-slate-300 dark:text-slate-700 cursor-not-allowed hover:bg-slate-100/50" 
+                                    : "text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                                )}
+                                title={isLocked ? "Registry modifications are locked" : "Purge Record"}
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </>
                           )}
                         {!isAdmin && client.createdBy === currentUserId && (
@@ -941,7 +922,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
                     return (
                       <button
-                        key={'page-'+pageNum}
+                        key={`page-${i}-${pageNum}`}
                         onClick={() => setCurrentPage(pageNum)}
                         className={cn(
                           "w-8 h-8 rounded-lg text-[10px] font-black uppercase transition-all",
@@ -1132,6 +1113,26 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         </div>
       )}
       </AnimatePresence>
+
+      <DeleteConfirmationModal
+        isOpen={!!deletingId}
+        onClose={() => setDeletingId(null)}
+        title="Delete Client Record"
+        itemType="Client Record"
+        itemName={clients.find(c => c.id === deletingId)?.name || undefined}
+        onTrash={async () => {
+          const cl = clients.find(c => c.id === deletingId);
+          if (cl) {
+            await handleDelete(cl.id, cl.name, false);
+          }
+        }}
+        onPermanentDelete={async () => {
+          const cl = clients.find(c => c.id === deletingId);
+          if (cl) {
+            await handleDelete(cl.id, cl.name, true);
+          }
+        }}
+      />
     </div>
   );
 }

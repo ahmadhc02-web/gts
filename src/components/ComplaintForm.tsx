@@ -268,9 +268,9 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                       Matches Found
                     </span>
                   </div>
-                  {filteredClients.map(client => (
+                  {filteredClients.map((client, idx) => (
                     <button
-                      key={client.id}
+                      key={`client-${client.id || idx}-${idx}`}
                       type="button"
                       onClick={() => handleSelectClient(client)}
                       className="w-full px-4 py-2 flex flex-col items-center hover:bg-emerald-500 text-center group/item transition-all border-b border-slate-100 dark:border-white/10 last:border-0 cursor-pointer"
@@ -636,9 +636,9 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                           Database Matches Found
                         </span>
                       </div>
-                      {filteredClients.map(client => (
+                      {filteredClients.map((client, idx) => (
                         <button
-                          key={client.id}
+                          key={`client-${client.id || idx}-${idx}`}
                           type="button"
                           onClick={() => handleSelectClient(client)}
                           className="w-full px-4 py-2.5 flex flex-col items-center hover:bg-brand-accent text-center group/item transition-all border-b border-slate-100 dark:border-white/10 last:border-0 cursor-pointer"

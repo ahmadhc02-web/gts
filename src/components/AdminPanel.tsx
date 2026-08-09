@@ -25,6 +25,7 @@ import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpre
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { supabaseService as pocketbaseService, fromDb, globalTableCaches } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
@@ -684,11 +685,11 @@ export default function AdminPanel({
 
   const savingMonthCounts = React.useRef<Record<string, number>>({});
   
-  const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false, changedIndices?: number[] | Set<number>) => {
+  const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false, changedIndices?: number[] | Set<number>, excludedClientKeys?: string[]) => {
     savingMonthIds.current.add(monthId);
     savingMonthCounts.current[monthId] = (savingMonthCounts.current[monthId] || 0) + 1;
     try {
-      await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate, changedIndices);
+      await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate, changedIndices, excludedClientKeys);
       setHasPendingEdits(false);
     } catch (err: any) {
       toast.error("Save Blocked — Action Required", {
@@ -779,6 +780,8 @@ export default function AdminPanel({
   const [isDeleteSheetModalOpen, setIsDeleteSheetModalOpen] = useState(false);
   const [isConfirmingPurge, setIsConfirmingPurge] = useState(false);
   const [sheetIdToDelete, setSheetIdToDelete] = useState('');
+  const [isSheetDeleteConfirmModalOpen, setIsSheetDeleteConfirmModalOpen] = useState(false);
+  const [billingRowToDelete, setBillingRowToDelete] = useState<{ rowIndex: number, clientName: string } | null>(null);
   const [isPurgeAllModalOpen, setIsPurgeAllModalOpen] = useState(false);
   const [isConfirmingPurgeAll, setIsConfirmingPurgeAll] = useState(false);
   const [newMonthName, setNewMonthName] = useState('');
@@ -2062,49 +2065,75 @@ export default function AdminPanel({
     }
   };
 
-  const handleDeleteBillingRow = async (rowIndex: number) => {
+  const triggerDeleteBillingRow = (rowIndex: number) => {
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete rows from billing sheets." });
       return;
     }
     const activeDoc = billingMonths.find(m => m.id === currentMonthId);
     if (!activeDoc) return;
-    
-    if (!confirm("Discard this subscriber row from this month's sheet?\n\n(This will not remove them from the Main Clients Directory)")) return;
+
+    const deletedRow = activeDoc.rows?.[rowIndex];
+    const clientName = deletedRow?.name || deletedRow?.username || `Row ${rowIndex + 1}`;
+    setBillingRowToDelete({ rowIndex, clientName });
+  };
+
+  const handleDeleteBillingRow = async (rowIndex: number, isPermanent: boolean = false) => {
+    if (!isBillingUnlocked) {
+      toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete rows from billing sheets." });
+      return;
+    }
+    const activeDoc = billingMonths.find(m => m.id === currentMonthId);
+    if (!activeDoc) return;
 
     try {
       const updatedRows = [...(activeDoc.rows || [])];
       const [deletedRow] = updatedRows.splice(rowIndex, 1);
       
+      const clientKey = deletedRow?.username 
+        ? `u_${String(deletedRow.username).toLowerCase().trim()}` 
+        : (deletedRow?.clientId ? `i_${String(deletedRow.clientId)}` : (deletedRow?.id ? `i_${String(deletedRow.id)}` : null));
+      const currentExcluded = activeDoc.excludedClientKeys || [];
+      const updatedExcluded = clientKey && !currentExcluded.includes(clientKey)
+        ? [...currentExcluded, clientKey]
+        : currentExcluded;
+
       // Update local state instantly
-      if (currentMonthId) {
-              }
-      setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
+      setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows, excludedClientKeys: updatedExcluded } : m));
       
-      // Save billing row to Recycle Bin
-      try {
-        await pocketbaseService.saveToRecycleBin(
-          'billing_row',
-          deletedRow.clientId || deletedRow.username || `row_${rowIndex}_${Date.now()}`,
-          currentUser.username || 'admin',
-          activeDealerId || 'main',
-          {
-            originalData: deletedRow,
-            monthId: currentMonthId,
-            dealerId: activeDealerId || 'main'
-          }
-        );
-      } catch (binErr) {
-        console.error("Error saving billing row to recycle bin:", binErr);
+      if (!isPermanent) {
+        // Save billing row to Recycle Bin
+        try {
+          await pocketbaseService.saveToRecycleBin(
+            'billing_rows',
+            deletedRow.clientId || deletedRow.username || `row_${rowIndex}_${Date.now()}`,
+            currentUser.username || 'admin',
+            activeDealerId || 'main',
+            {
+              originalData: deletedRow,
+              monthId: currentMonthId,
+              dealerId: activeDealerId || 'main'
+            }
+          );
+        } catch (binErr) {
+          console.error("Error saving billing row to recycle bin:", binErr);
+        }
       }
 
-      await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId, true).catch(err => {
+      await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId, true, undefined, updatedExcluded).catch(err => {
          console.error("Failed to delete row in cloud:", err);
       });
-      toast.success("Recovery row removed from current month's sheet.");
+
+      if (isPermanent) {
+        toast.success("Recovery row permanently deleted from current month's sheet.");
+      } else {
+        toast.success("Recovery row removed and moved to Recycle Bin.");
+      }
     } catch (err: any) {
       console.error(err);
       toast.error("Failed to remove row", { description: getCleanErrorMessage(err) });
+    } finally {
+      setBillingRowToDelete(null);
     }
   };
 
@@ -2151,13 +2180,19 @@ export default function AdminPanel({
       const updatedRows = [...(activeDoc.rows || [])];
       updatedRows.splice(globalRowIdx, 1);
 
+      const clientKey = rowRef?.username 
+        ? `u_${String(rowRef.username).toLowerCase().trim()}` 
+        : (rowRef?.clientId ? `i_${String(rowRef.clientId)}` : (rowRef?.id ? `i_${String(rowRef.id)}` : null));
+      const currentExcluded = activeDoc.excludedClientKeys || [];
+      const updatedExcluded = clientKey && !currentExcluded.includes(clientKey)
+        ? [...currentExcluded, clientKey]
+        : currentExcluded;
+
       // Local state update immediately
-      if (currentMonthId) {
-              }
-      setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows } : m));
+      setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: updatedRows, excludedClientKeys: updatedExcluded } : m));
 
       // Remove from active Billing Month in DB
-      await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId, true).catch(err => {
+      await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId, true, undefined, updatedExcluded).catch(err => {
          console.error("Failed to update active billing month in cloud:", err);
       });
 
@@ -2177,7 +2212,7 @@ export default function AdminPanel({
     }
   };
 
-  const handleDeleteBillingMonth = async (selectedMonthId: string) => {
+  const handleDeleteBillingMonth = async (selectedMonthId: string, isPermanent: boolean = false) => {
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete entire billing sheets." });
       return;
@@ -2190,17 +2225,24 @@ export default function AdminPanel({
     deletingMonthIds.current.add(selectedMonthId);
 
     try {
-      await pocketbaseService.deleteBillingMonth(selectedMonthId, activeDealerId);
+      const fullMonthObj = billingMonths.find(m => m.id === selectedMonthId);
+      await pocketbaseService.deleteBillingMonth(selectedMonthId, activeDealerId, currentUser.username || 'admin', fullMonthObj, isPermanent);
       
       // Remove deleted recovery sheet from React state immediately
       setBillingMonths(prev => prev.filter(m => m.id !== selectedMonthId));
 
-      toast.success(`${selectedMonthId} recovery sheet was deleted from database successfully.`);
+      if (isPermanent) {
+        toast.success(`${selectedMonthId} recovery sheet was permanently deleted from database.`);
+      } else {
+        toast.success(`${selectedMonthId} recovery sheet was moved to Recycle Bin.`);
+      }
+
       if (currentMonthId === selectedMonthId) {
         setCurrentMonthId('');
       }
       setIsDeleteSheetModalOpen(false);
       setIsConfirmingPurge(false);
+      setIsSheetDeleteConfirmModalOpen(false);
     } catch (err: any) {
       console.error(err);
       toast.error("Purge month failed", { description: getCleanErrorMessage(err) });
@@ -2758,11 +2800,14 @@ export default function AdminPanel({
       r.username ? `u_${String(r.username).toLowerCase().trim()}` : (r.clientId ? `i_${String(r.clientId)}` : null)
     ).filter(Boolean));
     
-    // Find missing clients (registered clients not in current month sheet)
+    // Build excluded keys set for current active month
+    const excludedKeys = new Set(activeMonthDoc.excludedClientKeys || []);
+
+    // Find missing clients (registered clients not in current month sheet and not explicitly excluded)
     const missingClients = dbClients.filter(c => {
       if (!c) return false;
       const key = c.username ? `u_${String(c.username).toLowerCase().trim()}` : (c.id ? `i_${String(c.id)}` : null);
-      return key && !existingKeys.has(key);
+      return key && !existingKeys.has(key) && !excludedKeys.has(key);
     });
     
     let hasUpdates = false;
@@ -2770,6 +2815,14 @@ export default function AdminPanel({
     
     // Check for profile updates in existing rows without deleting ANY row
     for (let i = 0; i < updatedRows.length; i++) {
+      // Check if this row has any pending edits in progress
+      const hasPendingEdit = Object.keys(cellDebounceTimersRef.current || {}).some(
+        key => key.startsWith(`${i}_`)
+      );
+      if (hasPendingEdit) {
+        continue;
+      }
+
       const row = updatedRows[i];
       const match = dbClients.find(c => String(c.id) === String(row.clientId) || (c.username && String(c.username).toLowerCase().trim() === String(row.username || '').toLowerCase().trim()));
       if (match) {
@@ -2850,13 +2903,14 @@ export default function AdminPanel({
       
       const finalRows = [...updatedRows, ...newRows];
       
-      setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: finalRows } : m));
+      const activeExcluded = activeMonthDoc.excludedClientKeys || [];
+      setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: finalRows, excludedClientKeys: activeExcluded } : m));
       
-      saveBillingMonthTracked(currentMonthId, finalRows, currentUser?.username || 'admin', activeDealerId, true).catch(err => {
+      saveBillingMonthTracked(currentMonthId, finalRows, currentUser?.username || 'admin', activeDealerId, true, undefined, activeExcluded).catch(err => {
          console.warn("Background auto-sync failed:", err);
       });
     }
-  }, [masterClients, currentMonthId, activeDealerId]);
+  }, [masterClients, currentMonthId, activeDealerId, activeMonthDoc?.excludedClientKeys]);
 
 
   const activeRows = useMemo(() => {
@@ -3152,142 +3206,97 @@ export default function AdminPanel({
                   </button>
                 </div>
 
-                {!isConfirmingPurge ? (
-                  <div className="space-y-4">
-                    <label className={labelClasses}>Select Sheet From List</label>
-                    
-                    {billingMonths.length === 0 ? (
-                      <div className="py-8 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-white\/10 font-sans">
-                        No billing monthly sheets found in database.
-                      </div>
-                    ) : (
-                      <div className="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
-                        {billingMonths.map((m) => {
-                          const isSelected = sheetIdToDelete === m.id;
-                          return (
-                            <motion.button
-                              type="button"
-                              key={`sheet-item-${m.id}`}
-                              onClick={() => setSheetIdToDelete(m.id)}
-                              whileHover={{ y: -1 }}
-                              whileTap={{ scale: 0.99 }}
-                              className={cn(
-                                "w-full text-left p-3 rounded-2xl border transition-all duration-300 flex items-center justify-between gap-3 cursor-pointer relative overflow-hidden",
-                                isSelected
-                                  ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-500 dark:border-rose-900 shadow-md shadow-rose-500/5"
-                                  : "bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-900 border-slate-200/80 dark:border-white\/10"
-                              )}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className={cn(
-                                  "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
-                                  isSelected
-                                    ? "bg-rose-500 text-white"
-                                    : "bg-slate-200/70 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                                )}>
-                                  <FileSpreadsheet size={15} />
-                                </div>
-                                <div>
-                                  <span className="block text-xs font-black uppercase tracking-wide text-slate-800 dark:text-zinc-100 font-sans">
-                                    {m.id}
-                                  </span>
-                                  <span className="block text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-0.5">
-                                    {m.rows?.length || 0} Registered Clients
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              {/* Selection Indicator */}
-                              <div className={cn(
-                                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all shrink-0",
-                                isSelected
-                                  ? "border-rose-500 bg-rose-500 text-white"
-                                  : "border-slate-300 dark:border-slate-700 bg-transparent"
-                              )}>
-                                {isSelected && (
-                                  <motion.div
-                                    initial={{ scale: 0 }}
-                                    animate={{ scale: 1 }}
-                                    className="w-1.5 h-1.5 rounded-full bg-white"
-                                  />
-                                )}
-                              </div>
-                            </motion.button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    <div className="p-4 bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-900 rounded-2xl flex items-start gap-3">
-                      <AlertTriangle className="text-amber-500 shrink-0 mt-0.5 animate-bounce" size={16} />
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-normal">
-                        <span className="font-extrabold text-amber-600 block mb-0.5">⚠️ Data Purge Warning:</span>
-                        Deleting a sheet will permanently remove all clients and their payment recovery statuses for that selected period.
-                      </div>
+                <div className="space-y-4">
+                  <label className={labelClasses}>Select Sheet From List</label>
+                  
+                  {billingMonths.length === 0 ? (
+                    <div className="py-8 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-white\/10 font-sans">
+                      No billing monthly sheets found in database.
                     </div>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
+                      {billingMonths.map((m) => {
+                        const isSelected = sheetIdToDelete === m.id;
+                        return (
+                          <motion.button
+                            type="button"
+                            key={`sheet-item-${m.id}`}
+                            onClick={() => setSheetIdToDelete(m.id)}
+                            whileHover={{ y: -1 }}
+                            whileTap={{ scale: 0.99 }}
+                            className={cn(
+                              "w-full text-left p-3 rounded-2xl border transition-all duration-300 flex items-center justify-between gap-3 cursor-pointer relative overflow-hidden",
+                              isSelected
+                                ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-500 dark:border-rose-900 shadow-md shadow-rose-500/5"
+                                : "bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-900 border-slate-200/80 dark:border-white\/10"
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={cn(
+                                "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
+                                isSelected
+                                  ? "bg-rose-500 text-white"
+                                  : "bg-slate-200/70 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                              )}>
+                                <FileSpreadsheet size={15} />
+                              </div>
+                              <div>
+                                <span className="block text-xs font-black uppercase tracking-wide text-slate-800 dark:text-zinc-100 font-sans">
+                                  {m.id}
+                                </span>
+                                <span className="block text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-0.5">
+                                  {m.rows?.length || 0} Registered Clients
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Selection Indicator */}
+                            <div className={cn(
+                              "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all shrink-0",
+                              isSelected
+                                ? "border-rose-500 bg-rose-500 text-white"
+                                : "border-slate-300 dark:border-slate-700 bg-transparent"
+                            )}>
+                              {isSelected && (
+                                <motion.div
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: 1 }}
+                                  className="w-1.5 h-1.5 rounded-full bg-white"
+                                />
+                              )}
+                            </div>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsDeleteSheetModalOpen(false)}
-                        className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-black uppercase tracking-widest text-[10px] transition-colors cursor-pointer"
-                      >
-                        Close
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!sheetIdToDelete}
-                        onClick={() => setIsConfirmingPurge(true)}
-                        className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl font-black uppercase tracking-widest text-[10px] transition-all shadow-lg shadow-rose-500/15 cursor-pointer"
-                      >
-                        Delete Selected
-                      </button>
+                  <div className="p-4 bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-900 rounded-2xl flex items-start gap-3">
+                    <AlertTriangle className="text-amber-500 shrink-0 mt-0.5 animate-bounce" size={16} />
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-normal">
+                      <span className="font-extrabold text-amber-600 block mb-0.5">⚠️ Data Purge Warning:</span>
+                      Deleting a sheet will permanently remove all clients and their payment recovery statuses for that selected period.
                     </div>
                   </div>
-                ) : (
-                  // Deep interactive double confirmation step
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.98 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="space-y-5"
-                  >
-                    <div className="p-5 bg-rose-500/10 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-900/70 rounded-2xl text-center space-y-3">
-                      <div className="w-12 h-12 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center mx-auto mb-2 animate-pulse">
-                        <AlertTriangle size={24} />
-                      </div>
-                      <h4 className="text-sm font-black uppercase tracking-tight text-rose-700 dark:text-rose-400">
-                        Confirm Permanent Deletion
-                      </h4>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed uppercase tracking-wider">
-                        Are you absolutely sure you want to completely destroy the recovery sheet for <span className="font-black text-rose-600 dark:text-rose-400 underline">{sheetIdToDelete}</span>?
-                      </p>
-                      <div className="text-[10px] bg-white/70 dark:bg-slate-950/60 p-2.5 rounded-xl border border-rose-200/50 dark:border-rose-900/40 text-slate-500 dark:text-slate-400 font-mono font-extrabold inline-block">
-                        RECOVERY MONTH: {sheetIdToDelete}
-                      </div>
-                    </div>
 
-                    <p className="text-[10px] text-slate-400 text-center uppercase tracking-widest font-bold">
-                      ⚠️ This process is final and cannot be undone.
-                    </p>
-
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsConfirmingPurge(false)}
-                        className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-black uppercase tracking-widest text-[10px] transition-colors cursor-pointer"
-                      >
-                        ◀ Go Back
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteBillingMonth(sheetIdToDelete)}
-                        className="flex-1 py-3 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-700 hover:to-rose-800 text-white rounded-xl font-black uppercase tracking-widest text-[10px] transition-all shadow-lg shadow-red-500/20 cursor-pointer"
-                      >
-                        Confirm Delete
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsDeleteSheetModalOpen(false)}
+                      className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl font-black uppercase tracking-widest text-[10px] transition-colors cursor-pointer"
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!sheetIdToDelete}
+                      onClick={() => setIsSheetDeleteConfirmModalOpen(true)}
+                      className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl font-black uppercase tracking-widest text-[10px] transition-all shadow-lg shadow-rose-500/15 cursor-pointer"
+                    >
+                      Delete Selected
+                    </button>
+                  </div>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -7586,13 +7595,13 @@ export default function AdminPanel({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-900/50">
-                        {filteredLogs.map((log) => {
+                        {filteredLogs.map((log, idx) => {
                           const logTime = new Date(log.timestamp);
                           const isFailed = log.status === 'failed';
                           const isSuccess = log.status === 'success';
                           
                           return (
-                            <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
+                            <tr key={`log-${log.id || idx}-${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
                               <td className="py-4 px-6 whitespace-nowrap text-xs font-mono font-bold text-slate-500">
                                 {logTime.toLocaleDateString()} {logTime.toLocaleTimeString()}
                               </td>
@@ -7999,8 +8008,8 @@ export default function AdminPanel({
                         className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white\/10 rounded-xl focus:border-blue-500 font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
                       >
                         <option value="all">ALL AREAS</option>
-                        {Array.from(new Set(activeRows.map((r: any) => r.area).filter(Boolean))).map((areaName: any) => (
-                          <option key={areaName} value={areaName}>{areaName}</option>
+                        {Array.from(new Set(activeRows.map((r: any) => r.area).filter(Boolean))).map((areaName: any, idx) => (
+                          <option key={`area-${areaName}-${idx}`} value={areaName}>{areaName}</option>
                         ))}
                       </select>
                     </div>
@@ -8414,7 +8423,7 @@ export default function AdminPanel({
                                     <button
                                       type="button"
                                       disabled={!isBillingUnlocked}
-                                      onClick={() => handleDeleteBillingRow(globalRowIdx)}
+                                      onClick={() => triggerDeleteBillingRow(globalRowIdx)}
                                       className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded transition-colors disabled:opacity-45 "
                                       title={isBillingUnlocked ? "Exclude row from current month's sheet" : "Unlock billing sheet to discard registers"}
                                     >
@@ -8851,7 +8860,7 @@ export default function AdminPanel({
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     <button
                                       type="button"
-                                      onClick={() => handleDeleteBillingRow(globalRowIdx)}
+                                      onClick={() => triggerDeleteBillingRow(globalRowIdx)}
                                       className="px-2 py-1 text-[9px] font-black uppercase text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-lg transition-colors flex items-center gap-1 shrink-0 select-none cursor-pointer"
                                       title="Exclude row from current month's sheet"
                                     >
@@ -9445,10 +9454,10 @@ export default function AdminPanel({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                        {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').map((subUser) => {
+                        {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').map((subUser, idx) => {
                           const isPassVisible = !!visiblePasswords[subUser.uid];
                           return (
-                            <tr key={subUser.uid} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
+                            <tr key={`subuser-${subUser.uid || idx}-${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-extrabold text-xs text-slate-600 dark:text-slate-300 uppercase">
@@ -9550,6 +9559,42 @@ export default function AdminPanel({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <DeleteConfirmationModal
+        isOpen={!!billingRowToDelete}
+        onClose={() => setBillingRowToDelete(null)}
+        title="Delete Billing Record Row"
+        itemType="Billing Row"
+        itemName={billingRowToDelete?.clientName || undefined}
+        onTrash={async () => {
+          if (billingRowToDelete) {
+            await handleDeleteBillingRow(billingRowToDelete.rowIndex, false);
+          }
+        }}
+        onPermanentDelete={async () => {
+          if (billingRowToDelete) {
+            await handleDeleteBillingRow(billingRowToDelete.rowIndex, true);
+          }
+        }}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={isSheetDeleteConfirmModalOpen}
+        onClose={() => setIsSheetDeleteConfirmModalOpen(false)}
+        title="Delete Recovery Sheet"
+        itemType="Recovery Sheet"
+        itemName={sheetIdToDelete || undefined}
+        onTrash={async () => {
+          if (sheetIdToDelete) {
+            await handleDeleteBillingMonth(sheetIdToDelete, false);
+          }
+        }}
+        onPermanentDelete={async () => {
+          if (sheetIdToDelete) {
+            await handleDeleteBillingMonth(sheetIdToDelete, true);
+          }
+        }}
+      />
 
     </div>
     </>

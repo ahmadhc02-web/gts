@@ -617,7 +617,7 @@ export default function Layout({
 
               const visible = permitted.filter(item => !(branding?.hiddenTabs || []).includes(item.id));
 
-              return visible.map((item) => {
+              return visible.map((item, idx) => {
                 const isItemActive = (() => {
                   if (item.id === 'chat') return isChatOpen;
                   if (item.id === 'monitor') return isMonitorOpen;
@@ -643,7 +643,7 @@ export default function Layout({
 
                 return (
                   <motion.button
-                    key={item.id}
+                    key={`nav-${item.id}-${idx}`}
                     onClick={handleItemClick}
                     initial="rest"
                     whileHover="hover"
@@ -788,8 +788,8 @@ export default function Layout({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar no-scrollbar">
-          {filteredCategories.map((cat) => (
-            <div key={cat.id} className="space-y-1">
+          {filteredCategories.map((cat, catIdx) => (
+            <div key={`cat-${cat.id}-${catIdx}`} className="space-y-1">
               <button 
                 onClick={() => toggleCat(cat.id)}
                 className="w-full flex items-center justify-between px-4 py-2 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors group cursor-pointer"
@@ -820,7 +820,7 @@ export default function Layout({
                       
                       return (
                         <motion.button 
-                          key={item.id}
+                          key={`sub-${item.id}-${itemIdx}`}
                           onClick={() => handleSidebarNav(item.id)}
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
@@ -1305,11 +1305,11 @@ export default function Layout({
                             Billing Recovery Sheets
                           </div>
                           {billingMonths.length > 0 ? (
-                            billingMonths.map((m) => {
+                            billingMonths.map((m, mIdx) => {
                               const isSelected = m.id === currentMonthId;
                               return (
                                 <button
-                                  key={m.id}
+                                  key={`m-${m.id}-${mIdx}`}
                                   type="button"
                                   onClick={() => {
                                     window.dispatchEvent(new CustomEvent('gts-billing-month-selected', { detail: m.id }));
