@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
-  X, Printer, Check, Info, FileSpreadsheet, Sparkles, FolderSync, CheckSquare, Square, FileText, ChevronRight
+  X, Printer, Check, Info, FileSpreadsheet, Sparkles, FolderSync, CheckSquare, Square, FileText, ChevronRight, FileDown
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
@@ -32,6 +32,8 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
   const [filterPaymentStatus, setFilterPaymentStatus] = useState<'all' | 'paid' | 'unpaid'>('all');
   const [filterStartDay, setFilterStartDay] = useState<string>('');
   const [filterEndDay, setFilterEndDay] = useState<string>('');
+  const [filterRt, setFilterRt] = useState<'all' | 'Phy' | 'Online' | 'Office'>('all');
+  const [sortBy, setSortBy] = useState<'name' | 'area' | 'username'>('name');
 
   // Automatically select the latest month on load if present
   useEffect(() => {
@@ -206,20 +208,48 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
               {/* Status and Date Filters */}
               <div className="space-y-3 mt-4 pt-4 border-t border-slate-200 dark:border-white/10">
                 <span className="font-black text-[10px] uppercase tracking-widest text-slate-400 dark:text-slate-550 select-none block mb-2">
-                  Advanced Filters
+                  Advanced Filters & Sorting
                 </span>
                 
                 <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Payment Status</label>
+                      <select
+                        value={filterPaymentStatus}
+                        onChange={(e) => setFilterPaymentStatus(e.target.value as any)}
+                        className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
+                      >
+                        <option value="all">Show All Rows</option>
+                        <option value="unpaid">Only Unpaid (unpaid, tdc)</option>
+                        <option value="paid">Only Paid (paid, partial)</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">RT Filter</label>
+                      <select
+                        value={filterRt}
+                        onChange={(e) => setFilterRt(e.target.value as any)}
+                        className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
+                      >
+                        <option value="all">All RT Types</option>
+                        <option value="Phy">Phy</option>
+                        <option value="Online">Online</option>
+                        <option value="Office">Office</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Payment Status</label>
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Sort By</label>
                     <select
-                      value={filterPaymentStatus}
-                      onChange={(e) => setFilterPaymentStatus(e.target.value as any)}
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
                       className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
                     >
-                      <option value="all">Show All Rows</option>
-                      <option value="unpaid">Only Unpaid (unpaid, tdc)</option>
-                      <option value="paid">Only Paid (paid, partial)</option>
+                      <option value="name">Name (A-Z)</option>
+                      <option value="area">Area / Zone (A-Z)</option>
+                      <option value="username">User ID (A-Z)</option>
                     </select>
                   </div>
 
@@ -257,16 +287,29 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
 
           {/* Sticky Actions Trigger Footer */}
           <div className="p-5 border-t border-slate-150 dark:border-white/10 bg-slate-50 dark:bg-slate-950 flex flex-col gap-3">
-            <button
-              onClick={handlePrint}
-              disabled={selectedMonthIds.length === 0}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-brand-accent hover:opacity-90 disabled:opacity-30 disabled:hover:opacity-30 text-white font-black uppercase tracking-widest text-[11px] cursor-pointer transition-all active:scale-[0.98] shadow-lg shadow-brand-accent/20"
-            >
-              <Printer size={14} />
-              Spool Print ({selectedMonthIds.length} Sheets)
-            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={handlePrint}
+                disabled={selectedMonthIds.length === 0}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-30 disabled:hover:opacity-30 text-white font-black uppercase tracking-widest text-[11px] cursor-pointer transition-all active:scale-[0.98] shadow-lg"
+              >
+                <Printer size={14} />
+                Print
+              </button>
+              <button
+                onClick={() => {
+                  toast.success("Ready to save as PDF", { description: "Select 'Save as PDF' in the destination dropdown of the print dialog."});
+                  setTimeout(handlePrint, 500);
+                }}
+                disabled={selectedMonthIds.length === 0}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-brand-accent hover:opacity-90 disabled:opacity-30 disabled:hover:opacity-30 text-white font-black uppercase tracking-widest text-[11px] cursor-pointer transition-all active:scale-[0.98] shadow-lg shadow-brand-accent/20"
+              >
+                <FileDown size={14} />
+                Save PDF
+              </button>
+            </div>
             <p className="text-[8px] text-center text-slate-400 uppercase tracking-widest font-mono font-bold">
-              Pressing Spool loads A4 print preview dialog
+              Layout is optimized for multi-page A4 printing
             </p>
           </div>
 
@@ -308,6 +351,10 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                   rows = rows.filter((r: any) => r.paymentStatus === 'unpaid' || r.paymentStatus === 'tdc' || !r.paymentStatus);
                 }
 
+                if (filterRt !== 'all') {
+                  rows = rows.filter((r: any) => (r.rt || '').toLowerCase() === filterRt.toLowerCase());
+                }
+
                 if (filterStartDay !== '') {
                   rows = rows.filter((r: any) => {
                     const day = parseInt(r.billingDay || '5', 10);
@@ -322,19 +369,44 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                   });
                 }
 
+                // Sorting
+                rows = [...rows].sort((a: any, b: any) => {
+                  if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
+                  if (sortBy === 'area') return (a.area || '').localeCompare(b.area || '');
+                  if (sortBy === 'username') return (a.username || '').localeCompare(b.username || '');
+                  return 0;
+                });
+
                 const expectedValue = rows.reduce((sum: number, r: any) => sum + (parseFloat(r.totalAmount) || 0), 0);
                 const baseValue = rows.reduce((sum: number, r: any) => sum + (parseFloat(r.baseAmount) || 0), 0);
                 const recoveredValue = rows.reduce((sum: number, r: any) => sum + (parseFloat(r.paymentReceived) || 0), 0);
                 const outstandingValue = expectedValue - recoveredValue;
                 const recoveryRate = expectedValue > 0 ? (recoveredValue / expectedValue) * 100 : 0;
 
-                return (
+                // Pagination logic
+                const ROWS_PER_PAGE = 45;
+                const totalRows = rows.length;
+                const pages = [];
+                for (let i = 0; i < totalRows; i += ROWS_PER_PAGE) {
+                  pages.push({
+                    pageRows: rows.slice(i, i + ROWS_PER_PAGE),
+                    pageNumber: Math.floor(i / ROWS_PER_PAGE) + 1,
+                    isLastPage: i + ROWS_PER_PAGE >= totalRows,
+                    globalStartIndex: i
+                  });
+                }
+                
+                if (pages.length === 0) {
+                  pages.push({ pageRows: [], pageNumber: 1, isLastPage: true, globalStartIndex: 0 });
+                }
+
+                return pages.map((page) => (
                   <div 
-                    key={monthDoc.id}
-                    className="batch-print-page w-[210mm] min-h-[297mm] bg-white border border-slate-300 shadow-xl p-10 flex flex-col text-slate-900 justify-start break-after-page page-break-after-always"
+                    key={`${monthDoc.id}-page-${page.pageNumber}`}
+                    className="batch-print-page w-[210mm] h-[297mm] overflow-hidden bg-white border border-slate-300 shadow-xl p-10 flex flex-col text-slate-900 justify-start break-after-page page-break-after-always relative"
                   >
                     {/* Official Corporate Letterhead Info */}
-                    <div className="flex justify-between items-start border-b-2 border-black pb-4">
+                    <div className="flex justify-between items-start border-b-2 border-black pb-4 shrink-0">
                       <div>
                         <h2 className="text-md font-sans tracking-tight leading-none text-black font-black uppercase flex items-center gap-1.5">
                           <FileSpreadsheet className="w-5 h-5 text-black inline shrink-0" />
@@ -354,29 +426,31 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                       </div>
                     </div>
 
-                    {/* Statistical highlights row */}
-                    <div className="grid grid-cols-4 gap-3 my-4 py-3.5 px-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs font-mono select-none">
-                      <div className="space-y-0.5 border-r border-slate-200">
-                        <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold">TOTAL EXPECTED</p>
-                        <p className="text-[12px] font-black text-black">PKR {expectedValue.toLocaleString()}</p>
+                    {/* Statistical highlights row - Only show on first page of this month */}
+                    {page.pageNumber === 1 && (
+                      <div className="grid grid-cols-4 gap-3 my-4 py-3.5 px-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs font-mono select-none shrink-0">
+                        <div className="space-y-0.5 border-r border-slate-200">
+                          <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold">TOTAL EXPECTED</p>
+                          <p className="text-[12px] font-black text-black">PKR {expectedValue.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-0.5 border-r border-slate-200">
+                          <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold">RECOVERED AMOUNT</p>
+                          <p className="text-[12px] font-black text-emerald-600">PKR {recoveredValue.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-0.5 border-r border-slate-200">
+                          <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold">OUTSTANDING DUE</p>
+                          <p className="text-[12px] font-black text-rose-600">PKR {outstandingValue.toLocaleString()}</p>
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold">RECOVERY TAX RATE</p>
+                          <p className="text-[12px] font-black text-blue-600">{recoveryRate.toFixed(1)}%</p>
+                        </div>
                       </div>
-                      <div className="space-y-0.5 border-r border-slate-200">
-                        <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold">RECOVERED AMOUNT</p>
-                        <p className="text-[12px] font-black text-emerald-600">PKR {recoveredValue.toLocaleString()}</p>
-                      </div>
-                      <div className="space-y-0.5 border-r border-slate-200">
-                        <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold">OUTSTANDING DUE</p>
-                        <p className="text-[12px] font-black text-rose-600">PKR {outstandingValue.toLocaleString()}</p>
-                      </div>
-                      <div className="space-y-0.5">
-                        <p className="text-[8px] uppercase tracking-wider text-slate-400 font-bold">RECOVERY TAX RATE</p>
-                        <p className="text-[12px] font-black text-blue-600">{recoveryRate.toFixed(1)}%</p>
-                      </div>
-                    </div>
+                    )}
 
                     {/* Compact Spooled subscribers data grid */}
-                    <div className="flex-1 mt-1">
-                      {rows.length === 0 ? (
+                    <div className={cn("mt-1", page.pageNumber === 1 ? "" : "mt-4")}>
+                      {page.pageRows.length === 0 ? (
                         <div className="py-10 border border-dashed border-slate-300 rounded-xl text-center text-[10px] text-slate-400 uppercase font-mono tracking-widest font-bold">
                           Blank Registry Month. No rows loaded.
                         </div>
@@ -397,8 +471,8 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                             </tr>
                           </thead>
                           <tbody>
-                            {rows.map((row: any, rIdx: number) => {
-                              const outstanding = parseFloat(row.totalAmount || 0) - parseFloat(row.paymentReceived || 0);
+                            {page.pageRows.map((row: any, localIdx: number) => {
+                              const rIdx = page.globalStartIndex + localIdx;
                               return (
                                 <tr key={rIdx} className="border-b border-slate-300 font-mono text-[9px] hover:bg-slate-50/50">
                                   <td className="py-1 px-1 border-r border-black text-center font-sans font-bold text-slate-600 select-none bg-slate-50/50">
@@ -469,38 +543,42 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                       )}
                     </div>
 
-                    {/* Official Dispatch signature section */}
-                    <div className="grid grid-cols-3 gap-6 pt-6 border-t border-slate-200 text-[10px] font-sans tracking-wide mt-6">
-                      <div className="flex flex-col gap-1 select-none">
-                        <span className="font-mono font-black text-slate-400 uppercase text-[8px]">Compiled Registry Officer</span>
-                        <div className="border-b border-slate-300 border-dashed py-1 text-[11px] font-black uppercase">
-                          AHMAD IQBAL / SYSTEM
-                        </div>
-                      </div>
+                    {/* Footer pinned to bottom */}
+                    <div className="absolute bottom-10 left-10 right-10 flex flex-col justify-end">
+                      {/* Official Dispatch signature section (Only on last page) */}
+                      {page.isLastPage && (
+                        <div className="grid grid-cols-3 gap-6 pt-6 border-t border-slate-200 text-[10px] font-sans tracking-wide mb-6">
+                          <div className="flex flex-col gap-1 select-none">
+                            <span className="font-mono font-black text-slate-400 uppercase text-[8px]">Compiled Registry Officer</span>
+                            <div className="border-b border-slate-300 border-dashed py-1 text-[11px] font-black uppercase">
+                              AHMAD IQBAL / SYSTEM
+                            </div>
+                          </div>
 
-                      <div className="flex flex-col gap-1 select-none text-center">
-                        <span className="font-mono font-black text-slate-400 uppercase text-[8px]">Recovery Audit Signature</span>
-                        <div className="border-b border-slate-300 border-dashed py-1 text-[11px] text-slate-300 italic">
-                          - Verified -
-                        </div>
-                      </div>
+                          <div className="flex flex-col gap-1 select-none text-center">
+                            <span className="font-mono font-black text-slate-400 uppercase text-[8px]">Recovery Audit Signature</span>
+                            <div className="border-b border-slate-300 border-dashed py-1 text-[11px] text-slate-300 italic">
+                              - Verified -
+                            </div>
+                          </div>
 
-                      <div className="flex flex-col gap-1 select-none text-right">
-                        <span className="font-mono font-black text-slate-400 uppercase text-[8px]">Final Approving Authority</span>
-                        <div className="border-b border-slate-300 border-dashed py-1 text-[11px] font-black text-slate-900 italic">
-                          Authorized Sign
+                          <div className="flex flex-col gap-1 select-none text-right">
+                            <span className="font-mono font-black text-slate-400 uppercase text-[8px]">Final Approving Authority</span>
+                            <div className="border-b border-slate-300 border-dashed py-1 text-[11px] font-black text-slate-900 italic">
+                              Authorized Sign
+                            </div>
+                          </div>
                         </div>
+                      )}
+
+                      {/* Micro footnote */}
+                      <div className="flex items-center justify-between text-[8px] text-slate-400 uppercase select-none tracking-widest font-mono border-t border-slate-100 pt-1.5">
+                        <span>Enterprise Financial Ledger Suite</span>
+                        <span>Page {page.pageNumber} of {pages.length} • Month Cycle Ref: {monthDoc.id}</span>
                       </div>
                     </div>
-
-                    {/* Micro footnote */}
-                    <div className="mt-5 flex items-center justify-between text-[8px] text-slate-400 uppercase select-none tracking-widest font-mono border-t border-slate-100 pt-1.5">
-                      <span>Enterprise Financial Ledger Suite</span>
-                      <span>Month Cycle Ref: {monthDoc.id}</span>
-                    </div>
-
                   </div>
-                );
+                ));
               })
             )}
 
@@ -557,6 +635,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
             width: 210mm !important;
             height: 297mm !important;
             min-height: 297mm !important;
+            max-height: 297mm !important;
             box-sizing: border-box !important;
             padding: 12mm 15mm !important;
             margin: 0 !important;
@@ -572,6 +651,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
             display: flex !important;
             flex-direction: column !important;
             justify-content: flex-start !important;
+            position: relative !important;
           }
           .batch-print-page table {
             width: 100% !important;
