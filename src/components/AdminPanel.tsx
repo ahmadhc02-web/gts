@@ -1791,11 +1791,26 @@ export default function AdminPanel({
 
     setMasterClients(prev => {
       if (!prev || prev.length === 0) return prev;
-      const matchIdx = prev.findIndex((c: any) =>
-        (targetId && String(c.id) === String(targetId)) ||
-        (targetUsername && String(c.username || '').toLowerCase().trim() === targetUsername) ||
-        (targetName && String(c.name || '').toLowerCase().trim() === targetName)
-      );
+      
+      let matchIdx = -1;
+      const hasRealId = targetId && !String(targetId).startsWith('new_row_') && !String(targetId).startsWith('idx_');
+
+      if (hasRealId) {
+        matchIdx = prev.findIndex((c: any) => String(c.id) === String(targetId));
+      }
+
+      if (matchIdx === -1 && targetUsername) {
+        matchIdx = prev.findIndex((c: any) => c.username && String(c.username).toLowerCase().trim() === targetUsername);
+      }
+
+      if (matchIdx === -1 && targetName) {
+        const sameNamedClients = prev.filter((c: any) => c.name && String(c.name).toLowerCase().trim() === targetName);
+        if (sameNamedClients.length === 1) {
+          matchIdx = prev.findIndex((c: any) => c.id === sameNamedClients[0].id);
+        } else if (sameNamedClients.length > 1) {
+          console.warn(`Ambiguous same-name case for "${row.name}" in masterClients sync. Leaving unsynced.`);
+        }
+      }
 
       if (matchIdx === -1) return prev;
 

@@ -1923,11 +1923,7 @@ export default function EntrySheet({
           if (isExcludedName(r.name)) return;
 
           // Find existing customer card
-          const client = clients.find((c: any) => 
-            (r.clientId && c.id === r.clientId) ||
-            (r.clientUsername && c.username?.toLowerCase() === String(r.clientUsername).toLowerCase()) ||
-            (r.cId && (c.id?.toLowerCase() === String(r.cId).toLowerCase() || c.username?.toLowerCase() === String(r.cId).toLowerCase()))
-          );
+          const client = findClientForEntry(r);
 
           if (client) {
             r.clientId = client.id;
@@ -2036,9 +2032,11 @@ export default function EntrySheet({
               if (!hasId && !hasName && amountVal === 0 && !isStatusString) return;
               if (isExcludedName(r.name)) return;
 
-              const client = clients.find((c: any) => c.id === r.clientId);
+              const client = findClientForEntry(r);
 
               let matchedIdx = -1;
+              const hasAnyId = Boolean(r.clientId || r.clientUsername || (r.cId && String(r.cId).trim()));
+
               if (r.clientId || r.clientUsername) {
                 const searchClientId = (r.clientId || '').trim().toLowerCase();
                 const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
@@ -2056,7 +2054,7 @@ export default function EntrySheet({
                   (br.id && String(br.id).trim().toLowerCase() === searchId)
                 );
               }
-              if (matchedIdx === -1 && hasName) {
+              if (matchedIdx === -1 && hasName && !hasAnyId) {
                 const searchName = String(r.name).trim().toLowerCase();
                 const matchedIndices = baseRecalculatedRows.reduce((acc: number[], br: any, idx: number) => {
                   if (br.name && String(br.name).trim().toLowerCase() === searchName) {
