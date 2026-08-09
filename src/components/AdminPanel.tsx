@@ -601,6 +601,7 @@ export default function AdminPanel({
 
   const [cellProgress, setCellProgress] = useState<Record<string, number>>({});
   const cellIntervalsRef = React.useRef<Record<string, NodeJS.Timeout>>({});
+  const cellDebounceTimersRef = React.useRef<Record<string, NodeJS.Timeout>>({});
 
   const animateCellProgress = (rowIndex: number, field: string, promise: Promise<any>) => {
     const cellKey = `${rowIndex}_${field}`;
@@ -1917,14 +1918,37 @@ export default function AdminPanel({
       setBillingMonths(nextMonths);
       setHasPendingEdits(true);
 
-      syncRecoveryRowToMasterClient(targetRow);
+      const commitSave = () => {
+        const latestMonths = billingMonthsRef.current;
+        const currentDocLatest = latestMonths.find(m => m.id === currentMonthId);
+        if (!currentDocLatest || !currentDocLatest.rows) return;
+        const latestRows = currentDocLatest.rows;
+        const latestTargetRow = latestRows[rowIndex];
+        if (!latestTargetRow) return;
 
-      const savePromise = saveBillingMonthTracked(currentMonthId, nextRows, currentUser.username || 'admin', activeDealerId, forceImmediate, [rowIndex]);
-      animateCellProgress(rowIndex, field, savePromise);
-      savePromise.catch((err)=>{
-        toast.error("Cloud Sync Failed", { description: "Failed to save recovery cell changes. Check connection." });
-        console.error("Auto-sync cell change failed:", err);
-      });
+        syncRecoveryRowToMasterClient(latestTargetRow);
+        
+        const savePromise = saveBillingMonthTracked(currentMonthId, latestRows, currentUser.username || 'admin', activeDealerId, true, [rowIndex]);
+        animateCellProgress(rowIndex, field, savePromise);
+        savePromise.catch((err)=>{
+          toast.error("Cloud Sync Failed", { description: "Failed to save recovery cell changes. Check connection." });
+          console.error("Auto-sync cell change failed:", err);
+        });
+      };
+
+      const timerKey = `${rowIndex}_${field}`;
+      if (cellDebounceTimersRef.current[timerKey]) {
+        clearTimeout(cellDebounceTimersRef.current[timerKey]);
+      }
+
+      if (forceImmediate) {
+        commitSave();
+      } else {
+        cellDebounceTimersRef.current[timerKey] = setTimeout(() => {
+          commitSave();
+          delete cellDebounceTimersRef.current[timerKey];
+        }, 2000);
+      }
 
     } catch (err: any) {
       console.error(err);
