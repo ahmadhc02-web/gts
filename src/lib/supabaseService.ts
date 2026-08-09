@@ -85,8 +85,7 @@ export const mappings: Record<string, Record<string, string>> = {
     createdAt: 'created_at',
     dealerId: 'dealer_id',
     lat: 'lat',
-    lng: 'lng',
-    lineCode: 'line_code'
+    lng: 'lng'
   },
   chat_groups: {
     id: 'id',

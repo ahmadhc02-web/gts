@@ -290,7 +290,6 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         }
       } else {
         const effectiveDealerId = pocketbaseService.getTenantId(currentUser);
-        const effectiveLineCode = currentUser.lineCode || '';
 
         const newClientData = {
           name: trimmedName,
@@ -306,8 +305,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           baseAmount: parseFloat(String(baseAmount)) || 0,
           billingDay: String(billingDay || '5').trim(),
           createdBy: currentUserId,
-          dealerId: effectiveDealerId,
-          lineCode: effectiveLineCode
+          dealerId: effectiveDealerId
         };
 
         const newClient = await pocketbaseService.createClient(newClientData, currentUserName, effectiveDealerId);
