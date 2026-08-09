@@ -85,7 +85,8 @@ export const mappings: Record<string, Record<string, string>> = {
     createdAt: 'created_at',
     dealerId: 'dealer_id',
     lat: 'lat',
-    lng: 'lng'
+    lng: 'lng',
+    lineCode: 'line_code'
   },
   chat_groups: {
     id: 'id',
@@ -407,20 +408,29 @@ async function upsertSupabase(collectionName: string, idField: string, idValue: 
   try {
     const { error } = await supabase.from(targetTable).upsert(cleanData, { onConflict: idField });
     if (error) {
-      console.warn(`upsertSupabase native upsert warning for ${targetTable}:`, error.message);
+      console.warn(`upsertSupabase native upsert warning for ${targetTable}:`, error.message, error.code, error.details, error.hint);
       // Fallback to old select-then-insert/update path only if native upsert fails
       const { data: existingSup, error: findErr } = await supabase.from(targetTable).select(idField).eq(idField, idValue).limit(1);
       if (!findErr && existingSup && existingSup.length > 0) {
         const { error: updateErr } = await supabase.from(targetTable).update(cleanData).eq(idField, idValue);
-        if (updateErr && throwOnError) throw updateErr;
+        if (updateErr) {
+          console.warn(`upsertSupabase update fallback error for ${targetTable}:`, updateErr.message, updateErr.code, updateErr.details, updateErr.hint);
+          if (throwOnError) throw new Error(`[Supabase Update Error] ${updateErr.message} (Code: ${updateErr.code}) ${updateErr.details || ''} ${updateErr.hint || ''}`);
+        }
       } else {
         const { error: insertErr } = await supabase.from(targetTable).insert([cleanData]);
-        if (insertErr && throwOnError) throw insertErr;
+        if (insertErr) {
+          console.warn(`upsertSupabase insert fallback error for ${targetTable}:`, insertErr.message, insertErr.code, insertErr.details, insertErr.hint);
+          if (throwOnError) throw new Error(`[Supabase Insert Error] ${insertErr.message} (Code: ${insertErr.code}) ${insertErr.details || ''} ${insertErr.hint || ''}`);
+        }
       }
     }
   } catch (e: any) {
-    console.warn(`upsertSupabase error for ${targetTable}:`, e?.message || e);
-    if (throwOnError) throw e;
+    console.warn(`upsertSupabase error for ${targetTable}:`, e?.message || e, e?.code, e?.details, e?.hint);
+    if (throwOnError) {
+      if (e instanceof Error) throw e;
+      throw new Error(`[Supabase Error] ${e?.message || e} (Code: ${e?.code}) ${e?.details || ''} ${e?.hint || ''}`);
+    }
   }
 }
 
@@ -2090,12 +2100,12 @@ export const supabaseService = {
       createdAt: Date.now(),
       dealerId
     };
-    await upsertSupabase('clients', 'id', client.id, toDb('clients', client));
+    await upsertSupabase('clients', 'id', client.id, toDb('clients', client), true);
     return client;
   },
 
   updateClient: async (id: string, data: Partial<Client>, clientName: string, authorName: string) => {
-    await upsertSupabase('clients', 'id', id, toDb('clients', data));
+    await upsertSupabase('clients', 'id', id, toDb('clients', data), true);
   },
 
   saveClientsBatch: async (clientsList: Client[], dealerId: string = 'main') => {
