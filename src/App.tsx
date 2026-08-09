@@ -1017,6 +1017,75 @@ export default function App() {
     return () => unsubscribe();
   }, [user?.uid, pbAuthReady, alertAuthorized, isAudioMuted, chatAudio, userGroups]);
 
+  // Global Broadcast Channel for Real-time Complaints Sync and Alerts
+  useEffect(() => {
+    if (!user) return;
+    if (!pbAuthReady) return;
+
+    const channelName = 'gts-realtime-channel';
+    const channel = supabase.channel(channelName);
+
+    channel
+      .on('broadcast', { event: 'complaint_registered' }, (payload: any) => {
+        console.log('[BROADCAST] Live complaint notification received:', payload);
+        const { complaint, authorName, dealerId } = payload.payload;
+
+        // Check if the complaint belongs to this tenant/dealer
+        const currentTenantId = pocketbaseService.getReadTenantId(user);
+        const complaintTenantId = dealerId || 'main';
+
+        if (currentTenantId === 'all' || currentTenantId === complaintTenantId) {
+          // Update complaints state (preventing duplicates and alerting user)
+          setComplaints(prev => {
+            if (prev.some(c => c.id === complaint.id)) return prev;
+
+            // Only notify if not authored by self
+            if (authorName !== user.username) {
+              // Sound Alert
+              if (alertAuthorized && !isAudioMuted) {
+                notificationAudio.currentTime = 0;
+                notificationAudio.volume = 0.9;
+                notificationAudio.play().catch(e => console.warn("Audio blocked:", e));
+                
+                // Vibration
+                if ("vibrate" in navigator) {
+                  navigator.vibrate([300, 100, 300]);
+                }
+              }
+
+              // In-app Toast
+              toast.info(`🔔 NEW COMPLAINT REGISTERED`, {
+                description: `New complaint for ${complaint.customerName} (${complaint.area}) - By ${authorName}`,
+                duration: 8000,
+                icon: '🔔',
+              });
+
+              // Background/Browser Notification
+              if ("Notification" in window && Notification.permission === "granted") {
+                const options = {
+                  body: `New complaint for ${complaint.customerName} (${complaint.area})\nBy: ${authorName}`,
+                  icon: '/vite.svg',
+                  badge: '/vite.svg',
+                  vibrate: [200, 100, 200]
+                };
+                new Notification(`GTS: NEW COMPLAINT`, options);
+              }
+            }
+
+            return [complaint, ...prev];
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      try {
+        channel.unsubscribe();
+        supabase.removeChannel(channel);
+      } catch (e) {}
+    };
+  }, [user?.uid, user?.username, user?.role, user?.dealerId, pbAuthReady, alertAuthorized, isAudioMuted, notificationAudio]);
+
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError(null);
@@ -1490,6 +1559,40 @@ export default function App() {
       const verified = await pocketbaseService.verifyComplaintPersisted(newComplaint.id);
       if (!verified) {
         throw new Error('Verification failed: Complaint could not be verified after creation.');
+      }
+
+      // Create database notification for persistent syncing and live alerts
+      try {
+        await pocketbaseService.createNotification({
+          type: 'complaint_created',
+          message: `New Complaint registered for ${newComplaint.customerName} (${newComplaint.area})`,
+          authorName: user.username,
+          dealerId: newComplaint.dealerId || 'main',
+          details: {
+            complaintId: newComplaint.id,
+            customerName: newComplaint.customerName,
+            area: newComplaint.area,
+            createdAt: Date.now()
+          }
+        });
+      } catch (err) {
+        console.warn("Could not create database notification:", err);
+      }
+
+      // Broadcast complaint registered event for real-time list update
+      try {
+        const channel = supabase.channel('gts-realtime-channel');
+        channel.send({
+          type: 'broadcast',
+          event: 'complaint_registered',
+          payload: {
+            complaint: newComplaint,
+            authorName: user.username,
+            dealerId: newComplaint.dealerId || 'main'
+          }
+        }).catch(err => console.warn("Broadcast failed:", err));
+      } catch (err) {
+        console.warn("Could not broadcast complaint registration:", err);
       }
 
       if (!silent) toast.success('Complaint submitted and verified successfully!');
