@@ -754,6 +754,37 @@ export default function EntrySheet({
 
   // Autocomplete suggestions states
   const [clients, setClients] = useState<any[]>([]);
+
+  const findClientForEntry = (item: any): any | null => {
+    if (!item) return null;
+    
+    // 1. Try reliable ID-based matches
+    // Match by clientId / clientUsername / cId (ID-based, reliable)
+    const matchedById = clients.find((c: any) => {
+      const clientIdMatch = item.clientId && c.id === item.clientId;
+      const clientUsernameMatch = item.clientUsername && c.username?.toLowerCase() === String(item.clientUsername).toLowerCase();
+      const cIdMatch = item.cId && (c.id?.toLowerCase() === String(item.cId).toLowerCase() || c.username?.toLowerCase() === String(item.cId).toLowerCase());
+      return clientIdMatch || clientUsernameMatch || cIdMatch;
+    });
+
+    if (matchedById) {
+      return matchedById;
+    }
+
+    // 2. Fallback: match by name, ONLY if the name is unique among all clients
+    const nameToSearch = item.name ? String(item.name).trim().toLowerCase() : '';
+    if (nameToSearch) {
+      const sameNamedClients = clients.filter((c: any) => c.name && String(c.name).trim().toLowerCase() === nameToSearch);
+      if (sameNamedClients.length === 1) {
+        return sameNamedClients[0];
+      } else if (sameNamedClients.length > 1) {
+        console.warn(`Ambiguous same-name case for "${item.name}" in clients list. Found ${sameNamedClients.length} clients with this name. Leaving unmatched.`);
+      }
+    }
+
+    return null;
+  };
+
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const [focusedField, setFocusedField] = useState<'cId' | 'name' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -2027,9 +2058,18 @@ export default function EntrySheet({
               }
               if (matchedIdx === -1 && hasName) {
                 const searchName = String(r.name).trim().toLowerCase();
-                matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
-                  br.name && String(br.name).trim().toLowerCase() === searchName
-                );
+                const matchedIndices = baseRecalculatedRows.reduce((acc: number[], br: any, idx: number) => {
+                  if (br.name && String(br.name).trim().toLowerCase() === searchName) {
+                    acc.push(idx);
+                  }
+                  return acc;
+                }, []);
+
+                if (matchedIndices.length === 1) {
+                  matchedIdx = matchedIndices[0];
+                } else if (matchedIndices.length > 1) {
+                  console.warn(`Ambiguous same-name case for "${r.name}" in baseRecalculatedRows. Found ${matchedIndices.length} candidate rows. Leaving unmatched.`);
+                }
               }
 
               if (matchedIdx !== -1) {
@@ -2912,12 +2952,7 @@ export default function EntrySheet({
                         r.receiptCode?.toLowerCase().includes(keyword);
           if (match && Number(r.amount) > 0) {
             // Find corresponding client for extra connection info
-            const matchClient = clients.find(c => 
-              (r.clientUsername && c.username?.toLowerCase() === r.clientUsername.toLowerCase()) ||
-              (r.cId && c.username?.toLowerCase() === r.cId.toLowerCase()) ||
-              (r.clientId && c.id === r.clientId) ||
-              (c.name?.toLowerCase() === (r.name || '').toLowerCase())
-            );
+            const matchClient = findClientForEntry(r);
 
             results.push({
               sheetId: sh.id,
@@ -2940,10 +2975,7 @@ export default function EntrySheet({
           const match = r.name?.toLowerCase().includes(keyword);
           if (match && Number(r.amount) > 0) {
             // Find corresponding client
-            const matchClient = clients.find(c => 
-              c.name?.toLowerCase() === (r.name || '').toLowerCase() ||
-              c.username?.toLowerCase() === (r.name || '').toLowerCase()
-            );
+            const matchClient = findClientForEntry(r);
 
             results.push({
               sheetId: sh.id,
@@ -5320,12 +5352,7 @@ export default function EntrySheet({
                             }
 
                             return previewItems.map((entry, index) => {
-                              const client = (entry && entry.name) ? clients.find((c: any) => 
-                                c.id === entry.clientId || 
-                                (c.username && entry.clientUsername && c.username.toLowerCase() === entry.clientUsername.toLowerCase()) ||
-                                (c.username && entry.cId && c.username.toLowerCase() === entry.cId.toLowerCase()) ||
-                                (c.name && c.name.trim().toLowerCase() === entry.name.trim().toLowerCase())
-                              ) : null;
+                              const client = (entry && entry.name) ? findClientForEntry(entry) : null;
 
                               const hasExtraDetails = actualCount <= 2 && client;
                               
@@ -5495,12 +5522,7 @@ export default function EntrySheet({
                       const actualCount = itemsToPrint.filter(item => item && (item?.name || '').trim() !== '').length;
 
                       const itemsHtml = printItems.map(item => {
-                        const client = (item && item.name) ? clients.find((c: any) => 
-                          c.id === item.clientId || 
-                          (c.username && item.clientUsername && c.username.toLowerCase() === item.clientUsername.toLowerCase()) ||
-                          (c.username && item.cId && c.username.toLowerCase() === item.cId.toLowerCase()) ||
-                          (c.name && c.name.trim().toLowerCase() === item.name.trim().toLowerCase())
-                        ) : null;
+                        const client = (item && item.name) ? findClientForEntry(item) : null;
 
                         const hasExtraDetails = actualCount <= 2 && client;
                         const subDetailsHtml = hasExtraDetails ? `
@@ -5713,12 +5735,7 @@ export default function EntrySheet({
 
                         doc.setTextColor(51, 65, 85);
                         printItems.forEach(item => {
-                          const client = (item && item.name) ? clients.find((c: any) => 
-                            c.id === item.clientId || 
-                            (c.username && item.clientUsername && c.username.toLowerCase() === item.clientUsername.toLowerCase()) ||
-                            (c.username && item.cId && c.username.toLowerCase() === item.cId.toLowerCase()) ||
-                            (c.name && c.name.trim().toLowerCase() === item.name.trim().toLowerCase())
-                          ) : null;
+                          const client = (item && item.name) ? findClientForEntry(item) : null;
 
                           const hasExtraDetails = actualCount <= 2 && client;
 
