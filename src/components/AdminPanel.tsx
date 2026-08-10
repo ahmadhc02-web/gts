@@ -603,6 +603,7 @@ export default function AdminPanel({
   const [cellProgress, setCellProgress] = useState<Record<string, number>>({});
   const cellIntervalsRef = React.useRef<Record<string, NodeJS.Timeout>>({});
   const cellDebounceTimersRef = React.useRef<Record<string, NodeJS.Timeout>>({});
+  const pendingCommitSavesRef = React.useRef<Record<string, () => void>>({});
 
   const animateCellProgress = (rowIndex: number, field: string, promise: Promise<any>) => {
     const cellKey = `${rowIndex}_${field}`;
@@ -690,7 +691,9 @@ export default function AdminPanel({
     savingMonthCounts.current[monthId] = (savingMonthCounts.current[monthId] || 0) + 1;
     try {
       await pocketbaseService.saveBillingMonth(monthId, rows, updatedBy, dealerId, forceImmediate, changedIndices, excludedClientKeys);
-      setHasPendingEdits(false);
+      if (Object.keys(cellDebounceTimersRef.current).length === 0) {
+        setHasPendingEdits(false);
+      }
     } catch (err: any) {
       toast.error("Save Blocked — Action Required", {
         description: err?.message || "Save blocked: this would erase existing payment records. Please refresh and try again.",
@@ -1343,6 +1346,69 @@ export default function AdminPanel({
     return () => unsubscribe();
   }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId, activeTab]);
 
+  // Register visibilitychange and beforeunload listeners for pending saves
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        const keys = Object.keys(cellDebounceTimersRef.current);
+        if (keys.length > 0) {
+          console.log(`[VisibilityChange] Flushing ${keys.length} pending saves...`);
+          keys.forEach(key => {
+            if (cellDebounceTimersRef.current[key]) {
+              clearTimeout(cellDebounceTimersRef.current[key]);
+              delete cellDebounceTimersRef.current[key];
+            }
+            const commit = pendingCommitSavesRef.current[key];
+            if (commit) {
+              try {
+                commit();
+              } catch (e) {
+                console.error("Failed to commit save on visibility change:", e);
+              }
+              delete pendingCommitSavesRef.current[key];
+            }
+          });
+          setHasPendingEdits(false);
+        }
+      }
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const keys = Object.keys(cellDebounceTimersRef.current);
+      if (keys.length > 0 || hasPendingEdits) {
+        console.log(`[BeforeUnload] Flushing ${keys.length} pending saves...`);
+        keys.forEach(key => {
+          if (cellDebounceTimersRef.current[key]) {
+            clearTimeout(cellDebounceTimersRef.current[key]);
+            delete cellDebounceTimersRef.current[key];
+          }
+          const commit = pendingCommitSavesRef.current[key];
+          if (commit) {
+            try {
+              commit();
+            } catch (err) {
+              console.error("Failed to commit save on beforeunload:", err);
+            }
+            delete pendingCommitSavesRef.current[key];
+          }
+        });
+        setHasPendingEdits(false);
+
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [hasPendingEdits]);
+
   // Collaborative Presence & Cursor Broadcast
   useEffect(() => {
     if (activeTab !== 'billing' || !currentMonthId || !currentUser) return;
@@ -1933,7 +1999,11 @@ export default function AdminPanel({
         
         const savePromise = saveBillingMonthTracked(currentMonthId, latestRows, currentUser.username || 'admin', activeDealerId, true, [rowIndex]);
         animateCellProgress(rowIndex, field, savePromise);
-        savePromise.catch((err)=>{
+        savePromise.then(() => {
+          if (Object.keys(cellDebounceTimersRef.current).length === 0) {
+            setHasPendingEdits(false);
+          }
+        }).catch((err)=>{
           toast.error("Cloud Sync Failed", { description: "Failed to save recovery cell changes. Check connection." });
           console.error("Auto-sync cell change failed:", err);
         });
@@ -1942,14 +2012,18 @@ export default function AdminPanel({
       const timerKey = `${rowIndex}_${field}`;
       if (cellDebounceTimersRef.current[timerKey]) {
         clearTimeout(cellDebounceTimersRef.current[timerKey]);
+        delete cellDebounceTimersRef.current[timerKey];
       }
+      delete pendingCommitSavesRef.current[timerKey];
 
       if (forceImmediate) {
         commitSave();
       } else {
+        pendingCommitSavesRef.current[timerKey] = commitSave;
         cellDebounceTimersRef.current[timerKey] = setTimeout(() => {
           commitSave();
           delete cellDebounceTimersRef.current[timerKey];
+          delete pendingCommitSavesRef.current[timerKey];
         }, 2000);
       }
 

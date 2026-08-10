@@ -1437,39 +1437,6 @@ export default function EntrySheet({
     ];
 
     const activeFolderId = openedFolderId || (loadedSheetId ? sheetFolderMap[loadedSheetId] : '') || sheets[activeSheetIdx]?.folderId || '';
-    const generatedId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
-    
-    // Inherit layout parameters from currently active/edited sheet for seamless multi-page consistency, while keeping data rows blank
-    const newSheet = {
-      id: generatedId,
-      folderId: activeFolderId,
-      recOfficer: recOfficer || currentUser.fullName || currentUser.username.toUpperCase(),
-      recOfficerLabel: recOfficerLabel || 'REC. OFFICER',
-      area: area || 'MAIN',
-      areaLabel: areaLabel || 'AREA',
-      sheetDate: sheetDate || new Date().toISOString().split('T')[0],
-      dateLabel: dateLabel || 'DATE',
-      table1Rows: blankT1Rows,
-      table2Rows: blankT2Rows,
-      cashReceived: '',
-      sign: '',
-      submitted: '',
-      footnoteLeft: footnoteLeft || 'Enterprise Ledger Dispatch System',
-      footnoteRight: footnoteRight || 'GENv2.5 // A4 PRINTABLE',
-      t1Headers: t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
-      t2Headers: t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH'],
-      t1TotalLabel: t1TotalLabel || 'TOTAL',
-      t2TotalLabel: t2TotalLabel || 'TOTAL',
-      cashReceivedLabel: cashReceivedLabel || 'CASH RECEIVED',
-      signLabel: signLabel || 'SIGN',
-      submittedLabel: submittedLabel || 'SUBMITTED',
-    };
-
-    if (activeFolderId) {
-      const nextMap = { ...sheetFolderMap, [generatedId]: activeFolderId };
-      setSheetFolderMap(nextMap);
-      saveMapToDb(nextMap);
-    }
     
     // Save to Supabase immediately
     const scopeId = activeDealerId || currentUser?.uid || 'main';
@@ -1477,43 +1444,74 @@ export default function EntrySheet({
     const blankSheetPayload = {
       folder_id: activeFolderId,
       dealer_id: scopeId,
-      rec_officer: newSheet.recOfficer,
-      rec_officer_label: newSheet.recOfficerLabel,
-      area: newSheet.area,
-      area_label: newSheet.areaLabel,
-      sheet_date: newSheet.sheetDate,
-      date_label: newSheet.dateLabel,
-      table1_rows: JSON.stringify(newSheet.table1Rows),
-      table2_rows: JSON.stringify(newSheet.table2Rows),
-      cash_received: newSheet.cashReceived,
-      cash_received_label: newSheet.cashReceivedLabel,
-      sign: newSheet.sign,
-      sign_label: newSheet.signLabel,
-      submitted: newSheet.submitted,
-      submitted_label: newSheet.submittedLabel,
-      footnote_left: newSheet.footnoteLeft,
-      footnote_right: newSheet.footnoteRight
+      rec_officer: recOfficer || currentUser.fullName || currentUser.username.toUpperCase(),
+      rec_officer_label: recOfficerLabel || 'REC. OFFICER',
+      area: area || 'MAIN',
+      area_label: areaLabel || 'AREA',
+      sheet_date: sheetDate || new Date().toISOString().split('T')[0],
+      date_label: dateLabel || 'DATE',
+      table1_rows: JSON.stringify(blankT1Rows),
+      table2_rows: JSON.stringify(blankT2Rows),
+      cash_received: '',
+      cash_received_label: cashReceivedLabel || 'CASH RECEIVED',
+      sign: '',
+      sign_label: signLabel || 'SIGN',
+      submitted: '',
+      submitted_label: submittedLabel || 'SUBMITTED',
+      footnote_left: footnoteLeft || 'Enterprise Ledger Dispatch System',
+      footnote_right: footnoteRight || 'GENv2.5 // A4 PRINTABLE'
     };
 
+    let realId = '';
     try {
       const { data, error } = await supabase.from('ledger_sheets').insert(blankSheetPayload).select().single();
       if (error) {
         console.error("Supabase insert error for ledger_sheets (handleAddSheet):", error);
         toast.error("Failed to instantly save new sheet to Supabase: " + error.message);
+        return;
       } else if (data) {
         console.log("Successfully created sheet (handleAddSheet) in Supabase:", data);
-        // Replace generated ID with real Supabase ID
-        setSheets(prev => {
-          const updated = [...prev];
-          const createdIdx = updated.findIndex(s => s.id === generatedId);
-          if (createdIdx !== -1) {
-            updated[createdIdx].id = data.id;
-          }
-          return updated;
-        });
+        realId = data.id;
+      } else {
+        toast.error("Failed to retrieve ID for new sheet from Supabase.");
+        return;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to instantly save new sheet to Supabase:", err);
+      toast.error("An unexpected error occurred while saving to Supabase: " + (err?.message || 'Unknown error'));
+      return;
+    }
+    
+    // Inherit layout parameters from currently active/edited sheet for seamless multi-page consistency, while keeping data rows blank
+    const newSheet = {
+      id: realId,
+      folderId: activeFolderId,
+      recOfficer: blankSheetPayload.rec_officer,
+      recOfficerLabel: blankSheetPayload.rec_officer_label,
+      area: blankSheetPayload.area,
+      areaLabel: blankSheetPayload.area_label,
+      sheetDate: blankSheetPayload.sheet_date,
+      dateLabel: blankSheetPayload.date_label,
+      table1Rows: blankT1Rows,
+      table2Rows: blankT2Rows,
+      cashReceived: blankSheetPayload.cash_received,
+      sign: blankSheetPayload.sign,
+      submitted: blankSheetPayload.submitted,
+      footnoteLeft: blankSheetPayload.footnote_left,
+      footnoteRight: blankSheetPayload.footnote_right,
+      t1Headers: t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
+      t2Headers: t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH'],
+      t1TotalLabel: t1TotalLabel || 'TOTAL',
+      t2TotalLabel: t2TotalLabel || 'TOTAL',
+      cashReceivedLabel: blankSheetPayload.cash_received_label,
+      signLabel: blankSheetPayload.sign_label,
+      submittedLabel: blankSheetPayload.submitted_label,
+    };
+
+    if (activeFolderId) {
+      const nextMap = { ...sheetFolderMap, [realId]: activeFolderId };
+      setSheetFolderMap(nextMap);
+      saveMapToDb(nextMap);
     }
     
     setSheets(prev => {
@@ -1950,28 +1948,37 @@ export default function EntrySheet({
       for (const targetMonthId of Array.from(targetMonthIdsToUpdate)) {
         if (!targetMonthId) continue;
         
-        let targetMonthRows: any[] = accumulatedBillingMonths[targetMonthId] || [];
-        
-        if (targetMonthRows.length === 0) {
-          const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
-          targetMonthRows = targetMonthDoc?.rows || [];
+        let targetMonthRows: any[] = [];
+        let fetchedFresh = false;
+
+        // REQUIREMENT: ALWAYS fetch fresh from the database before recalculating to prevent silently overwriting concurrent edits
+        try {
+          const directMonth = await pocketbaseService.getBillingMonthDirect(targetMonthId, activeDealerId || 'main');
+          if (directMonth && Array.isArray(directMonth.rows) && directMonth.rows.length > 0) {
+            targetMonthRows = directMonth.rows;
+            fetchedFresh = true;
+          }
+        } catch (err) {
+          console.warn(`Direct DB fetch for target month ${targetMonthId} failed, falling back to local state:`, err);
         }
 
-        // REQUIREMENT 1: Direct network call straight to Supabase before assuming month is empty
+        // Fallback to local state if network fails or returns empty
         if (targetMonthRows.length === 0) {
-          try {
-            const directMonth = await pocketbaseService.getBillingMonthDirect(targetMonthId, activeDealerId || 'main');
-            if (directMonth && Array.isArray(directMonth.rows) && directMonth.rows.length > 0) {
-              targetMonthRows = directMonth.rows;
-            }
-          } catch (err) {
-            console.warn("Direct DB fetch for target month failed:", err);
+          targetMonthRows = accumulatedBillingMonths[targetMonthId] || [];
+          if (targetMonthRows.length === 0) {
+            const targetMonthDoc = billingMonths.find(m => m.id === targetMonthId);
+            targetMonthRows = targetMonthDoc?.rows || [];
           }
         }
 
         if (targetMonthRows.length === 0) {
           console.warn(`Target month ${targetMonthId} has no rows or does not exist. Skipping sync to prevent accidental recreation or overwriting.`);
           continue;
+        }
+
+        const localRowCount = (accumulatedBillingMonths[targetMonthId] || []).length || (billingMonths.find(m => m.id === targetMonthId)?.rows || []).length;
+        if (fetchedFresh && targetMonthRows.length !== localRowCount && localRowCount > 0) {
+          console.log(`[Sync Safety] Fresh fetch for month ${targetMonthId} returned ${targetMonthRows.length} rows, differing from local state (${localRowCount} rows). Using fresh rows.`);
         }
 
         try {

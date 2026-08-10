@@ -396,6 +396,7 @@ export const globalTableCaches: Record<string, any[]> = {};
 const globalTableIntervals: Record<string, any> = {};
 const globalTableChannels: Record<string, any> = {};
 const globalPresenceChannels: Record<string, any> = {};
+const realtimeFetchTimers: Record<string, NodeJS.Timeout> = {};
 
 async function upsertSupabase(collectionName: string, idField: string, idValue: string, data: any, throwOnError = false) {
   if (!supabase) {
@@ -594,7 +595,30 @@ function subscribeTable(
         .channel(channelName)
         .on('postgres_changes', { event: '*', schema: 'public', table: targetTable }, (payload: any) => {
           console.log('[REALTIME] Change event received for table', targetTable, ':', payload);
-          if (payload && payload.new) {
+          
+          if (payload && payload.eventType === 'DELETE' && payload.old) {
+            try {
+              const oldId = payload.old.id || payload.old.month_id || payload.old.sheet_id;
+              if (oldId) {
+                let cache = globalTableCaches[syncKey] || [];
+                const originalLength = cache.length;
+                cache = cache.filter((item: any) => (item.id || item.month_id || item.sheet_id) !== oldId);
+                if (cache.length !== originalLength) {
+                  globalTableCaches[syncKey] = cache;
+                  try {
+                    localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
+                  } catch (e) {}
+
+                  const subscribers = globalTableSubscribers[syncKey];
+                  if (subscribers) {
+                    subscribers.forEach((cb) => {
+                      try { cb(cache); } catch (err) {}
+                    });
+                  }
+                }
+              }
+            } catch (e) {}
+          } else if (payload && payload.new) {
             try {
               const mappedRow = mapRow(payload.new);
               if (mappedRow) {
@@ -623,7 +647,15 @@ function subscribeTable(
               }
             } catch (e) {}
           }
-          fetchInitial();
+
+          // Debounce safety fetchInitial to avoid constant heavy queries on rapid-fire updates
+          if (realtimeFetchTimers[syncKey]) {
+            clearTimeout(realtimeFetchTimers[syncKey]);
+          }
+          realtimeFetchTimers[syncKey] = setTimeout(() => {
+            fetchInitial();
+            delete realtimeFetchTimers[syncKey];
+          }, 3000);
         })
         .subscribe();
       globalTableChannels[syncKey] = channel;
@@ -638,6 +670,10 @@ function subscribeTable(
         if (globalTableIntervals[syncKey]) {
           clearInterval(globalTableIntervals[syncKey]);
           delete globalTableIntervals[syncKey];
+        }
+        if (realtimeFetchTimers[syncKey]) {
+          clearTimeout(realtimeFetchTimers[syncKey]);
+          delete realtimeFetchTimers[syncKey];
         }
         if (globalTableChannels[syncKey]) {
           try { supabase.removeChannel(globalTableChannels[syncKey]); } catch (e) {}
