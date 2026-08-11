@@ -587,6 +587,7 @@ export default function AdminPanel({
     });
   }, []);
   const billingMonthsRef = React.useRef<any[]>([]);
+  const isBillingDataFresh = React.useRef(false);
   React.useEffect(() => {
     billingMonthsRef.current = billingMonths;
   }, [billingMonths]);
@@ -1283,6 +1284,7 @@ export default function AdminPanel({
       // Baseline warm start: fetch once so dropdowns or quick references work
       const tenantId = pocketbaseService.getReadTenantId(currentUser);
       pocketbaseService.getBillingMonths(activeDealerId).then(data => {
+        isBillingDataFresh.current = true;
         const sorted = [...data].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setBillingMonths(sorted);
         setCurrentMonthId(prev => (!prev && sorted.length > 0 ? sorted[0].id : prev));
@@ -1291,6 +1293,7 @@ export default function AdminPanel({
     }
 
     const unsubscribe = pocketbaseService.subscribeBillingMonths((data) => {
+      isBillingDataFresh.current = true;
       const filtered = data.filter((m: any) => !deletingMonthIds.current.has(m.id));
       const sorted = [...filtered].sort((a, b) => {
         // Sort newest first by parsing e.g. "MAY-26" or using epoch createdAt
@@ -2864,6 +2867,7 @@ export default function AdminPanel({
   // Auto-sync missing clients to current billing sheet without deleting existing records
   useEffect(() => {
     if (!currentMonthId || !activeMonthDoc || !masterClients || masterClients.length === 0) return;
+    if (!isBillingDataFresh.current) return;
     
     const dbClients = masterClients;
     const existingRows = activeMonthDoc.rows || [];

@@ -1409,6 +1409,7 @@ export const supabaseService = {
     // Fetch existing month data from database before saving to validate data integrity
     let dbTotal = 0;
     let dbPaidCount = 0;
+    let existingRowsParsed: any[] = [];
     try {
       const { data: dbData } = await supabase
         .from('billing_months')
@@ -1423,6 +1424,7 @@ export const supabaseService = {
           try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
         }
         if (Array.isArray(existingRows)) {
+          existingRowsParsed = existingRows;
           dbTotal = existingRows.length;
           dbPaidCount = countRecordedPaymentRows(existingRows);
         }
@@ -1434,13 +1436,44 @@ export const supabaseService = {
     // AUDIT LOGGING (Requirement 4): Log incoming vs existing row counts and payment activity
     console.log(`Saving billing month "${monthId}": incoming ${incomingTotal} rows (paid/recorded: ${incomingPaidCount}), previous ${dbTotal} rows (paid/recorded: ${dbPaidCount})`);
 
-    // HARD SAFETY CHECK (Requirement 2): Prevent silent overwriting/wiping of existing payment records
+    let wipedCommentsCount = 0;
+    let totalExistingComments = 0;
+
+    if (existingRowsParsed.length > 0) {
+      const incomingRowsMap = new Map();
+      rows.forEach(r => {
+        const key = r.username ? `u_${String(r.username).toLowerCase().trim()}` : (r.clientId ? `i_${String(r.clientId)}` : null);
+        if (key) incomingRowsMap.set(key, r);
+      });
+
+      existingRowsParsed.forEach(er => {
+        const key = er.username ? `u_${String(er.username).toLowerCase().trim()}` : (er.clientId ? `i_${String(er.clientId)}` : null);
+        const oldComment = String(er.comments || '').trim();
+        if (key && oldComment !== '') {
+          totalExistingComments++;
+          const incRow = incomingRowsMap.get(key);
+          const newComment = incRow ? String(incRow.comments || '').trim() : '';
+          if (newComment !== oldComment && newComment === '') { 
+            wipedCommentsCount++;
+          } else if (newComment !== oldComment) {
+             // It's different, also count as wiped/reverted if it's a regression
+             wipedCommentsCount++;
+          }
+        }
+      });
+    }
+
+    // HARD SAFETY CHECK (Requirement 2): Prevent silent overwriting/wiping of existing payment records and comments
     const isWipingPaymentRecords = dbPaidCount > 0 && incomingPaidCount === 0;
     const isSeverelyReducingPaidRows = dbPaidCount >= 3 && incomingPaidCount < Math.floor(dbPaidCount * 0.4);
     const isWipingTotalRows = dbTotal >= 5 && incomingTotal === 0;
+    const isWipingComments = totalExistingComments > 3 && wipedCommentsCount > totalExistingComments * 0.3;
 
-    if (isWipingPaymentRecords || isSeverelyReducingPaidRows || isWipingTotalRows) {
-      const alertMsg = `Save blocked: this would erase existing payment records for "${monthId}" (${incomingPaidCount} paid/recorded rows incoming vs ${dbPaidCount} currently in database). Please refresh and try again.`;
+    if (isWipingPaymentRecords || isSeverelyReducingPaidRows || isWipingTotalRows || isWipingComments) {
+      let alertMsg = `Save blocked: this would erase existing payment records for "${monthId}" (${incomingPaidCount} paid/recorded rows incoming vs ${dbPaidCount} currently in database). Please refresh and try again.`;
+      if (isWipingComments) {
+        alertMsg = `Save blocked: this would erase/revert existing comments for "${monthId}" (${wipedCommentsCount} out of ${totalExistingComments} comments would be lost). Please refresh and try again.`;
+      }
       console.error(`🚨 CRITICAL DATA LOSS PREVENTED: ${alertMsg}`);
       throw new Error(alertMsg);
     }
