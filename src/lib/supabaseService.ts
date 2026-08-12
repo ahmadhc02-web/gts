@@ -1970,6 +1970,13 @@ export const supabaseService = {
 
   updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, protocols?: ComplaintReview[] | string, reviews?: ComplaintReview[]) => {
     return globalLoading.wrap(async () => {
+      // Get dealer_id for scoped notification
+      let dealerId = 'main';
+      try {
+        const { data: comp } = await supabase.from('complaints').select('dealer_id').eq('id', id).single();
+        if (comp && comp.dealer_id) dealerId = comp.dealer_id;
+      } catch (e) {}
+
       const updates: any = { status, updated_at: Date.now() };
       if (protocols) {
         updates.remarks = typeof protocols === 'string' ? protocols : JSON.stringify(protocols);
@@ -1980,20 +1987,64 @@ export const supabaseService = {
         updates.customer_review = JSON.stringify(reviews);
       }
       await upsertSupabase('complaints', 'id', id, updates);
+
+      // Trigger notification
+      try {
+        await supabaseService.createNotification({
+          type: 'complaint_updated',
+          message: `Status changed to ${status} for ${customerName}`,
+          authorName: authorName || 'System',
+          dealerId: dealerId,
+          details: { complaintId: id, customerName, status, updated_at: Date.now() }
+        });
+      } catch(err) { console.warn("Failed to create notification", err); }
     }, 'Updating complaint status...');
   },
 
   updateComplaintRemarks: async (id: string, protocols: string | ComplaintReview[], customerName: string, authorName: string, authorId: string) => {
+    let dealerId = 'main';
+    try {
+      const { data: comp } = await supabase.from('complaints').select('dealer_id').eq('id', id).single();
+      if (comp && comp.dealer_id) dealerId = comp.dealer_id;
+    } catch (e) {}
+
     await upsertSupabase('complaints', 'id', id, {
       remarks: typeof protocols === 'string' ? protocols : JSON.stringify(protocols),
       remark_author_id: authorId,
       remark_author_name: authorName,
       updated_at: Date.now()
     });
+
+    try {
+      await supabaseService.createNotification({
+        type: 'complaint_updated',
+        message: `Remarks updated for ${customerName}`,
+        authorName: authorName || 'System',
+        dealerId: dealerId,
+        details: { complaintId: id, customerName, updated_at: Date.now() }
+      });
+    } catch(err) { console.warn("Failed to create notification", err); }
   },
 
   updateComplaint: async (id: string, data: Partial<Complaint>, customerName: string, authorName: string) => {
+    let dealerId = 'main';
+    try {
+      const { data: comp } = await supabase.from('complaints').select('dealer_id').eq('id', id).single();
+      if (comp && comp.dealer_id) dealerId = comp.dealer_id;
+    } catch (e) {}
+
     await upsertSupabase('complaints', 'id', id, toDb('complaints', { ...data, updatedAt: Date.now() }));
+
+    const changedFields = Object.keys(data).join(', ');
+    try {
+      await supabaseService.createNotification({
+        type: 'complaint_updated',
+        message: `Complaint details updated for ${customerName} (${changedFields})`,
+        authorName: authorName || 'System',
+        dealerId: dealerId,
+        details: { complaintId: id, customerName, changedFields, updated_at: Date.now() }
+      });
+    } catch(err) { console.warn("Failed to create notification", err); }
   },
 
   saveComplaint: async (complaint: Complaint, dealerId: string = 'main') => {

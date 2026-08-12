@@ -26,6 +26,7 @@ import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCa
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import { WhatsAppSendButton } from '../../whatsapp_data/frontend';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { supabaseService as pocketbaseService, fromDb, globalTableCaches } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
@@ -554,6 +555,14 @@ export default function AdminPanel({
 
   // --- Advanced Enterprise Billing & Recovery Module states ---
   const [masterClients, setMasterClients] = useState<any[]>([]);
+
+  // Backup / Restore state
+  const [isRestoreOverlayOpen, setIsRestoreOverlayOpen] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState(0); // 0 to 100
+  const [restoreStatus, setRestoreStatus] = useState('');
+  const [restoreError, setRestoreError] = useState('');
+  const [restoreSuccess, setRestoreSuccess] = useState(false);
+
   const [billingMonths, setBillingMonths] = useState<any[]>(() => {
     try {
       const syncKey = `billing_months_${activeDealerId || 'main'}`;
@@ -3144,6 +3153,115 @@ export default function AdminPanel({
     };
   }, [activeRows]);
 
+  const handleGetBackup = async () => {
+    try {
+      const allMonths = await pocketbaseService.getBillingMonths(activeDealerId || 'main');
+      const backupData = {
+        exportedAt: new Date().toISOString(),
+        dealerId: activeDealerId || 'main',
+        months: allMonths.map((m: any) => ({
+          monthId: m.id,
+          rows: m.rows || []
+        }))
+      };
+      
+      const jsonString = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      
+      const dateStr = new Date().toISOString().replace(/T/, '_').replace(/:/g, '').slice(0, 15);
+      link.setAttribute("download", `GTS_BILLING_FULL_BACKUP_${activeDealerId || 'main'}_${dateStr}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Backup downloaded successfully");
+    } catch (err) {
+      console.error("Backup failed:", err);
+      toast.error("Failed to generate backup");
+    }
+  };
+
+  const handleUploadBackup = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      setIsRestoreOverlayOpen(true);
+      setRestoreError('');
+      setRestoreSuccess(false);
+      setRestoreProgress(0);
+      setRestoreStatus('Reading file...');
+
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+
+        if (!parsed || !Array.isArray(parsed.months)) {
+          throw new Error("Invalid backup format: missing 'months' array.");
+        }
+
+        const monthsToRestore = parsed.months;
+        const totalMonths = monthsToRestore.length;
+
+        if (totalMonths === 0) {
+          throw new Error("Backup file contains no months.");
+        }
+
+        for (let i = 0; i < totalMonths; i++) {
+          const m = monthsToRestore[i];
+          setRestoreStatus(`Restoring ${m.monthId}... (${i + 1} of ${totalMonths})`);
+          
+          if (!m.monthId || !Array.isArray(m.rows)) {
+            throw new Error(`Invalid data structure for month at index ${i}`);
+          }
+          
+          await pocketbaseService.saveBillingMonth(
+            m.monthId, 
+            m.rows, 
+            currentUser?.username || 'admin', 
+            activeDealerId || 'main', 
+            true
+          );
+          
+          setRestoreProgress(Math.round(((i + 1) / totalMonths) * 100));
+        }
+
+        setRestoreStatus("Verifying saved data...");
+        // Final verification
+        const verifiedMonths = await pocketbaseService.getBillingMonths(activeDealerId || 'main');
+        
+        for (let i = 0; i < totalMonths; i++) {
+          const expectedMonth = monthsToRestore[i];
+          const actualMonth = verifiedMonths.find((vm: any) => vm.id === expectedMonth.monthId);
+          if (!actualMonth) {
+            throw new Error(`Verification failed: Month ${expectedMonth.monthId} not found in database.`);
+          }
+          if ((actualMonth.rows?.length || 0) !== expectedMonth.rows.length) {
+            throw new Error(`Verification failed for ${expectedMonth.monthId}: expected ${expectedMonth.rows.length} rows, found ${actualMonth.rows?.length || 0}.`);
+          }
+        }
+
+        setRestoreSuccess(true);
+        setRestoreStatus("Backup restored successfully");
+        
+        // Hide overlay after delay
+        setTimeout(() => {
+          setIsRestoreOverlayOpen(false);
+        }, 1500);
+
+      } catch (err: any) {
+        console.error("Restore failed:", err);
+        setRestoreError(err.message || "Failed to restore backup");
+      }
+    };
+    input.click();
+  };
+
   const handleDownloadCSV = () => {
     if (!currentMonthId || !activeRows.length) return;
     const headers = [
@@ -3224,6 +3342,10 @@ export default function AdminPanel({
         setIsBatchPrintOpen(true);
       } else if (action === 'download-csv') {
         handleDownloadCSV();
+      } else if (action === 'get-backup') {
+        handleGetBackup();
+      } else if (action === 'upload-backup') {
+        handleUploadBackup();
       }
     };
 
@@ -3249,6 +3371,72 @@ export default function AdminPanel({
   return (
     <>
       <AnimatePresence>
+        {isRestoreOverlayOpen && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200/50 dark:border-white/10 p-8 flex flex-col items-center justify-center text-center overflow-hidden"
+            >
+              {restoreSuccess ? (
+                <>
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-6">
+                    <CheckCircle size={32} />
+                  </div>
+                  <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">Backup Restored</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Your data has been successfully imported.</p>
+                </>
+              ) : restoreError ? (
+                <>
+                  <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 mb-6">
+                    <AlertTriangle size={32} />
+                  </div>
+                  <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">Restore Failed</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-6">{restoreError}</p>
+                  <button
+                    onClick={() => setIsRestoreOverlayOpen(false)}
+                    className="px-6 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold uppercase tracking-wider text-xs transition-colors"
+                  >
+                    Close
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="relative w-24 h-24 mb-6">
+                    <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                      <circle
+                        className="text-slate-100 dark:text-slate-800 stroke-current"
+                        strokeWidth="8"
+                        cx="50" cy="50" r="40" fill="transparent"
+                      ></circle>
+                      <circle
+                        className="text-blue-500 stroke-current transition-all duration-300 ease-out"
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        cx="50" cy="50" r="40" fill="transparent"
+                        strokeDasharray={251.2}
+                        strokeDashoffset={251.2 - (251.2 * restoreProgress) / 100}
+                      ></circle>
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-xl font-black text-slate-900 dark:text-white">{restoreProgress}%</span>
+                    </div>
+                  </div>
+                  <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">Restoring Data</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium animate-pulse">{restoreStatus}</p>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+
         {isDeleteSheetModalOpen && (
           <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
             <motion.div 
@@ -8498,6 +8686,15 @@ export default function AdminPanel({
                                 {/* Actions (Always rendered for standard and advance lists) */}
                                 <td className="py-1 px-1 text-center font-sans">
                                   <div className="flex items-center justify-center gap-1.5">
+                                    <WhatsAppSendButton
+                                      name={rowRef.name || ''}
+                                      mobileNumber={rowRef.mobileNumber || ''}
+                                      totalAmount={rowRef.totalAmount}
+                                      baseAmount={rowRef.baseAmount}
+                                      paymentStatus={rowRef.paymentStatus || 'unpaid'}
+                                      username={rowRef.username || ''}
+                                      area={rowRef.area || ''}
+                                    />
                                     <button
                                       type="button"
                                       disabled={!isBillingUnlocked}

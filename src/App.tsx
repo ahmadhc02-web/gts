@@ -227,7 +227,8 @@ export default function App() {
   });
 
   // Global Audio Objects to prevent garbage collection issues
-  const [notificationAudio] = useState(new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'));
+  // Use a short, clean two-tone Note-style chime
+  const [notificationAudio] = useState(new Audio('https://assets.mixkit.co/active_storage/sfx/2870/2870-preview.mp3'));
   const [chatAudio] = useState(new Audio('https://assets.mixkit.co/active_storage/sfx/1114/1114-preview.mp3'));
 
   // Sync initial audio states
@@ -760,7 +761,7 @@ export default function App() {
     };
   }, [user?.uid, user?.role, user?.dealerId, pbAuthReady, activeTab]);
 
-  // Fetch complaints only when a user is logged in and actively viewing complaints or dashboard sections
+  // Fetch and subscribe to complaints for live updates across all tabs
   useEffect(() => {
     if (!user) {
       setComplaints([]);
@@ -769,22 +770,13 @@ export default function App() {
     if (!pbAuthReady) return;
     
     const tenantId = pocketbaseService.getReadTenantId(user);
-    const isComplaintsTab = ['complaints', 'top10', 'recycle_bin', 'sync_status', 'submit'].includes(activeTab || '');
-
-    if (!isComplaintsTab) {
-      // Offline fallback: load baseline once to keep widgets working, but unsubscribe from live updates
-      pocketbaseService.getComplaints(tenantId).then(data => {
-        setComplaints(data.sort((a, b) => b.createdAt - a.createdAt));
-      }).catch(console.error);
-      return;
-    }
     
     const unsubscribe = pocketbaseService.subscribeComplaints((data) => {
       setComplaints(data);
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady, activeTab]);
+  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady]);
 
   // Real-time data fetch functions to instantly synchronize local states from database
   const fetchComplaints = async () => {

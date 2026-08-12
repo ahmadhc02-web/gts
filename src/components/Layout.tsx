@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, MessageCircle, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload, DatabaseBackup } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
+import { WhatsAppConnectPanel } from '../../whatsapp_data/frontend';
 import { UserProfile, Notification, BrandingConfig } from '../types';
 import FloatingMascot from './FloatingMascot';
 import RefreshControl from './RefreshControl';
@@ -123,6 +124,8 @@ export default function Layout({
   const [currentMonthId, setCurrentMonthId] = useState<string>('');
   const [isBillingUnlocked, setIsBillingUnlocked] = useState<boolean>(false);
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState<boolean>(false);
+  const [isBackupDropdownOpen, setIsBackupDropdownOpen] = useState<boolean>(false);
+  const [isWhatsAppPanelOpen, setIsWhatsAppPanelOpen] = useState<boolean>(false);
   const [hasActiveRows, setHasActiveRows] = useState<boolean>(false);
   
   const [localActiveTab, setLocalActiveTab] = useState<string>('complaints');
@@ -750,6 +753,11 @@ export default function Layout({
           />
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
 
 
             {/* Modern Sidebar */}
@@ -849,6 +857,11 @@ export default function Layout({
                   </motion.div>
                 )}
               </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
             </div>
           ))}
         </div>
@@ -919,6 +932,11 @@ export default function Layout({
               Connection Restored — Synchronizing data with server...
             </span>
           </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
         )}
       </AnimatePresence>
 
@@ -1042,6 +1060,11 @@ export default function Layout({
           </>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
 
       {/* Global Loading Indicator */}
       <AnimatePresence>
@@ -1056,6 +1079,11 @@ export default function Layout({
           </motion.div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
 
       {/* Chat Sidebar / AI Help Panel */}
       <AnimatePresence>
@@ -1068,6 +1096,11 @@ export default function Layout({
               }} 
             />
           </Suspense>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
         )}
       </AnimatePresence>
 
@@ -1224,6 +1257,11 @@ export default function Layout({
           </>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
 
       {/* Relocated Profile dropdown to the header relative toggle container */}
 
@@ -1337,6 +1375,11 @@ export default function Layout({
                       </>
                     )}
                   </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
                 </div>
               </div>
 
@@ -1395,6 +1438,82 @@ export default function Layout({
                     <HardDriveDownload size={13} className="text-emerald-500 shrink-0" />
                     <span className="hidden md:inline">CSV Sheet</span>
                   </motion.button>
+                )}
+
+                {isBillingUnlocked && (
+                  <div className="relative">
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      type="button"
+                      onClick={() => setIsWhatsAppPanelOpen(true)}
+                      className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                      title="WhatsApp Integration"
+                    >
+                      <MessageCircle size={13} className="text-emerald-500 shrink-0" />
+                      <span className="hidden md:inline">WhatsApp</span>
+                    </motion.button>
+                  </div>
+                )}
+
+                {isBillingUnlocked && (
+                  <div className="relative">
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      type="button"
+                      onClick={() => setIsBackupDropdownOpen(!isBackupDropdownOpen)}
+                      className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                      title="Backup Data"
+                    >
+                      <DatabaseBackup size={13} className="text-indigo-500 shrink-0" />
+                      <span className="hidden md:inline">Backup</span>
+                    </motion.button>
+
+                    <AnimatePresence>
+                      {isBackupDropdownOpen && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setIsBackupDropdownOpen(false)} 
+                          />
+                          <motion.div
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                            transition={{ duration: 0.15 }}
+                            className="absolute top-full mt-2 right-0 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-2 z-50 flex flex-col gap-1 origin-top-right"
+                          >
+                            <button
+                              onClick={() => {
+                                setIsBackupDropdownOpen(false);
+                                window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'get-backup' }));
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
+                            >
+                              <HardDriveDownload size={14} className="text-emerald-500" />
+                              Get Backup
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsBackupDropdownOpen(false);
+                                window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'upload-backup' }));
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
+                            >
+                              <CloudUpload size={14} className="text-blue-500" />
+                              Upload Backup
+                            </button>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
+                  </div>
                 )}
 
                 {isBillingUnlocked && (
@@ -1553,6 +1672,11 @@ export default function Layout({
                       </motion.div>
                     )}
                   </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
                 </div>
 
                 {/* REFRESH button pill matching brand-accent theme */}
@@ -1942,6 +2066,11 @@ export default function Layout({
                     </>
                   )}
                 </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+        )}
+      </AnimatePresence>
               </div>
             )}
 
@@ -2030,6 +2159,11 @@ export default function Layout({
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
         )}
       </AnimatePresence>
 
@@ -2302,6 +2436,11 @@ export default function Layout({
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isWhatsAppPanelOpen && (
+          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
         )}
       </AnimatePresence>
 
