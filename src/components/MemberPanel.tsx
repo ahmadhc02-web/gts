@@ -206,7 +206,7 @@ export default function MemberPanel({
               onClick={() => handleTileClick(stat.filter)}
               title={stat.tooltip}
               className={cn(
-                "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 flex flex-col justify-between transition-all group cursor-pointer relative active:scale-95",
+                "p-3 sm:p-6 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-black/5 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/60 border-slate-200/60 dark:border-slate-800/60 flex flex-col justify-between transition-all group cursor-pointer relative active:scale-95",
                 stat.color,
                 isTileActive ? "ring-2 ring-brand-accent scale-[1.04] z-10 shadow-2xl shadow-brand-accent/20 dark:shadow-brand-accent/30" : ""
               )}

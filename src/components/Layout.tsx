@@ -3,12 +3,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sun, Moon, LogOut, User, MessageSquare, MessageCircle, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload, DatabaseBackup } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
-import { WhatsAppConnectPanel } from '../../whatsapp_data/frontend';
+import { WhatsAppConnectPanel } from '../whatsapp_data';
 import { UserProfile, Notification, BrandingConfig } from '../types';
-import FloatingMascot from './FloatingMascot';
 import RefreshControl from './RefreshControl';
 import FiberLoading from './FiberLoading';
 import InlineTextEditor from './InlineTextEditor';
+import { IndependenceBuntingHeader, PakistanFlagFooter, PakistaniFlagBackground } from '../culture_design';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { getAvatarUrl } from '../utils/avatar';
@@ -554,7 +554,7 @@ export default function Layout({
   };
 
   return (
-    <div className="min-h-screen transition-colors duration-500 overflow-x-hidden relative">
+    <PakistaniFlagBackground className="transition-colors duration-500">
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
       {user && (
         <div className={cn(
@@ -1270,10 +1270,10 @@ export default function Layout({
         "z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
         isPreview ? "absolute top-0" : "sticky top-0",
         user && !isPreview && "lg:pl-[68px]",
-        branding?.sidebarTheme === 'dark' ? "bg-slate-950/95 border-slate-900 text-white" :
-        branding?.sidebarTheme === 'accent' ? "bg-brand-accent/95 border-white/10 text-white" :
+        branding?.sidebarTheme === 'dark' ? "bg-slate-950/70 border-slate-900/80 text-white" :
+        branding?.sidebarTheme === 'accent' ? "bg-brand-accent/70 border-white/10 text-white" :
         branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
-        "bg-white/95 dark:bg-slate-950/95 border-slate-200/80 dark:border-slate-900/80"
+        "bg-white/60 dark:bg-slate-950/60 border-white/50 dark:border-slate-800/50"
       )}>
         <div className={cn(
           "max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:pr-8 lg:pl-6 flex items-center justify-between transition-all duration-300",
@@ -1446,22 +1446,6 @@ export default function Layout({
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       type="button"
-                      onClick={() => setIsWhatsAppPanelOpen(true)}
-                      className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
-                      title="WhatsApp Integration"
-                    >
-                      <MessageCircle size={13} className="text-emerald-500 shrink-0" />
-                      <span className="hidden md:inline">WhatsApp</span>
-                    </motion.button>
-                  </div>
-                )}
-
-                {isBillingUnlocked && (
-                  <div className="relative">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      type="button"
                       onClick={() => setIsBackupDropdownOpen(!isBackupDropdownOpen)}
                       className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                       title="Backup Data"
@@ -1614,6 +1598,11 @@ export default function Layout({
               </motion.button>
             )}
           </motion.div>
+
+          {/* Independence Bunting Banner Header - Expanded landscape bunting flags */}
+          <div className="hidden sm:flex flex-1 items-center justify-center px-1 z-20 overflow-visible relative">
+            <IndependenceBuntingHeader />
+          </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
             {user && onRefresh && (
@@ -2169,7 +2158,7 @@ export default function Layout({
 
       {/* Main Content */}
       <main className={cn(
-        "mx-auto transition-all duration-500",
+        "mx-auto transition-all duration-500 flex-1 flex flex-col",
         user ? (
           isPreview 
             ? "py-4 sm:py-8 w-full px-4 pt-20 pl-[80px]" 
@@ -2188,90 +2177,20 @@ export default function Layout({
       {/* Footer */}
       {user && (
       <footer className={cn(
-        "relative w-full overflow-hidden border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950 py-5 sm:py-6 transition-colors",
+        "relative mt-auto w-full overflow-hidden border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950 transition-colors",
+
         user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
       )}>
-        <div className="max-w-[1850px] w-full mx-auto px-3 sm:px-6 lg:px-8">
-          {/* Main Footer Graphic Box with Black Outlined & Transparent Inner Branding Text */}
-          <div className="relative w-full flex flex-col items-center justify-center min-h-[70px] sm:min-h-[110px] my-1 sm:my-2 overflow-visible">
-            <svg
-              viewBox="0 0 1200 120"
-              className="w-full max-w-7xl mx-auto h-auto select-none pointer-events-none overflow-visible relative z-10"
-              preserveAspectRatio="xMidYMid meet"
-            >
-              <defs>
-                {/* Light mode drop shadow */}
-                <filter id="gtsOutlinedShadowLight" x="-10%" y="-10%" width="120%" height="120%">
-                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#0f172a" floodOpacity="0.12" />
-                </filter>
-                {/* Dark mode drop shadow */}
-                <filter id="gtsOutlinedShadowDark" x="-10%" y="-10%" width="120%" height="120%">
-                  <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#000000" floodOpacity="0.8" />
-                </filter>
-              </defs>
-
-              {/* Light Mode Outlined Text (Black Edges, Transparent Inside with Typewriter Effect) */}
-              <motion.text
-                x="50%"
-                y="55%"
-                dominantBaseline="central"
-                textAnchor="middle"
-                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                fontSize="68"
-                fontWeight="900"
-                letterSpacing="0.14em"
-                fill="none"
-                stroke="#020617"
-                strokeWidth="3.2"
-                strokeLinejoin="round"
-                filter="url(#gtsOutlinedShadowLight)"
-                className="block dark:hidden"
-                animate={{
-                  opacity: [0.88, 1, 0.88],
-                  scale: [1, 1.003, 1]
-                }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              >
-                {footerTypedText}{showFooterCursor ? '|' : '\u00A0'}
-              </motion.text>
-
-              {/* Dark Mode Outlined Text (Crisp White/Slate Edges, Transparent Inside with Typewriter Effect) */}
-              <motion.text
-                x="50%"
-                y="55%"
-                dominantBaseline="central"
-                textAnchor="middle"
-                fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                fontSize="68"
-                fontWeight="900"
-                letterSpacing="0.14em"
-                fill="none"
-                stroke="#f8fafc"
-                strokeWidth="3.2"
-                strokeLinejoin="round"
-                filter="url(#gtsOutlinedShadowDark)"
-                className="hidden dark:block"
-                animate={{
-                  opacity: [0.88, 1, 0.88],
-                  scale: [1, 1.003, 1]
-                }}
-                transition={{
-                  duration: 4,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              >
-                {footerTypedText}{showFooterCursor ? '|' : '\u00A0'}
-              </motion.text>
-            </svg>
+        <PakistanFlagFooter />
+        <div className="relative z-10 max-w-[1850px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
+          {/* Typed Text (formerly in the big box) */}
+          <div className="w-full text-center pb-4">
+            <span className="text-2xl sm:text-3xl font-black tracking-widest text-emerald-900 dark:text-emerald-100 uppercase drop-shadow-sm">
+              {footerTypedText}{showFooterCursor ? "|" : "\u00A0"}
+            </span>
           </div>
-
           {/* Bottom Row containing GTS Logo, Company Name, ISP MANAGEMENT PRO, Copyright & Powered By */}
-          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-300 dark:border-slate-800/80">
             {/* Left/Center: GTS Logo + Brand Info + Copyright */}
             <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
               {/* GTS Logo */}
@@ -2444,6 +2363,6 @@ export default function Layout({
         )}
       </AnimatePresence>
 
-    </div>
+    </PakistaniFlagBackground>
   );
 }

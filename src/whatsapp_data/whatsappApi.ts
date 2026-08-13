@@ -13,17 +13,17 @@ export async function getQr() {
   return res.json();
 }
 
-export async function getTemplate() {
+export async function getTemplate(): Promise<{ template: string, complaintRegisteredTemplate: string, complaintCompletedTemplate: string, completedStatusValue: string }> {
   const res = await fetch(`${API_URL}/template`);
   if (!res.ok) throw new Error('Failed to fetch template');
   return res.json();
 }
 
-export async function saveTemplate(template: string) {
+export async function saveTemplate(data: { template?: string, complaintRegisteredTemplate?: string, complaintCompletedTemplate?: string, completedStatusValue?: string }) {
   const res = await fetch(`${API_URL}/template`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ template })
+    body: JSON.stringify(data)
   });
   if (!res.ok) throw new Error('Failed to save template');
   return res.json();

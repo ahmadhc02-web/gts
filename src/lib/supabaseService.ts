@@ -3,6 +3,7 @@ import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notificat
 import { toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES } from '../constants';
 import { globalLoading } from '../contexts/LoadingContext';
+import { sendMessage, getTemplate, getStatus } from '../whatsapp_data/whatsappApi';
 
 const isExcludedFromRecovery = (name?: string, username?: string) => {
   const check = (str?: string) => {
@@ -1942,6 +1943,31 @@ export const supabaseService = {
         scheduledAt: data.scheduledAt
       };
       await upsertSupabase('complaints', 'id', complaint.id, toDb('complaints', complaint));
+      
+      // WhatsApp notification (fire-and-forget)
+      if (complaint.number) {
+        (async () => {
+          try {
+            const statusRes = await getStatus();
+            if (statusRes.state === 'open') {
+              const templates = await getTemplate();
+              const tmpl = templates.complaintRegisteredTemplate;
+              if (tmpl) {
+                const msg = tmpl
+                  .replace(/\{\{name\}\}/gi, complaint.customerName || '')
+                  .replace(/\{\{complaintId\}\}/gi, complaint.id)
+                  .replace(/\{\{category\}\}/gi, complaint.category || '')
+                  .replace(/\{\{area\}\}/gi, complaint.area || '')
+                  .replace(/\{\{description\}\}/gi, complaint.description || '');
+                await sendMessage(complaint.number, msg);
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to send WhatsApp registered notification', e);
+          }
+        })();
+      }
+      
       return complaint;
     }, 'Registering complaint...');
   },
@@ -1970,11 +1996,13 @@ export const supabaseService = {
 
   updateComplaintStatus: async (id: string, status: ComplaintStatus, customerName: string, authorName: string, authorId: string, protocols?: ComplaintReview[] | string, reviews?: ComplaintReview[]) => {
     return globalLoading.wrap(async () => {
-      // Get dealer_id for scoped notification
+      // Get dealer_id for scoped notification and number for WhatsApp
       let dealerId = 'main';
+      let compNumber = '';
       try {
-        const { data: comp } = await supabase.from('complaints').select('dealer_id').eq('id', id).single();
+        const { data: comp } = await supabase.from('complaints').select('dealer_id, number').eq('id', id).single();
         if (comp && comp.dealer_id) dealerId = comp.dealer_id;
+        if (comp && comp.number) compNumber = comp.number;
       } catch (e) {}
 
       const updates: any = { status, updated_at: Date.now() };
@@ -1998,6 +2026,32 @@ export const supabaseService = {
           details: { complaintId: id, customerName, status, updated_at: Date.now() }
         });
       } catch(err) { console.warn("Failed to create notification", err); }
+      
+      // WhatsApp notification (fire-and-forget)
+      if (compNumber) {
+        (async () => {
+          try {
+            const templates = await getTemplate();
+            const completedValue = templates.completedStatusValue || 'Resolved';
+            
+            // Check if this status counts as completed (case-insensitive)
+            if (status.toLowerCase() === completedValue.toLowerCase()) {
+              const statusRes = await getStatus();
+              if (statusRes.state === 'open') {
+                const tmpl = templates.complaintCompletedTemplate;
+                if (tmpl) {
+                  const msg = tmpl
+                    .replace(/\{\{name\}\}/gi, customerName || '')
+                    .replace(/\{\{complaintId\}\}/gi, id);
+                  await sendMessage(compNumber, msg);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to send WhatsApp completed notification', e);
+          }
+        })();
+      }
     }, 'Updating complaint status...');
   },
 

@@ -98,7 +98,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
   
   return (
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 pb-0">
-      <div className="flex-1 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-white/10 flex flex-col relative overflow-hidden shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 transition-shadow">
+      <div className="flex-1 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-2xl border border-white/60 dark:border-white/10 flex flex-col relative overflow-hidden shadow-xl shadow-black/5 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/60 transition-shadow">
         {/* Soft pastel decorative ambient blobs exactly like mockup photo */}
         {chartType === 'area' ? (
           <div className="absolute top-4 -right-16 w-48 h-48 bg-emerald-400/8 blur-[48px] rounded-full pointer-events-none z-0" />

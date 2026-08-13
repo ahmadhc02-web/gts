@@ -4,3 +4,5 @@ coverage/
 *.log
 .env*
 !.env.example
+whatsapp_data/backend/node_modules
+whatsapp_data/backend/package.json

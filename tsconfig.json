@@ -33,6 +33,7 @@
     "app",
     "test_*.ts",
     "export_to_supabase.ts",
-    "src/check_*.ts"
+    "src/check_*.ts",
+    "whatsapp_data/backend"
   ]
 }

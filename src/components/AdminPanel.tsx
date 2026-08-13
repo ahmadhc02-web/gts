@@ -21,12 +21,12 @@ const isExcludedFromRecovery = (r: any) => {
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX } from 'lucide-react';
+import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
-import { WhatsAppSendButton } from '../../whatsapp_data/frontend';
+import { WhatsAppSendButton, WhatsAppConnectPanel, WhatsAppMessageTemplateBox } from '../whatsapp_data';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { supabaseService as pocketbaseService, fromDb, globalTableCaches } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
@@ -63,6 +63,7 @@ const MYPC_SLUG_TO_FILE: Record<string, string> = {
   'customization': 'branding_panel',
   'print': 'print_receipt_view',
   'complaints': 'complaints_view',
+  'whatsapp-integration': 'whatsapp_integration',
 };
 
 const MYPC_FILE_TO_SLUG: Record<string, string> = {
@@ -80,6 +81,7 @@ const MYPC_FILE_TO_SLUG: Record<string, string> = {
   'branding_panel': 'customization',
   'print_receipt_view': 'print',
   'complaints_view': 'complaints',
+  'whatsapp_integration': 'whatsapp-integration',
 };
 
 interface AdminPanelProps {
@@ -1026,7 +1028,7 @@ export default function AdminPanel({
 
   const [isEditingMypc, setIsEditingMypc] = useState(false);
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
-  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | null>(null);
+  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'whatsapp_integration' | null>(null);
 
   // Sync /mypc sub-routes with opened file state
   useEffect(() => {
@@ -2708,7 +2710,7 @@ export default function AdminPanel({
                     onClick={() => handleTileClick(stat.filter)}
                     title={stat.tooltip}
                     className={cn(
-                      "p-3 sm:p-6 bg-white dark:bg-slate-950 rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-black/10 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/20 dark:hover:shadow-black/60 border-slate-100 dark:border-slate-900 flex flex-col justify-between transition-all duration-300 group cursor-pointer relative",
+                      "p-3 sm:p-6 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-black/5 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/60 border-slate-200/60 dark:border-slate-800/60 flex flex-col justify-between transition-all duration-300 group cursor-pointer relative",
                       stat.color,
                       isTileActive ? "ring-2 ring-brand-accent scale-[1.04] z-10 shadow-2xl shadow-brand-accent/20 dark:shadow-brand-accent/30" : ""
                     )}
@@ -5869,7 +5871,8 @@ export default function AdminPanel({
                   { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
                   { id: 'integrations', icon: CloudUpload, title: 'Google Sheet Link', desc: 'One-Time Enterprise Sync' },
                   { id: 'branding_panel', icon: Palette, title: 'CUSTOMIZATION', desc: 'Design aesthetics & app layouts' },
-                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' }
+                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' },
+                  { id: 'whatsapp_integration', icon: MessageCircle, title: 'WhatsApp', desc: 'Connect & manage automated messaging' }
                 ].map((item) => (
                   <motion.div
                     key={item.id}
@@ -5912,6 +5915,7 @@ export default function AdminPanel({
                       <span className="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
                         Running Frame: {
+                          mypcOpenedFile === 'whatsapp_integration' ? 'WhatsApp Business Integration Console' :
                           mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
                           mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
                           mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
@@ -7560,6 +7564,29 @@ export default function AdminPanel({
                       currentUser={currentUser}
                       branding={branding}
                     />
+                  )}
+
+                  {/* Subview 15: WhatsApp Integration whatsapp_integration */}
+                  {mypcOpenedFile === 'whatsapp_integration' && (
+                    <div className="max-w-5xl mx-auto space-y-6 text-left animate-in fade-in duration-300">
+                      {/* Safety / Anti-Ban Warning Header Card */}
+                      <div className="p-4 sm:p-5 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-500/10 text-slate-800 dark:text-amber-200">
+                        <div className="flex gap-3 items-start">
+                          <span className="text-xl shrink-0 mt-0.5">⚠️</span>
+                          <div>
+                            <h4 className="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">Safe Sending Compliance Warning</h4>
+                            <p className="text-[11px] font-bold mt-1 text-amber-700/95 dark:text-amber-400/90 leading-relaxed">
+                              Avoid sending more than ~50-100 messages per hour to reduce ban risk. Always personalize messages. Personalized tags (like <span className="font-mono text-xs text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-1 py-0.5 rounded">{"{{name}}"}</span> or <span className="font-mono text-xs text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-1 py-0.5 rounded">{"{{amount}}"}</span>) are automatically substituted to maintain natural variations.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                        <WhatsAppConnectPanel onClose={() => setMypcOpenedFile(null)} />
+                        <WhatsAppMessageTemplateBox />
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
