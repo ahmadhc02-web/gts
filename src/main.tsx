@@ -75,11 +75,21 @@ if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'servic
 }
 
 import { registerSW } from 'virtual:pwa-register';
+import { toast } from 'sonner';
 
-// Register Service Worker with automatic updates
+// Register Service Worker with prompt updates
 const updateSW = registerSW({
   onNeedRefresh() {
-    console.log('New content available, please refresh.');
+    toast('New version available', {
+      description: 'A new version of the app is available.',
+      duration: 100000,
+      action: {
+        label: 'Update now',
+        onClick: () => {
+          updateSW(true);
+        },
+      },
+    });
   },
   onOfflineReady() {
     console.log('Application ready for offline use.');
