@@ -1026,7 +1026,7 @@ export default function App() {
         const currentTenantId = pocketbaseService.getReadTenantId(user);
         const complaintTenantId = dealerId || 'main';
 
-        if (currentTenantId === 'all' || currentTenantId === complaintTenantId) {
+        if (!currentTenantId || currentTenantId === 'all' || currentTenantId === complaintTenantId) {
           // Update complaints state (preventing duplicates and alerting user)
           setComplaints(prev => {
             if (prev.some(c => c.id === complaint.id)) return prev;

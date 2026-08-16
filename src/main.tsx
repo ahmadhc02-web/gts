@@ -1,5 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
+import { toast } from 'sonner';
 import App from './App.tsx';
 import './index.css';
 
@@ -74,8 +76,35 @@ if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'servic
   }
 }
 
-import { registerSW } from 'virtual:pwa-register';
-import { toast } from 'sonner';
+// Force clear stale service worker and caches once to migrate to prompt-mode PWA
+if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  const isSwPromptMigrated = safeLocalStorage.getItem('gts_sw_v3_prompt_migration_done');
+  if (!isSwPromptMigrated) {
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+      if (registrations.length > 0) {
+        const unregisterPromises = registrations.map(registration => registration.unregister());
+        Promise.all(unregisterPromises).then(() => {
+          if ('caches' in window) {
+            caches.keys().then(keys => {
+              Promise.all(keys.map(key => caches.delete(key))).then(() => {
+                safeLocalStorage.setItem('gts_sw_v3_prompt_migration_done', 'true');
+                console.log("Stale Service Worker and caches fully purged for prompt migration.");
+                window.location.reload();
+              });
+            });
+          } else {
+            safeLocalStorage.setItem('gts_sw_v3_prompt_migration_done', 'true');
+            (window as any).location.reload();
+          }
+        });
+      } else {
+        safeLocalStorage.setItem('gts_sw_v3_prompt_migration_done', 'true');
+      }
+    }).catch(err => {
+      console.error("Service worker v3 migration error:", err);
+    });
+  }
+}
 
 // Register Service Worker with prompt updates
 const updateSW = registerSW({
