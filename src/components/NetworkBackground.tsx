@@ -26,20 +26,20 @@ export default function NetworkBackground() {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-slate-50 dark:bg-[#020617] transition-colors duration-500">
-      {/* Atmosphere */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-500/5 dark:from-blue-900/20 via-transparent dark:via-slate-950 to-transparent dark:to-black" />
+    <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-[var(--neu-bg)] transition-colors duration-500">
+      {/* Atmosphere - Pure Matte */}
+      <div className="absolute inset-0 bg-transparent" />
       
-      {/* Grid Pattern */}
+      {/* Subtle Grid Pattern */}
       <div 
-        className="absolute inset-0 opacity-5" 
+        className="absolute inset-0 opacity-[0.04] dark:opacity-[0.06]" 
         style={{ 
-          backgroundImage: 'linear-gradient(rgba(59, 130, 246, 0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(59, 130, 246, 0.2) 1px, transparent 1px)',
-          backgroundSize: '100px 100px' 
+          backgroundImage: 'linear-gradient(rgba(0, 0, 0, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 0, 0, 0.3) 1px, transparent 1px)',
+          backgroundSize: '80px 80px' 
         }} 
       />
 
-      <svg className="w-full h-full opacity-40" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <svg className="w-full h-full opacity-20 dark:opacity-25" viewBox="0 0 100 100" preserveAspectRatio="none">
         <defs>
           <filter id="glow">
             <feGaussianBlur stdDeviation="0.4" result="coloredBlur" />
@@ -59,19 +59,20 @@ export default function NetworkBackground() {
               x2={line.endX} 
               y2={line.endY} 
               stroke="currentColor" 
-              className="text-blue-500/10"
+              className="text-slate-500/20"
               strokeWidth="0.05" 
             />
             
             {/* The moving pulse */}
             <motion.circle
-              r="0.3"
-              fill="#3b82f6"
+              r="0.25"
+              fill="currentColor"
+              className="text-slate-600 dark:text-slate-400"
               filter="url(#glow)"
               initial={{ offsetDistance: "0%", opacity: 0 }}
               animate={{ 
                 offsetDistance: ["0%", "100%"],
-                opacity: [0, 1, 1, 0]
+                opacity: [0, 0.8, 0.8, 0]
               }}
               style={{
                 offsetPath: `path('M ${line.startX} ${line.startY} L ${line.endX} ${line.endY}')`,
@@ -86,19 +87,20 @@ export default function NetworkBackground() {
           </React.Fragment>
         ))}
 
-        {/* WiFi / Signal Pulse Emitters */}
+        {/* Signal Pulse Emitters */}
         {networkData.wifiNodes.map((node) => (
           <g key={`wifi-${node.id}`}>
-            <circle cx={node.x} cy={node.y} r="0.4" fill="#3b82f6" opacity="0.5" />
+            <circle cx={node.x} cy={node.y} r="0.3" fill="currentColor" className="text-slate-600 dark:text-slate-400" opacity="0.4" />
             <motion.circle
               cx={node.x}
               cy={node.y}
-              r="4"
-              stroke="#3b82f6"
-              strokeWidth="0.1"
+              r="3.5"
+              stroke="currentColor"
+              className="text-slate-600 dark:text-slate-400"
+              strokeWidth="0.08"
               fill="none"
               initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: [0, 0.4, 0] }}
+              animate={{ scale: 1, opacity: [0, 0.3, 0] }}
               transition={{
                 duration: 4,
                 repeat: Infinity,
@@ -106,31 +108,9 @@ export default function NetworkBackground() {
                 ease: "easeOut"
               }}
             />
-            <motion.circle
-              cx={node.x}
-              cy={node.y}
-              r="8"
-              stroke="#3b82f6"
-              strokeWidth="0.05"
-              fill="none"
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: [0, 0.2, 0] }}
-              transition={{
-                duration: 4,
-                repeat: Infinity,
-                delay: node.delay + 1,
-                ease: "easeOut"
-              }}
-            />
           </g>
         ))}
       </svg>
-
-      {/* Decorative Blur Blobs */}
-      <div className="absolute inset-0">
-        <div className="absolute top-1/2 left-1/4 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-indigo-600/10 rounded-full blur-[100px] animate-pulse delay-1000" />
-      </div>
     </div>
   );
 }

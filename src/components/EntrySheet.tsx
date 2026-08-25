@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabaseService as pocketbaseService, globalTableCaches } from '../lib/supabaseService';
+import { supabaseService, pocketbaseService, globalTableCaches } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { Client, UserProfile } from '../types';
@@ -61,6 +61,71 @@ const parseRowsArray = (val: any): any[] => {
   return [];
 };
 
+const ColumnDragHandle = ({ min, max, value, onChange, onDragEnd }: { min: number, max: number, value: number, onChange: (v: number) => void, onDragEnd: () => void }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+
+  const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
+    setIsDragging(true);
+    let clientX = 0;
+    if ('touches' in e) {
+      clientX = e.touches[0].clientX;
+    } else {
+      clientX = (e as React.MouseEvent).clientX;
+    }
+    startXRef.current = clientX;
+    startWidthRef.current = value;
+    document.body.style.cursor = 'col-resize';
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+    
+    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
+      let clientX = 0;
+      if ('touches' in e) {
+        clientX = e.touches[0].clientX;
+      } else {
+        clientX = (e as MouseEvent).clientX;
+      }
+      const delta = clientX - startXRef.current;
+      let newWidth = startWidthRef.current + delta;
+      if (newWidth < min) newWidth = min;
+      if (newWidth > max) newWidth = max;
+      onChange(newWidth);
+    };
+
+    const handlePointerUp = () => {
+      setIsDragging(false);
+      document.body.style.cursor = '';
+      if (onDragEnd) onDragEnd();
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handlePointerMove, { passive: false });
+    window.addEventListener('touchend', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+    };
+  }, [isDragging, min, max, onChange, onDragEnd]);
+
+  return (
+    <div
+      onMouseDown={handlePointerDown}
+      onTouchStart={handlePointerDown}
+      className="absolute top-0 right-0 bottom-0 w-2 cursor-col-resize hover:bg-brand-accent z-10 transition-colors print:hidden"
+      style={{ right: '-1px' }}
+    />
+  );
+};
+
 export default function EntrySheet({ 
   isOpen, 
   onClose, 
@@ -93,11 +158,13 @@ export default function EntrySheet({
   const activeView = (loadedSheetId ? 'editor' : 'dashboard') as 'dashboard' | 'editor';
   const [folders, setFolders] = useState<any[]>(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const syncKey = `ledger_folders_${originalScopeId}`;
+    const syncKey = `ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`;
     if ((globalTableCaches as any)[syncKey] && Array.isArray((globalTableCaches as any)[syncKey])) {
       return (globalTableCaches as any)[syncKey];
     }
-    const saved = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_all`);
+    const saved = isDealerTied
+      ? localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`)
+      : (localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_all_${currentUser?.lineCode || 'nolc'}`));
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -122,11 +189,13 @@ export default function EntrySheet({
   });
   const [ledgerHistory, setLedgerHistory] = useState<any[]>(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const syncKey = `ledger_sheets_${originalScopeId}`;
+    const syncKey = `ledger_sheets_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`;
     if ((globalTableCaches as any)[syncKey] && Array.isArray((globalTableCaches as any)[syncKey])) {
       return (globalTableCaches as any)[syncKey];
     }
-    const saved = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`) || localStorage.getItem(`gts_cache_v3_ledger_sheets_all`);
+    const saved = isDealerTied
+      ? localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`)
+      : (localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_ledger_sheets_all_${currentUser?.lineCode || 'nolc'}`));
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -239,12 +308,12 @@ export default function EntrySheet({
   const [isSavingSheet, setIsSavingSheet] = useState(false);
   const [isLoadingFolders, setIsLoadingFolders] = useState(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const hasCache = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
+    const hasCache = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
     return !hasCache;
   });
   const [isLoadingSheets, setIsLoadingSheets] = useState(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const hasCache = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}`);
+    const hasCache = localStorage.getItem(`gts_cache_v3_ledger_sheets_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`);
     return !hasCache;
   });
 
@@ -898,7 +967,7 @@ export default function EntrySheet({
     try {
       const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
       const unsubscribe = pocketbaseService.subscribeLedgerSheets((data) => {
-        setLedgerHistory(prev => data.length > 0 ? data : prev);
+        setLedgerHistory(Array.isArray(data) ? data : []);
         setIsLoadingSheets(false);
       }, tenantId);
       return () => unsubscribe();
@@ -911,10 +980,19 @@ export default function EntrySheet({
     if (openedFolderId && isOpen) {
       const fetchFolderSpecificSheets = async () => {
         try {
-          const { data, error } = await supabase
+          let query = supabase
             .from('ledger_sheets')
             .select('*')
             .eq('folder_id', openedFolderId);
+          
+          const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
+          if (tenantId && tenantId !== 'all') {
+            query = tenantId === 'main' 
+              ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') 
+              : query.eq('dealer_id', tenantId);
+          }
+            
+          const { data, error } = await query;
             
           if (error) {
              console.error(`Failed to fetch sheets for folder ${openedFolderId}:`, error);
@@ -1015,48 +1093,46 @@ export default function EntrySheet({
   });  // in mm
 
   // Table 1 individual column width states (can be modified back and forth via sliders)
-  const [t1WidthSr, setT1WidthSr] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t1WidthSr');
-    return saved !== null ? parseInt(saved) : 40;
-  });
-  const [t1WidthId, setT1WidthId] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t1WidthId');
-    return saved !== null ? parseInt(saved) : 90;
-  });
-  const [t1WidthName, setT1WidthName] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t1WidthName');
-    return saved !== null ? parseInt(saved) : 240;
-  });
-  const [t1WidthComments, setT1WidthComments] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t1WidthComments');
-    return saved !== null ? parseInt(saved) : 180;
-  });
-  const [t1WidthAmount, setT1WidthAmount] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t1WidthAmount');
-    return saved !== null ? parseInt(saved) : 100;
-  });
-  const [t1WidthCh, setT1WidthCh] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t1WidthCh');
-    return saved !== null ? parseInt(saved) : 40;
-  });
+  const [t1WidthSr, setT1WidthSr] = useState(40);
+  const [t1WidthId, setT1WidthId] = useState(90);
+  const [t1WidthName, setT1WidthName] = useState(240);
+  const [t1WidthComments, setT1WidthComments] = useState(180);
+  const [t1WidthAmount, setT1WidthAmount] = useState(100);
+  const [t1WidthCh, setT1WidthCh] = useState(40);
 
   // Table 2 individual column width states
-  const [t2WidthSr, setT2WidthSr] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t2WidthSr');
-    return saved !== null ? parseInt(saved) : 40;
-  });
-  const [t2WidthName, setT2WidthName] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t2WidthName');
-    return saved !== null ? parseInt(saved) : 490;
-  });
-  const [t2WidthAmount, setT2WidthAmount] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t2WidthAmount');
-    return saved !== null ? parseInt(saved) : 120;
-  });
-  const [t2WidthCh, setT2WidthCh] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_t2WidthCh');
-    return saved !== null ? parseInt(saved) : 40;
-  });
+  const [t2WidthSr, setT2WidthSr] = useState(40);
+  const [t2WidthName, setT2WidthName] = useState(490);
+  const [t2WidthAmount, setT2WidthAmount] = useState(120);
+  const [t2WidthCh, setT2WidthCh] = useState(40);
+
+  const [widthsLoading, setWidthsLoading] = useState(true);
+  const [showSaveWidthsBar, setShowSaveWidthsBar] = useState(false);
+  const [savingWidths, setSavingWidths] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let mounted = true;
+    setWidthsLoading(true);
+    supabaseService.getUserPreferences(currentUser.uid).then((prefs) => {
+      if (!mounted) return;
+      if (prefs && prefs.columnWidths) {
+        const w = prefs.columnWidths;
+        if (w.t1WidthSr) setT1WidthSr(w.t1WidthSr);
+        if (w.t1WidthId) setT1WidthId(w.t1WidthId);
+        if (w.t1WidthName) setT1WidthName(w.t1WidthName);
+        if (w.t1WidthComments) setT1WidthComments(w.t1WidthComments);
+        if (w.t1WidthAmount) setT1WidthAmount(w.t1WidthAmount);
+        if (w.t1WidthCh) setT1WidthCh(w.t1WidthCh);
+        if (w.t2WidthSr) setT2WidthSr(w.t2WidthSr);
+        if (w.t2WidthName) setT2WidthName(w.t2WidthName);
+        if (w.t2WidthAmount) setT2WidthAmount(w.t2WidthAmount);
+        if (w.t2WidthCh) setT2WidthCh(w.t2WidthCh);
+      }
+      setWidthsLoading(false);
+    });
+    return () => { mounted = false; };
+  }, [currentUser]);
 
   // Save layout configurations to localStorage on modification
   useEffect(() => {
@@ -1066,20 +1142,8 @@ export default function EntrySheet({
     localStorage.setItem('gts_ledger_headerFontSize', String(headerFontSize));
     localStorage.setItem('gts_ledger_paperPaddingX', String(paperPaddingX));
     localStorage.setItem('gts_ledger_paperPaddingY', String(paperPaddingY));
-    localStorage.setItem('gts_ledger_t1WidthSr', String(t1WidthSr));
-    localStorage.setItem('gts_ledger_t1WidthId', String(t1WidthId));
-    localStorage.setItem('gts_ledger_t1WidthName', String(t1WidthName));
-    localStorage.setItem('gts_ledger_t1WidthComments', String(t1WidthComments));
-    localStorage.setItem('gts_ledger_t1WidthAmount', String(t1WidthAmount));
-    localStorage.setItem('gts_ledger_t1WidthCh', String(t1WidthCh));
-    localStorage.setItem('gts_ledger_t2WidthSr', String(t2WidthSr));
-    localStorage.setItem('gts_ledger_t2WidthName', String(t2WidthName));
-    localStorage.setItem('gts_ledger_t2WidthAmount', String(t2WidthAmount));
-    localStorage.setItem('gts_ledger_t2WidthCh', String(t2WidthCh));
   }, [
-    showSizingPanel, rowPadding, tableFontSize, headerFontSize, paperPaddingX, paperPaddingY,
-    t1WidthSr, t1WidthId, t1WidthName, t1WidthComments, t1WidthAmount, t1WidthCh,
-    t2WidthSr, t2WidthName, t2WidthAmount, t2WidthCh
+    showSizingPanel, rowPadding, tableFontSize, headerFontSize, paperPaddingX, paperPaddingY
   ]);
 
   // Zoom & Auto-Fit scaling states: strictly defaults to 'fit' (Auto)
@@ -1187,8 +1251,8 @@ export default function EntrySheet({
     };
   }, [zoomOption, isLocked, isOpen, showSizingPanel, showHistoryPanel, isInputFocused, activeView, rowPadding, tableFontSize, headerFontSize, paperPaddingY, paperPaddingX]);
 
-   // Function to reset all lines & boxes sizing parameters to default
-  const resetSizingToDefault = () => {
+  // Function to reset all lines & boxes sizing parameters to default
+  const resetSizingToDefault = async () => {
     setRowPadding(5.5);
     setTableFontSize(11.5);
     setHeaderFontSize(13);
@@ -1211,18 +1275,38 @@ export default function EntrySheet({
     localStorage.removeItem('gts_ledger_headerFontSize');
     localStorage.removeItem('gts_ledger_paperPaddingX');
     localStorage.removeItem('gts_ledger_paperPaddingY');
-    localStorage.removeItem('gts_ledger_t1WidthSr');
-    localStorage.removeItem('gts_ledger_t1WidthId');
-    localStorage.removeItem('gts_ledger_t1WidthName');
-    localStorage.removeItem('gts_ledger_t1WidthComments');
-    localStorage.removeItem('gts_ledger_t1WidthAmount');
-    localStorage.removeItem('gts_ledger_t1WidthCh');
-    localStorage.removeItem('gts_ledger_t2WidthSr');
-    localStorage.removeItem('gts_ledger_t2WidthName');
-    localStorage.removeItem('gts_ledger_t2WidthAmount');
-    localStorage.removeItem('gts_ledger_t2WidthCh');
     
+    if (currentUser) {
+      try {
+        const prefs = await supabaseService.getUserPreferences(currentUser.uid) || {};
+        delete prefs.columnWidths;
+        await supabaseService.updateUserPreferences(currentUser.uid, prefs);
+      } catch (e) {
+        console.error("Failed to reset sizing preferences in DB", e);
+      }
+    }
+
     toast.success("Sizing and column widths restored to defaults and permanently saved!");
+  };
+
+  const saveColumnWidths = async () => {
+    if (!currentUser) return;
+    setSavingWidths(true);
+    try {
+      const prefs = await supabaseService.getUserPreferences(currentUser.uid) || {};
+      prefs.columnWidths = {
+        t1WidthSr, t1WidthId, t1WidthName, t1WidthComments, t1WidthAmount, t1WidthCh,
+        t2WidthSr, t2WidthName, t2WidthAmount, t2WidthCh
+      };
+      await supabaseService.updateUserPreferences(currentUser.uid, prefs);
+      toast.success("Column widths saved to your account! They'll be the same wherever you log in.");
+      setShowSaveWidthsBar(false);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to save — please try again");
+    } finally {
+      setSavingWidths(false);
+    }
   };
 
   // Footer fields
@@ -4263,7 +4347,7 @@ export default function EntrySheet({
                         </div>
                         <input 
                           type="range" min="20" max="80" value={t1WidthSr} 
-                          onChange={(e) => setT1WidthSr(parseInt(e.target.value))}
+                          onChange={(e) => { setT1WidthSr(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
                           className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
@@ -4275,7 +4359,7 @@ export default function EntrySheet({
                         </div>
                         <input 
                           type="range" min="40" max="150" value={t1WidthId} 
-                          onChange={(e) => setT1WidthId(parseInt(e.target.value))}
+                          onChange={(e) => { setT1WidthId(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
                           className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
@@ -4287,7 +4371,7 @@ export default function EntrySheet({
                         </div>
                         <input 
                           type="range" min="100" max="380" value={t1WidthName} 
-                          onChange={(e) => setT1WidthName(parseInt(e.target.value))}
+                          onChange={(e) => { setT1WidthName(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
                           className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
@@ -4299,7 +4383,7 @@ export default function EntrySheet({
                         </div>
                         <input 
                           type="range" min="100" max="350" value={t1WidthComments} 
-                          onChange={(e) => setT1WidthComments(parseInt(e.target.value))}
+                          onChange={(e) => { setT1WidthComments(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
                           className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
@@ -4311,7 +4395,7 @@ export default function EntrySheet({
                         </div>
                         <input 
                           type="range" min="50" max="180" value={t1WidthAmount} 
-                          onChange={(e) => setT1WidthAmount(parseInt(e.target.value))}
+                          onChange={(e) => { setT1WidthAmount(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
                           className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
@@ -4332,7 +4416,7 @@ export default function EntrySheet({
                         </div>
                         <input 
                           type="range" min="150" max="550" value={t2WidthName} 
-                          onChange={(e) => setT2WidthName(parseInt(e.target.value))}
+                          onChange={(e) => { setT2WidthName(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
                           className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
@@ -4344,7 +4428,7 @@ export default function EntrySheet({
                         </div>
                         <input 
                           type="range" min="50" max="250" value={t2WidthAmount} 
-                          onChange={(e) => setT2WidthAmount(parseInt(e.target.value))}
+                          onChange={(e) => { setT2WidthAmount(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
                           className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
                         />
                       </div>
@@ -4635,7 +4719,7 @@ export default function EntrySheet({
                 <tr className="border-b-2 border-black font-extrabold text-center text-black uppercase font-mono">
                   <th 
                     style={{ width: `${t1WidthSr}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 
-                    className="px-1 border-r-2 border-black"
+                    className="px-1 border-r-2 border-black relative"
                   >
                     <input
                       type="text"
@@ -4649,6 +4733,7 @@ export default function EntrySheet({
                       className="w-full min-w-0 text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
                       title="Double-click/type to edit column header"
                     />
+                    <ColumnDragHandle min={20} max={80} value={t1WidthSr} onChange={setT1WidthSr} onDragEnd={() => setShowSaveWidthsBar(true)} />
                   </th>
                   <th 
                     style={{ width: `${t1WidthId}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
@@ -4669,11 +4754,12 @@ export default function EntrySheet({
                     <button
                       type="button"
                       onClick={() => handleT1Sort('cId')}
-                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      className="print:hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
                       title="Sort by C.ID"
                     >
                       <ArrowUpDown className="w-2.5 h-2.5" />
                     </button>
+                    <ColumnDragHandle min={40} max={150} value={t1WidthId} onChange={setT1WidthId} onDragEnd={() => setShowSaveWidthsBar(true)} />
                   </th>
                   <th 
                     style={{ width: `${t1WidthName}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
@@ -4694,11 +4780,12 @@ export default function EntrySheet({
                     <button
                       type="button"
                       onClick={() => handleT1Sort('name')}
-                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      className="print:hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
                       title="Sort by Name"
                     >
                       <ArrowUpDown className="w-2.5 h-2.5" />
                     </button>
+                    <ColumnDragHandle min={100} max={380} value={t1WidthName} onChange={setT1WidthName} onDragEnd={() => setShowSaveWidthsBar(true)} />
                   </th>
                   <th 
                     style={{ width: `${t1WidthComments}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
@@ -4719,11 +4806,12 @@ export default function EntrySheet({
                     <button
                       type="button"
                       onClick={() => handleT1Sort('comments')}
-                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      className="print:hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
                       title="Sort by Comments"
                     >
                       <ArrowUpDown className="w-2.5 h-2.5" />
                     </button>
+                    <ColumnDragHandle min={100} max={350} value={t1WidthComments} onChange={setT1WidthComments} onDragEnd={() => setShowSaveWidthsBar(true)} />
                   </th>
                   <th 
                     style={{ width: `${t1WidthAmount}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
@@ -4744,11 +4832,12 @@ export default function EntrySheet({
                     <button
                       type="button"
                       onClick={() => handleT1Sort('amount')}
-                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      className="print:hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
                       title="Sort by Amount"
                     >
                       <ArrowUpDown className="w-2.5 h-2.5" />
                     </button>
+                    <ColumnDragHandle min={50} max={180} value={t1WidthAmount} onChange={setT1WidthAmount} onDragEnd={() => setShowSaveWidthsBar(true)} />
                   </th>
                   <th 
                     style={{ width: `${t1WidthCh}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }}
@@ -4985,8 +5074,8 @@ export default function EntrySheet({
               <thead>
                 <tr className="border-b-2 border-black font-extrabold text-center text-black uppercase font-mono">
                   <th 
-                    style={{ width: '40px', paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 
-                    className="px-1 border-r-2 border-black"
+                    style={{ width: `${t2WidthSr}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 
+                    className="px-1 border-r-2 border-black relative"
                   >
                     <input
                       type="text"
@@ -5000,6 +5089,7 @@ export default function EntrySheet({
                       className="w-full min-w-0 text-center bg-transparent border-none p-0 font-extrabold text-black font-mono focus:bg-slate-200 outline-none uppercase"
                       title="Double-click/type to edit heading"
                     />
+                    <ColumnDragHandle min={20} max={80} value={t2WidthSr} onChange={setT2WidthSr} onDragEnd={() => setShowSaveWidthsBar(true)} />
                   </th>
                   <th 
                     style={{ width: `${t2WidthName}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 
@@ -5020,11 +5110,12 @@ export default function EntrySheet({
                     <button
                       type="button"
                       onClick={() => handleT2Sort('name')}
-                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      className="print:hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
                       title="Sort by Name"
                     >
                       <ArrowUpDown className="w-2.5 h-2.5" />
                     </button>
+                    <ColumnDragHandle min={150} max={550} value={t2WidthName} onChange={setT2WidthName} onDragEnd={() => setShowSaveWidthsBar(true)} />
                   </th>
                   <th 
                     style={{ width: `${t2WidthAmount}px`, paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 
@@ -5045,11 +5136,12 @@ export default function EntrySheet({
                     <button
                       type="button"
                       onClick={() => handleT2Sort('amount')}
-                      className="print:hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
+                      className="print:hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-black hover:bg-slate-200 p-0.5 rounded transition-all cursor-pointer opacity-0 group-hover:opacity-100 shrink-0"
                       title="Sort by Amount"
                     >
                       <ArrowUpDown className="w-2.5 h-2.5" />
                     </button>
+                    <ColumnDragHandle min={50} max={250} value={t2WidthAmount} onChange={setT2WidthAmount} onDragEnd={() => setShowSaveWidthsBar(true)} />
                   </th>
                   <th 
                     style={{ width: '40px', paddingTop: `${Math.max(1, rowPadding - 2.5)}px`, paddingBottom: `${Math.max(1, rowPadding - 2.5)}px`, fontSize: `${tableFontSize}px` }} 
@@ -6982,6 +7074,20 @@ export default function EntrySheet({
               );
             })
           )}
+        </div>
+      )}
+      
+      {showSaveWidthsBar && (
+        <div className="fixed bottom-6 right-6 z-[350] bg-white dark:bg-slate-800 shadow-xl border-2 border-brand-accent rounded-lg p-3 flex items-center gap-4 animate-in slide-in-from-bottom-5 print:hidden">
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Unsaved column width changes</span>
+          <button 
+            onClick={saveColumnWidths}
+            disabled={savingWidths}
+            className="px-4 py-1.5 bg-brand-accent text-white rounded font-bold hover:bg-brand-accent/90 disabled:opacity-50 flex items-center gap-2"
+          >
+            {savingWidths ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save
+          </button>
         </div>
       )}
     </>,

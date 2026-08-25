@@ -49,21 +49,21 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
 
   return (
     <div className="h-full flex flex-col space-y-6">
-      <div className="flex-1 flex flex-col bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-white/10 p-5 shadow-[0_22px_48px_rgba(0,0,0,0.12),_0_8px_24px_rgba(245,158,11,0.08)] overflow-hidden">
+      <div className="flex-1 flex flex-col rounded-3xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] p-5 overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+            <div className="w-10 h-10 rounded-xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] flex items-center justify-center text-amber-500">
               <Flame size={20} />
             </div>
             <div>
-              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Nodes</h3>
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Complainers</h3>
               <p className="text-[10px] font-bold text-amber-500 uppercase tracking-tighter opacity-70">
-                Top 10 Active Nodes ({highFreqRange === 'all' ? 'All Time' : highFreqRange.replace('days', ' Days')})
+                Top 10 Active Complainers ({highFreqRange === 'all' ? 'All Time' : highFreqRange.replace('days', ' Days')})
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+          <div className="flex items-center gap-2 p-1 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] rounded-xl">
             {[
               { id: '10days', label: '10D' },
               { id: '30days', label: '30D' },
@@ -72,9 +72,9 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
               <button
                 key={range.id}
                 onClick={() => setHighFreqRange(range.id as any)}
-                className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
                   highFreqRange === range.id 
-                    ? 'bg-white dark:bg-slate-700 text-amber-600 shadow-sm' 
+                    ? 'bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-raised)] text-amber-500' 
                     : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
@@ -93,10 +93,10 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.05 }}
                   onClick={() => setExpandedUser(expandedUser === user.name ? null : user.name)}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
+                  className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all ${
                     expandedUser === user.name 
-                      ? 'bg-amber-500/5 border-amber-500/30' 
-                      : 'bg-slate-50 dark:bg-slate-800/40 border-slate-100 dark:border-white/10 hover:border-amber-500/30'
+                      ? 'border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)]' 
+                      : 'border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-btn)] hover:text-amber-500 active:scale-95'
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -142,7 +142,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                             <button 
                               key={`${complaint.id}-${cIdx}`} 
                               onClick={() => setSelectedComplaint(complaint)}
-                              className="w-full text-left p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-white/10 shadow-sm flex items-center justify-between gap-3 hover:border-amber-500/30 transition-all active:scale-[0.98]"
+                              className="w-full text-left p-3 bg-[var(--neu-surface)] rounded-xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] flex items-center justify-between gap-3 hover:shadow-[var(--neu-shadow-inset)] transition-all active:scale-95"
                             >
                                <div className="flex-1 min-w-0">
                                   <p className="text-[10px] font-bold text-slate-900 dark:text-white truncate uppercase">{complaint.category}</p>
@@ -161,7 +161,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                                    if (prog.percentage <= 0) return null;
                                    return (
                                      <div className="w-16 flex flex-col items-end gap-0.5" title={prog.stepText}>
-                                       <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40">
+                                       <div className="w-full bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] h-1 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40">
                                          <div 
                                            className="bg-blue-500 h-full rounded-full"
                                            style={{ width: `${prog.percentage}%` }}
@@ -206,21 +206,21 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl md:max-w-3xl bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
+              className="relative w-full max-w-2xl md:max-w-3xl bg-[var(--neu-surface)] rounded-3xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-raised)] overflow-hidden max-h-[92vh] flex flex-col"
             >
-              <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between shrink-0">
+              <div className="p-6 border-b border-[var(--neu-border)] flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                  <div className="w-10 h-10 rounded-xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] flex items-center justify-center text-amber-500">
                     <Info size={20} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Node Registry Report</h3>
+                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Complainer Registry Report</h3>
                     <p className="text-[10px] font-bold text-amber-500 uppercase tracking-tighter opacity-70">Registry Entry: {selectedComplaint.id.toUpperCase()}</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setSelectedComplaint(null)}
-                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  className="w-8 h-8 rounded-full bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all active:scale-95"
                 >
                   <X size={16} />
                 </button>
@@ -228,7 +228,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
 
               <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
                 {/* User profile & coordinates */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-b border-slate-100 dark:border-white/10 pb-5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-b border-[var(--neu-border)] pb-5">
                   <div className="space-y-1">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Customer Node</p>
                     <div className="flex items-center gap-2 text-slate-900 dark:text-white">
@@ -264,15 +264,15 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   
                   {/* Core 1: Operational Log */}
-                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/10 p-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2 mb-3">
+                  <div className="flex flex-col bg-[var(--neu-surface)] rounded-2xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] p-4">
+                    <div className="flex items-center justify-between border-b border-[var(--neu-border)] pb-2 mb-3">
                       <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">OPERATIONAL LOG</span>
                       <span className="text-[8px] font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1 rounded uppercase font-bold">Issue Details</span>
                     </div>
                     <p className="text-xs text-slate-705 dark:text-slate-300 font-medium leading-relaxed italic min-h-[80px]">
                       "{selectedComplaint.description}"
                     </p>
-                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-white/10 flex flex-col gap-1">
+                    <div className="mt-auto pt-3 border-t border-[var(--neu-border)] flex flex-col gap-1">
                       <div className="flex justify-between items-center text-[8px] font-bold text-slate-400">
                         <span>LOG CAPTAIN:</span>
                         <div className="flex items-center gap-1.5">
@@ -283,7 +283,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                                 <img 
                                   src={getAvatarUrl(authorUser.profilePicture)} 
                                   alt={selectedComplaint.memberName} 
-                                  className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0"
+                                  className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0"
                                 />
                               );
                             }
@@ -291,7 +291,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                               <img 
                                 src={getAvatarUrl('default:male')} 
                                 alt={selectedComplaint.memberName || 'System'}
-                                className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0 opacity-80"
+                                className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 opacity-80"
                               />
                             );
                           })()}
@@ -302,8 +302,8 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                   </div>
 
                   {/* Core 2: Team Resolution Protocol */}
-                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/10 p-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2 mb-3">
+                  <div className="flex flex-col bg-[var(--neu-surface)] rounded-2xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] p-4">
+                    <div className="flex items-center justify-between border-b border-[var(--neu-border)] pb-2 mb-3">
                       <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500 dark:text-emerald-400">RESOLUTION PROTOCOL</span>
                       <span className="text-[8px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1 rounded uppercase font-bold">Action Taken</span>
                     </div>
@@ -316,7 +316,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                             <span className="uppercase tracking-widest">RESOLUTION PROGRESS</span>
                             <span>{prog.percentage}%</span>
                           </div>
-                          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40">
+                          <div className="w-full bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40">
                             <div 
                               className="bg-blue-500 h-full rounded-full transition-all duration-300"
                               style={{ width: `${prog.percentage}%` }}
@@ -336,7 +336,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                         <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 leading-snug">No active technical resolution protocol registered yet.</p>
                       </div>
                     )}
-                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-white/10 flex flex-col gap-1">
+                    <div className="mt-auto pt-3 border-t border-[var(--neu-border)] flex flex-col gap-1">
                       <div className="flex justify-between items-center text-[8px] font-bold text-slate-400">
                         <span>TEAM AUTHOR:</span>
                         <div className="flex items-center gap-1.5">
@@ -347,7 +347,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                                 <img 
                                   src={getAvatarUrl(authorUser.profilePicture)} 
                                   alt={selectedComplaint.remarkAuthorName || selectedComplaint.memberName || 'AWAITING DISPATCH'} 
-                                  className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0"
+                                  className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0"
                                 />
                               );
                             }
@@ -355,7 +355,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                               <img 
                                 src={getAvatarUrl('default:male')} 
                                 alt={selectedComplaint.remarkAuthorName || selectedComplaint.memberName || 'AWAITING DISPATCH'}
-                                className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-sm shrink-0 opacity-80"
+                                className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 opacity-80"
                               />
                             );
                           })()}
@@ -366,8 +366,8 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                   </div>
 
                   {/* Core 3: Customer Review */}
-                  <div className="flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-white/10 p-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/10 pb-2 mb-3">
+                  <div className="flex flex-col bg-[var(--neu-surface)] rounded-2xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] p-4">
+                    <div className="flex items-center justify-between border-b border-[var(--neu-border)] pb-2 mb-3">
                       <span className="text-[9px] font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400">CUSTOMER REVIEW</span>
                       <span className="text-[8px] font-mono bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-1 rounded uppercase font-bold">Feedback</span>
                     </div>
@@ -381,7 +381,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                         <p className="text-[8px] font-bold text-slate-400 uppercase mt-1 leading-snug">Complete full dispatch protocol to trigger customer review telemetry.</p>
                       </div>
                     )}
-                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-white/10 flex flex-col gap-1">
+                    <div className="mt-auto pt-3 border-t border-[var(--neu-border)] flex flex-col gap-1">
                       <div className="flex justify-between text-[8px] font-bold text-slate-400">
                         <span>REVIEW TELEMETRY:</span>
                         <span className="text-slate-600 dark:text-slate-300">{selectedComplaint.customerReview ? 'SUCCESS' : 'PENDING'}</span>
@@ -395,7 +395,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Hardware Interface / Panel Details</p>
-                    <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-white/10">
+                    <div className="p-3 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] rounded-xl">
                       <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
                         {selectedComplaint.panelDetails || "NO HARDWARE PANEL SPECIFIED FOR THIS ACTIVE NODE REGISTRY ENTRY."}
                       </p>
@@ -403,7 +403,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                   </div>
                   <div className="space-y-1">
                     <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Broadband Subscription / Speed Details</p>
-                    <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-white/10">
+                    <div className="p-3 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] rounded-xl">
                       <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
                         {selectedComplaint.pkgDetails || "NO SPEED PROFILE SPECIFIED FOR THIS ACTIVE NODE REGISTRY ENTRY."}
                       </p>
@@ -412,7 +412,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                 </div>
 
                 {/* Timestamps */}
-                <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-white/10 shrink-0">
+                <div className="flex items-center justify-between pt-4 border-t border-[var(--neu-border)] shrink-0">
                   <div className="flex items-center gap-2 text-slate-400">
                     <Calendar size={12} />
                     <span className="text-[9px] font-black uppercase tracking-widest">
@@ -428,10 +428,10 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                 </div>
               </div>
 
-              <div className="p-6 bg-slate-50 dark:bg-slate-800/50 flex justify-end shrink-0 gap-3">
+              <div className="p-6 bg-[var(--neu-surface)] border-t border-[var(--neu-border)] flex justify-end shrink-0 gap-3">
                 <button 
                   onClick={() => setSelectedComplaint(null)}
-                  className="px-6 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 transition-transform"
+                  className="px-6 py-2.5 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:text-rose-500 transition-all active:scale-95"
                 >
                   Terminate View
                 </button>

@@ -3,6 +3,9 @@ import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notificat
 import { toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES } from '../constants';
 import { globalLoading } from '../contexts/LoadingContext';
+
+let activeLineCode: string | undefined = undefined;
+
 import { sendMessage, getTemplate, getStatus } from '../whatsapp_data/whatsappApi';
 
 const isExcludedFromRecovery = (name?: string, username?: string) => {
@@ -26,7 +29,23 @@ const isExcludedFromRecovery = (name?: string, username?: string) => {
 
 const parseExcludedKeys = (em: any): string[] => {
   if (!em) return [];
-  const raw = em.excluded_client_keys ?? em.excludedClientKeys ?? (typeof em.rows_data === 'object' && em.rows_data !== null && !Array.isArray(em.rows_data) ? em.rows_data?.excludedClientKeys : null);
+  
+  let rowsDataObj = null;
+  if (em.rows_data) {
+    if (typeof em.rows_data === 'string') {
+      try {
+        const parsed = JSON.parse(em.rows_data);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          rowsDataObj = parsed;
+        }
+      } catch (e) {}
+    } else if (typeof em.rows_data === 'object' && em.rows_data !== null && !Array.isArray(em.rows_data)) {
+      rowsDataObj = em.rows_data;
+    }
+  }
+  
+  const raw = rowsDataObj?.excludedClientKeys ?? em.excluded_client_keys ?? em.excludedClientKeys;
+
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string' && raw.trim()) {
     try {
@@ -79,6 +98,7 @@ export const mappings: Record<string, Record<string, string>> = {
     customerReview: 'customer_review',
     reviews: 'customer_review',
     dealerId: 'dealer_id',
+    lineCode: 'line_code',
     scheduledAt: 'scheduled_at'
   },
   clients: {
@@ -98,6 +118,7 @@ export const mappings: Record<string, Record<string, string>> = {
     createdBy: 'created_by',
     createdAt: 'created_at',
     dealerId: 'dealer_id',
+    lineCode: 'line_code',
     lat: 'lat',
     lng: 'lng'
   },
@@ -132,6 +153,7 @@ export const mappings: Record<string, Record<string, string>> = {
     createdAt: 'created_at',
     isRead: 'is_read',
     dealerId: 'dealer_id',
+    lineCode: 'line_code',
     details: 'details'
   },
   monitor_targets: {
@@ -140,6 +162,7 @@ export const mappings: Record<string, Record<string, string>> = {
     createdBy: 'created_by',
     createdAt: 'created_at',
     dealerId: 'dealer_id',
+    lineCode: 'line_code',
     lat: 'lat',
     lng: 'lng',
     label: 'label'
@@ -163,6 +186,7 @@ export const mappings: Record<string, Record<string, string>> = {
     footnoteLeft: 'footnote_left',
     footnoteRight: 'footnote_right',
     dealerId: 'dealer_id',
+    lineCode: 'line_code',
     createdAt: 'created_at',
     folderId: 'folder_id',
     sort: 'sort',
@@ -200,7 +224,10 @@ export function toDb(table: string, obj: any): any {
   if (!obj) return obj;
   const tableMapping = mappings[table];
   if (!tableMapping) return obj;
+
   const result: any = {};
+  
+  
   for (const [clientKey, dbKey] of Object.entries(tableMapping)) {
     if (obj[clientKey] !== undefined) {
       if (table === 'users' && clientKey === 'password' && (!obj[clientKey] || String(obj[clientKey]).trim() === '')) {
@@ -419,6 +446,8 @@ async function upsertSupabase(collectionName: string, idField: string, idValue: 
   // Ensure the id field itself is included in the row being upserted
   cleanData[idField] = idValue;
 
+  
+
   try {
     const { error } = await supabase.from(targetTable).upsert(cleanData, { onConflict: idField });
     if (error) {
@@ -464,13 +493,15 @@ function subscribeTable(
   tableName: string,
   callback: (data: any[]) => void,
   mapRow: (row: any) => any = (row) => row,
-  dealerId?: string
+  dealerId?: string,
+  bypassLineCodeFilter: boolean | string = false
 ) {
-  const syncKey = `${tableName}_${dealerId || 'all'}`;
+  const syncKey = `${tableName}_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
 
   if (!globalTableCaches[syncKey]) {
     try {
-      const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`) || localStorage.getItem(`gts_cache_v3_${tableName}`);
+      const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
+      const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`) || (isSpecificDealer ? null : localStorage.getItem(`gts_cache_v3_${tableName}_all_${activeLineCode || 'nolc'}`));
       if (cachedData) {
         const parsed = JSON.parse(cachedData);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -494,6 +525,19 @@ function subscribeTable(
       } else {
         const targetTable = tableName === 'users' ? 'users_data' : tableName;
         let query = supabase.from(targetTable).select('*');
+        
+        
+        if (!['branding_config', 'categories_config', 'priority_config', 'statuses_config', 'zone_config'].includes(tableName)) {
+          if (bypassLineCodeFilter === true) {
+            // no filter
+          } else if (typeof bypassLineCodeFilter === 'string') {
+            query = query.eq('line_code', bypassLineCodeFilter);
+          } else if (activeLineCode) {
+            query = query.eq('line_code', activeLineCode);
+          } else {
+            query = query.or('line_code.is.null,line_code.eq.');
+          }
+        }
         if (dealerId && dealerId !== 'all') {
           if (tableName === 'ledger_folders') {
             query = dealerId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null,tenant_id.eq.') : query.eq('tenant_id', dealerId);
@@ -511,10 +555,11 @@ function subscribeTable(
       }
 
       if (tableName === 'ledger_folders' && (error || mapped.length === 0)) {
+        const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
         const currentCache = globalTableCaches[syncKey];
         if (currentCache && currentCache.length > 0) {
           mapped = currentCache;
-        } else {
+        } else if (!isSpecificDealer) {
           // Check Supabase branding_config backup
           const docId = `ledger_folders_data_${dealerId || 'main'}`;
           try {
@@ -528,7 +573,7 @@ function subscribeTable(
           } catch (e) {}
 
           if (mapped.length === 0) {
-            const localSaved = localStorage.getItem(`gts_ledger_folders_${dealerId || 'main'}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_${dealerId || 'all'}`) || localStorage.getItem('gts_cache_v3_ledger_folders');
+            const localSaved = localStorage.getItem(`gts_ledger_folders_${dealerId || 'main'}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_${dealerId || 'all'}_${activeLineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_all_${activeLineCode || 'nolc'}`);
             if (localSaved) {
               try {
                 const parsed = JSON.parse(localSaved);
@@ -538,11 +583,11 @@ function subscribeTable(
               } catch (e) {}
             }
           }
-        }
 
-        if (mapped.length > 0) {
-          globalTableCaches[syncKey] = mapped;
-          supabaseService.saveLedgerFolders(mapped, dealerId || 'main').catch(console.warn);
+          if (mapped.length > 0) {
+            globalTableCaches[syncKey] = mapped;
+            supabaseService.saveLedgerFolders(mapped, dealerId || 'main').catch(console.warn);
+          }
         }
       }
 
@@ -621,6 +666,34 @@ function subscribeTable(
             } catch (e) {}
           } else if (payload && payload.new) {
             try {
+              const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
+              if (isSpecificDealer) {
+                const rowDealer = payload.new.dealer_id || payload.new.tenant_id;
+                if (tableName === 'billing_months') {
+                  if (rowDealer && rowDealer !== dealerId) {
+                    return; // Skip billing month updates not belonging to this dealer
+                  }
+                } else {
+                  if (rowDealer && rowDealer !== dealerId && rowDealer !== 'main') {
+                    return; // Skip updates not belonging to this dealer (or main for ledger fallback logic)
+                  }
+                }
+              }
+              
+              if (!['branding_config', 'categories_config', 'priority_config', 'statuses_config', 'zone_config'].includes(tableName)) {
+                if (bypassLineCodeFilter === true) {
+                  // no filter
+                } else if (typeof bypassLineCodeFilter === 'string') {
+                  if (payload.new.line_code && payload.new.line_code !== bypassLineCodeFilter) return;
+                  if (!payload.new.line_code && bypassLineCodeFilter) return;
+                } else if (activeLineCode) {
+                  if (payload.new.line_code && payload.new.line_code !== activeLineCode) return;
+                } else {
+                  if (payload.new.line_code) return; // For non-dealers, only allow empty line_code
+                }
+              }
+
+
               const mappedRow = mapRow(payload.new);
               if (mappedRow) {
                 const rowId = mappedRow.id || mappedRow.month_id || mappedRow.sheet_id;
@@ -746,6 +819,9 @@ async function fetchBrandingConfigType(configType: string): Promise<any> {
 }
 
 export const supabaseService = {
+  setActiveLineCode: (lineCode?: string) => {
+    activeLineCode = lineCode;
+  },
   // Presence and Cursor Broadcast for Collaboration
   joinBillingPresence(
     monthId: string, 
@@ -1054,13 +1130,19 @@ export const supabaseService = {
   },
 
   // --- BILLING CONFIG & RECOVERY SHEETS ---
-  async getBillingMonths(dealerId: string = 'main') {
+  async getBillingMonths(dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) {
     const parseRowsData = (val: any): any[] => {
       if (Array.isArray(val)) return val;
+      if (val && typeof val === 'object' && !Array.isArray(val) && 'rows' in val) {
+        if (Array.isArray(val.rows)) return val.rows;
+      }
       if (typeof val === 'string' && val.trim()) {
         try {
           const parsed = JSON.parse(val);
           if (Array.isArray(parsed)) return parsed;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'rows' in parsed) {
+            if (Array.isArray(parsed.rows)) return parsed.rows;
+          }
         } catch (e) {}
       }
       return [];
@@ -1072,6 +1154,17 @@ export const supabaseService = {
       try {
         let query = supabase.from('billing_months').select('*');
         if (dealerId && dealerId !== 'main') query = query.eq('dealer_id', dealerId);
+        
+        if (bypassLineCodeFilter === true) {
+          // no filter
+        } else if (typeof bypassLineCodeFilter === 'string') {
+          query = query.eq('line_code', bypassLineCodeFilter);
+        } else if (activeLineCode) {
+          query = query.eq('line_code', activeLineCode);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
+        }
+
         const { data: supMonths } = await query;
         if (supMonths) {
           for (const em of supMonths) {
@@ -1079,6 +1172,7 @@ export const supabaseService = {
             monthMap.set(em.month_id, {
               id: em.month_id,
               dealerId: em.dealer_id || dealerId,
+              lineCode: em.line_code || '',
               rows: rowsFromData,
               excludedClientKeys: parseExcludedKeys(em),
               hasAuthoritativeRowsData: rowsFromData.length > 0,
@@ -1092,12 +1186,24 @@ export const supabaseService = {
       try {
         let query = supabase.from('billing_rows').select('*');
         if (dealerId && dealerId !== 'main') query = query.eq('dealer_id', dealerId);
+        
+        if (bypassLineCodeFilter === true) {
+          // no filter
+        } else if (typeof bypassLineCodeFilter === 'string') {
+          query = query.eq('line_code', bypassLineCodeFilter);
+        } else if (activeLineCode) {
+          query = query.eq('line_code', activeLineCode);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
+        }
+
         const { data: rowRecords } = await query;
         if (rowRecords && rowRecords.length > 0) {
           const rowsByMonth = new Map<string, any[]>();
           for (const r of rowRecords) {
             const mId = r.month_id || 'UNKNOWN';
             if (isExcludedFromRecovery(r.name, r.username)) continue;
+            if (activeLineCode && r.line_code && r.line_code !== activeLineCode) continue;
             if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
             rowsByMonth.get(mId)!.push({
               id: r.client_id || r.id,
@@ -1121,15 +1227,18 @@ export const supabaseService = {
               lai: r.lai || '',
               connectionDate: r.connection_date || '',
               devicePrice: r.device_price || '',
-              abl: r.abl || ''
+              abl: r.abl || '',
+              lineCode: r.line_code || ''
             });
           }
 
           for (const [mId, rowList] of rowsByMonth.entries()) {
             if (!monthMap.has(mId)) {
+              if (dealerId && dealerId !== 'main' && (!rowList || rowList.length === 0)) continue;
               monthMap.set(mId, {
                 id: mId,
-                dealerId,
+                dealerId: dealerId || 'main',
+                lineCode: activeLineCode || '',
                 rows: rowList,
                 hasAuthoritativeRowsData: false,
                 updatedAt: Date.now(),
@@ -1171,7 +1280,9 @@ export const supabaseService = {
 
       const sortedList = Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
       try {
-        localStorage.setItem('gts_cache_v3_billing_months', JSON.stringify(sortedList));
+        const lc = activeLineCode || 'nolc';
+        const cacheKey = dealerId && dealerId !== 'main' ? `gts_cache_v3_billing_months_${dealerId}_${lc}` : `gts_cache_v3_billing_months_all_${lc}`;
+        localStorage.setItem(cacheKey, JSON.stringify(sortedList));
       } catch (e) {}
 
       return sortedList;
@@ -1181,9 +1292,21 @@ export const supabaseService = {
     }
   },
 
-  getBillingMonthRowsDirect: async (monthId: string, dealerId: string = 'main') => {
+  getBillingMonthRowsDirect: async (monthId: string, dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
     try {
-      const { data: records } = await supabase.from('billing_rows').select('*').eq('month_id', monthId).eq('dealer_id', dealerId);
+      let query = supabase.from('billing_rows').select('*').eq('month_id', monthId).eq('dealer_id', dealerId);
+      
+        if (bypassLineCodeFilter === true) {
+          // no filter
+        } else if (typeof bypassLineCodeFilter === 'string') {
+          query = query.eq('line_code', bypassLineCodeFilter);
+        } else if (activeLineCode) {
+          query = query.eq('line_code', activeLineCode);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
+        }
+
+      const { data: records } = await query;
       if (records && records.length > 0) {
         return records.filter(r => !isExcludedFromRecovery(r.name, r.username)).map(r => ({
           id: r.client_id || r.id,
@@ -1230,6 +1353,11 @@ export const supabaseService = {
         let rows = data.rows_data;
         if (typeof rows === 'string') {
           try { rows = JSON.parse(rows); } catch (e) { rows = []; }
+        }
+        if (rows && typeof rows === 'object' && !Array.isArray(rows) && 'rows' in rows) {
+          if (Array.isArray(rows.rows)) {
+            rows = rows.rows;
+          }
         }
         const excludedClientKeys = parseExcludedKeys(data);
         if (Array.isArray(rows) && rows.length > 0) {
@@ -1290,7 +1418,7 @@ export const supabaseService = {
       if (existing && existing.excludedClientKeys !== undefined) {
         finalExcludedKeys = existing.excludedClientKeys;
       } else {
-        const primaryKey = `billing_months_${dealerId || 'main'}`;
+        const primaryKey = `billing_months_${dealerId || 'main'}_${activeLineCode || 'nolc'}`;
         const cached = (globalTableCaches[primaryKey] || []).find((m: any) => m.id === monthId || m.month_id === monthId);
         if (cached && cached.excludedClientKeys) {
           finalExcludedKeys = cached.excludedClientKeys;
@@ -1305,8 +1433,9 @@ export const supabaseService = {
     this._billingMonthSaveCounter[key] = currentCounter;
 
     // Synchronously update globalTableCaches and localStorage for instant UI updates
-    const primaryKey = `billing_months_${dealerId || 'main'}`;
-    const syncKeys = [primaryKey, 'billing_months_all', 'billing_months_main', 'billing_months_'];
+    const primaryKey = `billing_months_${dealerId || 'main'}_${activeLineCode || 'nolc'}`;
+    const lc = activeLineCode || 'nolc';
+    const syncKeys = [primaryKey, `billing_months_all_${lc}`, `billing_months_main_${lc}`, `billing_months__${lc}`];
     syncKeys.forEach(sKey => {
       if (!globalTableCaches[sKey]) globalTableCaches[sKey] = [];
       const idx = globalTableCaches[sKey].findIndex((m: any) => m.id === monthId || m.month_id === monthId);
@@ -1315,9 +1444,8 @@ export const supabaseService = {
         month_id: monthId,
         dealerId: dealerId || 'main',
         rows,
-        rows_data: rows,
+        rows_data: { rows, excludedClientKeys: finalExcludedKeys },
         excludedClientKeys: finalExcludedKeys,
-        excluded_client_keys: finalExcludedKeys,
         updated_by: updatedBy,
         updatedAt: Date.now()
       };
@@ -1329,7 +1457,7 @@ export const supabaseService = {
     });
 
     try {
-      localStorage.setItem('gts_cache_v3_billing_months', JSON.stringify(globalTableCaches[primaryKey] || globalTableCaches['billing_months_main'] || []));
+      localStorage.setItem(`gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`, JSON.stringify(globalTableCaches[primaryKey] || globalTableCaches['billing_months_main'] || []));
     } catch (e) {}
     
     if (!this._saveBillingMonthTimers) this._saveBillingMonthTimers = {};
@@ -1377,7 +1505,7 @@ export const supabaseService = {
   _syncingMonths: new Set<string>(),
 
   async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, executeCounter?: number, excludedClientKeys?: string[]) {
-    const syncKey = `${monthId}_${dealerId}`;
+    const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
     if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
     
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
@@ -1391,7 +1519,7 @@ export const supabaseService = {
   },
 
   async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, excludedClientKeys?: string[]) {
-    const syncKey = `${monthId}_${dealerId}`;
+    const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
     if (!this._syncingMonths) this._syncingMonths = new Set<string>();
     this._syncingMonths.add(syncKey);
 
@@ -1423,6 +1551,11 @@ export const supabaseService = {
         let existingRows = dbData.rows_data;
         if (typeof existingRows === 'string') {
           try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
+        }
+        if (existingRows && typeof existingRows === 'object' && !Array.isArray(existingRows) && 'rows' in existingRows) {
+          if (Array.isArray(existingRows.rows)) {
+            existingRows = existingRows.rows;
+          }
         }
         if (Array.isArray(existingRows)) {
           existingRowsParsed = existingRows;
@@ -1478,35 +1611,23 @@ export const supabaseService = {
       console.error(`🚨 CRITICAL DATA LOSS PREVENTED: ${alertMsg}`);
       throw new Error(alertMsg);
     }
-
     try {
       const payload: any = {
         month_id: monthId,
         dealer_id: dealerId,
-        rows_data: rows,
+        line_code: activeLineCode || '',
+        rows_data: { rows, excludedClientKeys: excludedClientKeys || [] },
         updated_by: updatedBy
       };
-      if (excludedClientKeys !== undefined) {
-        payload.excluded_client_keys = excludedClientKeys;
-      }
+
+      await upsertSupabase('billing_months', 'month_id', monthId, payload, true);
 
       try {
-        await upsertSupabase('billing_months', 'month_id', monthId, payload, true);
-      } catch (upsertErr: any) {
-        if (payload.excluded_client_keys !== undefined) {
-          delete payload.excluded_client_keys;
-          await upsertSupabase('billing_months', 'month_id', monthId, payload, true);
-        } else {
-          throw upsertErr;
-        }
-      }
-
-      try {
-        const cacheKey = `gts_cache_v3_billing_months`;
+        const cacheKey = `gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`;
         const rawCache = localStorage.getItem(cacheKey);
         let list: any[] = rawCache ? JSON.parse(rawCache) : [];
         const idx = list.findIndex(m => m.id === monthId || m.month_id === monthId);
-        const updatedObj = { id: monthId, month_id: monthId, dealer_id: dealerId, rows, rows_data: rows, excludedClientKeys: excludedClientKeys || [], excluded_client_keys: excludedClientKeys || [], updated_by: updatedBy, updatedAt: Date.now() };
+        const updatedObj = { id: monthId, month_id: monthId, dealer_id: dealerId, rows, rows_data: { rows, excludedClientKeys: excludedClientKeys || [] }, excludedClientKeys: excludedClientKeys || [], updated_by: updatedBy, updatedAt: Date.now() };
         if (idx !== -1) {
           list[idx] = { ...list[idx], ...updatedObj };
         } else {
@@ -1536,7 +1657,8 @@ export const supabaseService = {
         await supabase.from('billing_rows').delete().eq('month_id', monthId).eq('dealer_id', dealerId);
 
         try {
-          const syncKeys = [`billing_months_${dealerId}`, 'billing_months_all', 'billing_months_main', 'billing_months_'];
+          const lc = activeLineCode || 'nolc';
+          const syncKeys = [`billing_months_${dealerId}_${lc}`, `billing_months_all_${lc}`, `billing_months_main_${lc}`, `billing_months__${lc}`];
           syncKeys.forEach(sKey => {
             if (globalTableCaches[sKey]) {
               globalTableCaches[sKey] = globalTableCaches[sKey].filter((m: any) => m.id !== monthId && m.month_id !== monthId);
@@ -1550,7 +1672,7 @@ export const supabaseService = {
             }
           });
 
-          const cacheKey = `gts_cache_v3_billing_months`;
+          const cacheKey = `gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`;
           const rawCache = localStorage.getItem(cacheKey);
           if (rawCache) {
             let list: any[] = JSON.parse(rawCache);
@@ -1580,7 +1702,7 @@ export const supabaseService = {
       await queryRows;
 
       try {
-        localStorage.removeItem('gts_cache_v3_billing_months');
+        localStorage.removeItem(`gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`);
       } catch (e) {}
     } catch (e: any) {
       console.error("Failed to delete all billing data:", e);
@@ -1635,7 +1757,8 @@ export const supabaseService = {
         connection_date: String(r.connectionDate || r.connection_date || ''),
         device_price: sanitizeNum(r.devicePrice ?? r.device_price),
         abl: sanitizeNum(r.abl),
-        panel_details: String(r.panelDetails || '')
+        panel_details: String(r.panelDetails || ''),
+        line_code: String(r.lineCode || r.line_code || activeLineCode || '')
       };
     };
 
@@ -1758,7 +1881,7 @@ export const supabaseService = {
       companyName: companyName || '',
       status
     };
-    await upsertSupabase('users', 'uid', uid, toDb('users', user));
+    await upsertSupabase('users', 'uid', uid, toDb('users', user), true);
     return user;
   },
 
@@ -1984,10 +2107,33 @@ export const supabaseService = {
   deleteComplaint: async (id: string, customerName: string, authorName: string, fullComplaintData?: Complaint, isPermanent: boolean = false) => {
     return globalLoading.wrap(async () => {
       try {
+        let dealerId = fullComplaintData?.dealerId || 'main';
+        if (!fullComplaintData) {
+          try {
+            const { data: comp } = await supabase.from('complaints').select('dealer_id').eq('id', id).single();
+            if (comp && comp.dealer_id) dealerId = comp.dealer_id;
+          } catch (e) {}
+        }
         if (!isPermanent && fullComplaintData) {
           await supabaseService.saveToRecycleBin('complaints', id, authorName, fullComplaintData.dealerId || 'main', fullComplaintData);
         }
         await supabase.from('complaints').delete().eq('id', id);
+
+        // Broadcast complaint deletion event for real-time list sync
+        try {
+          const channel = supabase.channel('gts-realtime-channel');
+          channel.send({
+            type: 'broadcast',
+            event: 'complaint_deleted',
+            payload: {
+              complaintId: id,
+              authorName: authorName || 'System',
+              dealerId: dealerId
+            }
+          }).catch(err => console.warn("Broadcast failed:", err));
+        } catch (err) {
+          console.warn("Could not broadcast complaint deletion:", err);
+        }
       } catch (e) {
         console.error("Error in deleteComplaint:", e);
       }
@@ -2026,6 +2172,26 @@ export const supabaseService = {
           details: { complaintId: id, customerName, status, updated_at: Date.now() }
         });
       } catch(err) { console.warn("Failed to create notification", err); }
+
+      // Broadcast complaint updated event for real-time list sync & alerts
+      try {
+        const { data: updatedRow } = await supabase.from('complaints').select('*').eq('id', id).single();
+        if (updatedRow) {
+          const fullUpdatedComplaint = fromDb('complaints', updatedRow);
+          const channel = supabase.channel('gts-realtime-channel');
+          channel.send({
+            type: 'broadcast',
+            event: 'complaint_updated',
+            payload: {
+              complaint: fullUpdatedComplaint,
+              authorName: authorName || 'System',
+              dealerId: fullUpdatedComplaint.dealerId || dealerId || 'main'
+            }
+          }).catch(err => console.warn("Broadcast failed:", err));
+        }
+      } catch (err) {
+        console.warn("Could not broadcast complaint status update:", err);
+      }
       
       // WhatsApp notification (fire-and-forget)
       if (compNumber) {
@@ -2078,6 +2244,26 @@ export const supabaseService = {
         details: { complaintId: id, customerName, updated_at: Date.now() }
       });
     } catch(err) { console.warn("Failed to create notification", err); }
+
+    // Broadcast complaint updated event for real-time list sync & alerts
+    try {
+      const { data: updatedRow } = await supabase.from('complaints').select('*').eq('id', id).single();
+      if (updatedRow) {
+        const fullUpdatedComplaint = fromDb('complaints', updatedRow);
+        const channel = supabase.channel('gts-realtime-channel');
+        channel.send({
+          type: 'broadcast',
+          event: 'complaint_updated',
+          payload: {
+            complaint: fullUpdatedComplaint,
+            authorName: authorName || 'System',
+            dealerId: fullUpdatedComplaint.dealerId || dealerId || 'main'
+          }
+        }).catch(err => console.warn("Broadcast failed:", err));
+      }
+    } catch (err) {
+      console.warn("Could not broadcast complaint remarks update:", err);
+    }
   },
 
   updateComplaint: async (id: string, data: Partial<Complaint>, customerName: string, authorName: string) => {
@@ -2099,6 +2285,26 @@ export const supabaseService = {
         details: { complaintId: id, customerName, changedFields, updated_at: Date.now() }
       });
     } catch(err) { console.warn("Failed to create notification", err); }
+
+    // Broadcast complaint updated event for real-time list sync & alerts
+    try {
+      const { data: updatedRow } = await supabase.from('complaints').select('*').eq('id', id).single();
+      if (updatedRow) {
+        const fullUpdatedComplaint = fromDb('complaints', updatedRow);
+        const channel = supabase.channel('gts-realtime-channel');
+        channel.send({
+          type: 'broadcast',
+          event: 'complaint_updated',
+          payload: {
+            complaint: fullUpdatedComplaint,
+            authorName: authorName || 'System',
+            dealerId: fullUpdatedComplaint.dealerId || dealerId || 'main'
+          }
+        }).catch(err => console.warn("Broadcast failed:", err));
+      }
+    } catch (err) {
+      console.warn("Could not broadcast complaint update:", err);
+    }
   },
 
   saveComplaint: async (complaint: Complaint, dealerId: string = 'main') => {
@@ -2310,6 +2516,7 @@ export const supabaseService = {
     const client: Client = {
       id: `client_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       ...data,
+      lineCode: activeLineCode || '',
       createdAt: Date.now(),
       dealerId
     };
@@ -2324,8 +2531,9 @@ export const supabaseService = {
   saveClientsBatch: async (clientsList: Client[], dealerId: string = 'main') => {
     if (!clientsList || clientsList.length === 0) return;
     try {
-      const primaryKey = `clients_${dealerId || 'all'}`;
-      const syncKeys = [primaryKey, 'clients_all', 'clients_main', 'clients_'];
+      const primaryKey = `clients_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+      const lc = activeLineCode || 'nolc';
+      const syncKeys = [primaryKey, `clients_all_${lc}`, `clients_main_${lc}`, `clients__${lc}`];
       
       syncKeys.forEach(sKey => {
         const existing = globalTableCaches[sKey] || [];
@@ -2540,7 +2748,17 @@ export const supabaseService = {
         if (!monthId) continue;
         const dealerId = bm.dealer_id || bm.dealerId || 'main';
         const rowsVal = bm.rows_data ?? bm.rows;
-        const rowsStr = typeof rowsVal === 'string' ? rowsVal : JSON.stringify(rowsVal || []);
+        let rowsObj = typeof rowsVal === 'string' ? (()=>{try{return JSON.parse(rowsVal)}catch(e){return []}})() : rowsVal;
+        const excludedKeys = bm.excludedClientKeys || bm.excluded_client_keys || [];
+        if (Array.isArray(rowsObj)) {
+          rowsObj = { rows: rowsObj, excludedClientKeys: excludedKeys };
+        } else if (rowsObj && typeof rowsObj === 'object' && !Array.isArray(rowsObj)) {
+           // already an object, maybe update excluded keys if present in bm
+           if (excludedKeys.length > 0) {
+              rowsObj.excludedClientKeys = excludedKeys;
+           }
+        }
+        const rowsStr = JSON.stringify(rowsObj || { rows: [], excludedClientKeys: [] });
         await supabase.from('billing_months').upsert([{
           month_id: monthId,
           dealer_id: dealerId,
@@ -2661,10 +2879,16 @@ export const supabaseService = {
   subscribeBillingMonths: (callback: (months: any[]) => void, dealerId?: string) => {
     const parseRowsData = (val: any): any[] => {
       if (Array.isArray(val)) return val;
+      if (val && typeof val === 'object' && !Array.isArray(val) && 'rows' in val) {
+        if (Array.isArray(val.rows)) return val.rows;
+      }
       if (typeof val === 'string' && val.trim()) {
         try {
           const parsed = JSON.parse(val);
           if (Array.isArray(parsed)) return parsed;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'rows' in parsed) {
+            if (Array.isArray(parsed.rows)) return parsed.rows;
+          }
         } catch (e) {}
       }
       return [];
@@ -2672,6 +2896,7 @@ export const supabaseService = {
     return subscribeTable('billing_months', callback, (row: any) => ({
       id: row.month_id,
       dealerId: row.dealer_id,
+      lineCode: row.line_code || '',
       rows: parseRowsData(row.rows_data ?? row.rows),
       excludedClientKeys: parseExcludedKeys(row),
       updatedAt: row.updated ? new Date(row.updated).getTime() : Date.now(),
@@ -2703,6 +2928,28 @@ export const supabaseService = {
     await upsertSupabase('branding_config', 'config_type', 'translations', {
       config_type: 'translations',
       dashboard_subtext: JSON.stringify(translations)
+    });
+  },
+
+  getUserPreferences: async (uid: string): Promise<any> => {
+    try {
+      if (!supabase) return null;
+      const { data } = await supabase.from('branding_config').select('*').eq('config_type', `user_prefs_${uid}`).limit(1);
+      const res = data && data.length > 0 ? data[0] : null;
+      if (res && res.dashboard_subtext) {
+        return JSON.parse(res.dashboard_subtext);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  updateUserPreferences: async (uid: string, prefs: any) => {
+    await upsertSupabase('branding_config', 'config_type', `user_prefs_${uid}`, {
+      config_type: `user_prefs_${uid}`,
+      dashboard_subtext: JSON.stringify(prefs),
+      tenant_id: 'main' // or default
     });
   },
 
@@ -2853,7 +3100,8 @@ export const supabaseService = {
       }
 
       // Fallback 2: Check localStorage
-      const localCached = localStorage.getItem(`gts_ledger_folders_${tenantId || 'main'}`) || localStorage.getItem('gts_cache_v3_ledger_folders');
+      const isSpecificDealer = Boolean(tenantId && tenantId !== 'all' && tenantId !== 'main');
+      const localCached = localStorage.getItem(`gts_ledger_folders_${tenantId || 'main'}`) || (isSpecificDealer ? null : localStorage.getItem(`gts_cache_v3_ledger_folders_all_${activeLineCode || 'nolc'}`));
       if (localCached) {
         try {
           const parsed = JSON.parse(localCached);
@@ -2869,7 +3117,8 @@ export const supabaseService = {
 
   deleteLedgerFolder: async (folderId: string, tenantId: string = 'main') => {
     try {
-      const syncKeys = [`ledger_folders_${tenantId || 'all'}`, 'ledger_folders_all', 'ledger_folders_main', 'ledger_folders_'];
+      const lc = activeLineCode || 'nolc';
+      const syncKeys = [`ledger_folders_${tenantId || 'all'}_${lc}`, `ledger_folders_all_${lc}`, `ledger_folders_main_${lc}`, `ledger_folders__${lc}`];
       syncKeys.forEach(sKey => {
         if (globalTableCaches[sKey]) {
           globalTableCaches[sKey] = globalTableCaches[sKey].filter(f => f.id !== folderId);
@@ -2925,8 +3174,9 @@ export const supabaseService = {
   saveLedgerFolders: async (folders: any[], tenantId: string = 'main') => {
     try {
       // 1. Instantly update global table cache and subscribers so UI never loses newly created folders
-      const primaryKey = `ledger_folders_${tenantId || 'all'}`;
-      const syncKeys = [primaryKey, 'ledger_folders_all', 'ledger_folders_main', 'ledger_folders_'];
+      const primaryKey = `ledger_folders_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
+      const lc = activeLineCode || 'nolc';
+      const syncKeys = [primaryKey, `ledger_folders_all_${lc}`, `ledger_folders_main_${lc}`, `ledger_folders__${lc}`];
       
       syncKeys.forEach(sKey => {
         globalTableCaches[sKey] = folders;
@@ -2939,7 +3189,7 @@ export const supabaseService = {
       });
 
       try {
-        localStorage.setItem(`gts_cache_v3_ledger_folders`, JSON.stringify(folders));
+        localStorage.setItem(`gts_cache_v3_ledger_folders_all_${activeLineCode || 'nolc'}`, JSON.stringify(folders));
         localStorage.setItem(`gts_ledger_folders_${tenantId || 'main'}`, JSON.stringify(folders));
       } catch (e) {}
 
@@ -3007,11 +3257,12 @@ export const supabaseService = {
   },
 
   saveGoogleSheetLink: async (tenantId: string, folderId: string, sheetId: string) => {
-    const payload = {
+    const payload: any = {
       tenant_id: tenantId,
       folder_id: folderId,
       sheet_id: sheetId
     };
+    if (activeLineCode) payload.line_code = activeLineCode;
     try {
       const { data } = await supabase.from('google_sheet_links').select('id').eq('tenant_id', tenantId).eq('folder_id', folderId).limit(1).single();
       if (data) {
@@ -3022,18 +3273,42 @@ export const supabaseService = {
     } catch (e) {}
   },
 
-  getGoogleSheetLinks: async (tenantId: string) => {
+  getGoogleSheetLinks: async (tenantId: string, bypassLineCodeFilter: boolean | string = false) => {
     try {
-      const { data } = await supabase.from('google_sheet_links').select('*').eq('tenant_id', tenantId);
+      let query = supabase.from('google_sheet_links').select('*').eq('tenant_id', tenantId);
+      
+        if (bypassLineCodeFilter === true) {
+          // no filter
+        } else if (typeof bypassLineCodeFilter === 'string') {
+          query = query.eq('line_code', bypassLineCodeFilter);
+        } else if (activeLineCode) {
+          query = query.eq('line_code', activeLineCode);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
+        }
+
+      const { data } = await query;
       return data || [];
     } catch (e) {
       return [];
     }
   },
 
-  getLedgerSheets: async (tenantId: string = 'main') => {
+  getLedgerSheets: async (tenantId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
     try {
-      const { data } = await supabase.from('ledger_sheets').select('*').eq('dealer_id', tenantId);
+      let query = supabase.from('ledger_sheets').select('*').eq('dealer_id', tenantId);
+      
+        if (bypassLineCodeFilter === true) {
+          // no filter
+        } else if (typeof bypassLineCodeFilter === 'string') {
+          query = query.eq('line_code', bypassLineCodeFilter);
+        } else if (activeLineCode) {
+          query = query.eq('line_code', activeLineCode);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
+        }
+
+      const { data } = await query;
       return (data || []).map(r => fromDb('ledger_sheets', r));
     } catch (e) {
       return [];
@@ -3068,8 +3343,9 @@ export const supabaseService = {
     const dbRow = toDb('ledger_sheets', itemObj);
 
     // Update memory caches and notify subscribers immediately
-    const syncKey = `ledger_sheets_${tenantId || 'all'}`;
-    const syncKeys = [syncKey, 'ledger_sheets_all', 'ledger_sheets_main', 'ledger_sheets_'];
+    const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
+    const lc = activeLineCode || 'nolc';
+    const syncKeys = [syncKey, `ledger_sheets_all_${lc}`, `ledger_sheets_main_${lc}`, `ledger_sheets__${lc}`];
     syncKeys.forEach(sKey => {
       if (!globalTableCaches[sKey]) globalTableCaches[sKey] = [];
       const idx = globalTableCaches[sKey].findIndex(item => item.id === sheet.id);
@@ -3120,8 +3396,9 @@ export const supabaseService = {
       }
       const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId };
 
-      const syncKey = `ledger_sheets_${tenantId || 'all'}`;
-      const syncKeys = [syncKey, 'ledger_sheets_all', 'ledger_sheets_main', 'ledger_sheets_'];
+      const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
+      const lc = activeLineCode || 'nolc';
+    const syncKeys = [syncKey, `ledger_sheets_all_${lc}`, `ledger_sheets_main_${lc}`, `ledger_sheets__${lc}`];
       syncKeys.forEach(sKey => {
         if (!globalTableCaches[sKey]) globalTableCaches[sKey] = [];
         const idx = globalTableCaches[sKey].findIndex(item => item.id === sheet.id);
@@ -3140,7 +3417,7 @@ export const supabaseService = {
     });
 
     try {
-      const syncKey = `ledger_sheets_${tenantId || 'all'}`;
+      const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
       localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(globalTableCaches[syncKey] || []));
     } catch (e) {}
 
@@ -3274,21 +3551,38 @@ export const supabaseService = {
               if (monthData) {
                 const rowsStr = monthData.rows_data ?? monthData.rows;
                 let currentRows: any[] = [];
+                let parsedObj: any = null;
                 if (typeof rowsStr === 'string' && rowsStr.trim()) {
-                  try { currentRows = JSON.parse(rowsStr); } catch (e) {}
+                  try { 
+                    parsedObj = JSON.parse(rowsStr); 
+                    if (Array.isArray(parsedObj)) currentRows = parsedObj;
+                    else if (parsedObj && typeof parsedObj === 'object' && Array.isArray(parsedObj.rows)) currentRows = parsedObj.rows;
+                  } catch (e) {}
                 } else if (Array.isArray(rowsStr)) {
                   currentRows = rowsStr;
+                } else if (rowsStr && typeof rowsStr === 'object' && !Array.isArray(rowsStr) && Array.isArray(rowsStr.rows)) {
+                  parsedObj = rowsStr;
+                  currentRows = rowsStr.rows;
                 }
                 
                 // Add if not already present
                 if (!currentRows.some((r: any) => (r.clientId || r.id) === rowId)) {
                   currentRows.push(rowData);
+                  
+                  let newRowsData: any = currentRows;
+                  if (parsedObj && typeof parsedObj === 'object' && !Array.isArray(parsedObj)) {
+                     newRowsData = { ...parsedObj, rows: currentRows };
+                  } else {
+                     newRowsData = { rows: currentRows, excludedClientKeys: parseExcludedKeys(monthData) };
+                  }
+
                   await supabase.from('billing_months').update({
-                    rows_data: JSON.stringify(currentRows)
+                    rows_data: JSON.stringify(newRowsData)
                   }).eq('month_id', monthId).eq('dealer_id', dealerId);
                   
                   // Trigger cache update so UI sees it instantly
-                  const syncKeys = [`billing_months_${dealerId}`, 'billing_months_all', 'billing_months_main', 'billing_months_'];
+                  const lc = activeLineCode || 'nolc';
+          const syncKeys = [`billing_months_${dealerId}_${lc}`, `billing_months_all_${lc}`, `billing_months_main_${lc}`, `billing_months__${lc}`];
                   syncKeys.forEach(sKey => {
                     if (globalTableCaches[sKey]) {
                       const mIndex = globalTableCaches[sKey].findIndex((m: any) => m.id === monthId && (m.dealerId === dealerId || (!m.dealerId && dealerId === 'main')));

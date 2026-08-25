@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { useTheme } from "../hooks/useTheme";
 import {
   Lock,
   User,
@@ -145,24 +146,10 @@ export default function LoginForm({
   isLoading,
   error,
 }: LoginFormProps) {
+  const { theme, toggleTheme } = useTheme();
+  const isDarkMode = theme === "dark";
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  useEffect(() => {
-    if (document.documentElement.classList.contains("dark")) {
-      setIsDarkMode(true);
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    setIsDarkMode(!isDarkMode);
-    if (!isDarkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  };
 
   const SLIDER_IMAGES = [
     "https://images.unsplash.com/photo-1614064641936-38998971f11e?q=80&w=1920&h=1080&fit=crop", // Fiber optics
@@ -680,85 +667,211 @@ export default function LoginForm({
           </button>
         </nav>
 
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2 sm:space-x-4">
           <button
             onClick={toggleTheme}
-            className="p-2 sm:p-2.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            className="p-2 sm:p-2.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shadow-sm cursor-pointer"
             aria-label="Toggle Theme"
           >
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
-
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="hidden lg:flex px-6 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-bold uppercase text-sm tracking-wider shadow-lg hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:scale-105 transition-all active:scale-95"
-          >
-            Get Started
-          </button>
-
-          <button
-            onClick={() => setShowAuthModal(true)}
-            className="lg:hidden text-slate-800 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400"
-            aria-label="Menu"
-          >
-            <Menu size={28} />
+            {isDarkMode ? <Sun size={18} className="sm:w-5 sm:h-5" /> : <Moon size={18} className="sm:w-5 sm:h-5" />}
           </button>
         </div>
       </header>
 
       {/* Tagline Content */}
-      <main className="relative z-20 flex-1 flex flex-col items-center justify-center pt-24 pb-12 px-4 text-center pointer-events-none">
+      <main className="relative z-20 flex-1 flex flex-col items-center justify-center pt-28 pb-16 px-4 text-center pointer-events-none">
         <AnimatePresence>
           {!showAuthModal && (
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -30 }}
-              transition={{ duration: 0.8 }}
-              className="max-w-5xl mx-auto"
+              exit={{ opacity: 0, y: -40 }}
+              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+              className="max-w-5xl mx-auto relative"
             >
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-emerald-500/10 dark:bg-emerald-500/5 blur-[100px] rounded-full pointer-events-none" />
+              
               <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2, duration: 0.8 }}
-                className="inline-flex items-center space-x-2 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md px-4 py-2 rounded-full border border-slate-200/50 dark:border-white/10 shadow-sm mb-6"
+                initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ delay: 0.3, duration: 0.8, type: "spring", stiffness: 100 }}
+                className="inline-flex items-center space-x-2 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl px-5 py-2.5 rounded-full border border-slate-200/60 dark:border-white/10 shadow-lg mb-8 relative z-10"
               >
                 <span className="relative flex h-3 w-3">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                 </span>
-                <span className="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-emerald-400">
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] text-slate-800 dark:text-emerald-400">
                   99.9% Uptime Guarantee
                 </span>
               </motion.div>
-              <h1 className="text-5xl sm:text-7xl md:text-8xl font-black uppercase tracking-tight text-slate-900 dark:text-white drop-shadow-2xl leading-[1.1]">
+
+              <h1 className="text-5xl sm:text-7xl md:text-[5.5rem] font-black uppercase tracking-tighter text-slate-900 dark:text-white drop-shadow-2xl leading-[1.05] relative z-10">
                 Ultra-Fast <br className="hidden sm:block" />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-teal-500 dark:from-emerald-400 dark:to-teal-300">
+                <span className="text-transparent bg-clip-text bg-gradient-to-br from-emerald-500 via-teal-400 to-emerald-600 dark:from-emerald-400 dark:via-teal-300 dark:to-emerald-500">
                   Fiber Internet
                 </span>
               </h1>
-              <p className="mt-8 text-lg sm:text-2xl text-slate-700 dark:text-slate-300 max-w-3xl mx-auto drop-shadow-md font-medium leading-relaxed">
+              
+              <motion.p 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5, duration: 1 }}
+                className="mt-8 text-base sm:text-xl md:text-2xl text-slate-600 dark:text-slate-300 max-w-3xl mx-auto drop-shadow-md font-medium leading-relaxed relative z-10 px-4 sm:px-0"
+              >
                 Experience symmetrical gigabit speeds, ultra-low latency, and
                 seamless streaming. Connect your entire world with Green Tech
                 Services (GTS).
-              </p>
+              </motion.p>
+
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4, duration: 0.8 }}
-                className="mt-12 pointer-events-auto"
+                transition={{ delay: 0.6, duration: 0.8 }}
+                className="mt-12 pointer-events-auto flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-8 relative z-10"
               >
+                {/* Uiverse.io Animated Join Today Button configured for Client Login */}
                 <button
+                  id="client-login-button"
+                  onClick={() => setShowAuthModal(true)}
+                  className="uiverse-btn-join pointer-events-auto"
+                  aria-label="Client Login"
+                >
+                  <div className="bg"></div>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 342 208"
+                    height="208"
+                    width="342"
+                    className="splash"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      d="M54.1054 99.7837C54.1054 99.7837 40.0984 90.7874 26.6893 97.6362C13.2802 104.485 1.5 97.6362 1.5 97.6362"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      d="M285.273 99.7841C285.273 99.7841 299.28 90.7879 312.689 97.6367C326.098 104.486 340.105 95.4893 340.105 95.4893"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      strokeOpacity="0.3"
+                      d="M281.133 64.9917C281.133 64.9917 287.96 49.8089 302.934 48.2295C317.908 46.6501 319.712 36.5272 319.712 36.5272"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      strokeOpacity="0.3"
+                      d="M281.133 138.984C281.133 138.984 287.96 154.167 302.934 155.746C317.908 157.326 319.712 167.449 319.712 167.449"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      d="M230.578 57.4476C230.578 57.4476 225.785 41.5051 236.061 30.4998C246.337 19.4945 244.686 12.9998 244.686 12.9998"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      d="M230.578 150.528C230.578 150.528 225.785 166.471 236.061 177.476C246.337 188.481 244.686 194.976 244.686 194.976"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      strokeOpacity="0.3"
+                      d="M170.392 57.0278C170.392 57.0278 173.89 42.1322 169.571 29.54C165.252 16.9478 168.751 2.05227 168.751 2.05227"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      strokeOpacity="0.3"
+                      d="M170.392 150.948C170.392 150.948 173.89 165.844 169.571 178.436C165.252 191.028 168.751 205.924 168.751 205.924"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      d="M112.609 57.4476C112.609 57.4476 117.401 41.5051 107.125 30.4998C96.8492 19.4945 98.5 12.9998 98.5 12.9998"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      d="M112.609 150.528C112.609 150.528 117.401 166.471 107.125 177.476C96.8492 188.481 98.5 194.976 98.5 194.976"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      strokeOpacity="0.3"
+                      d="M62.2941 64.9917C62.2941 64.9917 55.4671 49.8089 40.4932 48.2295C25.5194 46.6501 23.7159 36.5272 23.7159 36.5272"
+                    ></path>
+                    <path
+                      strokeLinecap="round"
+                      strokeWidth="3"
+                      strokeOpacity="0.3"
+                      d="M62.2941 145.984C62.2941 145.984 55.4671 161.167 40.4932 162.746C25.5194 164.326 23.7159 174.449 23.7159 174.449"
+                    ></path>
+                  </svg>
+
+                  <div className="wrap">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 221 42"
+                      height="42"
+                      width="221"
+                      className="path"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeWidth="3"
+                        d="M182.674 2H203C211.837 2 219 9.16344 219 18V24C219 32.8366 211.837 40 203 40H18C9.16345 40 2 32.8366 2 24V18C2 9.16344 9.16344 2 18 2H47.8855"
+                      ></path>
+                    </svg>
+
+                    <div className="outline"></div>
+                    <div className="content">
+                      <span className="char state-1">
+                        <span data-label="J" style={{ '--i': 1 } as React.CSSProperties}>J</span>
+                        <span data-label="o" style={{ '--i': 2 } as React.CSSProperties}>o</span>
+                        <span data-label="i" style={{ '--i': 3 } as React.CSSProperties}>i</span>
+                        <span data-label="n" style={{ '--i': 4 } as React.CSSProperties}>n</span>
+                        <span data-label="T" style={{ '--i': 5 } as React.CSSProperties}>T</span>
+                        <span data-label="o" style={{ '--i': 6 } as React.CSSProperties}>o</span>
+                        <span data-label="d" style={{ '--i': 7 } as React.CSSProperties}>d</span>
+                        <span data-label="a" style={{ '--i': 8 } as React.CSSProperties}>a</span>
+                        <span data-label="y" style={{ '--i': 9 } as React.CSSProperties}>y</span>
+                      </span>
+
+                      <div className="icon">
+                        <div></div>
+                      </div>
+
+                      <span className="char state-2">
+                        <span data-label="J" style={{ '--i': 1 } as React.CSSProperties}>J</span>
+                        <span data-label="o" style={{ '--i': 2 } as React.CSSProperties}>o</span>
+                        <span data-label="i" style={{ '--i': 3 } as React.CSSProperties}>i</span>
+                        <span data-label="n" style={{ '--i': 4 } as React.CSSProperties}>n</span>
+                        <span data-label="N" style={{ '--i': 5 } as React.CSSProperties}>N</span>
+                        <span data-label="o" style={{ '--i': 6 } as React.CSSProperties}>o</span>
+                        <span data-label="w" style={{ '--i': 7 } as React.CSSProperties}>w</span>
+                      </span>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  id="explore-plans-button"
                   onClick={() => {
                     document
                       .getElementById("plans")
                       ?.scrollIntoView({ behavior: "smooth" });
                   }}
-                  className="group relative px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold uppercase tracking-widest text-sm rounded-full overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 pointer-events-auto cursor-pointer"
+                  className="group relative px-8 py-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md text-slate-900 dark:text-white border border-slate-200 dark:border-white/10 font-bold uppercase tracking-widest text-xs sm:text-sm rounded-full overflow-hidden shadow-xl hover:shadow-2xl hover:-translate-y-1 hover:bg-white dark:hover:bg-slate-800 transition-all duration-300 pointer-events-auto cursor-pointer w-full sm:w-auto"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  <span className="relative z-10 flex items-center space-x-2">
-                    <span>Explore Plans & Portal</span>
+                  <span className="relative z-10 flex items-center justify-center space-x-2">
+                    <span>Explore Plans</span>
                     <ChevronRight
                       size={18}
                       className="group-hover:translate-x-1 transition-transform"
@@ -1659,12 +1772,14 @@ export default function LoginForm({
       </AnimatePresence>
 
       {/* Persistent footer brand coordinates */}
-      <div className="mt-8 text-center space-y-1 z-10">
-        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-[0.35em] font-black flex items-center justify-center gap-1.5">
-          <Globe className="w-3.5 h-3.5 animate-spin-slow text-brand-accent" />
-          {detectedCompanyName}
-        </p>
-        <p className="text-[8px] font-extrabold text-slate-400/50 uppercase tracking-widest">
+      <div className="mt-8 text-center space-y-2 z-10 flex flex-col items-center">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full neu-inset border border-white/60 dark:border-white/5 shadow-2xs">
+          <Globe className="w-3.5 h-3.5 animate-spin-slow text-brand-accent shrink-0" />
+          <span className="text-[10px] text-slate-600 dark:text-slate-400 uppercase tracking-[0.25em] font-black">
+            {detectedCompanyName}
+          </span>
+        </div>
+        <p className="text-[8px] font-extrabold text-slate-400/60 dark:text-slate-500 uppercase tracking-widest">
           GATEWAY LATENCY: 1.5ms · MATRIX SECURITY V2.6.5 · GREEN NET CO
         </p>
       </div>

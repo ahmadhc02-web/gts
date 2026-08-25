@@ -75,7 +75,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Robust CORS Middleware supporting Hugging Face, Netlify, and other external frontends
+  // Robust CORS Middleware supporting this project's domains
   app.use(
     cors({
       origin: (origin, callback) => {
@@ -641,7 +641,7 @@ async function startServer() {
       const appUrl =
         req.headers.origin ||
         process.env.APP_URL ||
-        "https://mahmad995-my-wifi-app.hf.space";
+        "http://localhost:3000";
       const resetUrl = `${appUrl}/?reset_username=${encodeURIComponent(username.trim())}&reset_code=${otpCode}`;
 
       const subject =
@@ -678,44 +678,42 @@ async function startServer() {
         </div>
       `;
 
-      if (BREVO_API_KEY) {
-        try {
-          const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-            method: "POST",
-            headers: {
-              accept: "application/json",
-              "api-key": BREVO_API_KEY,
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              sender: {
-                name: "GREEN TECH SERVICES",
-                email: "greennet757@gmail.com",
-              },
-              to: [
-                {
-                  email: foundUser.email,
-                  name: foundUser.fullName || foundUser.username,
-                },
-              ],
-              subject: subject,
-              htmlContent: emailHtml,
-            }),
+      try {
+        const tokens = await loadTokensFromFirestore();
+        if (tokens) {
+          const { auth } = await getAuthorizedClient(req, tokens);
+          const gmail = google.gmail({ version: "v1", auth });
+          
+          const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
+          const toEmail = foundUser.email;
+          const mimeParts = [
+            `To: ${toEmail}`,
+            `Subject: ${utf8Subject}`,
+            "Content-Type: text/html; charset=utf-8",
+            "MIME-Version: 1.0",
+            "",
+            emailHtml,
+          ];
+          const mimeMessage = mimeParts.join("\n");
+          const base64Encoded = Buffer.from(mimeMessage)
+            .toString("base64")
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/, "");
+            
+          await gmail.users.messages.send({
+            userId: "me",
+            requestBody: { raw: base64Encoded },
           });
-
-          if (!response.ok) {
-            const errData = await response.json();
-            throw new Error("Brevo API Error: " + JSON.stringify(errData));
-          }
-
-          emailStatus = "sent_brevo_api";
-        } catch (err: any) {
-          console.error("Brevo API sending failed:", err);
-          errorDetail = err.message || String(err);
+          emailStatus = "sent_gmail_api";
+        } else {
+          throw new Error("Gmail tokens not found. Please link your Google Account.");
         }
+      } catch (err) {
+        console.error("Gmail API sending failed:", err);
+        errorDetail = err.message || String(err);
       }
 
-      // Output the code ONLY to terminal console for local debugging (invisible to the client page)
       console.log("========================================");
       console.log(`[PASSCODE RESET SECURITY MODULE - SERVER DEBUG ONLY]`);
       console.log(`User: ${foundUser.username}`);
@@ -724,9 +722,9 @@ async function startServer() {
       console.log(`Access Link: ${resetUrl}`);
       console.log("========================================");
 
-      if (emailStatus !== "sent_brevo_api") {
+      if (emailStatus !== "sent_gmail_api") {
         return res.status(400).json({
-          error: `Verification sending failed: ${errorDetail || "Brevo connection error."}. Please try again.`
+          error: `Verification sending failed: ${errorDetail || "Gmail connection error."}. Please try again.`
         });
       }
 
@@ -1074,52 +1072,51 @@ async function startServer() {
         </div>
       `;
 
-      if (BREVO_API_KEY) {
-        try {
-          const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-            method: "POST",
-            headers: {
-              accept: "application/json",
-              "api-key": BREVO_API_KEY,
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              sender: {
-                name: "GREEN TECH SERVICES",
-                email: "greennet757@gmail.com",
-              },
-              to: [
-                {
-                  email: email,
-                  name: fullName || username || "New User",
-                },
-              ],
-              subject: subject,
-              htmlContent: emailHtml,
-            }),
+      try {
+        const tokens = await loadTokensFromFirestore();
+        if (tokens) {
+          const { auth } = await getAuthorizedClient(req, tokens);
+          const gmail = google.gmail({ version: "v1", auth });
+          
+          const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
+          const toEmail = email;
+          const mimeParts = [
+            `To: ${toEmail}`,
+            `Subject: ${utf8Subject}`,
+            "Content-Type: text/html; charset=utf-8",
+            "MIME-Version: 1.0",
+            "",
+            emailHtml,
+          ];
+          const mimeMessage = mimeParts.join("\n");
+          const base64Encoded = Buffer.from(mimeMessage)
+            .toString("base64")
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/, "");
+            
+          await gmail.users.messages.send({
+            userId: "me",
+            requestBody: { raw: base64Encoded },
           });
-
-          if (!response.ok) {
-            const errData = await response.json();
-            throw new Error("Brevo API Error: " + JSON.stringify(errData));
-          }
-          emailStatus = "sent_brevo_api";
-        } catch (err: any) {
-          console.error("Brevo API sending failed:", err);
-          errorDetail = err.message || String(err);
+          emailStatus = "sent_gmail_api";
+        } else {
+          throw new Error("Gmail tokens not found. Please link your Google Account.");
         }
+      } catch (err) {
+        console.error("Gmail API sending failed:", err);
+        errorDetail = err.message || String(err);
       }
 
       console.log("========================================");
       console.log(`[REGISTRATION SECURITY MODULE - SERVER DEBUG ONLY]`);
-      console.log(`User: ${username || "N/A"}`);
       console.log(`Dest Email: ${email}`);
-      console.log(`Generated OTP Registration Code: ${otpCode}`);
+      console.log(`Generated OTP Reset Code: ${otpCode}`);
       console.log("========================================");
 
-      if (emailStatus !== "sent_brevo_api") {
+      if (emailStatus !== "sent_gmail_api") {
         return res.status(400).json({
-          error: `Verification sending failed: ${errorDetail || "Brevo connection error."}. Please try again.`
+          error: `Verification sending failed: ${errorDetail || "Gmail connection error."}. Please try again.`
         });
       }
 
@@ -1677,7 +1674,7 @@ System instructions:
         : process.env.APP_URL;
       redirectUri = `${base}/api/auth/google/callback`;
     } else {
-      // Respect reverse proxies (like Hugging Face Spaces) which pass protocol and host headers
+      // Respect reverse proxies which pass protocol and host headers
       const protocolRaw =
         req.headers["x-forwarded-proto"] || req.protocol || "https";
       let protocol = "https";
@@ -1690,19 +1687,6 @@ System instructions:
         req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000";
       // Ensure host is clean
       const host = rawHost.split(",")[0].trim();
-
-      // Force HTTPS for external cloud hosting / spaces environments to match public URLs exactly
-      if (
-        host.includes("hf.space") ||
-        host.includes("huggingface.co") ||
-        host.includes("run.app") ||
-        host.includes("netlify.app") ||
-        host.includes("vercel.app") ||
-        host.includes("render.com") ||
-        host.includes("herokuapp.com")
-      ) {
-        protocol = "https";
-      }
 
       redirectUri = `${protocol}://${host}/api/auth/google/callback`;
     }
@@ -1986,7 +1970,7 @@ System instructions:
       const authClient = getOAuthClient(req);
       const { tokens } = await authClient.getToken(code);
 
-      // Real-time synchronization to Firebase Firestore 24/7 so Hugging Face or any external frontend receives active tokens instantly
+      // Real-time synchronization to Firebase Firestore 24/7 so the frontend receives active tokens instantly
       try {
         await saveTokensToFirestore(tokens);
       } catch (fbErr: any) {
@@ -1996,7 +1980,7 @@ System instructions:
         );
       }
 
-      // If client origin was passed (e.g. Hugging Face), redirect the popup back to that origin with token parameters.
+      // If client origin was passed, redirect the popup back to that origin with token parameters.
       // The client application loaded in the popup will save the tokens to localStorage, post a same-origin message,
       // and close immediately.
       if (

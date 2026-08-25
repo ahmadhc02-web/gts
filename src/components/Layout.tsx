@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sun, Moon, LogOut, User, MessageSquare, MessageCircle, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload, DatabaseBackup } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
@@ -118,6 +118,7 @@ export default function Layout({
   const [showSyncStatus, setShowSyncStatus] = useState(false);
   const [isInlineEditingActive, setIsInlineEditingActive] = useState(false);
   const [isComplaintSwipeDownOpen, setIsComplaintSwipeDownOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // Special states for integrated billing header
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
@@ -431,12 +432,23 @@ export default function Layout({
     return () => clearInterval(cursorInterval);
   }, []);
 
+  const isFirstMountRef = useRef(true);
+  const prevOnlineRef = useRef(isOnline);
+
   useEffect(() => {
-    if (isOnline) {
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      prevOnlineRef.current = isOnline;
+      return;
+    }
+
+    if (!prevOnlineRef.current && isOnline) {
       setShowSyncStatus(true);
-      const timer = setTimeout(() => setShowSyncStatus(false), 5000);
+      const timer = setTimeout(() => setShowSyncStatus(false), 4000);
+      prevOnlineRef.current = isOnline;
       return () => clearTimeout(timer);
     }
+    prevOnlineRef.current = isOnline;
   }, [isOnline]);
 
   useEffect(() => {
@@ -482,7 +494,7 @@ export default function Layout({
       label: 'Main Operations',
       items: [
         { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList },
-        { id: 'nodes', label: 'Active Nodes', icon: Flame },
+        { id: 'nodes', label: 'Active Complainers', icon: Flame },
         { id: 'dealers_data', label: 'Dealers Data', icon: BarChart3, roles: ['super_admin'] },
         { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
         { id: 'map', label: 'Network Map', icon: MapIcon },
@@ -524,7 +536,7 @@ export default function Layout({
       // Role-based filtering
       if (!user) return false;
       
-      // If user is member, only show specific items requested: Operations, User Details, Active Nodes, Security
+      // If user is member, only show specific items requested: Operations, User Details, Active Complainers, Security
       if (user.role === 'member') {
         return ['complaints', 'clients', 'nodes', 'settings'].includes(item.id);
       }
@@ -558,17 +570,17 @@ export default function Layout({
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
       {user && (
         <div className={cn(
-          "group/rail left-0 bottom-0 w-[68px] hover:w-[240px] transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] bg-white dark:bg-slate-950 border-r border-slate-200/60 dark:border-white/10 flex-col items-stretch pb-5 select-none overflow-hidden",
+          "group/rail left-0 bottom-0 w-[68px] hover:w-[240px] transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] neu-flat border-r border-slate-200/50 dark:border-white/5 flex-col items-stretch pb-5 select-none overflow-hidden",
           isSidebarOpen ? "flex z-[160] top-0" : "hidden lg:flex z-[51] top-0",
-          isPreview ? "absolute h-full" : "fixed shadow-[1px_0_15px_rgba(0,0,0,0.02)]"
+          isPreview ? "absolute h-full" : "fixed shadow-[4px_0_24px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_30px_rgba(0,0,0,0.4)]"
         )}>
           {/* Menu Trigger Button Container (Hidden on Desktop, replaced by Header Logo) */}
-          <div className="w-full h-16 flex items-center justify-start shrink-0 border-b border-slate-100/50 dark:border-slate-900/40 relative overflow-hidden">
+          <div className="w-full h-16 flex items-center justify-start shrink-0 border-b border-slate-200/50 dark:border-white/5 relative overflow-hidden">
             <div className="w-[68px] flex justify-center shrink-0">
               <div className="relative shrink-0 select-none group cursor-pointer transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]" onClick={handleLogoClick}>
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-40 transition duration-1000 animate-pulse" />
-                <div className="relative w-10 h-10 rounded-2xl bg-slate-950 flex items-center justify-center border border-white/10 shadow-lg">
-                  <span className="text-white font-black text-sm tracking-tighter italic leading-none">
+                <div className="relative w-10 h-10 rounded-2xl neu-raised flex items-center justify-center border border-white/20 dark:border-white/5 shadow-lg">
+                  <span className="text-slate-900 dark:text-white font-black text-sm tracking-tighter italic leading-none">
                     G<span className="text-emerald-500">TS</span>
                   </span>
                 </div>
@@ -589,12 +601,12 @@ export default function Layout({
           </div>
 
           {/* Dynamic Icon groups */}
-          <div className="flex-1 w-full px-3 flex flex-col gap-5 items-start pt-6 overflow-y-auto overflow-x-hidden no-scrollbar">
+          <div className="flex-1 w-full px-3 flex flex-col gap-3 items-start pt-6 overflow-y-auto overflow-x-hidden no-scrollbar">
             {(() => {
               const items = [
                 { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList },
                 { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
-                { id: 'nodes', label: 'Active Nodes', icon: Flame },
+                { id: 'nodes', label: 'Active Complainers', icon: Flame },
                 { id: 'clients', label: branding?.tabNames?.clients || 'Users Management', icon: Contact },
                 { id: 'mypc', label: 'MY PC', icon: Monitor },
                 { id: 'billing', label: 'Billing Mod', icon: CreditCard },
@@ -652,10 +664,10 @@ export default function Layout({
                     whileHover="hover"
                     whileTap="tap"
                     className={cn(
-                      "h-11 w-full rounded-2xl flex items-center justify-start relative cursor-pointer border transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] group",
+                      "h-11 w-full rounded-2xl flex items-center justify-start relative cursor-pointer transition-all duration-300 group",
                       isItemActive
-                        ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-900/30 shadow-[0_4px_12px_rgba(59,130,246,0.12)]"
-                        : "border-transparent text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-900/50 hover:text-slate-800 dark:hover:text-white"
+                        ? "neu-inset text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                        : "neu-btn text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                     )}
                   >
                     <div className="w-11 h-11 flex items-center justify-center shrink-0">
@@ -1066,25 +1078,6 @@ export default function Layout({
         )}
       </AnimatePresence>
 
-      {/* Global Loading Indicator */}
-      <AnimatePresence>
-        {isLoading && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center pointer-events-none"
-          >
-            <FiberLoading className="scale-90" />
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {isWhatsAppPanelOpen && (
-          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
-        )}
-      </AnimatePresence>
-
       {/* Chat Sidebar / AI Help Panel */}
       <AnimatePresence>
         {isChatOpen && user && (
@@ -1267,13 +1260,13 @@ export default function Layout({
 
       {user && (
       <header className={cn(
-        "z-50 w-full border-b backdrop-blur-md transition-all duration-300 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.05),0_4px_6px_-2px_rgba(0,0,0,0.02)] dark:shadow-[0_4px_20px_-5px_rgba(0,0,0,0.3)]",
+        "z-50 w-full border-b transition-all duration-300",
         isPreview ? "absolute top-0" : "sticky top-0",
         user && !isPreview && "lg:pl-[68px]",
-        branding?.sidebarTheme === 'dark' ? "bg-slate-950/70 border-slate-900/80 text-white" :
-        branding?.sidebarTheme === 'accent' ? "bg-brand-accent/70 border-white/10 text-white" :
+        branding?.sidebarTheme === 'dark' ? "bg-slate-950/90 border-slate-900 text-white" :
+        branding?.sidebarTheme === 'accent' ? "bg-brand-accent/90 border-white/10 text-white" :
         branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
-        "bg-white/60 dark:bg-slate-950/60 border-white/50 dark:border-slate-800/50"
+        "neu-flat border-slate-200/50 dark:border-white/5"
       )}>
         <div className={cn(
           "max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:pr-8 lg:pl-6 flex items-center justify-between transition-all duration-300",
@@ -1288,13 +1281,13 @@ export default function Layout({
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setActiveTab('complaints')}
-                    className="flex md:hidden items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-750 dark:text-slate-300 border border-slate-200/50 dark:border-white/10 text-[9px] font-black uppercase tracking-wider cursor-pointer"
+                    className="flex md:hidden items-center justify-center gap-1 px-2 py-1.5 rounded-lg neu-btn text-slate-750 dark:text-slate-300 text-[9px] font-black uppercase tracking-wider cursor-pointer"
                   >
                     <ChevronLeft size={11} className="text-slate-500 shrink-0" />
                     <span>Go Back</span>
                   </motion.button>
 
-                  <div className="flex w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 items-center justify-center text-blue-500 shadow-sm shrink-0">
+                  <div className="flex w-8 h-8 sm:w-10 sm:h-10 rounded-xl neu-inset items-center justify-center text-blue-500 shadow-sm shrink-0">
                     <FileSpreadsheet size={16} className="sm:size-[20px]" />
                   </div>
                   <div className="flex flex-col">
@@ -1310,7 +1303,7 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => setIsMonthDropdownOpen(!isMonthDropdownOpen)}
-                    className="inline-flex items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none w-28 sm:w-56"
+                    className="inline-flex items-center justify-between gap-1 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-xl neu-btn text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none w-28 sm:w-56"
                   >
                     <div className="flex items-center gap-1 min-w-0">
                       <FolderOpen size={11} className="text-blue-500 shrink-0 sm:size-[13px]" />
@@ -1337,7 +1330,7 @@ export default function Layout({
                           animate={{ opacity: 1, y: 0, scaleY: 1 }}
                           exit={{ opacity: 0, y: -10, scaleY: 0.9 }}
                           transition={{ type: "spring", stiffness: 450, damping: 25 }}
-                          className="absolute right-0 sm:left-0 mt-2 w-60 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 shadow-2xl py-2 z-40 overflow-hidden font-sans border-t-4 border-t-blue-500 max-h-72 overflow-y-auto"
+                          className="absolute right-0 sm:left-0 mt-2 w-60 rounded-2xl neu-raised-lg border border-slate-200/50 dark:border-white/10 py-2 z-40 overflow-hidden font-sans border-t-4 border-t-blue-500 max-h-72 overflow-y-auto"
                         >
                           <div className="px-4 pb-2 mb-1.5 border-b border-slate-100 dark:border-slate-900 text-[8.5px] text-slate-400 font-mono font-black uppercase tracking-widest block">
                             Billing Recovery Sheets
@@ -1390,7 +1383,7 @@ export default function Layout({
                   whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'ledger-vault' }))}
-                  className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                  className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl neu-btn text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                   title="User Ledger Vault"
                 >
                   <Users size={13} className="text-slate-500 dark:text-slate-400 animate-pulse shrink-0" />
@@ -1403,7 +1396,7 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'entry-sheet' }))}
-                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl neu-btn text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                     title="Entry Sheet"
                   >
                     <ClipboardList size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
@@ -1417,7 +1410,7 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'batch-print' }))}
-                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl neu-btn text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                     title="Batch Print"
                   >
                     <Printer size={13} className="text-blue-500 shrink-0" />
@@ -1432,7 +1425,7 @@ export default function Layout({
                     type="button"
                     disabled={!hasActiveRows}
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'download-csv' }))}
-                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none disabled:opacity-40 shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl neu-btn text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none disabled:opacity-40 shrink-0"
                     title="Download CSV Sheet"
                   >
                     <HardDriveDownload size={13} className="text-emerald-500 shrink-0" />
@@ -1447,7 +1440,7 @@ export default function Layout({
                       whileTap={{ scale: 0.98 }}
                       type="button"
                       onClick={() => setIsBackupDropdownOpen(!isBackupDropdownOpen)}
-                      className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                      className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl neu-btn text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                       title="Backup Data"
                     >
                       <DatabaseBackup size={13} className="text-indigo-500 shrink-0" />
@@ -1466,7 +1459,7 @@ export default function Layout({
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: 10, scale: 0.95 }}
                             transition={{ duration: 0.15 }}
-                            className="absolute top-full mt-2 right-0 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-2 z-50 flex flex-col gap-1 origin-top-right"
+                            className="absolute top-full mt-2 right-0 w-48 neu-raised-lg rounded-xl border border-slate-200/50 dark:border-white/10 p-2 z-50 flex flex-col gap-1 origin-top-right"
                           >
                             <button
                               onClick={() => {
@@ -1506,7 +1499,7 @@ export default function Layout({
                     whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'new-month' }))}
-                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/10 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
+                    className="inline-flex items-center justify-center gap-1.5 md:gap-2 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl neu-btn text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[8px] sm:text-[9px] transition-all shadow-sm cursor-pointer select-none shrink-0"
                     title="Create New Month Sheet"
                   >
                     <PlusSquare size={13} className="text-slate-500 dark:text-slate-400 shrink-0" />
@@ -1554,9 +1547,9 @@ export default function Layout({
                 id="sidebar-toggle-btn"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={cn(
-                  "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden -ml-2 sm:ml-0",
+                  "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden -ml-2 sm:ml-0 neu-btn",
                   menuUnlocked ? "opacity-100 w-10 h-10 p-2 scale-100" : "opacity-100 w-10 h-10 p-2 scale-100 lg:hidden",
-                  isColoredHeader ? "hover:bg-white/10 text-white" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500"
+                  isColoredHeader ? "hover:bg-white/10 text-white" : "text-slate-500"
                 )}
                 transition={{ type: 'spring', stiffness: 300, damping: 25 }}
               >
@@ -1605,98 +1598,16 @@ export default function Layout({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
-            {user && onRefresh && (
-              <div className="hidden md:flex items-center gap-2 h-9">
-                {/* AUTO - OFF dropdown pill matching mockup */}
-                <div className="relative h-9 flex items-center">
-                  <button
-                    onClick={() => setShowRefreshOptions(!showRefreshOptions)}
-                    className={cn(
-                      "flex items-center gap-1 px-2.5 h-9 rounded-xl border bg-white dark:bg-slate-900 text-[10px] font-extrabold uppercase tracking-wider transition-all focus:outline-none select-none shadow-sm cursor-pointer",
-                      showRefreshOptions 
-                        ? "border-brand-accent text-brand-accent" 
-                        : "border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700"
-                    )}
-                  >
-                    <span className={cn(
-                      "w-1.5 h-1.5 rounded-full mr-1 transition-all duration-300", 
-                      intervalTime === 0 
-                        ? "bg-slate-300 dark:bg-slate-600" 
-                        : "bg-brand-accent animate-pulse shadow-[0_0_8px_rgba(var(--brand-accent),0.5)]"
-                    )} />
-                    <span>{intervalTime === 0 ? 'AUTO - OFF' : `AUTO - ${intervalTime === 30000 ? '30S' : intervalTime === 60000 ? '1M' : '5M'}`}</span>
-                    <ChevronDown size={11} className={cn("text-slate-400 transition-transform ml-1", showRefreshOptions && "rotate-180")} />
-                  </button>
-
-                  <AnimatePresence>
-                    {showRefreshOptions && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 8 }}
-                        className="absolute top-full left-0 mt-1.5 w-36 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl shadow-[0_10px_25px_-5px_rgba(0,0,0,0.1),0_8px_10px_-6px_rgba(0,0,0,0.1)] dark:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)] z-[100] overflow-hidden py-1"
-                      >
-                        {[
-                          { label: 'AUTO - OFF', value: 0 },
-                          { label: 'AUTO - 30S', value: 30000 },
-                          { label: 'AUTO - 1M', value: 60000 },
-                          { label: 'AUTO - 5M', value: 300000 },
-                        ].map((opt) => (
-                          <button
-                            key={opt.value}
-                            onClick={() => {
-                              setIntervalTime(opt.value);
-                              setShowRefreshOptions(false);
-                            }}
-                            className={cn(
-                              "w-full text-left px-4 py-2 text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                              intervalTime === opt.value 
-                                ? "text-brand-accent bg-brand-accent/5 dark:bg-brand-accent/10" 
-                                : "text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-900/40 hover:text-slate-900 dark:hover:text-white"
-                            )}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-      <AnimatePresence>
-        {isWhatsAppPanelOpen && (
-          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
-        )}
-      </AnimatePresence>
-                </div>
-
-                {/* REFRESH button pill matching brand-accent theme */}
-                <button
-                  onClick={() => {
-                    if (onRefresh) onRefresh();
-                  }}
-                  disabled={isLoading}
-                  className="flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-brand-accent hover:opacity-90 active:scale-[0.97] text-white transition-all shadow-md shadow-brand-accent/10 border-none disabled:opacity-40 select-none cursor-pointer"
-                >
-                  <RefreshCw size={11} className={cn("text-white/90", isLoading && "animate-spin")} />
-                  <span className="text-[9px] font-black uppercase tracking-wider font-sans">REFRESH</span>
-                </button>
-
-                {/* LASTCHK timer */}
-                <div className="flex items-center px-2.5 h-9 bg-slate-50 dark:bg-slate-900 border border-slate-200/50 dark:border-white/10 rounded-xl text-[9px] font-extrabold text-slate-400 dark:text-slate-500 font-mono tracking-tight uppercase shadow-sm select-none">
-                  LASTCHK:{lastRefreshedTime}
-                </div>
-              </div>
-            )}
-
             {user && (
-            <div className="flex items-center gap-2 h-9">
-              {/* Alerts/Bell notification indicator */}
+              <div className="flex items-center gap-2 h-9">
+                {/* Alerts/Bell notification indicator */}
                 <button
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                   className={cn(
-                    "w-9 h-9 rounded-full border flex items-center justify-center relative transition-all bg-white dark:bg-slate-900 shadow-sm cursor-pointer hover:scale-105 active:scale-95",
+                    "w-9 h-9 rounded-full neu-btn flex items-center justify-center relative transition-all cursor-pointer hover:scale-105 active:scale-95",
                     alertAuthorized 
-                      ? "border-blue-500/30 text-blue-600 dark:text-blue-400 bg-blue-500/5 hover:bg-blue-500/10"
-                      : "border-slate-200 dark:border-white/10 text-amber-500 bg-amber-500/5 hover:bg-amber-500/10"
+                      ? "text-blue-600 dark:text-blue-400" 
+                      : "text-amber-500"
                   )}
                   title={alertAuthorized ? (isAudioMuted ? "Alert History (Muted)" : "Alert History") : "Alert Restricted"}
                 >
@@ -1720,20 +1631,23 @@ export default function Layout({
               <button
                 onClick={handleThemeToggle}
                 className={cn(
-                  "relative w-12 h-6 rounded-full transition-colors duration-300 outline-none flex items-center shrink-0 border",
+                  "relative w-14 h-7 rounded-full transition-all duration-300 outline-none flex items-center shrink-0 neu-inset cursor-pointer p-0.5",
                   theme === 'dark' 
-                    ? "bg-slate-900 border-slate-800" 
-                    : "bg-slate-100 border-slate-300/60"
+                    ? "border border-white/5" 
+                    : "border border-black/5"
                 )}
               >
                 <div
                   className={cn(
-                    "absolute w-4 h-4 rounded-full transition-all duration-300 shadow-md",
+                    "w-5 h-5 rounded-full transition-all duration-300 neu-raised flex items-center justify-center",
                     theme === 'dark' 
-                      ? "left-[22px] bg-slate-200" 
-                      : "left-[4px] bg-slate-800"
+                      ? "translate-x-7 text-amber-300" 
+                      : "translate-x-0.5 text-slate-700"
                   )}
-                />
+                  style={theme === 'dark' ? { backgroundColor: '#dddddd', color: '#dddddd' } : { backgroundColor: '#b5b5b5', borderColor: '#b5b5b5', color: '#b5b5b5' }}
+                >
+                  <div className="w-2 h-2 rounded-full bg-current opacity-80" />
+                </div>
               </button>
             </div>
 
@@ -1742,7 +1656,7 @@ export default function Layout({
                 <button 
                   id="profile-toggle-btn"
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="h-9 flex items-center gap-2.5 px-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-xl transition-all border border-slate-200/50 dark:border-white/10 shadow-sm cursor-pointer select-none"
+                  className="h-9 flex items-center gap-2.5 px-2.5 neu-btn rounded-xl transition-all cursor-pointer select-none"
                 >
                   <div className="hidden sm:flex flex-col items-end justify-center select-none">
                     <span className="text-[10px] font-black tracking-tight text-slate-800 dark:text-slate-200 leading-none">
@@ -1757,7 +1671,7 @@ export default function Layout({
                     </span>
                   </div>
                   {/* avatar photo matching profile image */}
-                  <div className="w-6.5 h-6.5 rounded-lg overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-800 border border-slate-200/55 dark:border-slate-750 flex items-center justify-center">
+                  <div className="w-6.5 h-6.5 rounded-lg overflow-hidden shrink-0 neu-inset flex items-center justify-center">
                     {user.profilePicture ? (
                       <img 
                         src={getAvatarUrl(user.profilePicture)} 
@@ -1784,7 +1698,7 @@ export default function Layout({
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={() => setIsProfileOpen(false)}
-                        className="fixed inset-0 bg-slate-950/10 backdrop-blur-[1px] z-[150]"
+                        className="fixed inset-0 bg-slate-950/20 backdrop-blur-[2px] z-[150]"
                       />
                       <motion.div
                         id="profile-panel"
@@ -1792,7 +1706,7 @@ export default function Layout({
                         animate={{ opacity: 1, height: "auto", scaleY: 1, y: 0, originY: 0 }}
                         exit={{ opacity: 0, height: 0, scaleY: 0.8, y: -10, originY: 0 }}
                         transition={{ type: "spring", damping: 26, stiffness: 320 }}
-                        className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[340px] bg-white dark:bg-slate-950 rounded-3xl border border-slate-200/70 dark:border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.12)] dark:shadow-[0_25px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden origin-top text-slate-800 dark:text-slate-100 animate-slideDown"
+                        className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-[340px] neu-raised-lg rounded-3xl border border-slate-200/50 dark:border-white/10 z-[200] overflow-hidden origin-top text-slate-800 dark:text-slate-100"
                       >
                         {/* Upper Gradient Accent */}
                         <div className="absolute top-0 left-0 right-0 h-[3.5px] bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
@@ -2063,26 +1977,84 @@ export default function Layout({
               </div>
             )}
 
-            {/* Glowing Live Relay Badge */}
-            <div className={cn(
-              "hidden lg:flex items-center gap-1.5 px-3 h-9 rounded-xl border transition-all select-none shadow-sm",
-              isOnline 
-                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" 
-                : "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-500"
-            )}>
-              <div className={cn(
-                "w-1.5 h-1.5 rounded-full animate-pulse",
-                isOnline ? "bg-emerald-500" : "bg-amber-500"
-              )} />
-              <span className="text-[9px] uppercase font-black tracking-widest leading-none">
-                {isOnline ? 'Live Relay' : 'Offline Access'}
-              </span>
-            </div>
+            {/* Header Logout Button */}
+            {user && (
+              <button
+                type="button"
+                id="header-logout-btn"
+                onClick={() => setShowLogoutModal(true)}
+                title="Logout from system"
+                className="flex items-center gap-1.5 px-3 h-9 rounded-xl border border-rose-500/25 bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white dark:text-rose-400 dark:hover:text-white transition-all select-none shadow-sm cursor-pointer active:scale-95 group font-sans"
+              >
+                <LogOut size={13} className="text-rose-500 group-hover:text-white dark:text-rose-400 transition-colors" />
+                <span className="text-[10px] uppercase font-black tracking-widest leading-none">
+                  Logout
+                </span>
+              </button>
+            )}
           </div>
           </>)}
         </div>
       </header>
       )}
+
+      {/* Logout Confirmation Modal Popup */}
+      <AnimatePresence>
+        {showLogoutModal && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowLogoutModal(false)}
+              className="absolute inset-0 bg-transparent"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 15 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 shadow-2xl overflow-hidden p-6 z-10 text-center"
+            >
+              {/* Header Icon Accent */}
+              <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-rose-500/10 dark:bg-rose-500/20 text-rose-500 flex items-center justify-center border border-rose-500/20 shadow-inner">
+                <LogOut size={26} className="text-rose-500 ml-0.5" />
+              </div>
+
+              <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                Confirm Logout
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                Are you sure you want to log out from <strong className="text-slate-700 dark:text-slate-200">GTS ISP Management</strong>?
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 mt-6">
+                <button
+                  type="button"
+                  id="cancel-logout-btn"
+                  onClick={() => setShowLogoutModal(false)}
+                  className="w-full py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-all active:scale-95 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  id="confirm-logout-btn"
+                  onClick={() => {
+                    setShowLogoutModal(false);
+                    if (onLogout) onLogout();
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-extrabold text-xs shadow-lg shadow-rose-500/25 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <LogOut size={13} />
+                  <span>Log Out</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isComplaintSwipeDownOpen && user && (
@@ -2100,26 +2072,26 @@ export default function Layout({
               animate={{ y: 0, opacity: 1, scaleY: 1, originY: 0 }}
               exit={{ y: -150, opacity: 0, scaleY: 0.9, originY: 0 }}
               transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-              className="relative w-full max-w-4xl bg-white dark:bg-slate-950 border-2 border-emerald-500/30 dark:border-emerald-500/20 rounded-[32px] shadow-[0_30px_70px_rgba(0,0,0,0.22)] dark:shadow-[0_40px_90px_rgba(0,0,0,0.6)] overflow-hidden"
+              className="relative w-full max-w-4xl neu-raised-lg rounded-[32px] overflow-hidden border border-white/50 dark:border-white/5"
             >
               {/* Top Accent Gradient Line */}
-              <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 animate-pulse" />
+              <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
               
               <div className="p-6 sm:p-8 space-y-6">
                 {/* Header section with instructions */}
-                <div className="flex items-center justify-between border-b-2 border-slate-200 dark:border-white/10 pb-4">
+                <div className="flex items-center justify-between border-b border-slate-300/40 dark:border-white/5 pb-4">
                   <div className="flex items-center gap-3">
                     <div className="relative flex h-3.5 w-3.5 items-center justify-center">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                     </div>
-                    <span className="text-sm sm:text-base font-extrabold uppercase tracking-[0.2em] text-slate-950 dark:text-white">
+                    <span className="text-sm sm:text-base font-extrabold uppercase tracking-[0.2em] text-slate-800 dark:text-slate-200">
                       Complaint Entry Portal
                     </span>
                   </div>
                   <button
                     onClick={() => setIsComplaintSwipeDownOpen(false)}
-                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white transition-all cursor-pointer shadow-sm"
+                    className="p-2.5 rounded-xl neu-btn text-slate-500 hover:text-rose-500 hover:border-rose-500/20 active:scale-95 transition-all cursor-pointer"
                   >
                     <X size={18} />
                   </button>
@@ -2177,43 +2149,51 @@ export default function Layout({
       {/* Footer */}
       {user && (
       <footer className={cn(
-        "relative mt-auto w-full overflow-hidden border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950 transition-colors",
-
+        "relative mt-auto w-full overflow-hidden neu-flat border-t border-slate-200/70 dark:border-white/5 transition-all select-none",
         user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
       )}>
         <PakistanFlagFooter />
-        <div className="relative z-10 max-w-[1850px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6">
-          {/* Typed Text (formerly in the big box) */}
-          <div className="w-full text-center pb-4">
-            <span className="text-2xl sm:text-3xl font-black tracking-widest text-emerald-900 dark:text-emerald-100 uppercase drop-shadow-sm">
-              {footerTypedText}{showFooterCursor ? "|" : "\u00A0"}
-            </span>
+        <div className="relative z-10 max-w-[1850px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4">
+          {/* Neumorphic Inset Ticker Display for Typed Branding Text */}
+          <div className="w-full neu-inset rounded-2xl p-3 sm:p-4 border border-white/60 dark:border-white/5 flex items-center justify-center relative overflow-hidden backdrop-blur-xs">
+            <div className="absolute -left-10 top-1/2 -translate-y-1/2 w-28 h-28 bg-brand-accent/5 dark:bg-brand-accent/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -right-10 top-1/2 -translate-y-1/2 w-28 h-28 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+            
+            <div className="text-center z-10">
+              <span className="text-lg sm:text-2xl lg:text-3xl font-black tracking-widest text-slate-800 dark:text-slate-100 uppercase drop-shadow-xs font-mono">
+                {footerTypedText}
+                <span className={cn("text-brand-accent transition-opacity duration-150", showFooterCursor ? "opacity-100" : "opacity-0")}>
+                  |
+                </span>
+              </span>
+            </div>
           </div>
-          {/* Bottom Row containing GTS Logo, Company Name, ISP MANAGEMENT PRO, Copyright & Powered By */}
-          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-300 dark:border-slate-800/80">
-            {/* Left/Center: GTS Logo + Brand Info + Copyright */}
-            <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
-              {/* GTS Logo */}
+
+          {/* Bottom Controls Row: GTS Emblem, System Details, Version & Powered By */}
+          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-2">
+            {/* Left Section: Neumorphic Emblem + Brand Meta */}
+            <div className="flex flex-col sm:flex-row items-center gap-3.5 text-center sm:text-left">
+              {/* Neumorphic Raised GTS Emblem */}
               <div className="relative group shrink-0">
-                <div className="relative w-8 h-8 rounded-lg bg-slate-900 dark:bg-slate-100 flex items-center justify-center shadow-md border border-slate-800 dark:border-white/20 overflow-hidden">
-                  <span className="text-white dark:text-slate-950 font-black text-xs tracking-tighter italic leading-none">
+                <div className="relative w-9 h-9 rounded-xl neu-raised flex items-center justify-center border border-white/80 dark:border-white/10 overflow-hidden transition-transform duration-200 hover:scale-105">
+                  <span className="text-slate-900 dark:text-slate-100 font-black text-xs tracking-tighter italic leading-none">
                     GTS
                   </span>
                 </div>
               </div>
 
-              {/* Brand & Copyright Text Block */}
+              {/* Brand Details & Copyright */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2.5">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <span className="font-black text-xs sm:text-sm tracking-tight text-slate-900 dark:text-slate-100">
+                  <span className="font-extrabold text-xs sm:text-sm tracking-tight text-slate-800 dark:text-slate-100">
                     {brandingText}
                   </span>
-                  <span className="text-[9px] font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider bg-slate-100 dark:bg-slate-800/90 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-700 shadow-2xs">
+                  <span className="text-[9px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest neu-inset px-2.5 py-0.5 rounded-lg border border-white/60 dark:border-white/5">
                     ISP MANAGEMENT PRO
                   </span>
                 </div>
 
-                <span className="hidden sm:inline text-slate-300 dark:text-slate-700">•</span>
+                <span className="hidden sm:inline text-slate-400 dark:text-slate-600">•</span>
 
                 <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium tracking-wide">
                   © {new Date().getFullYear()} {brandingText} Operations. Enterprise Edition.
@@ -2221,9 +2201,16 @@ export default function Layout({
               </div>
             </div>
 
-            {/* Right: Powered by Green Net pill */}
-            <div className="shrink-0 inline-flex items-center px-3.5 py-1 rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/90 text-[8.5px] sm:text-[9.5px] uppercase font-black tracking-widest text-slate-800 dark:text-slate-200 shadow-2xs cursor-default">
-              POWERED BY GREEN NET
+            {/* Right Section: System Metrics & Powered By Pill */}
+            <div className="flex items-center gap-2.5 shrink-0 flex-wrap justify-center">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl neu-inset text-[9px] font-mono font-bold text-slate-600 dark:text-slate-400 border border-white/50 dark:border-white/5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>ONLINE</span>
+              </div>
+
+              <div className="inline-flex items-center px-3.5 py-1.5 rounded-xl neu-btn text-[9px] sm:text-[10px] uppercase font-black tracking-widest text-slate-800 dark:text-slate-200 border border-white/70 dark:border-white/10 transition-all cursor-default select-none">
+                POWERED BY GREEN NET
+              </div>
             </div>
           </div>
         </div>

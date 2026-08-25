@@ -1,3 +1,4 @@
+import { useTheme } from "../hooks/useTheme";
 import React, { useEffect, useState, useMemo } from 'react';
 import { Complaint } from '../types';
 import { 
@@ -16,6 +17,8 @@ interface RealTimeMonitorProps {
 }
 
 export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProps) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [reportType, setReportType] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -241,34 +244,34 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 font-lexend animate-fade-in relative z-10">
       {/* Container Card with clean-edge dashboard feel on soft light-grey textured background */}
       <div 
-        className="flex-1 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-2xl border border-white/60 dark:border-white/10 p-5 flex flex-col relative overflow-hidden shadow-xl shadow-black/5 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/60 transition-all duration-300"
-        style={{
-          backgroundImage: 'radial-gradient(rgba(148, 163, 184, 0.08) 1.2px, transparent 1.2px)',
-          backgroundSize: '24px 24px'
-        }}
+        className="flex-1 neu-card rounded-2xl border border-slate-200/50 dark:border-white/5 p-5 flex flex-col relative overflow-hidden transition-all duration-300"
       >
         {/* Subtle ambient light gradient overlays */}
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-[#2563eb]/5 blur-[48px] rounded-full pointer-events-none z-0" />
         <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 blur-[48px] rounded-full pointer-events-none z-0" />
 
         {/* Top Header: Controls & Action Details */}
-        <div className="flex items-center justify-between gap-2 mb-4 relative z-10 w-full border-b border-slate-100 dark:border-white/10 pb-3">
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[10px] font-black tracking-widest text-[#2563eb] bg-[#2563eb]/10 px-2.5 py-1 rounded-lg uppercase">
-              MONITOR
+        <div className="flex items-center justify-between gap-2 mb-4 relative z-10 w-full border-b border-slate-200/80 dark:border-white/10 pb-3">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span 
+              className="text-[10px] font-black tracking-widest text-blue-700 dark:text-blue-300 bg-blue-500/15 dark:bg-blue-500/25 px-2.5 py-1 rounded-lg uppercase border border-blue-500/30 flex items-center gap-1.5 shadow-sm"
+              style={isDark ? { backgroundColor: '#3e4149', color: '#ffffff', borderColor: '#757575' } : { backgroundColor: '#f2f4f7', color: '#000000', borderColor: '#f2f4f7' }}
+            >
+              <Activity size={11} className="stroke-[2.5]" />
+              ACTIVITY MONITOR
             </span>
           </div>
 
           <div className="flex items-center shrink-0">
-            <div className="flex items-center bg-slate-100/80 dark:bg-slate-900/80 p-0.5 rounded-lg border border-slate-200/60 dark:border-white/10">
+            <div className="flex items-center bg-slate-200/70 dark:bg-slate-900/90 p-0.5 rounded-lg border border-slate-300 dark:border-white/10 shadow-xs">
               {(['weekly', 'monthly', 'yearly'] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setReportType(type)}
                   className={`px-2.5 sm:px-3 py-1 text-[9px] font-black tracking-wider rounded-md uppercase transition-all duration-200 ${
                     reportType === type 
-                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' 
-                      : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 font-bold'
+                      ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-[var(--neu-shadow-raised-sm)] border border-slate-200/80 dark:border-white/10' 
+                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white font-extrabold'
                   }`}
                 >
                   {type === 'weekly' ? 'Week' : type === 'monthly' ? 'Month' : 'Year'}
@@ -279,36 +282,39 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         </div>
 
         {/* Chart Frame */}
-        <div className="flex-1 w-full h-full min-h-[220px] min-w-0 relative z-10 -ml-4 mt-1">
+        <div className="flex-1 w-full h-full min-h-[220px] min-w-0 relative z-10 -ml-3 mt-1">
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-            <AreaChart data={chartData} margin={{ top: 20, right: 20, left: -20, bottom: 5 }}>
+            <AreaChart 
+              data={chartData} 
+              margin={{ top: 20, right: 20, left: -20, bottom: 5 }}
+            >
               <defs>
                 <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25}/>
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.42}/>
+                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02}/>
                 </linearGradient>
                 <linearGradient id="chartGradientGreen" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.42}/>
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.02}/>
                 </linearGradient>
-                {/* Subtle drop shadow for line */}
+                {/* High contrast drop shadow for line */}
                 <filter id="softLineShadow" x="-10%" y="-10%" width="120%" height="130%">
-                  <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#2563eb" floodOpacity="0.12" />
+                  <feDropShadow dx="0" dy="4" stdDeviation="3.5" floodColor="#1d4ed8" floodOpacity="0.4" />
                 </filter>
                 <filter id="softLineShadowGreen" x="-10%" y="-10%" width="120%" height="130%">
-                  <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#10b981" floodOpacity="0.12" />
+                  <feDropShadow dx="0" dy="4" stdDeviation="3.5" floodColor="#059669" floodOpacity="0.4" />
                 </filter>
               </defs>
 
-              {/* Faint horizontal grid lines */}
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.08)" />
+              {/* Crisp horizontal grid lines */}
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.22)" />
               
               {/* Date labels on x-axis */}
               <XAxis 
                 dataKey="name" 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 8, fontWeight: 900, fill: '#64748b' }}
+                tick={{ fontSize: 8.5, fontWeight: 900, fill: '#475569' }}
                 dy={8}
                 interval={reportType === 'monthly' ? 5 : 0}
               />
@@ -317,27 +323,27 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
               <YAxis 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 8, fontWeight: 900, fill: '#64748b' }}
+                tick={{ fontSize: 8.5, fontWeight: 900, fill: '#475569' }}
                 dx={-8}
                 allowDecimals={false}
               />
 
               <Tooltip 
                 contentStyle={{ 
-                  backgroundColor: 'rgba(255, 255, 255, 0.98)', 
-                  backdropFilter: 'blur(8px)',
-                  border: '1px solid rgba(226, 232, 240, 0.8)', 
-                  borderRadius: '12px',
-                  boxShadow: '0 8px 24px -6px rgba(0, 0, 0, 0.1)',
-                  fontSize: '9px',
-                  fontWeight: '900',
-                  color: '#0f172a',
-                  padding: '6px 10px',
+                  backgroundColor: 'rgba(15, 23, 42, 0.98)', 
+                  backdropFilter: 'blur(10px)',
+                  border: '2px solid rgba(255, 255, 255, 0.15)', 
+                  borderRadius: '14px',
+                  boxShadow: '0 15px 35px -5px rgba(0, 0, 0, 0.4)',
+                  fontSize: '10px',
+                  fontWeight: '950',
+                  color: '#ffffff',
+                  padding: '8px 12px',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em'
                 }}
-                itemStyle={{ fontWeight: '900', padding: 0 }}
-                cursor={{ stroke: 'rgba(59, 130, 246, 0.08)', strokeWidth: 1.5 }}
+                itemStyle={{ fontWeight: '950', padding: 0, color: '#ffffff' }}
+                cursor={{ stroke: 'rgba(37, 99, 235, 0.25)', strokeWidth: 2, strokeDasharray: '4 4' }}
               />
 
               <Area
@@ -345,11 +351,11 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                 dataKey="total"
                 name="Total Complaints"
                 stroke="#2563eb"
-                strokeWidth={2.5}
+                strokeWidth={3}
                 fillOpacity={1}
                 fill="url(#chartGradient)"
-                dot={renderCustomDot("#2563eb", "rgba(37, 99, 235, 0.15)")}
-                activeDot={renderCustomActiveDot("#2563eb", "rgba(37, 99, 235, 0.3)")}
+                dot={renderCustomDot("#2563eb", "rgba(37, 99, 235, 0.25)")}
+                activeDot={renderCustomActiveDot("#2563eb", "rgba(37, 99, 235, 0.45)")}
                 filter="url(#softLineShadow)"
                 animationDuration={1000}
               />
@@ -359,11 +365,11 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                 dataKey="resolved"
                 name="Resolved (Complete)"
                 stroke="#10b981"
-                strokeWidth={2.5}
+                strokeWidth={3}
                 fillOpacity={1}
                 fill="url(#chartGradientGreen)"
-                dot={renderCustomDot("#10b981", "rgba(16, 185, 129, 0.15)")}
-                activeDot={renderCustomActiveDot("#10b981", "rgba(16, 185, 129, 0.3)")}
+                dot={renderCustomDot("#10b981", "rgba(16, 185, 129, 0.25)")}
+                activeDot={renderCustomActiveDot("#10b981", "rgba(16, 185, 129, 0.45)")}
                 filter="url(#softLineShadowGreen)"
                 animationDuration={1000}
               />
@@ -371,10 +377,10 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
           </ResponsiveContainer>
         </div>
 
-        {/* Small Peak Day status line to enrich interface with context-rich facts */}
+        {/* Small Peak Day status line with high contrast tag */}
         {peakDay && (
-          <div className="absolute bottom-4 right-5 text-[8.5px] font-black uppercase tracking-widest text-[#2563eb] dark:text-[#38bdf8] z-10 flex items-center gap-1 select-none pointer-events-none bg-[#2563eb]/10 dark:bg-[#38bdf8]/10 px-2 py-0.5 rounded">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#2563eb] dark:bg-[#38bdf8] inline-block animate-pulse" />
+          <div className="absolute bottom-4 right-5 text-[9px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-300 z-10 flex items-center gap-1.5 select-none pointer-events-none bg-blue-500/15 dark:bg-blue-500/25 px-2.5 py-1 rounded-md border border-blue-500/30 shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400 inline-block animate-pulse" />
             Peak: {peakDay.count} complains on {peakDay.name}
           </div>
         )}

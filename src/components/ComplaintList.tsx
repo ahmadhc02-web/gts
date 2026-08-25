@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned, Send, Users, Activity, RotateCcw, FileSpreadsheet, Flag, UserPlus, Info, Sparkles } from 'lucide-react';
+import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned, Send, Users, Activity, RotateCcw, FileSpreadsheet, Flag, UserPlus, Info, Sparkles, Search } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig, ComplaintReview } from '../types';
 import { cn } from '../lib/utils';
 import { getCardStyle } from '../lib/styleUtils';
@@ -17,6 +17,7 @@ import ComplaintPrintPreviewModal from './ComplaintPrintPreviewModal';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface ComplaintListProps {
+  readOnly?: boolean;
   complaints: Complaint[];
   users?: UserProfile[];
   onDelete?: (id: string, isPermanent?: boolean) => Promise<void>;
@@ -43,7 +44,8 @@ const getEffectiveStatus = (c: Complaint, currentTime: number = Date.now()): Com
   return c.status || 'pending';
 };
 
-export default function ComplaintList({ 
+export default function ComplaintList({
+  readOnly = false, 
   complaints, 
   users = [],
   onDelete, 
@@ -363,14 +365,14 @@ export default function ComplaintList({
       case 'complete': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
       case 'in process': return 'text-blue-500 bg-blue-500/10 border-blue-500/20';
       case 'scheduled': return 'text-purple-500 bg-purple-500/10 border-purple-500/20';
-      case 'important': return 'text-amber-500 bg-amber-500/10 border-amber-500/20 shadow-sm shadow-amber-500/10';
+      case 'important': return 'text-amber-500 bg-amber-500/10 border-amber-500/20 shadow-[var(--neu-shadow-raised-sm)] shadow-amber-500/10';
       case 'pending': default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
     }
   };
 
   const getPriorityColor = (priority: ComplaintPriority) => {
     switch (priority) {
-      case 'Critical': return 'bg-rose-500 text-white border-rose-600 shadow-lg shadow-rose-500/20';
+      case 'Critical': return 'bg-rose-500 text-white border-rose-600 shadow-[var(--neu-shadow-raised-lg)] shadow-rose-500/20';
       case 'High': return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
       case 'Medium': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
       case 'Low': default: return 'bg-slate-500/10 text-slate-500 border-slate-500/20';
@@ -777,20 +779,20 @@ export default function ComplaintList({
       </div>
 
       {/* Search Bar, Time Range & Action Line */}
-      <div className="flex flex-col gap-4 bg-slate-50/50 dark:bg-slate-900/10 p-4 rounded-2xl border border-slate-200/50 dark:border-white/10 mb-2">
+      <div className="flex flex-col gap-4 neu-card p-4.5 rounded-2xl border border-white/50 dark:border-white/5 mb-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           
           {/* Leftside search field */}
           <div className="relative flex-1 max-w-md">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-              <Printer size={16} />
+              <Search size={16} />
             </span>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search registry (Name, Phone, Area)..."
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-xs font-semibold focus:ring-2 focus:ring-brand-accent/20 outline-none transition-all"
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-white/80 dark:border-white/5 neu-inset text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-xs font-semibold focus:ring-2 focus:ring-brand-accent/20 outline-none transition-all"
             />
           </div>
 
@@ -801,7 +803,7 @@ export default function ComplaintList({
             <div className="relative">
               <button
                 onClick={() => setTimeRangeOpen(!timeRangeOpen)}
-                className="flex items-center justify-between gap-2 px-4 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-350 shadow-sm min-w-[130px] hover:border-brand-accent transition-all cursor-pointer"
+                className="flex items-center justify-between gap-2 px-4 py-2 neu-btn rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 min-w-[130px] hover:border-brand-accent transition-all cursor-pointer"
               >
                 <span>{timeRange}</span>
                 <ChevronDown size={14} className={cn("text-slate-400 transition-transform duration-300", timeRangeOpen && "rotate-180")} />
@@ -813,7 +815,7 @@ export default function ComplaintList({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 8 }}
-                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 text-left"
+                    className="absolute right-0 mt-2 w-48 neu-raised-lg rounded-2xl border border-white/50 dark:border-white/10 overflow-hidden z-50 text-left"
                   >
                     <div className="p-1.5 space-y-1">
                       {['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'All Time'].map((r) => (
@@ -823,8 +825,8 @@ export default function ComplaintList({
                           className={cn(
                             "w-full text-left px-3 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer",
                             timeRange === r 
-                              ? "bg-brand-accent/10 text-brand-accent" 
-                              : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/60 hover:text-slate-900 dark:hover:text-white"
+                              ? "bg-brand-accent/10 text-brand-accent neu-inset" 
+                              : "text-slate-600 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white"
                           )}
                         >
                           {r}
@@ -847,20 +849,20 @@ export default function ComplaintList({
                 setZoneFilter('all');
                 setTimeRange('All Time');
               }}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-brand-accent hover:bg-slate-100 dark:hover:bg-slate-900 rounded-xl cursor-pointer transition-all"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-brand-accent neu-btn rounded-xl cursor-pointer transition-all"
             >
               <RotateCcw size={13} />
               <span>Reset</span>
             </button>
 
             {/* Split status filters pill toggler */}
-            <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-white/10">
+            <div className="flex neu-inset p-1 rounded-xl border border-white/30 dark:border-white/5">
               <button
                 onClick={() => setStatusFilter('all')}
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
                   statusFilter === 'all'
-                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    ? "neu-raised text-brand-accent"
                     : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-355"
                 )}
               >
@@ -871,7 +873,7 @@ export default function ComplaintList({
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
                   statusFilter === 'pending'
-                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    ? "neu-raised text-brand-accent"
                     : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-355"
                 )}
               >
@@ -882,7 +884,7 @@ export default function ComplaintList({
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
                   statusFilter === 'in process'
-                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    ? "neu-raised text-brand-accent"
                     : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-330"
                 )}
               >
@@ -893,7 +895,7 @@ export default function ComplaintList({
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
                   statusFilter === 'scheduled'
-                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    ? "neu-raised text-brand-accent"
                     : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-330"
                 )}
               >
@@ -904,7 +906,7 @@ export default function ComplaintList({
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
                   statusFilter === 'hold'
-                    ? "bg-white dark:bg-slate-800 text-brand-accent shadow-sm"
+                    ? "neu-raised text-brand-accent"
                     : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-330"
                 )}
               >
@@ -916,7 +918,7 @@ export default function ComplaintList({
             <div className="relative">
               <button
                 onClick={() => setExportOpen(!exportOpen)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 dark:bg-slate-850 hover:bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-all cursor-pointer border border-transparent dark:border-white/10"
+                className="flex items-center gap-1.5 px-4 py-2 neu-btn text-slate-800 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
               >
                 <Download size={13} />
                 <span>Export</span>
@@ -929,7 +931,7 @@ export default function ComplaintList({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 8 }}
-                    className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 text-left"
+                    className="absolute right-0 mt-2 w-48 neu-raised-lg border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden z-50 text-left"
                   >
                     <div className="p-1.5 space-y-1">
                       <button
@@ -937,7 +939,7 @@ export default function ComplaintList({
                           exportToPDF();
                           setExportOpen(false);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-all cursor-pointer"
                       >
                         <FileDown size={14} className="text-rose-500" />
                         <span>Export PDF document</span>
@@ -947,7 +949,7 @@ export default function ComplaintList({
                           exportToCSV();
                           setExportOpen(false);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-all cursor-pointer"
                       >
                         <FileSpreadsheet size={14} className="text-emerald-500" />
                         <span>Export CSV datasheet</span>
@@ -957,7 +959,7 @@ export default function ComplaintList({
                           handleBackupToDrive();
                           setExportOpen(false);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-all cursor-pointer"
                       >
                         <CloudUpload size={14} className="text-blue-500" />
                         <span>Cloud Backup (Drive)</span>
@@ -967,7 +969,7 @@ export default function ComplaintList({
                           window.print();
                           setExportOpen(false);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer border-t border-slate-150 dark:border-white/10 pt-1.5 mt-1"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-all cursor-pointer border-t border-slate-300/40 dark:border-white/10 pt-1.5 mt-1"
                       >
                         <Printer size={14} className="text-indigo-500" />
                         <span>Print Registry (A4)</span>
@@ -982,12 +984,12 @@ export default function ComplaintList({
         </div>
 
         {/* Dropdown filters grid line */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-200/40 dark:border-white/10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2.5 border-t border-slate-300/40 dark:border-white/5">
           <div>
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as any)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
+              className="w-full px-3 py-2.5 rounded-xl border border-white/30 dark:border-white/5 neu-inset text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1006,7 +1008,7 @@ export default function ComplaintList({
             <select
               value={zoneFilter}
               onChange={(e) => setZoneFilter(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
+              className="w-full px-3 py-2.5 rounded-xl border border-white/30 dark:border-white/5 neu-inset text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1025,7 +1027,7 @@ export default function ComplaintList({
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value as any)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none"
+              className="w-full px-3 py-2.5 rounded-xl border border-white/30 dark:border-white/5 neu-inset text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1042,22 +1044,22 @@ export default function ComplaintList({
         </div>
       </div>
 
-      {/* Row-based Grid (Table View) - High-Fidelity Professional ISP Layout */}
+      {/* Row-based Grid (Table View) - High-Fidelity Neumorphic ISP Layout */}
       <motion.div 
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn("overflow-hidden shadow-2xl border bg-white dark:bg-slate-950/40 border-slate-200/50 dark:border-white/10 backdrop-blur-md", getCardStyle(branding.cardStyle))}
+        className={cn("overflow-hidden neu-card border border-white/50 dark:border-white/5", getCardStyle(branding.cardStyle))}
       >
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1250px]">
-            <thead className="bg-slate-50/75 dark:bg-slate-900/40 border-b border-slate-150 dark:border-white/10">
+            <thead className="neu-inset border-b border-slate-300/40 dark:border-white/5">
               <tr>
                 <th 
-                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('client')}
                 >
                   <div className="flex items-center gap-1.5">
-                    <span>{customNames.client || 'Client & Contact'}</span>
+                    <span style={{ textAlign: 'center', paddingLeft: '25px', fontSize: '13px' }}>{customNames.client || 'Client & Contact'}</span>
                     {sortConfig.key === 'client' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
@@ -1065,11 +1067,11 @@ export default function ComplaintList({
                 </th>
                 
                 <th 
-                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('category')}
                 >
                   <div className="flex items-center gap-1.5">
-                    <span>{customNames.category || 'Category'}</span>
+                    <span style={{ fontSize: '13px', paddingLeft: '8px' }}>{customNames.category || 'Category'}</span>
                     {sortConfig.key === 'category' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
@@ -1077,11 +1079,11 @@ export default function ComplaintList({
                 </th>
 
                 <th 
-                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('tactical')}
                 >
                   <div className="flex items-center gap-1.5 ">
-                    <span>User ID & Sector</span>
+                    <span style={{ fontSize: '13px', paddingLeft: '1px' }}>User ID & Sector</span>
                     {sortConfig.key === 'tactical' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
@@ -1089,11 +1091,11 @@ export default function ComplaintList({
                 </th>
 
                 <th 
-                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('description')}
                 >
                   <div className="flex items-center gap-1.5">
-                    <span>{customNames.description || 'Issue Details'}</span>
+                    <span style={{ fontSize: '13px', paddingLeft: '11px' }}>{customNames.description || 'Issue Details'}</span>
                     {sortConfig.key === 'description' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
@@ -1101,11 +1103,11 @@ export default function ComplaintList({
                 </th>
 
                 <th 
-                  className="px-4 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 text-center cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-4 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 text-center cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('urgency')}
                 >
                   <div className="flex items-center justify-center gap-1.5">
-                    <span>Priority</span>
+                    <span style={{ fontSize: '13px' }}>Priority</span>
                     {sortConfig.key === 'urgency' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
@@ -1113,7 +1115,7 @@ export default function ComplaintList({
                 </th>
 
                 <th 
-                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 text-center cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 text-center cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('status')}
                 >
                   <div className="flex items-center justify-center gap-1.5">
@@ -1125,10 +1127,10 @@ export default function ComplaintList({
                 </th>
 
                 <th 
-                  className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 text-right cursor-pointer hover:text-brand-accent transition-colors"
+                  className="px-6 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 text-right cursor-pointer hover:text-brand-accent transition-colors"
                   onClick={() => handleSort('registry')}
                 >
-                  <div className="flex items-center justify-end gap-1.5">
+                  <div className="flex items-center justify-end gap-1.5" style={{ fontSize: '13px' }}>
                     <span>Dates</span>
                     {sortConfig.key === 'registry' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
@@ -1136,16 +1138,16 @@ export default function ComplaintList({
                   </div>
                 </th>
 
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500 text-right">Quick Actions</th>
+                <th className="px-6 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 text-right" style={{ fontSize: '11px' }}>Quick Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-105 dark:divide-slate-800/40">
+            <tbody className="divide-y divide-slate-300/30 dark:divide-white/5">
               <AnimatePresence mode="popLayout">
                 {paginatedComplaints.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="py-24 text-center">
-                      <Clock size={40} className="text-slate-200 mx-auto mb-4 animate-bounce" style={{ animationDuration: '3s' }} />
-                      <p className="text-slate-400 font-bold uppercase tracking-widest text-[11px]">No operational records fit active criteria</p>
+                      <Clock size={40} className="text-slate-400 mx-auto mb-4 animate-bounce" style={{ animationDuration: '3s' }} />
+                      <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-[11px]">No operational records fit active criteria</p>
                     </td>
                   </tr>
                 ) : (
@@ -1170,18 +1172,7 @@ export default function ComplaintList({
                         transition: { duration: 0.15 }
                       }}
                       onClick={() => setSelectedComplaint(complaint)}
-                      className={cn(
-                        "group hover:scale-[1.002] active:scale-[0.999] hover:shadow-[0_4px_24px_rgba(0,0,0,0.02)] dark:hover:shadow-[0_4px_24px_rgba(0,0,0,0.25)] border-y border-slate-100/50 dark:border-white/10 transition-all duration-300 cursor-pointer relative",
-                        getEffectiveStatus(complaint, now).toLowerCase() === 'complete' 
-                          ? 'bg-emerald-500/[0.005] dark:bg-slate-950/20 hover:bg-emerald-500/[0.02] dark:hover:bg-emerald-500/[0.03]' 
-                          : getEffectiveStatus(complaint, now).toLowerCase() === 'in process'
-                            ? 'bg-blue-500/[0.005] dark:bg-slate-950/20 hover:bg-blue-500/[0.02] dark:hover:bg-blue-500/[0.03]'
-                            : getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled'
-                              ? 'bg-purple-500/[0.005] dark:bg-slate-950/20 hover:bg-purple-500/[0.02] dark:hover:bg-purple-500/[0.03]'
-                              : getEffectiveStatus(complaint, now).toLowerCase() === 'hold'
-                                ? 'bg-rose-500/[0.005] dark:bg-slate-950/20 hover:bg-rose-500/[0.02] dark:hover:bg-rose-500/[0.03]'
-                                : 'bg-white dark:bg-slate-950/20 hover:bg-slate-500/[0.015] dark:hover:bg-slate-500/[0.025]'
-                      )}
+                      className="group border-b border-slate-300/30 dark:border-white/5 hover:bg-black/[0.025] dark:hover:bg-white/[0.025] transition-all duration-200 cursor-pointer relative"
                     >
                       {/* CLIENT & CONTACT */}
                       <td className="px-6 py-4.5 relative">
@@ -1196,25 +1187,25 @@ export default function ComplaintList({
                         )} />
                         
                         <div className="flex items-center gap-3.5 pl-1.5">
-                          <div className="shrink-0 w-10 h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200/60 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover:scale-110 group-hover:bg-brand-accent/10 group-hover:text-brand-accent group-hover:border-brand-accent/20 transition-all duration-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.01)]">
+                          <div className="shrink-0 w-10 h-10 rounded-xl neu-inset border border-white/40 dark:border-white/5 flex items-center justify-center text-slate-600 dark:text-slate-400 group-hover:scale-110 group-hover:text-brand-accent transition-all duration-300">
                             <Wifi size={17} className="shrink-0" />
                           </div>
                           <div className="flex flex-col">
-                            <span className="font-extrabold text-slate-950 dark:text-white uppercase tracking-tight text-xs group-hover:text-brand-accent transition-colors duration-300 leading-tight">
+                            <span className="font-black text-slate-900 dark:text-white uppercase tracking-tight text-[16px] group-hover:text-brand-accent transition-colors duration-300 leading-tight">
                               {complaint.customerName}
                             </span>
                             {Boolean(complaint.scheduledAt) && complaint.scheduledAt! > 0 && (
-                              <div className="flex items-center gap-1.5 mt-1 text-[8.5px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/50 dark:border-indigo-900/40 px-2 py-0.5 rounded-lg w-max uppercase tracking-wider animate-pulse">
+                              <div className="flex items-center gap-1.5 mt-1 text-[8.5px] font-black text-indigo-700 dark:text-indigo-300 neu-inset px-2 py-0.5 rounded-lg w-max uppercase tracking-wider">
                                 <Calendar size={10} className="shrink-0 text-indigo-500" />
-                                <span>Scheduled At: {new Date(complaint.scheduledAt!).toLocaleString()}</span>
+                                <span>Scheduled: {new Date(complaint.scheduledAt!).toLocaleString()}</span>
                               </div>
                             )}
-                            <span className="text-[10px] font-lexend font-bold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
-                              <Phone size={10} className="text-slate-400 shrink-0" />
-                              <span>({complaint.number.slice(0,4)}) {complaint.number.slice(4)}</span>
+                            <span className="text-[10px] font-lexend font-bold text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-1">
+                              <Phone size={10} className="text-slate-500 shrink-0" />
+                              <span className="inline-block text-[14px] w-[120px]">({complaint.number.slice(0,4)}) {complaint.number.slice(4)}</span>
                             </span>
                             {Boolean(complaint.pkgDetails) && (
-                              <span className="inline-block mt-1 text-[8.5px] font-black uppercase tracking-wider text-brand-accent bg-brand-accent/10 border border-brand-accent/15 px-1.5 py-0.5 rounded w-max">
+                              <span className="inline-block mt-1 text-[11.5px] w-[45px] text-center font-black uppercase tracking-wider text-brand-accent neu-inset px-1.5 py-0.5 rounded truncate">
                                 {complaint.pkgDetails}
                               </span>
                             )}
@@ -1225,12 +1216,12 @@ export default function ComplaintList({
                       {/* CATEGORY */}
                       <td className="px-6 py-4.5">
                         <span className={cn(
-                          "text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border inline-block leading-none",
+                          "text-[11px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg neu-raised inline-block leading-none border border-white/40 dark:border-white/5",
                           complaint.category === 'Fiber Break' 
-                            ? 'bg-rose-500/5 text-rose-500 border-rose-500/10' 
+                            ? 'text-rose-600 dark:text-rose-400' 
                             : complaint.category === 'Offline'
-                            ? 'bg-purple-500/5 text-purple-500 border-purple-500/10'
-                            : 'bg-indigo-505/5 text-indigo-500 border-indigo-500/10'
+                            ? 'text-purple-600 dark:text-purple-400'
+                            : 'text-indigo-600 dark:text-indigo-400'
                         )}>
                           {complaint.category}
                         </span>
@@ -1239,12 +1230,12 @@ export default function ComplaintList({
                       {/* USER ID & SECTOR */}
                       <td className="px-6 py-4.5 font-sans">
                         <div className="flex flex-col">
-                          <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider bg-slate-100/50 dark:bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-200/20 dark:border-white/10 w-max leading-none">
+                          <span className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider neu-inset px-2.5 py-1 rounded-lg border border-white/30 dark:border-white/5 w-max leading-none">
                             {complaint.customerUsername || 'NO USER_ID'}
                           </span>
-                          <span className="text-[10px] font-extrabold text-slate-500 mt-1.5 flex items-center gap-1">
-                            <MapPin size={11} className="text-slate-400 shrink-0" />
-                            <span>{complaint.area || 'Unknown Sector'}</span>
+                          <span className="text-[10px] font-extrabold text-slate-600 dark:text-slate-400 mt-1.5 flex items-center gap-1">
+                            <MapPin size={11} className="text-slate-500 shrink-0" />
+                            <span className="inline-block text-[13px] w-[100px] truncate">{complaint.area || 'Unknown Sector'}</span>
                           </span>
                         </div>
                       </td>
@@ -1253,21 +1244,21 @@ export default function ComplaintList({
                       <td className="px-6 py-4.5">
                         <div className="flex flex-col gap-1.5 max-w-[280px]">
                           {complaint.panelDetails ? (
-                            <span className="text-[9.5px] font-lexend font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200/50 dark:border-white/10 block truncate select-all leading-tight">
+                            <span className="text-[12.5px] font-lexend font-black text-slate-700 dark:text-slate-300 neu-inset px-2 py-0.5 rounded border border-white/30 dark:border-white/5 block truncate select-all leading-tight">
                               {complaint.panelDetails}
                             </span>
                           ) : (
                             <span className="text-[9px] font-lexend font-bold text-slate-400 dark:text-slate-500 italic">No Device Panel specified</span>
                           )}
-                          <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed font-semibold italic truncate">
+                          <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-semibold italic truncate">
                             "{complaint.description}"
                           </p>
                         </div>
                       </td>
 
-                      {/* PRIORITY (with Flags correctly aligned with metadata) */}
+                      {/* PRIORITY */}
                       <td className="px-4 py-4.5 text-center">
-                        <div className="flex flex-col items-center justify-center gap-1">
+                        <div className="flex flex-col items-center justify-center gap-1 neu-raised p-1.5 rounded-xl border border-white/40 dark:border-white/5 w-max mx-auto">
                           <Flag size={14} className={cn(
                             "shrink-0",
                             complaint.priority === 'Critical' || complaint.priority === 'High' ? 'text-rose-500 fill-rose-500 animate-pulse' :
@@ -1275,34 +1266,34 @@ export default function ComplaintList({
                             'text-slate-400 fill-slate-300 dark:fill-slate-700'
                           )} />
                           <span className={cn(
-                            "text-[9px] font-black uppercase tracking-widest",
+                            "text-[8.5px] font-black uppercase tracking-widest",
                             complaint.priority === 'Critical' || complaint.priority === 'High' ? 'text-rose-600 dark:text-rose-400' :
                             complaint.priority === 'Medium' ? 'text-amber-600 dark:text-amber-400' :
-                            'text-slate-500'
+                            'text-slate-500 dark:text-slate-400'
                           )}>
                             {complaint.priority || 'Medium'}
                           </span>
                         </div>
                       </td>
 
-                      {/* STATUS (With badge and delegator avatar) */}
+                      {/* STATUS (With Neumorphic badge and delegator avatar) */}
                       <td className="px-6 py-4.5">
                         <div className="flex flex-col items-center justify-center gap-1.5 matches-status-cell">
                           <div className="flex items-center gap-2">
                             <span className={cn(
-                              "flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-[inset_0_1px_2px_rgba(255,255,255,0.05)]",
+                              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest neu-raised border border-white/40 dark:border-white/5",
                               getEffectiveStatus(complaint, now).toLowerCase() === 'complete' 
-                                ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400' 
+                                ? 'text-emerald-700 dark:text-emerald-400' 
                                 : getEffectiveStatus(complaint, now).toLowerCase() === 'in process'
-                                ? 'bg-blue-500/10 text-blue-600 border-blue-500/25 dark:text-blue-400'
+                                ? 'text-blue-700 dark:text-blue-400'
                                 : getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled'
-                                ? 'bg-purple-500/10 text-purple-600 border-purple-500/25 dark:text-purple-400'
+                                ? 'text-purple-700 dark:text-purple-400'
                                 : getEffectiveStatus(complaint, now).toLowerCase() === 'hold'
-                                ? 'bg-rose-500/10 text-rose-600 border-rose-500/25 dark:text-rose-400'
-                                : 'bg-amber-500/10 text-amber-600 border-amber-500/25 dark:text-amber-400'
+                                ? 'text-rose-700 dark:text-rose-400'
+                                : 'text-amber-700 dark:text-amber-400'
                             )}>
                               <span className={cn(
-                                "w-1.5 h-1.5 rounded-full",
+                                "w-2 h-2 rounded-full",
                                 getEffectiveStatus(complaint, now).toLowerCase() === 'complete' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
                                 getEffectiveStatus(complaint, now).toLowerCase() === 'in process' ? 'bg-blue-500 shadow-[0_0_6px_#3b82f6]' : 
                                 getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled' ? 'bg-purple-500 shadow-[0_0_6px_#a855f7]' : 
@@ -1331,7 +1322,7 @@ export default function ComplaintList({
                                   <img 
                                     src={getAvatarUrl(authorUser.profilePicture)} 
                                     alt={complaint.memberName} 
-                                    className="h-6 w-6 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700 shadow-sm shrink-0 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                                    className="h-7 w-7 rounded-full object-cover neu-raised p-0.5 border border-white/60 dark:border-white/10 shrink-0 hover:scale-125 cursor-pointer transition-all active:scale-95 duration-200"
                                     title={`Click to view profile of ${complaint.memberName || 'Delegate'}`}
                                     onClick={handleClick}
                                   />
@@ -1341,7 +1332,7 @@ export default function ComplaintList({
                                 <img 
                                   src={getAvatarUrl('default:male')} 
                                   alt={complaint.memberName || 'System'}
-                                  className="h-6 w-6 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700 shadow-sm shrink-0 opacity-80 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                                  className="h-7 w-7 rounded-full object-cover neu-raised p-0.5 border border-white/60 dark:border-white/10 shrink-0 opacity-80 hover:scale-125 cursor-pointer transition-all active:scale-95 duration-200"
                                   title={`Click to view profile of ${complaint.memberName || 'System'}`}
                                   onClick={handleClick}
                                 />
@@ -1354,15 +1345,15 @@ export default function ComplaintList({
                             if (prog.percentage <= 0) return null;
                             return (
                               <div className="w-24 flex flex-col items-center gap-1" title={prog.stepText}>
-                                <div className="w-full bg-slate-100 dark:bg-slate-800/80 h-1 rounded-full overflow-hidden border border-slate-205/25 dark:border-slate-700/30">
+                                <div className="w-full neu-inset h-1.5 rounded-full overflow-hidden border border-white/30 dark:border-white/5">
                                   <motion.div 
                                     initial={{ width: 0 }}
                                     animate={{ width: `${prog.percentage}%` }}
                                     transition={{ duration: 0.6, ease: "easeOut" }}
-                                    className="bg-blue-500 dark:bg-blue-400 h-full rounded-full"
+                                    className="bg-blue-600 dark:bg-blue-400 h-full rounded-full"
                                   />
                                 </div>
-                                <span className="text-[7.5px] font-lexend font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0 animate-pulse">
+                                <span className="text-[7.5px] font-lexend font-black text-blue-600 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0 animate-pulse">
                                   {prog.percentage}% Complete
                                 </span>
                               </div>
@@ -1374,28 +1365,28 @@ export default function ComplaintList({
                       {/* DATES */}
                       <td className="px-6 py-4.5 text-right font-sans">
                         <div className="flex flex-col items-end">
-                          <span className="text-[11px] font-extrabold text-slate-850 dark:text-slate-300 uppercase tracking-tighter">
+                          <span className="inline-block text-[13px] w-[80px] font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-tighter">
                             {new Date(complaint.createdAt).toLocaleDateString()}
                           </span>
-                          <span className="text-[9.5px] font-lexend text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1">
-                            <Clock size={10} className="text-slate-350" />
-                            <span>{new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="text-[9.5px] font-lexend text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                            <Clock size={10} className="text-slate-500" />
+                            <span className="inline-block text-[11.5px] w-[30px] truncate">{new Date(complaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </span>
                         </div>
                       </td>
 
                       {/* QUICK ACTIONS */}
                       <td className="px-6 py-4.5 text-right">
-                        <div className="flex justify-end gap-1.5" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-end gap-2" onClick={e => e.stopPropagation()}>
                            {(isAdmin || (currentUserId && complaint.memberId === currentUserId)) && (
                              <button
                                onClick={(e) => {
                                  e.stopPropagation();
                                  setEditingId(complaint.id);
                                  setEditData({ ...complaint });
-                                 setSelectedComplaint(null); // Close detail modal if open
+                                 setSelectedComplaint(null);
                                }}
-                               className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-transparent hover:border-blue-100 rounded-lg transition-all cursor-pointer"
+                               className="p-2 neu-btn text-slate-600 dark:text-slate-300 hover:text-blue-600 rounded-xl transition-all cursor-pointer"
                                title="Edit Operational Log"
                              >
                                <Pencil size={13} />
@@ -1407,7 +1398,7 @@ export default function ComplaintList({
                                  e.stopPropagation();
                                  setComplaintToDelete(complaint.id);
                                }}
-                               className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-100 rounded-lg transition-all cursor-pointer"
+                               className="p-2 neu-btn text-slate-600 dark:text-slate-300 hover:text-red-500 rounded-xl transition-all cursor-pointer"
                                title="Revoke Registry"
                              >
                                <Trash2 size={13} />
@@ -1424,17 +1415,17 @@ export default function ComplaintList({
         </div>
 
         {filteredComplaints.length > 0 && (
-          <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="px-6 py-4 neu-inset border-t border-slate-300/40 dark:border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Display Limit:</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Display Limit:</span>
                 <select
                   value={itemsPerPage}
                   onChange={(e) => {
                     setItemsPerPage(Number(e.target.value));
                     setCurrentPage(1);
                   }}
-                  className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-md px-2 py-1 text-[10px] font-black text-slate-600 dark:text-slate-300 outline-none focus:ring-1 focus:ring-brand-accent transition-all"
+                  className="neu-inset rounded-lg px-2.5 py-1 text-[10px] font-black text-slate-700 dark:text-slate-300 outline-none border border-white/30 dark:border-white/5 cursor-pointer"
                 >
                   <option value={20}>20 UNITS</option>
                   <option value={50}>50 UNITS</option>
@@ -1442,7 +1433,7 @@ export default function ComplaintList({
                   <option value={500}>500 UNITS</option>
                 </select>
               </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                 Matrix Status: <span className="text-slate-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredComplaints.length)}</span> of <span className="text-brand-accent">{filteredComplaints.length}</span>
               </p>
             </div>
@@ -1451,12 +1442,12 @@ export default function ComplaintList({
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className="p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                className="p-2 rounded-xl neu-btn text-slate-600 dark:text-slate-300 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
                 <ChevronLeft size={16} />
               </button>
               
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let pageNum: number;
                   if (totalPages <= 5) {
@@ -1474,10 +1465,10 @@ export default function ComplaintList({
                       key={`page-${i}-${pageNum}`}
                       onClick={() => setCurrentPage(pageNum)}
                       className={cn(
-                        "w-8 h-8 rounded-lg text-[10px] font-black uppercase transition-all",
+                        "w-8 h-8 rounded-xl text-[10px] font-black uppercase transition-all cursor-pointer",
                         currentPage === pageNum 
-                          ? "bg-slate-900 dark:bg-brand-accent text-white shadow-lg" 
-                          : "bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-500 hover:border-brand-accent hover:text-brand-accent"
+                          ? "neu-inset text-brand-accent font-black border border-brand-accent/20" 
+                          : "neu-btn text-slate-600 dark:text-slate-300 hover:text-brand-accent"
                       )}
                     >
                       {pageNum}
@@ -1487,9 +1478,9 @@ export default function ComplaintList({
               </div>
 
               <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev + 1))}
                 disabled={currentPage === totalPages}
-                className="p-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-400 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                className="p-2 rounded-xl neu-btn text-slate-600 dark:text-slate-300 hover:text-brand-accent disabled:opacity-30 disabled:cursor-not-allowed transition-all"
               >
                 <ChevronRight size={16} />
               </button>
@@ -1528,7 +1519,7 @@ export default function ComplaintList({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 30 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/80 dark:border-white/10 z-10 animate-in fade-in zoom-in-95 duration-200"
+              className="relative w-full max-w-sm bg-[var(--neu-surface)] rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/80 dark:border-white/10 z-10 animate-in fade-in zoom-in-95 duration-200"
             >
               {/* Banner/Header Graphic background */}
               <div className="h-28 bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 relative flex items-end justify-center">
@@ -1545,7 +1536,7 @@ export default function ComplaintList({
                 
                 {/* Large Profile Picture overlapping the banner */}
                 <div className="relative -mt-14 mb-4">
-                  <div className="w-24 h-24 rounded-full border-4 border-white dark:border-slate-950 overflow-hidden shadow-xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
+                  <div className="w-24 h-24 rounded-full border-4 border-white dark:border-slate-950 overflow-hidden shadow-[var(--neu-shadow-raised-lg)] bg-[var(--neu-surface)] flex items-center justify-center">
                     <img 
                       src={getAvatarUrl(selectedDelegate.profilePicture || 'default:male')} 
                       alt={selectedDelegate.fullName || selectedDelegate.username}
@@ -1554,7 +1545,7 @@ export default function ComplaintList({
                   </div>
                   
                   {/* Status Indicator circle badge */}
-                  <div className="absolute bottom-1 right-1 w-5 h-5 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full flex items-center justify-center shadow-md" title="Active Account">
+                  <div className="absolute bottom-1 right-1 w-5 h-5 bg-emerald-500 border-2 border-white dark:border-slate-950 rounded-full flex items-center justify-center shadow-[var(--neu-shadow-raised)]" title="Active Account">
                     <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
                   </div>
                 </div>
@@ -1571,7 +1562,7 @@ export default function ComplaintList({
 
                 {/* Role Badge */}
                 <span className={cn(
-                  "mt-3 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-sm",
+                  "mt-3 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border shadow-[var(--neu-shadow-raised-sm)]",
                   selectedDelegate.role === 'admin' || selectedDelegate.role === 'super_admin'
                     ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
                     : selectedDelegate.role === 'editor'
@@ -1647,7 +1638,7 @@ export default function ComplaintList({
                 {/* Footer Action to close */}
                 <button
                   onClick={() => setSelectedDelegate(null)}
-                  className="w-full mt-6 py-3 rounded-2xl bg-slate-900 hover:bg-black dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-black uppercase tracking-widest text-[10px] shadow-md transition-all active:scale-[0.98] cursor-pointer text-center"
+                  className="w-full mt-6 py-3 rounded-2xl bg-slate-900 hover:bg-black dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-black uppercase tracking-widest text-[10px] shadow-[var(--neu-shadow-raised)] transition-all active:scale-[0.98] cursor-pointer text-center"
                 >
                   Dismiss Profile
                 </button>
@@ -1672,7 +1663,7 @@ export default function ComplaintList({
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-6xl bg-white dark:bg-slate-950 rounded-2xl shadow-[0_45px_120px_rgba(0,0,0,0.5)] overflow-hidden border border-slate-200/50 dark:border-white/10 origin-center my-auto scale-100 transition-all duration-300 shrink-0"
+              className="relative w-full max-w-6xl neu-card rounded-[32px] overflow-hidden border border-white/50 dark:border-white/5 origin-center my-auto scale-100 transition-all duration-300 shrink-0"
             >
               <div className="p-5 sm:p-7 md:p-9 space-y-5 sm:space-y-6 max-h-[96vh] md:max-h-[90vh] overflow-y-auto custom-scrollbar">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
@@ -1692,12 +1683,12 @@ export default function ComplaintList({
                           if (prog.percentage <= 0) return null;
                           return (
                             <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 bg-blue-500/5 border border-blue-500/10 rounded-full">
-                              <div className="w-20 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40 shadow-inner">
+                              <div className="w-20 bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] h-1.5 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40 shadow-inner">
                                 <motion.div 
                                   initial={{ width: 0 }}
                                   animate={{ width: `${prog.percentage}%` }}
                                   transition={{ duration: 0.5, ease: "easeOut" }}
-                                  className="bg-blue-500 dark:bg-blue-400 h-full rounded-full shadow-sm"
+                                  className="bg-blue-500 dark:bg-blue-400 h-full rounded-full shadow-[var(--neu-shadow-raised-sm)]"
                                 />
                               </div>
                               <span className="text-[9px] font-mono font-black text-blue-500 dark:text-blue-400 uppercase tracking-tighter leading-none">
@@ -1713,9 +1704,9 @@ export default function ComplaintList({
                     </div>
                     
                     {selectedComplaint.customerUsername && (
-                      <div className="flex flex-col gap-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-white/10">
+                      <div className="flex flex-col gap-1 px-3 py-1.5 rounded-lg border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)]">
                         <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Access ID</span>
-                        <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-brand-accent uppercase tracking-widest leading-none">
+                        <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-emerald-500 uppercase tracking-widest leading-none">
                           {selectedComplaint.customerUsername}
                         </span>
                       </div>
@@ -1726,7 +1717,7 @@ export default function ComplaintList({
                     <button
                       id="open-print-preview-modal-btn"
                       onClick={() => setShowPrintPreview(true)}
-                      className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-700 text-white flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer border-none shadow-md shadow-indigo-500/20"
+                      className="px-4 py-2 rounded-xl neu-btn hover:text-indigo-500 hover:border-indigo-500/20 flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all active:scale-95 cursor-pointer"
                     >
                       <Printer size={13} />
                       <span>Print Preview</span>
@@ -1735,38 +1726,38 @@ export default function ComplaintList({
 
                   <button 
                     onClick={() => setSelectedComplaint(null)}
-                    className="absolute top-3 right-3 sm:relative sm:top-0 sm:right-0 w-9 h-9 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:scale-110 active:scale-95 transition-all shadow-sm cursor-pointer"
+                    className="absolute top-3 right-3 sm:relative sm:top-0 sm:right-0 w-9 h-9 rounded-full neu-btn flex items-center justify-center text-slate-400 hover:text-rose-500 hover:border-rose-500/20 hover:scale-110 active:scale-95 transition-all cursor-pointer"
                   >
                     <X size={18} />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/45 border border-slate-100 dark:border-white/10">
-                  <div className="space-y-1 md:border-r border-slate-105 dark:border-white/10 pr-1.5 sm:pr-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 p-4 rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)]">
+                  <div className="space-y-1 md:border-r border-slate-200/40 dark:border-white/5 pr-1.5 sm:pr-3">
                     <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">{customNames.zone || 'Sector'}</p>
-                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <MapPin size={13} className="text-brand-accent shrink-0" />
+                    <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-bold overflow-hidden">
+                      <MapPin size={13} className="text-emerald-500 shrink-0" />
                       <span className="uppercase text-xs sm:text-sm truncate">{selectedComplaint.area}</span>
                     </div>
                   </div>
-                  <div className="space-y-1 md:border-r border-slate-105 dark:border-white/10 pr-1.5 sm:pr-3">
+                  <div className="space-y-1 md:border-r border-slate-200/40 dark:border-white/5 pr-1.5 sm:pr-3">
                     <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">Contact</p>
-                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Phone size={13} className="text-brand-accent shrink-0" />
+                    <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-bold overflow-hidden">
+                      <Phone size={13} className="text-emerald-500 shrink-0" />
                       <span className="font-mono text-xs sm:text-sm truncate">{selectedComplaint.number}</span>
                     </div>
                   </div>
-                  <div className="space-y-1 md:border-r border-slate-105 dark:border-white/10 pr-1.5 sm:pr-3">
+                  <div className="space-y-1 md:border-r border-slate-200/40 dark:border-white/5 pr-1.5 sm:pr-3">
                     <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">{customNames.pkg || 'Profile'}</p>
-                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Package size={13} className="text-brand-accent shrink-0" />
+                    <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-bold overflow-hidden">
+                      <Package size={13} className="text-emerald-500 shrink-0" />
                       <span className="uppercase text-xs sm:text-sm truncate">{selectedComplaint.pkgDetails || 'N/A'}</span>
                     </div>
                   </div>
                   <div className="space-y-1">
                     <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-slate-400">{customNames.panel || 'Panel'}/{customNames.nearby || 'Nearby'}</p>
-                    <div className="flex items-center gap-2 text-slate-900 dark:text-slate-100 font-bold overflow-hidden">
-                      <Layers size={13} className="text-brand-accent shrink-0" />
+                    <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-bold overflow-hidden">
+                      <Layers size={13} className="text-emerald-500 shrink-0" />
                       <span className="uppercase text-xs sm:text-sm truncate leading-tight">
                         {selectedComplaint.panelDetails || 'N/A'} / {selectedComplaint.userNearby || 'N/A'}
                       </span>
@@ -1783,11 +1774,11 @@ export default function ComplaintList({
                       initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3 }}
-                      className="group relative rounded-xl border border-slate-200/60 dark:border-white/10 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                      className="group relative rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] overflow-hidden transition-all duration-300"
                     >
                       {/* Side indicator with priority color */}
                       <div className={cn(
-                        "absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover:w-1.5",
+                        "absolute left-0 top-0 bottom-0 w-1.5 transition-all duration-300 group-hover:w-2",
                         selectedComplaint.priority === 'High' ? 'bg-rose-500 shadow-[2px_0_10px_rgba(244,63,94,0.4)]' :
                         selectedComplaint.priority === 'Critical' ? 'bg-red-600 shadow-[2px_0_12px_rgba(220,38,38,0.5)]' :
                         selectedComplaint.priority === 'Medium' ? 'bg-amber-500 shadow-[2px_0_10px_rgba(245,158,11,0.4)]' :
@@ -1797,7 +1788,7 @@ export default function ComplaintList({
                       <div className="p-3 pl-5 space-y-2">
                         <div className="flex justify-between items-center">
                           <div className="flex items-center gap-1.5">
-                            <span className="p-0.5 rounded bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400">
+                            <span className="p-1 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-emerald-500 shadow-[var(--neu-shadow-inset)]">
                               <Network size={10} className="animate-pulse" />
                             </span>
                             <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
@@ -1808,7 +1799,7 @@ export default function ComplaintList({
                           <motion.div 
                             whileHover={{ scale: 1.05 }}
                             className={cn(
-                              "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all",
+                              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all shadow-[var(--neu-shadow-inset)]",
                               selectedComplaint.priority === 'High' || selectedComplaint.priority === 'Critical'
                                 ? 'bg-rose-500/10 dark:bg-rose-500/5 text-rose-500 border-rose-500/20'
                                 : selectedComplaint.priority === 'Medium'
@@ -1821,7 +1812,7 @@ export default function ComplaintList({
                           </motion.div>
                         </div>
 
-                        <div className="relative p-4 sm:p-5 rounded-xl bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100/50 dark:border-slate-900/80 flex items-center">
+                        <div className="relative p-4 sm:p-5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] flex items-center">
                           <div className="absolute top-1 left-2.5 text-slate-300 dark:text-slate-800 text-3xl font-serif pointer-events-none select-none">“</div>
                           <p className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-200 leading-relaxed italic relative z-10 pl-3 pr-3">
                             {selectedComplaint.description}
@@ -1836,7 +1827,7 @@ export default function ComplaintList({
                       initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: 0.05 }}
-                      className="group relative rounded-xl border border-slate-200/60 dark:border-white/10 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                      className="group relative rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] overflow-hidden transition-all duration-300"
                     >
                       <div className="p-3 space-y-2 relative overflow-hidden">
                         {/* Thank You Animation Background Overlay */}
@@ -1863,7 +1854,7 @@ export default function ComplaintList({
 
                         <div className="flex justify-between items-center">
                           <div className="flex items-center gap-1.5">
-                            <span className="p-0.5 rounded bg-slate-100 dark:bg-slate-900 text-emerald-500">
+                            <span className="p-1 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-emerald-500 shadow-[var(--neu-shadow-inset)]">
                               <CheckCircle size={10} />
                             </span>
                             <span className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-500">
@@ -1879,7 +1870,7 @@ export default function ComplaintList({
                                   setEditedRemarks(selectedComplaint.remarks || '');
                                   setIsEditingRemarks(true);
                               }}
-                              className="text-[8px] font-black uppercase tracking-wider text-brand-accent hover:text-brand-accent/80 flex items-center gap-1 px-1.5 py-0.5 rounded bg-brand-accent/5 border border-brand-accent/10 hover:border-brand-accent/20 cursor-pointer transition-all"
+                              className="text-[8px] font-black uppercase tracking-wider text-emerald-500 hover:text-emerald-600 flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] cursor-pointer transition-all"
                             >
                               <Pencil size={9} />
                               <span>{selectedComplaint.remarks ? 'Amend' : 'Formulate'}</span>
@@ -1898,7 +1889,7 @@ export default function ComplaintList({
                               <textarea
                                 value={editedRemarks}
                                 onChange={(e) => setEditedRemarks(e.target.value)}
-                                className="w-full p-3 bg-slate-50 dark:bg-slate-900/60 border border-brand-accent/30 dark:border-brand-accent/20 rounded-xl text-sm focus:ring-2 focus:ring-brand-accent/25 focus:border-brand-accent outline-none h-24 resize-none"
+                                className="w-full p-3 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none h-24 resize-none text-slate-800 dark:text-slate-100"
                                 placeholder="Type structural logging protocol..."
                                 autoFocus
                               />
@@ -1919,7 +1910,7 @@ export default function ComplaintList({
                                       setIsEditingRemarks(false);
                                     }
                                   }}
-                                  className="px-3 py-1 bg-brand-accent text-white rounded shadow-sm shadow-brand-accent/15 cursor-pointer hover:bg-brand-accent-hover transition-all"
+                                  className="px-3 py-1 neu-btn hover:text-emerald-500 hover:border-emerald-500/20 rounded cursor-pointer transition-all"
                                 >
                                   Commit Updates
                                 </button>
@@ -1935,7 +1926,7 @@ export default function ComplaintList({
                               initial={animateRemarksLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
                               animate={{ x: 0, opacity: 1, scale: 1 }}
                               transition={{ type: "spring", stiffness: 150, damping: 15 }}
-                              className="p-4 sm:p-5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent rounded-xl border border-emerald-500/20 text-emerald-800 dark:text-emerald-400 text-sm sm:text-base font-semibold whitespace-pre-wrap leading-relaxed shadow-inner"
+                              className="p-4 sm:p-5 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] text-emerald-600 dark:text-emerald-400 rounded-xl text-sm sm:text-base font-semibold whitespace-pre-wrap leading-relaxed"
                             >
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="relative flex h-2 w-2">
@@ -1950,7 +1941,7 @@ export default function ComplaintList({
                             <motion.div 
                               initial={{ opacity: 0 }}
                               animate={{ opacity: 1 }}
-                              className="p-2.5 bg-amber-500/5 rounded-xl border border-dashed border-amber-500/20 text-[10px] text-amber-600 dark:text-amber-400 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1"
+                              className="p-2.5 border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-[10px] text-amber-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1 rounded-xl"
                             >
                               <ShieldAlert size={12} className="text-amber-500 animate-bounce" />
                               <span>⚠️ Protocol Outstanding</span>
@@ -1974,7 +1965,7 @@ export default function ComplaintList({
                       initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: 0.1 }}
-                      className="group relative rounded-xl border border-slate-200/60 dark:border-white/10 bg-white dark:bg-slate-950 shadow-sm overflow-hidden transition-all duration-300"
+                      className="group relative rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] overflow-hidden transition-all duration-300"
                     >
                       <div className="p-3 space-y-2 relative overflow-hidden">
                         {/* Thank You Animation Background Overlay */}
@@ -2001,10 +1992,10 @@ export default function ComplaintList({
 
                         <div className="flex justify-between items-center">
                           <div className="flex items-center gap-1.5">
-                            <span className="p-0.5 rounded bg-slate-100 dark:bg-slate-900 text-brand-accent">
+                            <span className="p-1 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-emerald-500 shadow-[var(--neu-shadow-inset)]">
                               <User size={10} />
                             </span>
-                            <span className="text-[9px] font-black uppercase tracking-[0.18em] text-brand-accent">
+                            <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
                               Customer Review
                             </span>
                           </div>
@@ -2019,7 +2010,7 @@ export default function ComplaintList({
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ duration: 0.3, delay: 0.15 }}
-                      className="flex flex-row items-center justify-between p-2 rounded-xl border border-slate-200/50 dark:border-white/10 bg-slate-50/60 dark:bg-slate-950/40 gap-2"
+                      className="flex flex-row items-center justify-between p-2.5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] gap-2"
                     >
                       <div className="flex items-center gap-1.5 text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
                         {(() => {
@@ -2040,7 +2031,7 @@ export default function ComplaintList({
                               <img 
                                 src={getAvatarUrl(authorUser.profilePicture)} 
                                 alt={selectedComplaint.memberName} 
-                                className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm shrink-0 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                                className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
                                 title={`Click to view profile of ${selectedComplaint.memberName || 'Delegate'}`}
                                 onClick={handleClick}
                               />
@@ -2050,7 +2041,7 @@ export default function ComplaintList({
                             <img 
                               src={getAvatarUrl('default:male')} 
                               alt={selectedComplaint.memberName || 'System'}
-                              className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm shrink-0 opacity-80 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                              className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 opacity-80 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
                               title={`Click to view profile of ${selectedComplaint.memberName || 'System'}`}
                               onClick={handleClick}
                             />
@@ -2067,7 +2058,7 @@ export default function ComplaintList({
                   </div>
 
                   {/* Right Side: Admin Protocol */}
-                  <div className="col-span-12 lg:col-span-5 flex flex-col bg-slate-50/50 dark:bg-white/[0.02] border border-slate-200/50 dark:border-white/5 rounded-xl p-3 sm:p-4 relative overflow-hidden">
+                  <div className="col-span-12 lg:col-span-5 flex flex-col rounded-3xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] p-4 sm:p-5 relative overflow-hidden">
                     {isAdmin && onStatusChange ? (
                       <div className="flex flex-col h-full space-y-4">
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Tactical Protocol Command</p>
@@ -2081,7 +2072,7 @@ export default function ComplaintList({
                                 animate={{ scale: 1, opacity: 1, y: 0 }}
                                 exit={{ scale: 0.9, opacity: 0, y: -15 }}
                                 transition={{ type: "spring", stiffness: 200, damping: 20 }}
-                                className="p-5 bg-gradient-to-br from-emerald-500/10 via-brand-accent/5 to-transparent rounded-2xl border border-emerald-500/30 text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[220px]"
+                                className="p-5 border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] rounded-2xl text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[220px]"
                               >
                                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.08)_0%,transparent_70%)] pointer-events-none" />
                                 
@@ -2089,7 +2080,7 @@ export default function ComplaintList({
                                   initial={{ scale: 0, rotate: -45 }}
                                   animate={{ scale: 1, rotate: 0 }}
                                   transition={{ delay: 0.15, type: "spring", stiffness: 220, damping: 12 }}
-                                  className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-emerald-500 mb-3.5 shadow-lg shadow-emerald-500/10"
+                                  className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-emerald-500 mb-3.5 shadow-[var(--neu-shadow-raised-lg)] shadow-emerald-500/10"
                                 >
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -2114,7 +2105,7 @@ export default function ComplaintList({
                                   Resolution & Review telemetry verified.
                                 </motion.p>
 
-                                <div className="w-full text-left space-y-1.5 p-3 bg-slate-100/50 dark:bg-slate-900/40 rounded-xl border border-slate-200 dark:border-white/10">
+                                <div className="w-full text-left space-y-1.5 p-3 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)]">
                                   <div className="flex items-center gap-1.5 justify-between">
                                     <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Team Resolution:</span>
                                     <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 truncate max-w-[140px]">{selectedComplaint.remarks || 'Confirmed'}</span>
@@ -2136,7 +2127,7 @@ export default function ComplaintList({
                                     setSelectedComplaint(prev => prev ? { ...prev, status: 'pending' } : null);
                                     setHideStatusRemarksBox(false);
                                   }}
-                                  className="mt-3.5 text-[9px] font-black uppercase text-brand-accent tracking-widest hover:underline cursor-pointer"
+                                  className="mt-3.5 text-[9px] font-black uppercase text-emerald-500 tracking-widest hover:underline cursor-pointer"
                                 >
                                   Revise Log Fields
                                 </button>
@@ -2151,7 +2142,7 @@ export default function ComplaintList({
                                       value={statusRemarks}
                                       onChange={(e) => setStatusRemarks(e.target.value.toUpperCase())}
                                       placeholder="Enter resolution protocol details..."
-                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-emerald-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
+                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-xs font-semibold focus:ring-1 focus:ring-emerald-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case text-slate-800 dark:text-slate-100"
                                     />
                                     <button
                                       type="button"
@@ -2198,7 +2189,7 @@ export default function ComplaintList({
                                           toast.error("Failed to save to database. Kept in memory.");
                                         }
                                       }}
-                                      className="absolute bottom-2 right-2 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20"
+                                      className="absolute bottom-2 right-2 px-2.5 py-1 bg-[var(--neu-surface)] border border-[var(--neu-border)] text-emerald-500 rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-[var(--neu-shadow-btn)]"
                                     >
                                       <span>Add</span>
                                       <Send size={7} />
@@ -2224,7 +2215,7 @@ export default function ComplaintList({
                                       value={customerReview}
                                       onChange={(e) => setCustomerReview(e.target.value.toUpperCase())}
                                       placeholder="Type customer feedback or review here..."
-                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-semibold focus:ring-1 focus:ring-indigo-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm uppercase placeholder:normal-case"
+                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-xs font-semibold focus:ring-1 focus:ring-indigo-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case text-slate-800 dark:text-slate-100"
                                     />
                                     <button
                                       type="button"
@@ -2265,7 +2256,7 @@ export default function ComplaintList({
                                           toast.error("Failed to save review.");
                                         }
                                       }}
-                                      className="absolute bottom-2 right-2 px-2 py-1 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md shadow-indigo-500/20"
+                                      className="absolute bottom-2 right-2 px-2.5 py-1 bg-[var(--neu-surface)] border border-[var(--neu-border)] text-indigo-500 rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-[var(--neu-shadow-btn)]"
                                     >
                                       <span>Add</span>
                                       <Send size={7} />
@@ -2334,10 +2325,10 @@ export default function ComplaintList({
                                 setHideStatusRemarksBox(false);
                               }}
                               className={cn(
-                                "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                                "py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border",
                                 selectedComplaint.status.toLowerCase() === s.toLowerCase() 
-                                  ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-lg shadow-brand-accent/20" 
-                                  : "bg-white dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-white/10 hover:border-slate-300"
+                                  ? "border-[var(--neu-border)] bg-[var(--neu-surface)] text-emerald-500 shadow-[var(--neu-shadow-inset)]" 
+                                  : "border-[var(--neu-border)] bg-[var(--neu-surface)] text-slate-500 shadow-[var(--neu-shadow-btn)] hover:text-slate-700 dark:hover:text-slate-300 active:scale-95"
                               )}
                             >
                               {s}
@@ -2353,7 +2344,7 @@ export default function ComplaintList({
                               animate={{ height: 'auto', opacity: 1, marginTop: 8 }}
                               exit={{ height: 0, opacity: 0, marginTop: 0 }}
                               transition={{ type: "spring", stiffness: 200, damping: 22 }}
-                              className="overflow-hidden bg-purple-500/[0.04] dark:bg-purple-950/20 border border-purple-500/20 rounded-xl p-3.5 space-y-3 origin-top"
+                              className="overflow-hidden border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] rounded-xl p-3.5 space-y-3 origin-top"
                             >
                               <div className="flex items-center gap-2">
                                 <div className="p-1.5 bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400 rounded-lg">
@@ -2365,7 +2356,7 @@ export default function ComplaintList({
                                 type="datetime-local"
                                 value={scheduleModalDate}
                                 onChange={(e) => setScheduleModalDate(e.target.value)}
-                                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-purple-500 text-center"
+                                className="w-full px-3 py-2 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 outline-none text-center"
                               />
                               <p className="text-[8px] font-medium text-slate-400 dark:text-slate-500 text-center leading-normal">
                                 Scheduled records will remain visually submerged until 12 hours prior to dispatch.
@@ -2374,7 +2365,7 @@ export default function ComplaintList({
                                 <button
                                   type="button"
                                   onClick={() => setShowInlineSchedulePicker(false)}
-                                  className="flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-all cursor-pointer"
+                                  className="flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest border border-[var(--neu-border)] bg-[var(--neu-surface)] text-slate-500 dark:text-slate-400 rounded-xl shadow-[var(--neu-shadow-btn)] active:scale-95 transition-all cursor-pointer"
                                 >
                                   Cancel
                                 </button>
@@ -2413,7 +2404,7 @@ export default function ComplaintList({
                                     setShowInlineSchedulePicker(false);
                                     toast.success('Complaint Scheduled successfully.');
                                   }}
-                                  className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-md shadow-purple-500/20 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                  className="flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest border border-[var(--neu-border)] bg-[var(--neu-surface)] text-purple-600 dark:text-purple-400 rounded-xl shadow-[var(--neu-shadow-btn)] active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer"
                                 >
                                   <CheckCircle size={10} />
                                   <span>Done</span>
@@ -2426,7 +2417,7 @@ export default function ComplaintList({
                         {onDelete && (
                           <button
                             onClick={() => setComplaintToDelete(selectedComplaint.id)}
-                            className="mt-2 w-full py-1 text-[8px] sm:text-[9px] font-black text-rose-500 uppercase tracking-widest hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-all opacity-60 hover:opacity-100"
+                            className="mt-2 w-full py-2.5 text-[8px] sm:text-[9px] font-black text-rose-500 uppercase tracking-widest rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-btn)] hover:shadow-[var(--neu-shadow-inset)] active:scale-95 transition-all"
                           >
                             Purge Entry
                           </button>
@@ -2495,7 +2486,7 @@ function EditModal({
     }
   };
 
-  const inputClasses = "w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
+  const inputClasses = "w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-white/10 bg-[var(--neu-surface)] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1.5 tracking-widest ml-1";
 
   return (
@@ -2512,7 +2503,7 @@ function EditModal({
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-2xl bg-white dark:bg-slate-950 rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-white/10"
+        className="relative w-full max-w-2xl bg-[var(--neu-surface)] rounded-2xl shadow-[var(--neu-shadow-raised-lg)] overflow-hidden border border-slate-200 dark:border-white/10"
       >
         <form onSubmit={handleSave} className="p-8 space-y-6">
           <div className="flex justify-between items-center mb-4">
@@ -2623,8 +2614,8 @@ function EditModal({
                   className={cn(
                     "py-2 rounded-lg text-[9px] font-black uppercase tracking-widest border transition-all",
                     data.priority === p 
-                      ? "bg-slate-900 dark:bg-brand-accent text-white border-slate-900 dark:border-brand-accent shadow-md"
-                      : "bg-white dark:bg-slate-900 border-slate-100 dark:border-white/10 text-slate-400"
+                      ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] border-slate-900 dark:border-brand-accent shadow-[var(--neu-shadow-raised)]"
+                      : "bg-[var(--neu-surface)] border-slate-100 dark:border-white/10 text-slate-400"
                   )}
                 >
                   {p}
@@ -2654,7 +2645,7 @@ function EditModal({
             <button
               type="submit"
               disabled={isSaving}
-              className="flex-1 py-3.5 rounded-xl bg-slate-900 dark:bg-brand-accent text-white font-black uppercase tracking-widest text-[10px] shadow-lg hover:shadow-brand-accent/20 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex-1 py-3.5 rounded-xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] font-black uppercase tracking-widest text-[10px] shadow-[var(--neu-shadow-raised-lg)] hover:shadow-brand-accent/20 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isSaving ? 'Processing...' : (
                 <>

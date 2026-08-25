@@ -204,18 +204,18 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
     setScheduleDate('');
   };
 
-  const inputClasses = "w-full px-3.5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-slate-900/50 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-4 focus:ring-brand-accent/10 focus:border-brand-accent/50 focus:bg-white dark:focus:bg-slate-900 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-sm text-center [text-align-last:center] uppercase placeholder:normal-case text-xs sm:text-sm";
-  const labelClasses = "block text-[10px] sm:text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.15em] mb-1.5 text-center group-focus-within/field:text-brand-accent transition-colors duration-300";
+  const inputClasses = "w-full px-3.5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-[var(--neu-shadow-inset)] text-center [text-align-last:center] uppercase placeholder:normal-case text-xs sm:text-sm";
+  const labelClasses = "block text-[10px] sm:text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.15em] mb-1.5 text-center group-focus-within/field:text-emerald-500 transition-colors duration-300";
 
-  const compactInputClasses = "w-full pl-10 pr-4 py-3 text-sm font-black rounded-xl border-2 border-slate-300 dark:border-white/10 bg-white dark:bg-slate-950 text-slate-950 dark:text-white placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/15 focus:border-emerald-600 dark:focus:border-emerald-500 hover:border-slate-400 dark:hover:border-slate-700 transition-all duration-300 uppercase placeholder:normal-case shadow-sm h-12";
-  const compactLabelContainerClasses = "absolute left-3.5 -top-2 px-1.5 bg-white dark:bg-slate-950 text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-all duration-200 z-10 flex items-center gap-1.5";
+  const compactInputClasses = "w-full pl-10 pr-4 py-3 text-sm font-black rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 uppercase placeholder:normal-case shadow-[var(--neu-shadow-inset)] h-12";
+  const compactLabelContainerClasses = "absolute left-3.5 -top-2 px-1.5 bg-[var(--neu-surface)] text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-all duration-200 z-10 flex items-center gap-1.5";
 
   if (compact) {
     return (
       <div className="w-full">
         {/* Offline / Online Status Indicator - Only show if offline or has pending syncs */}
         {(isOffline || pendingCount > 0) && (
-          <div className="flex items-center justify-between px-3 py-1.5 mb-4 rounded-xl bg-slate-50/50 dark:bg-slate-900/20 border border-slate-100 dark:border-slate-900 text-[9px] font-black uppercase tracking-wider">
+          <div className="flex items-center justify-between px-3 py-1.5 mb-4 rounded-xl bg-[var(--neu-surface)] border border-[var(--neu-border)] text-[9px] font-black uppercase tracking-wider">
             {isOffline ? (
               <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
                 <WifiOff size={11} className="animate-pulse" />
@@ -262,8 +262,8 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
               
               {showClientList && customerUsername && filteredClients.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
-                  <div className="px-3 py-1.5 border-b border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-slate-950/50 text-center">
+                <div className="absolute left-0 right-0 z-50 mt-1 bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl shadow-[var(--neu-shadow-raised-lg)] overflow-hidden max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="px-3 py-1.5 border-b border-slate-200/40 dark:border-white/5 bg-slate-500/5 text-center">
                     <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">
                       Matches Found
                     </span>
@@ -273,12 +273,12 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                       key={`client-${client.id || idx}-${idx}`}
                       type="button"
                       onClick={() => handleSelectClient(client)}
-                      className="w-full px-4 py-2 flex flex-col items-center hover:bg-emerald-500 text-center group/item transition-all border-b border-slate-100 dark:border-white/10 last:border-0 cursor-pointer"
+                      className="w-full px-4 py-2 flex flex-col items-center hover:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-center group/item transition-all border-b border-slate-200/40 dark:border-white/5 last:border-0 cursor-pointer"
                     >
-                      <span className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-tight group-hover/item:text-white">{client.name}</span>
+                      <span className="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-tight group-hover/item:text-emerald-500 dark:group-hover/item:text-emerald-400">{client.name}</span>
                       <div className="flex items-center gap-1.5 mt-0.5 justify-center">
-                        <span className="text-[9px] font-bold text-emerald-500 group-hover/item:text-white/90 uppercase">@{client.username}</span>
-                        <span className="text-[8px] font-medium text-slate-400 group-hover/item:text-white/75 uppercase tracking-widest border-l border-slate-200 dark:border-white/10 pl-1.5">{client.area}</span>
+                        <span className="text-[9px] font-bold text-emerald-500 uppercase">@{client.username}</span>
+                        <span className="text-[8px] font-medium text-slate-400 group-hover/item:text-slate-300 uppercase tracking-widest border-l border-slate-200/40 dark:border-white/5 pl-1.5">@{client.area}</span>
                       </div>
                     </button>
                   ))}
@@ -472,7 +472,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           </div>
 
           {/* Schedule Ticket inline block */}
-          <div className="col-span-12 p-2.5 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/10 dark:bg-slate-900/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+          <div className="col-span-12 p-3 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -493,7 +493,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   value={scheduleDate}
                   onChange={(e) => setScheduleDate(e.target.value)}
                   required={isScheduled}
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 text-[10px] font-mono"
+                  className="w-full px-3 py-1.5 rounded-lg border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-[10px] font-mono"
                 />
               </div>
             )}
@@ -524,32 +524,29 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               type="submit"
               disabled={isLoading || isSyncing}
               className={cn(
-                "group relative w-full overflow-hidden rounded-xl p-px font-bold transition-all hover:scale-[1.005] active:scale-[0.995] disabled:opacity-50 disabled:hover:scale-100 shadow-sm",
-                isOffline ? "bg-amber-600" : "bg-gradient-to-r from-emerald-600 to-teal-500"
+                "w-full h-12 rounded-xl font-bold transition-all duration-200 active:scale-[0.995] disabled:opacity-50 flex items-center justify-center gap-2",
+                isOffline 
+                  ? "bg-amber-600 text-white shadow-[var(--neu-shadow-raised)] hover:bg-amber-500" 
+                  : "bg-[var(--neu-surface)] text-slate-800 dark:text-slate-100 border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] hover:shadow-[var(--neu-shadow-btn-hover)] active:shadow-[var(--neu-shadow-btn-active)] hover:text-emerald-500 dark:hover:text-emerald-400"
               )}
             >
-              <div className={cn(
-                "relative flex items-center justify-center gap-2 rounded-[11px] px-5 py-3 text-white transition-all",
-                isOffline ? "bg-amber-600 hover:bg-amber-500" : "bg-slate-950/10 group-hover:bg-slate-950/0 dark:bg-slate-950/30"
-              )}>
-                {isLoading || isSyncing ? (
-                  <>
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                    <span className="text-xs sm:text-sm uppercase tracking-wider font-bold">{isSyncing ? "Syncing..." : "Processing..."}</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xs sm:text-sm uppercase tracking-wider font-black">
-                      {isOffline ? "Store Locally (Offline)" : "Register Operations Log"}
-                    </span>
-                    {isOffline ? (
-                      <CloudOff size={15} />
-                    ) : (
-                      <Send size={15} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    )}
-                  </>
-                )}
-              </div>
+              {isLoading || isSyncing ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-400 border-t-slate-800 dark:border-white/20 dark:border-t-white" />
+                  <span className="text-xs sm:text-sm uppercase tracking-wider font-bold">{isSyncing ? "Syncing..." : "Processing..."}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs sm:text-sm uppercase tracking-wider font-black">
+                    {isOffline ? "Store Locally (Offline)" : "Register Operations Log"}
+                  </span>
+                  {isOffline ? (
+                    <CloudOff size={15} />
+                  ) : (
+                    <Send size={15} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  )}
+                </>
+              )}
             </button>
           </div>
         </form>
@@ -562,10 +559,10 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
       {/* Decorative background element */}
       <div className="absolute -inset-2 bg-gradient-to-r from-brand-accent/10 via-blue-500/10 to-brand-accent/10 rounded-[2.5rem] blur-2xl opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-500 pointer-events-none"></div>
       
-      <motion.div layout className="relative p-4 sm:p-6 md:p-8 bg-white dark:bg-slate-950 rounded-2xl md:rounded-[2rem] border border-slate-200/60 dark:border-white/10 shadow-xl dark:shadow-2xl overflow-hidden">
+      <motion.div layout className="relative p-4 sm:p-6 md:p-8 neu-card rounded-2xl md:rounded-[2rem] overflow-hidden border border-white/50 dark:border-white/5">
         {/* Offline / Online Status Indicator - Only show if offline or has pending syncs */}
         {(isOffline || pendingCount > 0) && (
-          <div className="flex items-center justify-between px-3.5 py-2 mb-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/60 dark:border-white/10 text-[9px] font-black uppercase tracking-wider">
+          <div className="flex items-center justify-between px-3.5 py-2 mb-4 rounded-xl bg-slate-500/5 border border-slate-200/40 dark:border-white/5 text-[9px] font-black uppercase tracking-wider">
             {isOffline ? (
               <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
                 <WifiOff size={12} className="animate-pulse" />
@@ -592,7 +589,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           <motion.div layout className="space-y-4 w-full md:w-1/2 landscape:w-1/2">
             <div className="flex items-center gap-3 justify-center">
               <div className="h-px w-6 bg-gradient-to-r from-transparent to-slate-200 dark:to-slate-800" />
-              <span className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-[0.3em]">Col 01 / Identity</span>
+              <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em]">Col 01 / Identity</span>
               <div className="h-px w-6 bg-gradient-to-l from-transparent to-slate-200 dark:to-slate-800" />
             </div>
 
@@ -630,8 +627,8 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                   />
                   
                   {showClientList && customerUsername && filteredClients.length > 0 && (
-                    <div className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                      <div className="p-2 border-b border-slate-100 dark:border-white/10 bg-slate-50 dark:bg-slate-950/50 text-center">
+                    <div className="absolute z-50 w-full mt-2 bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl shadow-[var(--neu-shadow-raised-lg)] overflow-hidden max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="p-2 border-b border-slate-200/40 dark:border-white/5 bg-slate-500/5 text-center">
                         <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                           Database Matches Found
                         </span>
@@ -641,12 +638,12 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                           key={`client-${client.id || idx}-${idx}`}
                           type="button"
                           onClick={() => handleSelectClient(client)}
-                          className="w-full px-4 py-2.5 flex flex-col items-center hover:bg-brand-accent text-center group/item transition-all border-b border-slate-100 dark:border-white/10 last:border-0 cursor-pointer"
+                          className="w-full px-4 py-2.5 flex flex-col items-center hover:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-center group/item transition-all border-b border-slate-200/40 dark:border-white/5 last:border-0 cursor-pointer"
                         >
-                          <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tight group-hover/item:text-white">{client.name}</span>
+                          <span className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-tight group-hover/item:text-emerald-500 dark:group-hover/item:text-emerald-400">{client.name}</span>
                           <div className="flex flex-wrap items-center gap-1.5 mt-1 justify-center">
-                            <span className="text-[10px] font-bold text-brand-accent group-hover/item:text-white/80 uppercase">@{client.username}</span>
-                            <span className="text-[9px] font-medium text-slate-400 group-hover/item:text-white/60 uppercase tracking-widest border-l border-slate-200 dark:border-white/10 group-hover/item:border-white/20 pl-1.5">{client.area}</span>
+                            <span className="text-[10px] font-bold text-emerald-500 group-hover/item:text-emerald-600 dark:group-hover/item:text-emerald-400 uppercase">@{client.username}</span>
+                            <span className="text-[9px] font-medium text-slate-400 group-hover/item:text-slate-300 uppercase tracking-widest border-l border-slate-200/40 dark:border-white/5 group-hover/item:border-emerald-500/25 pl-1.5">@{client.area}</span>
                             {client.pkgDetails && (
                               <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-900/40 px-1.5 py-0.5 rounded group-hover/item:text-white group-hover/item:bg-white/20 group-hover/item:border-transparent uppercase">
                                 {client.pkgDetails}
@@ -801,7 +798,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </motion.div>
 
             {/* Schedule block */}
-            <motion.div layout className="p-3.5 rounded-xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50/20 dark:bg-slate-900/10 space-y-2.5">
+            <motion.div layout className="p-3.5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 tracking-wider">Schedule Operation</span>
                 <label className="relative inline-flex items-center cursor-pointer select-none">
@@ -811,7 +808,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                     onChange={(e) => setIsScheduled(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-slate-200 dark:bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-accent"></div>
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
                 </label>
               </div>
 
@@ -850,32 +847,29 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 type="submit"
                 disabled={isLoading || isSyncing}
                 className={cn(
-                  "group relative w-full overflow-hidden rounded-2xl p-px font-bold transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:hover:scale-100 shadow-md",
-                  isOffline ? "bg-amber-600" : "bg-slate-950 dark:bg-brand-accent"
+                  "w-full h-14 rounded-2xl font-bold transition-all duration-200 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2.5",
+                  isOffline 
+                    ? "bg-amber-600 text-white shadow-[var(--neu-shadow-raised)] hover:bg-amber-500" 
+                    : "bg-[var(--neu-surface)] text-slate-800 dark:text-slate-100 border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] hover:shadow-[var(--neu-shadow-btn-hover)] active:shadow-[var(--neu-shadow-btn-active)] hover:text-emerald-500 dark:hover:text-emerald-400"
                 )}
               >
-                <div className={cn(
-                  "relative flex items-center justify-center gap-2.5 rounded-[15px] px-5 py-3.5 text-white transition-all group-hover:bg-transparent",
-                  isOffline ? "bg-amber-600 dark:bg-amber-700 hover:bg-amber-500" : "bg-slate-950 dark:bg-brand-accent dark:group-hover:bg-blue-700"
-                )}>
-                  {isLoading || isSyncing ? (
-                    <>
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                      <span className="text-[10px] uppercase tracking-[0.3em] font-black">{isSyncing ? "Syncing..." : "Processing..."}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-[10px] uppercase tracking-[0.3em] font-black">
-                        {isOffline ? "Store Locally (Offline)" : "Register Complaint"}
-                      </span>
-                      {isOffline ? (
-                        <CloudOff size={15} />
-                      ) : (
-                        <Send size={15} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                      )}
-                    </>
-                  )}
-                </div>
+                {isLoading || isSyncing ? (
+                  <>
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-400 border-t-slate-800 dark:border-white/20 dark:border-t-white" />
+                    <span className="text-[10px] uppercase tracking-[0.3em] font-black">{isSyncing ? "Syncing..." : "Processing..."}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[10px] uppercase tracking-[0.3em] font-black">
+                      {isOffline ? "Store Locally (Offline)" : "Register Complaint"}
+                    </span>
+                    {isOffline ? (
+                      <CloudOff size={15} />
+                    ) : (
+                      <Send size={15} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    )}
+                  </>
+                )}
               </button>
             </motion.div>
           </motion.div>

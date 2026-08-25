@@ -180,7 +180,7 @@ export default function MemberPanel({
     }
   };
 
-  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400";
+  const inputClasses = "w-full px-4 py-3 rounded-lg border border-slate-200 dark:border-white/10 bg-[var(--neu-surface)] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-400 mb-2 tracking-widest ml-1";
 
   return (
@@ -206,9 +206,9 @@ export default function MemberPanel({
               onClick={() => handleTileClick(stat.filter)}
               title={stat.tooltip}
               className={cn(
-                "p-3 sm:p-6 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-xl sm:rounded-2xl border-l-4 shadow-xl shadow-black/5 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/60 border-slate-200/60 dark:border-slate-800/60 flex flex-col justify-between transition-all group cursor-pointer relative active:scale-95",
+                "p-3 sm:p-6 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-xl sm:rounded-2xl border-l-4 shadow-[var(--neu-shadow-raised-lg)] shadow-black/5 dark:shadow-black/50 hover:shadow-[var(--neu-shadow-raised-lg)] hover:shadow-black/10 dark:hover:shadow-black/60 border-slate-200/60 dark:border-slate-800/60 flex flex-col justify-between transition-all group cursor-pointer relative active:scale-95",
                 stat.color,
-                isTileActive ? "ring-2 ring-brand-accent scale-[1.04] z-10 shadow-2xl shadow-brand-accent/20 dark:shadow-brand-accent/30" : ""
+                isTileActive ? "ring-2 ring-brand-accent scale-[1.04] z-10 shadow-[var(--neu-shadow-raised-lg)] shadow-brand-accent/20 dark:shadow-brand-accent/30" : ""
               )}
             >
             <div className="flex justify-between items-start mb-2 sm:mb-4">
@@ -220,7 +220,7 @@ export default function MemberPanel({
                     stat.textColor === 'text-rose-500' ? "bg-rose-500/10" :
                     stat.textColor === 'text-blue-600' ? "bg-blue-600/10" :
                     stat.textColor === 'text-emerald-500' ? "bg-emerald-500/10" :
-                    "bg-slate-100 dark:bg-slate-900"
+                    "bg-[var(--neu-surface)]"
                   )}
                   animate={stat.label === 'Finalized' && typeof stat.value === 'number' && stat.value > 0 ? {
                     scale: [1, 1.2, 1],
@@ -300,13 +300,13 @@ export default function MemberPanel({
               }}
               className="grid grid-cols-1 lg:grid-cols-3 gap-6 origin-top"
             >
-              <div className="h-[350px] sm:h-[380px] shadow-sm rounded-2xl">
+              <div className="h-[350px] sm:h-[380px] shadow-[var(--neu-shadow-raised-sm)] rounded-2xl">
                 <DistributionList complaints={complaints} chartType="area" />
               </div>
-              <div className="h-[350px] sm:h-[380px] shadow-sm rounded-2xl">
+              <div className="h-[350px] sm:h-[380px] shadow-[var(--neu-shadow-raised-sm)] rounded-2xl">
                 <RealTimeMonitor complaints={complaints} />
               </div>
-              <div className="h-[350px] sm:h-[380px] shadow-sm rounded-2xl">
+              <div className="h-[350px] sm:h-[380px] shadow-[var(--neu-shadow-raised-sm)] rounded-2xl">
                 <DistributionList complaints={complaints} chartType="category" />
               </div>
             </motion.div>
@@ -474,14 +474,14 @@ export default function MemberPanel({
                       <button
                         type="submit"
                         disabled={isUpdating}
-                        className="px-8 py-3.5 rounded-xl bg-slate-900 dark:bg-brand-accent text-white font-black uppercase tracking-widest text-[10px] shadow-lg hover:shadow-brand-accent/20 transition-all active:scale-[0.98] disabled:opacity-50"
+                        className="px-8 py-3.5 rounded-xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] font-black uppercase tracking-widest text-[10px] shadow-[var(--neu-shadow-raised-lg)] hover:shadow-brand-accent/20 transition-all active:scale-[0.98] disabled:opacity-50"
                       >
                         {isUpdating ? 'Synchronizing Credentials...' : 'Confirm Identity Update'}
                       </button>
                     </div>
 
                     <div className="space-y-6">
-                      <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-white/10">
+                      <div className="bg-[var(--neu-surface)] p-8 rounded-2xl border border-slate-200 dark:border-white/10">
                         <div className="flex items-center gap-3 mb-6">
                           <Activity className="text-amber-500" size={20} />
                           <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Audio Matrix Hub</h4>
@@ -492,7 +492,7 @@ export default function MemberPanel({
                             <button
                               type="button"
                               onClick={onAuthorizeAlerts}
-                              className="w-full py-3 rounded-xl bg-amber-500 text-white font-black uppercase tracking-widest text-[9px] shadow-lg"
+                              className="w-full py-3 rounded-xl bg-amber-500 text-white font-black uppercase tracking-widest text-[9px] shadow-[var(--neu-shadow-raised-lg)]"
                             >
                               Unlock Speaker Matrix
                             </button>
@@ -524,7 +524,7 @@ export default function MemberPanel({
                         </div>
                       </div>
 
-                      <div className="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border border-slate-200 dark:border-white/10">
+                      <div className="bg-[var(--neu-surface)] p-8 rounded-2xl border border-slate-200 dark:border-white/10">
                         <div className="flex items-center gap-3 mb-6">
                           <Mic className="text-blue-500" size={20} />
                           <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Voice Input Protocol</h4>
@@ -535,7 +535,7 @@ export default function MemberPanel({
                             <button
                               type="button"
                               onClick={onAuthorizeMic}
-                              className="w-full py-3 rounded-xl bg-blue-600 text-white font-black uppercase tracking-widest text-[9px] shadow-lg"
+                              className="w-full py-3 rounded-xl bg-blue-600 text-white font-black uppercase tracking-widest text-[9px] shadow-[var(--neu-shadow-raised-lg)]"
                             >
                               Authorize Mic Capture
                             </button>
@@ -554,7 +554,7 @@ export default function MemberPanel({
                                   {isMicMuted ? 'Active' : 'Mute'}
                                 </button>
                               </div>
-                              <div className="mt-4 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
+                              <div className="mt-4 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)]">
                                 <MicVisualizer isMuted={isMicMuted} isAuthorized={micAuthorized} />
                               </div>
                             </>
@@ -571,7 +571,7 @@ export default function MemberPanel({
             <section className="mt-12 pt-12 border-t border-slate-100 dark:border-white/10 pb-12">
               <button
                 onClick={onLogout}
-                className="w-full max-w-sm mx-auto py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-[11px] shadow-lg flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
+                className="w-full max-w-sm mx-auto py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
               >
                 <LogOut size={16} />
                 Sign Out

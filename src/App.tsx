@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy, ComponentType } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { getTabFromPathname, getPathnameFromTab } from './lib/routingUtils';
 import { safeLocalStorage } from './lib/safeLocalStorage';
@@ -12,7 +12,6 @@ import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
 import { safeStringify, processScheduledComplaints } from './lib/utils';
-import FiberLoading from './components/FiberLoading';
 import RouteLoadingFallback from './components/RouteLoadingFallback';
 import ServiceMonitor from './components/ServiceMonitor';
 import GlobalProgressLoader from './components/GlobalProgressLoader';
@@ -20,9 +19,29 @@ import { Clock } from 'lucide-react';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
-const LoginForm = lazy(() => import('./components/LoginForm'));
-const AdminPanel = lazy(() => import('./components/AdminPanel'));
-const MemberPanel = lazy(() => import('./components/MemberPanel'));
+function lazyWithRetry<T extends ComponentType<any>>(
+  importFn: () => Promise<{ default: T }>
+) {
+  return lazy(async () => {
+    try {
+      return await importFn();
+    } catch (error) {
+      console.warn('Dynamic module import failed, attempting fallback reload...', error);
+      // Wait 300ms and retry once
+      await new Promise(res => setTimeout(res, 300));
+      try {
+        return await importFn();
+      } catch (retryErr) {
+        console.error('Dynamic module reload failed:', retryErr);
+        throw retryErr;
+      }
+    }
+  });
+}
+
+const LoginForm = lazyWithRetry(() => import('./components/LoginForm'));
+const AdminPanel = lazyWithRetry(() => import('./components/AdminPanel'));
+const MemberPanel = lazyWithRetry(() => import('./components/MemberPanel'));
 
 export default function App() {
   const isOnline = useOnlineStatus();
@@ -82,21 +101,42 @@ export default function App() {
     }
   };
 
-  const [pbAuthReady, setPbAuthReady] = useState(false);
-  const [pbUser, setPbUser] = useState<any>(null);
+  const [pbAuthReady, setPbAuthReady] = useState(true);
+  const [pbUser, setPbUser] = useState<any>({ uid: 'local_anon_user' });
 
-  const [user, setUser] = useState<UserProfile | null>(() => {
+  const [lineCodeReady, setLineCodeReady] = useState(true);
+
+  const [userState, _setUser] = useState<UserProfile | null>(() => {
     try {
       const savedUser = safeLocalStorage.getItem('complaint_app_user');
       if (savedUser) {
-        return JSON.parse(savedUser);
+        const parsed = JSON.parse(savedUser);
+        pocketbaseService.setActiveLineCode(parsed?.lineCode);
+        return parsed;
       }
+      pocketbaseService.setActiveLineCode(undefined);
       return null;
     } catch (e) {
       console.error("Failed to parse saved user:", e);
+      pocketbaseService.setActiveLineCode(undefined);
       return null;
     }
   });
+
+  const user = userState;
+  const setUser = (newUser: UserProfile | null | ((prev: UserProfile | null) => UserProfile | null)) => {
+    if (typeof newUser === 'function') {
+      _setUser((prev: UserProfile | null) => {
+        const resolved = newUser(prev);
+        pocketbaseService.setActiveLineCode(resolved?.lineCode);
+        return resolved;
+      });
+    } else {
+      pocketbaseService.setActiveLineCode(newUser?.lineCode);
+      _setUser(newUser);
+    }
+    setLineCodeReady(true);
+  };
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -112,7 +152,8 @@ export default function App() {
   }, [location.pathname, navigate]);
   const [complaints, setComplaints] = useState<Complaint[]>(() => {
     try {
-      const cached = localStorage.getItem('gts_cache_v3_complaints');
+      const activeDealerId = userState?.role === 'dealer' || (userState?.dealerId && userState?.dealerId !== 'main') ? (userState?.dealerId !== 'main' ? userState?.dealerId : userState?.uid) : 'all';
+      const cached = localStorage.getItem(`gts_cache_v3_complaints_${activeDealerId || 'all'}_${userState?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_complaints_all_${userState?.lineCode || 'nolc'}`);
       return cached ? JSON.parse(cached) : [];
     } catch (_) {
       return [];
@@ -123,7 +164,8 @@ export default function App() {
   }, [complaints]);
   const [users, setUsers] = useState<UserProfile[]>(() => {
     try {
-      const cached = localStorage.getItem('gts_cache_v3_users');
+      const activeDealerId = userState?.role === 'dealer' || (userState?.dealerId && userState?.dealerId !== 'main') ? (userState?.dealerId !== 'main' ? userState?.dealerId : userState?.uid) : 'all';
+      const cached = localStorage.getItem(`gts_cache_v3_users_${activeDealerId || 'all'}_${userState?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_users_all_${userState?.lineCode || 'nolc'}`);
       return cached ? JSON.parse(cached) : [];
     } catch (_) {
       return [];
@@ -197,7 +239,7 @@ export default function App() {
     }
     return { ...DEFAULT_BRANDING, id: 'global', updatedAt: Date.now(), updatedBy: 'system' } as BrandingConfig;
   });
-  const [isLoading, setIsLoading] = useState(true); // Default to true until auth/init is done
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [alertAuthorized, setAlertAuthorized] = useState(() => {
@@ -604,71 +646,52 @@ export default function App() {
     const init = async (userAuth: any) => {
       console.log('App: Initializing Data Registry...');
       
-      // Load Google Sheets config from Firestore to local storage first
-      try {
-        await Promise.race([
-          googleSheetsService.loadConfigFromFirestore(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error("Google Sheets config loading timeout")), 2000))
-        ]).catch(e => console.warn(e));
-      } catch (e) {
+      // Load Google Sheets config from Firestore in background
+      googleSheetsService.loadConfigFromFirestore().catch(e => {
         console.warn("Could not retrieve shared Google Sheets configuration:", e);
-      }
-      
-      // Test database connection
-      try {
-        pocketbaseService.testConnection();
-      } catch (e) {}
+      });
       
       try {
-        // Fetch all users with safety timeout fallback
-        const initialUsers = await Promise.race([
-          pocketbaseService.getUsers(),
-          new Promise<UserProfile[]>((resolve) => setTimeout(() => {
-            console.warn("Users loading timeout. Loading fallback users list.");
-            resolve([]);
-          }, 2000))
-        ]).catch(() => [] as UserProfile[]);
+        // Fetch all users in background with safety timeout fallback
+        pocketbaseService.getUsers().then((initialUsers) => {
+          if (initialUsers && initialUsers.length > 0) {
+            const currentUsers = [...initialUsers];
+            setUsers(currentUsers);
 
-        const currentUsers = [...initialUsers];
-        setUsers(currentUsers);
-
-        // Re-validate current session identity against the fresh registry
-        if (user && currentUsers.length > 0) {
-          const freshUser = currentUsers.find(u => u.username.toLowerCase() === user.username.toLowerCase() || u.uid === user.uid);
-          
-          if (freshUser) {
-            if (freshUser.status === 'blocked') {
-              console.warn("Auth Security: Revoking blocked identity session.");
-              setUser(null);
-              safeLocalStorage.removeItem('complaint_app_user');
-              toast.error("Access REVOKED: Your account has been blocked by an administrator.");
-            } else if (freshUser.status === 'pending') {
-              console.warn("Auth Security: Restricted pending identity session.");
-              setUser(null);
-              safeLocalStorage.removeItem('complaint_app_user');
-              toast.warning("Access RESTRICTED: Your request is still pending approval.");
-            } else {
-               // Prevent overwriting profile picture if freshUser doesn't have it but we do locally
-               const mergedUser = {
-                 ...user,
-                 ...freshUser,
-                 profilePicture: freshUser.profilePicture || user.profilePicture
-               };
-               if (safeStringify(mergedUser) !== safeStringify(user)) {
-                 setUser(mergedUser);
-                 safeLocalStorage.setItem('complaint_app_user', safeStringify(mergedUser));
-               }
+            // Re-validate current session identity against the fresh registry
+            if (user) {
+              const freshUser = currentUsers.find(u => u.username.toLowerCase() === user.username.toLowerCase() || u.uid === user.uid);
+              
+              if (freshUser) {
+                if (freshUser.status === 'blocked') {
+                  console.warn("Auth Security: Revoking blocked identity session.");
+                  setUser(null);
+                  safeLocalStorage.removeItem('complaint_app_user');
+                  toast.error("Access REVOKED: Your account has been blocked by an administrator.");
+                } else if (freshUser.status === 'pending') {
+                  console.warn("Auth Security: Restricted pending identity session.");
+                  setUser(null);
+                  safeLocalStorage.removeItem('complaint_app_user');
+                  toast.warning("Access RESTRICTED: Your request is still pending approval.");
+                } else {
+                  const mergedUser = {
+                    ...user,
+                    ...freshUser,
+                    profilePicture: freshUser.profilePicture || user.profilePicture
+                  };
+                  if (safeStringify(mergedUser) !== safeStringify(user)) {
+                    setUser(mergedUser);
+                    safeLocalStorage.setItem('complaint_app_user', safeStringify(mergedUser));
+                  }
+                }
+              }
             }
           }
-        }
+        }).catch(err => {
+          console.warn("Background user fetch warning:", err);
+        });
       } catch (err) {
         console.error("Initialization error:", err instanceof Error ? err.message : String(err));
-        setError("System initialization failed. Some data may be temporarily unavailable.");
-      } finally {
-        // High-performance loading optimization
-        setTimeout(() => {
-          setIsLoading(false);
-        }, 100);
       }
     };
 
@@ -1031,8 +1054,9 @@ export default function App() {
           setComplaints(prev => {
             if (prev.some(c => c.id === complaint.id)) return prev;
 
+            const isSelf = authorName === user.username || (user.fullName && authorName === user.fullName);
             // Only notify if not authored by self
-            if (authorName !== user.username) {
+            if (!isSelf) {
               // Sound Alert
               if (alertAuthorized && !isAudioMuted) {
                 notificationAudio.currentTime = 0;
@@ -1068,6 +1092,81 @@ export default function App() {
           });
         }
       })
+      .on('broadcast', { event: 'complaint_updated' }, (payload: any) => {
+        console.log('[BROADCAST] Live complaint update received:', payload);
+        const { complaint, authorName, dealerId } = payload.payload;
+
+        // Check if the complaint belongs to this tenant/dealer
+        const currentTenantId = pocketbaseService.getReadTenantId(user);
+        const complaintTenantId = dealerId || 'main';
+
+        if (!currentTenantId || currentTenantId === 'all' || currentTenantId === complaintTenantId) {
+          setComplaints(prev => {
+            const isSelf = authorName === user.username || (user.fullName && authorName === user.fullName);
+            // Only alert if not authored by self
+            if (!isSelf) {
+              // Sound Alert
+              if (alertAuthorized && !isAudioMuted) {
+                notificationAudio.currentTime = 0;
+                notificationAudio.volume = 0.9;
+                notificationAudio.play().catch(e => console.warn("Audio blocked:", e));
+                
+                // Vibration
+                if ("vibrate" in navigator) {
+                  navigator.vibrate([300, 100, 300]);
+                }
+              }
+
+              // In-app Toast
+              toast.info(`🔄 COMPLAINT STATUS UPDATED`, {
+                description: `Complaint #${complaint.id} (${complaint.customerName || 'Customer'}) status updated to ${complaint.status} - By ${authorName}`,
+                duration: 8000,
+                icon: '🔄',
+              });
+
+              // Background/Browser Notification
+              if ("Notification" in window && Notification.permission === "granted") {
+                const options = {
+                  body: `Complaint #${complaint.id} (${complaint.customerName || 'Customer'}) updated to ${complaint.status}\nBy: ${authorName}`,
+                  icon: '/vite.svg',
+                  badge: '/vite.svg',
+                  vibrate: [200, 100, 200]
+                };
+                new Notification(`GTS: COMPLAINT UPDATED`, options);
+              }
+            }
+
+            const exists = prev.some(c => c.id === complaint.id);
+            if (!exists) {
+              return [complaint, ...prev];
+            }
+            return prev.map(c => c.id === complaint.id ? { ...c, ...complaint } : c);
+          });
+        }
+      })
+      .on('broadcast', { event: 'complaint_deleted' }, (payload: any) => {
+        console.log('[BROADCAST] Live complaint deletion received:', payload);
+        const { complaintId, authorName, dealerId } = payload.payload;
+
+        // Check if the complaint belongs to this tenant/dealer
+        const currentTenantId = pocketbaseService.getReadTenantId(user);
+        const complaintTenantId = dealerId || 'main';
+
+        if (!currentTenantId || currentTenantId === 'all' || currentTenantId === complaintTenantId) {
+          setComplaints(prev => {
+            const target = prev.find(c => c.id === complaintId);
+            const isSelf = authorName === user.username || (user.fullName && authorName === user.fullName);
+            if (!isSelf) {
+              toast.info(`🗑️ COMPLAINT DELETED`, {
+                description: `Complaint #${complaintId} ${target?.customerName ? `(${target.customerName})` : ''} was deleted by ${authorName}`,
+                duration: 6000,
+                icon: '🗑️',
+              });
+            }
+            return prev.filter(c => c.id !== complaintId);
+          });
+        }
+      })
       .subscribe();
 
     return () => {
@@ -1076,7 +1175,7 @@ export default function App() {
         supabase.removeChannel(channel);
       } catch (e) {}
     };
-  }, [user?.uid, user?.username, user?.role, user?.dealerId, pbAuthReady, alertAuthorized, isAudioMuted, notificationAudio]);
+  }, [user?.uid, user?.username, user?.fullName, user?.role, user?.dealerId, pbAuthReady, alertAuthorized, isAudioMuted, notificationAudio]);
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
@@ -1390,6 +1489,8 @@ export default function App() {
               role: supabaseUser.role || 'member',
               fullName: supabaseUser.full_name || supabaseUser.name || '',
               dealerId: supabaseUser.dealer_id || '',
+              lineCode: supabaseUser.line_code || '',
+              companyName: supabaseUser.company_name || '',
               createdAt: supabaseUser.created_at || Date.now(),
               email: supabaseUser.email || '',
               status: 'active'
@@ -1852,8 +1953,9 @@ export default function App() {
         googleSheetsService.syncQueue.add({ tabName: 'User Register', data: newUser });
       }
     } catch (e) {
-      console.error(e instanceof Error ? e.message : String(e));
-      toast.error('Failed to create account.');
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(msg);
+      toast.error(`Failed to create account: ${msg}`);
       throw e;
     }
   };
@@ -2095,17 +2197,13 @@ export default function App() {
         <Suspense fallback={<RouteLoadingFallback />}>
           <AnimatePresence mode="wait">
             <motion.div
-              key={!pbAuthReady ? 'auth-loading' : !user ? 'login-view' : user.status === 'pending' ? 'pending-view' : `app-view-${user.uid || user.username || user.role}`}
+              key={!user ? 'login-view' : user.status === 'pending' ? 'pending-view' : `app-view-${user.uid || user.username || user.role}`}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
             >
-              {!pbAuthReady ? (
-                <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950">
-                  <FiberLoading fullScreen />
-                </div>
-              ) : !user ? (
+              {!user ? (
                 <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
               ) : user.status === 'pending' ? (
                 <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
@@ -2126,68 +2224,70 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-              ) : (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor') ? (
-                <AdminPanel
-                  complaints={processedComplaints}
-                  users={users}
-                  currentUser={user}
-                  isSuspended={isSuspended}
-                  onDeleteComplaint={handleDeleteComplaint}
-                  onUpdateComplaintStatus={handleUpdateComplaintStatus}
-                  onUpdateRemarks={handleUpdateRemarks}
-                  onUpdateComplaint={handleUpdateComplaint}
-                  onCreateUser={handleCreateUser}
-                  onDeleteUser={handleDeleteUser}
-                  onUpdateUser={handleUpdateUser}
-                  onRegisterComplaint={handleRegisterComplaint}
-                  onChangeAdminPass={handleChangeAdminPass}
-                  appConfig={appConfig}
-                  onUpdateConfig={handleUpdateConfig}
-                  onUpdateUserStatus={handleUpdateUserStatus}
-                  isLoading={isLoading}
-                  alertAuthorized={alertAuthorized}
-                  onAuthorizeAlerts={handleAuthorizeAlerts}
-                  onSoundTest={handleSoundTest}
-                  isAudioMuted={isAudioMuted}
-                  onToggleAudio={handleToggleAudio}
-                  onLogout={handleLogout}
-                  micAuthorized={micAuthorized}
-                  onAuthorizeMic={handleAuthorizeMic}
-                  isMicMuted={isMicMuted}
-                  onToggleMic={handleToggleMic}
-                  branding={branding}
-                  onUpdateBranding={handleUpdateBranding}
-                  activeTab={activeTab}
-                  onNavigate={handleNavigate}
-                />
-              ) : (
-                <MemberPanel
-                  complaints={processedComplaints}
-                  users={users}
-                  currentUser={user}
-                  isSuspended={isSuspended}
-                  onRegisterComplaint={handleRegisterComplaint}
-                  onUpdateComplaintStatus={handleUpdateComplaintStatus}
-                  onUpdateRemarks={handleUpdateRemarks}
-                  onUpdateComplaint={handleUpdateComplaint}
-                  onUpdateUser={handleUpdateUser}
-                  appConfig={appConfig}
-                  isLoading={isLoading}
-                  alertAuthorized={alertAuthorized}
-                  onAuthorizeAlerts={handleAuthorizeAlerts}
-                  onSoundTest={handleSoundTest}
-                  isAudioMuted={isAudioMuted}
-                  onToggleAudio={handleToggleAudio}
-                  onLogout={handleLogout}
-                  micAuthorized={micAuthorized}
-                  onAuthorizeMic={handleAuthorizeMic}
-                  isMicMuted={isMicMuted}
-                  onToggleMic={handleToggleMic}
-                  branding={branding}
-                  activeTab={activeTab}
-                  onNavigate={handleNavigate}
-                />
-              )}
+              ) : lineCodeReady ? (
+                (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor') ? (
+                  <AdminPanel
+                    complaints={processedComplaints}
+                    users={users}
+                    currentUser={user}
+                    isSuspended={isSuspended}
+                    onDeleteComplaint={handleDeleteComplaint}
+                    onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                    onUpdateRemarks={handleUpdateRemarks}
+                    onUpdateComplaint={handleUpdateComplaint}
+                    onCreateUser={handleCreateUser}
+                    onDeleteUser={handleDeleteUser}
+                    onUpdateUser={handleUpdateUser}
+                    onRegisterComplaint={handleRegisterComplaint}
+                    onChangeAdminPass={handleChangeAdminPass}
+                    appConfig={appConfig}
+                    onUpdateConfig={handleUpdateConfig}
+                    onUpdateUserStatus={handleUpdateUserStatus}
+                    isLoading={isLoading}
+                    alertAuthorized={alertAuthorized}
+                    onAuthorizeAlerts={handleAuthorizeAlerts}
+                    onSoundTest={handleSoundTest}
+                    isAudioMuted={isAudioMuted}
+                    onToggleAudio={handleToggleAudio}
+                    onLogout={handleLogout}
+                    micAuthorized={micAuthorized}
+                    onAuthorizeMic={handleAuthorizeMic}
+                    isMicMuted={isMicMuted}
+                    onToggleMic={handleToggleMic}
+                    branding={branding}
+                    onUpdateBranding={handleUpdateBranding}
+                    activeTab={activeTab}
+                    onNavigate={handleNavigate}
+                  />
+                ) : (
+                  <MemberPanel
+                    complaints={processedComplaints}
+                    users={users}
+                    currentUser={user}
+                    isSuspended={isSuspended}
+                    onRegisterComplaint={handleRegisterComplaint}
+                    onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                    onUpdateRemarks={handleUpdateRemarks}
+                    onUpdateComplaint={handleUpdateComplaint}
+                    onUpdateUser={handleUpdateUser}
+                    appConfig={appConfig}
+                    isLoading={isLoading}
+                    alertAuthorized={alertAuthorized}
+                    onAuthorizeAlerts={handleAuthorizeAlerts}
+                    onSoundTest={handleSoundTest}
+                    isAudioMuted={isAudioMuted}
+                    onToggleAudio={handleToggleAudio}
+                    onLogout={handleLogout}
+                    micAuthorized={micAuthorized}
+                    onAuthorizeMic={handleAuthorizeMic}
+                    isMicMuted={isMicMuted}
+                    onToggleMic={handleToggleMic}
+                    branding={branding}
+                    activeTab={activeTab}
+                    onNavigate={handleNavigate}
+                  />
+                )
+              ) : null}
             </motion.div>
           </AnimatePresence>
         </Suspense>

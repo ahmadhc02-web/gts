@@ -1,6 +1,6 @@
 {
   "name": "Green Tech Services ISP Management",
   "description": "ISP Service Management Dashboard with real-time network latency monitoring, ISP diagnostics, and customer complaint tracking.",
-  "requestFramePermissions": ["microphone", "screen-wake-lock", "geolocation"],
+  "requestFramePermissions": ["microphone", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

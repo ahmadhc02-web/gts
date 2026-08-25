@@ -502,7 +502,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="relative w-full max-w-sm bg-white dark:bg-slate-950 rounded-[2rem] shadow-2xl border border-rose-500/20 overflow-hidden"
+                className="relative w-full max-w-sm bg-[var(--neu-surface)] rounded-[2rem] shadow-[var(--neu-shadow-raised-lg)] border border-rose-500/20 overflow-hidden"
               >
                 <div className="p-8 text-center space-y-6">
                   <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto text-rose-500">
@@ -517,7 +517,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   <div className="flex flex-col gap-2">
                     <button
                       onClick={() => handleRemoveLocation(purgeTarget)}
-                      className="w-full py-4 rounded-2xl bg-rose-500 text-white font-black uppercase tracking-widest text-[11px] shadow-lg shadow-rose-500/20 hover:bg-rose-600 transition-all active:scale-95"
+                      className="w-full py-4 rounded-2xl bg-rose-500 text-white font-black uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] shadow-rose-500/20 hover:bg-rose-600 transition-all active:scale-95"
                     >
                       Confirm Purge
                     </button>
@@ -538,10 +538,10 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
           initial={{ y: 50, opacity: 0, scale: 0.95 }}
           animate={{ y: 0, opacity: 1, scale: 1 }}
           exit={{ y: 50, opacity: 0, scale: 0.95 }}
-          className="relative w-full max-w-7xl h-full md:h-[85vh] bg-white dark:bg-slate-950 rounded-3xl md:rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/20 flex flex-col"
+          className="relative w-full max-w-7xl h-full md:h-[85vh] bg-[var(--neu-surface)] rounded-3xl md:rounded-[2.5rem] shadow-[var(--neu-shadow-raised-lg)] overflow-hidden border border-white/20 flex flex-col"
         >
           <div className="absolute top-0 inset-x-0 p-3 md:p-6 flex items-center justify-between z-10 pointer-events-none">
-            <div className="flex flex-col gap-1.5 md:gap-2 pointer-events-auto bg-slate-950/40 backdrop-blur-md border border-white/10 p-2 md:p-3 rounded-xl md:rounded-3xl shadow-2xl min-w-[160px] md:min-w-[200px]">
+            <div className="flex flex-col gap-1.5 md:gap-2 pointer-events-auto bg-slate-950/40 backdrop-blur-md border border-white/10 p-2 md:p-3 rounded-xl md:rounded-3xl shadow-[var(--neu-shadow-raised-lg)] min-w-[160px] md:min-w-[200px]">
               <div className="flex items-center gap-2 md:gap-3">
                 <div className="w-6 h-6 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-white/10 flex items-center justify-center text-white">
                   <MapIcon size={12} className="md:w-5 md:h-5" />
@@ -610,9 +610,9 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                                 handleZoomToUser(c.username || c.id);
                                 setMapSearchText('');
                               }}
-                              className="w-full flex items-center gap-4 p-3 rounded-[1.25rem] bg-slate-50 hover:bg-emerald-600 group transition-all text-left border border-transparent hover:border-emerald-400/50 shadow-sm"
+                              className="w-full flex items-center gap-4 p-3 rounded-[1.25rem] bg-slate-50 hover:bg-emerald-600 group transition-all text-left border border-transparent hover:border-emerald-400/50 shadow-[var(--neu-shadow-raised-sm)]"
                             >
-                              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-emerald-600 font-black text-sm group-hover:bg-white group-hover:scale-110 transition-all shadow-md">
+                              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-emerald-600 font-black text-sm group-hover:bg-white group-hover:scale-110 transition-all shadow-[var(--neu-shadow-raised)]">
                                 {(c.name || 'U').charAt(0)}
                               </div>
                               <div className="flex-1 min-w-0">
@@ -685,7 +685,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
           </div>
 
           {/* Leaflet Map Section */}
-          <div className="flex-1 relative z-0 bg-slate-100 dark:bg-slate-900">
+          <div className="flex-1 relative z-0 bg-[var(--neu-surface)]">
             <MapContainer
               center={SADIQABAD_CENTER}
               zoom={INITIAL_ZOOM}
@@ -787,7 +787,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                           🌐 {target.label || target.domain}
                         </span>
                         <span className={cn(
-                          "text-[9px] font-mono font-bold tracking-widest px-1.5 py-0.5 rounded mt-0.5 border shadow-sm",
+                          "text-[9px] font-mono font-bold tracking-widest px-1.5 py-0.5 rounded mt-0.5 border shadow-[var(--neu-shadow-raised-sm)]",
                           status === 'excellent' && "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/10",
                           status === 'good' && "bg-green-50 dark:bg-green-950/20 text-green-600 dark:text-green-400 border-green-100 dark:border-green-905/10",
                           status === 'fair' && "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-900/10",
@@ -802,7 +802,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     <Popup className="custom-popup">
                       <div className="p-2 min-w-[200px]">
                         <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-white/10">
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xs shadow-sm bg-indigo-500 uppercase tracking-widest">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-xs shadow-[var(--neu-shadow-raised-sm)] bg-indigo-500 uppercase tracking-widest">
                             Node
                           </div>
                           <div>
@@ -899,7 +899,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 >
                   <div className="p-2 min-w-[180px]">
                     <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-sm bg-emerald-500">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-[var(--neu-shadow-raised-sm)] bg-emerald-500">
                         {selectedPopupClient.name.charAt(0)}
                       </div>
                       <div>
@@ -969,7 +969,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                           autoFocus
                           list="users-list"
                           placeholder="Type User ID or Name..."
-                          className="w-full text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded p-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                          className="w-full text-xs border border-slate-200 dark:border-slate-700 bg-[var(--neu-surface)] text-slate-900 dark:text-white rounded p-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                           value={selectedClientId}
                           onChange={(e) => setSelectedClientId(e.target.value)}
                         />
@@ -996,7 +996,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
 
             {/* Tactical Control Matrix */}
             <div className="absolute bottom-6 right-6 z-[1000] flex flex-col gap-3 items-end">
-              <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2 bg-slate-950/40 backdrop-blur-xl p-1.5 sm:p-2 rounded-[1.5rem] sm:rounded-[2rem] border border-white/10 shadow-2xl">
+              <div className="flex flex-col sm:grid sm:grid-cols-2 gap-2 bg-slate-950/40 backdrop-blur-xl p-1.5 sm:p-2 rounded-[1.5rem] sm:rounded-[2rem] border border-white/10 shadow-[var(--neu-shadow-raised-lg)]">
                 {/* Mode: Roadmap */}
                 <button 
                   onClick={() => setMapType('roadmap')}
@@ -1087,7 +1087,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 {measurePoints.length > 0 && (
                   <button 
                     onClick={() => setMeasurePoints([])}
-                    className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-rose-500 text-white text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] shadow-xl hover:scale-105 active:scale-95 transition-all"
+                    className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-3 rounded-xl sm:rounded-2xl bg-rose-500 text-white text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] shadow-[var(--neu-shadow-raised-lg)] hover:scale-105 active:scale-95 transition-all"
                   >
                     <Trash2 size={12} className="sm:size-14" />
                     Clear
@@ -1150,7 +1150,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   onDragEnd={(_, info) => {
                     if (info.offset.y > 150) setIsSelectingTarget(false);
                   }}
-                  className="w-full max-w-lg bg-white dark:bg-slate-950 rounded-t-[3rem] sm:rounded-3xl p-6 shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.3)] border-t sm:border border-slate-200 dark:border-white/10 pointer-events-auto h-[80vh] sm:h-auto flex flex-col"
+                  className="w-full max-w-lg bg-[var(--neu-surface)] rounded-t-[3rem] sm:rounded-3xl p-6 shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.3)] border-t sm:border border-slate-200 dark:border-white/10 pointer-events-auto h-[80vh] sm:h-auto flex flex-col"
                 >
                   <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto mb-6 sm:hidden cursor-grab active:cursor-grabbing" />
                   
@@ -1164,7 +1164,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Global Navigation Protocol</p>
                       </div>
                     </div>
-                    <button onClick={() => setIsSelectingTarget(false)} className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-500 hover:bg-slate-900 hover:text-white transition-all">
+                    <button onClick={() => setIsSelectingTarget(false)} className="w-10 h-10 rounded-full bg-[var(--neu-surface)] flex items-center justify-center text-slate-500 hover:bg-slate-900 hover:text-white transition-all">
                       <X size={18} />
                     </button>
                   </div>
@@ -1177,7 +1177,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     <input 
                       placeholder="ENTER NODE ID OR ALIAS..."
                       value={filterText}
-                      className="w-full h-11 sm:h-14 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-2xl pl-12 pr-4 text-[10px] sm:text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
+                      className="w-full h-11 sm:h-14 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10 rounded-2xl pl-12 pr-4 text-[10px] sm:text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
                       onChange={(e) => setFilterText(e.target.value)}
                     />
                   </div>
@@ -1233,7 +1233,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 initial={{ opacity: 0, scale: 0.9, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 15 }}
-                className="absolute top-24 left-6 z-[1000] p-4 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-amber-500/30 text-white space-y-2.5 max-w-xs shadow-2xl pointer-events-auto"
+                className="absolute top-24 left-6 z-[1000] p-4 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-amber-500/30 text-white space-y-2.5 max-w-xs shadow-[var(--neu-shadow-raised-lg)] pointer-events-auto"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1298,7 +1298,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 initial={{ opacity: 0, scale: 0.9, y: 15 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 15 }}
-                className="absolute top-24 left-6 z-[1000] p-4 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-indigo-500/30 text-white space-y-2 max-w-xs shadow-2xl pointer-events-auto"
+                className="absolute top-24 left-6 z-[1000] p-4 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-indigo-500/30 text-white space-y-2 max-w-xs shadow-[var(--neu-shadow-raised-lg)] pointer-events-auto"
               >
                 <div className="flex items-center gap-2">
                   <Crosshair size={14} className="text-indigo-400 animate-spin shrink-0" />
@@ -1327,12 +1327,12 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 animate={{ x: 0 }}
                 exit={{ x: "-100%" }}
                 transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                className="absolute left-0 top-0 bottom-0 w-full sm:w-[380px] bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-white/10 shadow-2xl z-[1005] flex flex-col p-6 pt-24 pointer-events-auto"
+                className="absolute left-0 top-0 bottom-0 w-full sm:w-[380px] bg-[var(--neu-surface)] border-r border-slate-200 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)] z-[1005] flex flex-col p-6 pt-24 pointer-events-auto"
               >
                 {/* Header info */}
                 <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-white/10">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 shadow-sm border border-indigo-500/10">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 shadow-[var(--neu-shadow-raised-sm)] border border-indigo-500/10">
                       <Globe size={18} />
                     </div>
                     <div>
@@ -1348,7 +1348,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                       className={cn(
                         "p-2 rounded-xl border flex items-center justify-center transition-all",
                         isPingingTargets
-                          ? "bg-slate-100 dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-white/10 animate-spin"
+                          ? "bg-[var(--neu-surface)] text-slate-400 border-slate-200 dark:border-white/10 animate-spin"
                           : "bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/30 hover:bg-indigo-100"
                       )}
                       title="Run latency speed checks"
@@ -1357,7 +1357,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                     </button>
                     <button 
                       onClick={() => setIsTargetsPanelOpen(false)} 
-                      className="p-2 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-200 transition-all border border-transparent"
+                      className="p-2 rounded-xl bg-[var(--neu-surface)] text-slate-500 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-200 transition-all border border-transparent"
                     >
                       <X size={13} />
                     </button>
@@ -1402,7 +1402,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   <button
                     onClick={handleAddMonitorTarget}
                     disabled={!newTargetDomain}
-                    className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-45 disabled:hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex justify-center items-center gap-1 border-none cursor-pointer"
+                    className="w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-45 disabled:hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-[var(--neu-shadow-raised)] flex justify-center items-center gap-1 border-none cursor-pointer"
                   >
                     <Plus size={12} /> Place Terminal Node
                   </button>
@@ -1438,7 +1438,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                           <div className="flex items-start justify-between">
                             <div className="flex items-center gap-2">
                               <div className={cn(
-                                "w-2.5 h-2.5 rounded-full border border-white dark:border-slate-950 shadow-sm shrink-0 animate-pulse",
+                                "w-2.5 h-2.5 rounded-full border border-white dark:border-slate-950 shadow-[var(--neu-shadow-raised-sm)] shrink-0 animate-pulse",
                                 status === 'excellent' && "bg-emerald-500",
                                 status === 'good' && "bg-green-500",
                                 status === 'fair' && "bg-amber-500",
@@ -1452,7 +1452,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                             </div>
 
                             <span className={cn(
-                              "text-[9px] font-lexend font-black tracking-tighter px-2 py-0.5 rounded-full border shadow-sm shrink-0",
+                              "text-[9px] font-lexend font-black tracking-tighter px-2 py-0.5 rounded-full border shadow-[var(--neu-shadow-raised-sm)] shrink-0",
                               status === 'excellent' && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/10",
                               status === 'good' && "bg-green-100 dark:bg-green-950/40 text-green-600 dark:text-green-400 border-green-200 dark:border-green-900/10",
                               status === 'fair' && "bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/10",
@@ -1474,7 +1474,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                                     toast.error("Coordinates not found for this monitor");
                                   }
                                 }}
-                                className="px-2 py-1 text-[8px] font-black bg-white dark:bg-slate-950 hover:bg-slate-100 text-slate-800 dark:text-slate-300 border border-slate-200 dark:border-white/10 rounded-lg transition-colors cursor-pointer"
+                                className="px-2 py-1 text-[8px] font-black bg-[var(--neu-surface)] hover:bg-slate-100 text-slate-800 dark:text-slate-300 border border-slate-200 dark:border-white/10 rounded-lg transition-colors cursor-pointer"
                               >
                                 Locate
                               </button>
@@ -1483,7 +1483,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                                   setPositioningTargetId(target.id);
                                   toast.info(`Shield terminal active. Click anywhere on native Map screen.`);
                                 }}
-                                className="px-2 py-1 text-[8px] font-black bg-white dark:bg-slate-950 hover:bg-slate-100 text-indigo-650 dark:text-indigo-400 border border-slate-200 dark:border-white/10 rounded-lg transition-colors cursor-pointer"
+                                className="px-2 py-1 text-[8px] font-black bg-[var(--neu-surface)] hover:bg-slate-100 text-indigo-650 dark:text-indigo-400 border border-slate-200 dark:border-white/10 rounded-lg transition-colors cursor-pointer"
                               >
                                 Deploy Node
                               </button>

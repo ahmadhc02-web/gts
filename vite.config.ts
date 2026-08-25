@@ -41,7 +41,8 @@ export default defineConfig(({ mode }) => {
           skipWaiting: true,
           clientsClaim: true,
           navigateFallbackDenylist: [/^\/api/],
-          globPatterns: ['**/*.{js,css,ico,png,svg}'],
+          globPatterns: ['**/*.{js,css,ico,png,svg,html}'],
+          globIgnores: ['**/server.cjs*', '**/node_modules/**'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           runtimeCaching: [
             {
@@ -76,9 +77,6 @@ export default defineConfig(({ mode }) => {
       'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || env.SUPABASE_URL || process.env.SUPABASE_URL || ''),
       'process.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''),
     },
-    build: {
-      outDir: 'dist',
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -86,7 +84,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modifyâ€”file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: {
         ignored: ['**/whatsapp_data/backend/**']
@@ -94,6 +92,17 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       exclude: ['whatsapp_data/backend']
+    },
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
+      sourcemap: false,
+      minify: 'esbuild',
+      target: 'es2022',
+      reportCompressedSize: false,
+      chunkSizeWarningLimit: 2000,
+      rollupOptions: {
+      }
     },
   };
 });

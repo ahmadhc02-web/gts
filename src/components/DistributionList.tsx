@@ -12,48 +12,74 @@ interface DistributionListProps {
   chartType?: 'area' | 'category';
 }
 
-const LIGHT_COLORS = [
-  '#3B82F6', // Blue 500
-  '#10B981', // Emerald 500
-  '#F59E0B', // Amber 500
-  '#8B5CF6', // Violet 500
-  '#0EA5E9', // Sky 500
-  '#EF4444', // Red 500
-  '#14B8A6', // Teal 500
-  '#F97316', // Orange 500
-  '#A855F7', // Purple 500
-  '#06B6D4', // Cyan 500
-  '#64748B', // Slate 500
-  '#84CC16', // Lime 500
+const HIGH_CONTRAST_COLORS = [
+  '#2563eb', // Vivid Royal Blue
+  '#059669', // Vivid Emerald Green
+  '#d97706', // Vivid Amber/Gold
+  '#7c3aed', // Vivid Violet
+  '#0284c7', // Vivid Sky Cyan
+  '#c026d3', // Vivid Fuchsia/Magenta
+  '#0d9488', // Vivid Deep Teal
+  '#ea580c', // Vivid Coral Orange
+  '#9333ea', // Vivid Purple
+  '#0891b2', // Vivid Ocean Cyan
+  '#475569', // Rich Slate
+  '#65a30d', // Vivid Lime
 ];
 
-const DARK_COLORS = [
-  '#93C5FD', // Vivid Neon Blue (Blue 300)
-  '#6EE7B7', // Vivid Mint (Emerald 300)
-  '#FDE047', // Vivid Yellow (Yellow 300)
-  '#C4B5FD', // Vivid Purple (Violet 300)
-  '#7DD3FC', // Vivid Sky (Sky 300)
-  '#FCA5A5', // Vivid Light Red (Red 300)
-  '#5EEAD4', // Vivid Aqua (Teal 300)
-  '#FDBA74', // Vivid Peach (Orange 300)
-  '#F0ABFC', // Vivid Fuchsia (Fuchsia 300)
-  '#67E8F9', // Vivid Cyan (Cyan 300)
-  '#E2E8F0', // Bright Silver (Slate 200)
-  '#BEF264', // Vivid Lime (Lime 300)
+const DARK_CONTRAST_COLORS = [
+  '#3b82f6', // Bright Electric Blue
+  '#10b981', // Bright Mint Emerald
+  '#fbbf24', // Bright Gold Amber
+  '#a855f7', // Bright Neon Purple
+  '#38bdf8', // Bright Cyan Sky
+  '#f472b6', // Bright Neon Pink
+  '#2dd4bf', // Bright Turquoise
+  '#fb923c', // Bright Orange
+  '#c084fc', // Bright Lilac
+  '#22d3ee', // Bright Cyan
+  '#94a3b8', // Bright Silver Slate
+  '#a3e635', // Bright Neon Lime
 ];
+
+export const getNormalizedCategory = (rawCategory: string): string => {
+  if (!rawCategory) return 'Unknown Category';
+  const lower = rawCategory.trim().toLowerCase();
+  if (lower.includes('redlight') || lower.includes('red light') || lower.includes('red-light') || lower.includes('los light') || lower.includes('pon light')) {
+    return 'Red Light';
+  }
+  if (lower.includes('slow') || lower.includes('speed') || lower.includes('ping') || lower.includes('latency') || lower.includes('buffering')) {
+    return 'Slow Speed';
+  }
+  if (lower.includes('new') || lower.includes('conn')) {
+    return 'New Connection';
+  }
+  if (lower.includes('router') || lower.includes('config') || lower.includes('modem') || lower.includes('wifi')) {
+    return 'Router Config';
+  }
+  if (lower.includes('wire') || lower.includes('fiber') || lower.includes('cable') || lower.includes('break') || lower.includes('drop')) {
+    return 'Wire Issue';
+  }
+  return rawCategory
+    .trim()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
 
 const getItemColor = (name: string, index: number, isCategory: boolean, isDark: boolean) => {
   const n = name.trim().toLowerCase();
-  
-  // Use dark colors for both light and dark modes
-  const themeColors = LIGHT_COLORS;
+  const themeColors = isDark ? DARK_CONTRAST_COLORS : HIGH_CONTRAST_COLORS;
   
   // Specifically map Redlight issues to a striking red color
-  if (isCategory && (n.includes('redlight') || n.includes('red light') || n.includes('red-light'))) {
-    return '#EF4444'; // Red 500
+  if (isCategory && (n.includes('redlight') || n.includes('red light') || n.includes('red-light') || n.includes('los light'))) {
+    return isDark ? '#f87171' : '#dc2626';
   }
-  // Always use a unique color per index for maximum distinction and premium variance
-  return themeColors[index % themeColors.length];
+  let color = themeColors[index % themeColors.length];
+  if (isCategory && (color === '#f87171' || color === '#dc2626')) {
+    color = isDark ? '#f472b6' : '#c026d3';
+  }
+  return color;
 };
 
 const getCategoryIcon = (categoryName: string, color: string) => {
@@ -79,63 +105,175 @@ const getCategoryIcon = (categoryName: string, color: string) => {
 export default function DistributionList({ complaints, chartType = 'area' }: DistributionListProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const [reportType, setReportType] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
   const [viewBy, setViewBy] = useState<'area' | 'category'>('area');
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
+  // Filter complaints based on chosen timeframe (Week / Month / Year)
+  const filteredComplaints = useMemo(() => {
+    const now = new Date();
+    let startTime = 0;
+
+    if (reportType === 'weekly') {
+      startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6, 0, 0, 0, 0).getTime();
+    } else if (reportType === 'monthly') {
+      startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29, 0, 0, 0, 0).getTime();
+    } else {
+      // Yearly (last 12 months)
+      startTime = new Date(now.getFullYear(), now.getMonth() - 11, 1, 0, 0, 0, 0).getTime();
+    }
+
+    return complaints.filter(c => {
+      if (!c.createdAt) return true; // Include records without timestamp fallback
+      const time = typeof c.createdAt === 'number' ? c.createdAt : new Date(c.createdAt).getTime();
+      if (isNaN(time)) return true;
+      return time >= startTime;
+    });
+  }, [complaints, reportType]);
+
   const data = useMemo(() => {
     const counts: Record<string, number> = {};
-    complaints.forEach(c => {
-      const key = chartType === 'area' ? (c.area || 'Unknown Area') : (c.category || 'Unknown Category');
+    filteredComplaints.forEach(c => {
+      let key = chartType === 'area' ? (c.area || 'Unknown Area') : (c.category || 'Unknown Category');
+      if (chartType === 'category') {
+        key = getNormalizedCategory(key);
+      } else {
+        key = key.trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      }
       if (!counts[key]) counts[key] = 0;
       counts[key]++;
     });
     return Object.entries(counts)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
-  }, [complaints, chartType]);
+  }, [filteredComplaints, chartType]);
 
-  const total = complaints.length;
+  const total = filteredComplaints.length;
   
   return (
     <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 pb-0">
-      <div className="flex-1 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-2xl border border-white/60 dark:border-white/10 flex flex-col relative overflow-hidden shadow-xl shadow-black/5 dark:shadow-black/50 hover:shadow-2xl hover:shadow-black/10 dark:hover:shadow-black/60 transition-shadow">
-        {/* Soft pastel decorative ambient blobs exactly like mockup photo */}
+      <div className="flex-1 neu-card rounded-2xl border-2 border-slate-300/80 dark:border-white/10 flex flex-col relative overflow-hidden transition-all duration-300 shadow-[var(--neu-shadow-raised)]">
+        {/* Soft decorative ambient glow */}
         {chartType === 'area' ? (
-          <div className="absolute top-4 -right-16 w-48 h-48 bg-emerald-400/8 blur-[48px] rounded-full pointer-events-none z-0" />
+          <div className="absolute top-4 -right-16 w-48 h-48 bg-blue-500/10 dark:bg-blue-400/15 blur-[48px] rounded-full pointer-events-none z-0" />
         ) : (
-          <div className="absolute top-4 -right-16 w-48 h-48 bg-indigo-400/8 blur-[48px] rounded-full pointer-events-none z-0" />
+          <div className="absolute top-4 -right-16 w-48 h-48 bg-purple-500/10 dark:bg-purple-400/15 blur-[48px] rounded-full pointer-events-none z-0" />
         )}
+
+        {/* Top Header: Controls & High-Contrast Badge with Week / Month / Year selector */}
+        <div className="px-5 pt-4 pb-3 flex items-center justify-between gap-2 border-b border-slate-200/80 dark:border-white/10 relative z-10">
+          <div className="flex items-center gap-2 shrink-0">
+            <span 
+              className={cn(
+                "text-[10px] font-black tracking-widest px-2.5 py-1 rounded-lg uppercase flex items-center gap-1.5 shadow-sm border",
+                chartType === 'area'
+                  ? "text-blue-700 dark:text-white bg-blue-500/15 dark:bg-[#101010] border-blue-500/30 dark:border-[#898989]"
+                  : "text-purple-700 dark:text-white bg-purple-500/15 dark:bg-[#1d1d1d] border-purple-500/30 dark:border-[#727070]"
+              )}
+              style={
+                chartType === 'area'
+                  ? (isDark ? { backgroundColor: '#3e4149', color: '#ffffff', borderColor: '#757575' } : { backgroundColor: '#f2f4f7', color: '#000000', borderColor: '#f2f4f7' })
+                  : (isDark ? { backgroundColor: '#3e4149', borderColor: '#757575', color: '#ffffff' } : { backgroundColor: '#f2f4f7', borderColor: '#f2f4f7', color: '#000000' })
+              }
+            >
+              {chartType === 'area' ? <MapPin size={11} className="stroke-[2.5]" /> : <Tag size={11} className="stroke-[2.5]" />}
+              {chartType === 'area' ? 'ZONE' : 'CATEGORY'}
+            </span>
+          </div>
+
+          {/* Timeframe selection: Week, Month, Year matching RealTimeMonitor */}
+          <div className="flex items-center bg-slate-200/70 dark:bg-slate-900/90 p-0.5 rounded-lg border border-slate-300 dark:border-white/10 shadow-xs">
+            {(['weekly', 'monthly', 'yearly'] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setReportType(type)}
+                className={`px-2.5 sm:px-3 py-1 text-[9px] font-black tracking-wider rounded-md uppercase transition-all duration-200 ${
+                  reportType === type 
+                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-[var(--neu-shadow-raised-sm)] border border-slate-200/80 dark:border-white/10' 
+                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white font-extrabold'
+                }`}
+              >
+                {type === 'weekly' ? 'Week' : type === 'monthly' ? 'Month' : 'Year'}
+              </button>
+            ))}
+          </div>
+        </div>
         
         <div className="flex-1 flex w-full h-full relative z-10">
-           <div className="w-full flex items-center relative h-full rounded-2xl overflow-hidden p-5">
+           <div className="w-full flex items-center relative h-full rounded-2xl overflow-hidden px-4 py-2">
                 {data.length > 0 ? (
                   <div className="flex flex-col w-full h-full justify-between">
-                    <div className="flex-1 w-full min-h-[200px] min-w-0 relative flex items-center justify-center">
-                      {/* Centered Label with elegant concentric double border layout matching photo */}
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[84px] h-[84px] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center pointer-events-none z-10 shadow-[inner_0_2px_4px_rgba(0,0,0,0.06),0_12px_24px_-6px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-white/10 transition-colors">
-                        <div className="w-[72px] h-[72px] rounded-full border border-dashed border-slate-200 dark:border-slate-700/60 flex items-center justify-center text-center">
-                          <span className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white leading-tight">
+                    <div key={`piechart-wrapper-${isDark ? 'dark' : 'light'}`} className="flex-1 w-full min-h-[210px] min-w-0 relative flex items-center justify-center">
+                      
+                      {/* Realistic 3D Raised Neumorphic Center Dial (Outward Embossed Button) */}
+                      <div className={cn(
+                        "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[86px] h-[86px] rounded-full flex flex-col items-center justify-center pointer-events-none z-20 transition-all duration-300",
+                        isDark
+                          ? "bg-[#33363d] border border-[#757575]/40"
+                          : "bg-gradient-to-br from-[#ffffff] to-[#e6e8ee] shadow-[5px_5px_12px_rgba(0,0,0,0.18),-5px_-5px_12px_rgba(255,255,255,0.95),inset_1px_1px_3px_rgba(255,255,255,0.9),inset_-1px_-1px_3px_rgba(0,0,0,0.08)] border border-slate-200/80"
+                      )}>
+                        <div className={cn(
+                          "w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center text-center transition-all",
+                          isDark
+                            ? "bg-[#282a2e] border border-[#757575]/30"
+                            : "bg-[#f1f3f7] shadow-[inset_2px_2px_5px_rgba(0,0,0,0.1),inset_-2px_-2px_5px_rgba(255,255,255,0.9)] border border-slate-200/60"
+                        )}>
+                          <span className="text-[10.5px] font-black uppercase tracking-[0.12em] leading-tight drop-shadow-sm text-blue-600 dark:text-blue-400">
                             {chartType === 'area' ? 'ZONE' : 'CATG.'}
+                          </span>
+                          <span className="text-[8.5px] font-extrabold text-slate-600 dark:text-slate-300 tracking-wider">
+                            {total} {total === 1 ? 'LOG' : 'LOGS'}
                           </span>
                         </div>
                       </div>
   
                       <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                        <PieChart margin={{ top: 0, right: 30, left: 30, bottom: 0 }}>
+                        <PieChart margin={{ top: 0, right: 32, left: 32, bottom: 0 }}>
                           <defs>
-                             <filter id="pieShadow" x="-10%" y="-10%" width="120%" height="120%">
-                               <feDropShadow dx="1" dy="3" stdDeviation="2" floodOpacity="0.15" />
-                             </filter>
+                            {/* Neumorphic 3D Raised Extrusion Filter for Light Mode */}
+                            <filter id="neuDonutRaisedLight" x="-20%" y="-20%" width="140%" height="140%">
+                              {/* Deep ambient drop shadow for outward elevation */}
+                              <feDropShadow dx="3" dy="5" stdDeviation="4" floodColor="#0f172a" floodOpacity="0.28" />
+                              {/* Secondary soft shadow */}
+                              <feDropShadow dx="1" dy="2" stdDeviation="1.5" floodColor="#0f172a" floodOpacity="0.18" />
+                              {/* Top-Left Light Highlight (Specular bevel pop) */}
+                              <feDropShadow dx="-2" dy="-2" stdDeviation="2.5" floodColor="#ffffff" floodOpacity="0.85" />
+                            </filter>
+
+                            {/* Recessed trench shadow for inner bed (Light Mode) */}
+                            <filter id="recessedTrench" x="-20%" y="-20%" width="140%" height="140%">
+                              <feDropShadow dx="1" dy="2" stdDeviation="2" floodColor="#000000" floodOpacity={0.15} />
+                            </filter>
                           </defs>
+
+                          {/* Neumorphic Recessed Base Track (Trench ring under the extruded slices) - Light mode only */}
+                          {!isDark && (
+                            <Pie
+                              key="trench-light"
+                              data={[{ value: 1 }]}
+                              cx="50%" cy="50%"
+                              innerRadius={50} outerRadius={96}
+                              dataKey="value"
+                              isAnimationActive={false}
+                              fill="#e2e6ee"
+                              stroke="rgba(0,0,0,0.06)"
+                              strokeWidth={1}
+                              style={{ filter: 'url(#recessedTrench)' }}
+                            />
+                          )}
+
+                          {/* 3D Raised Donut Slices */}
                           <Pie 
+                            key={`pie-${chartType}-${isDark ? 'dark' : 'light'}`}
                             data={chartType === 'area' ? data.slice(0, 6) : data.slice(0, 4)} 
                             cx="50%" cy="50%" 
-                            innerRadius={55} outerRadius={95} 
-                            paddingAngle={5}
-                            cornerRadius={8}
+                            innerRadius={54} outerRadius={94} 
+                            paddingAngle={6}
+                            cornerRadius={7}
                             dataKey="count"
                             nameKey="name"
-                            stroke="none"
+                            stroke={isDark ? '#282a2e' : '#ffffff'}
+                            strokeWidth={isDark ? 1.5 : 1.5}
                             labelLine={false}
                             label={(props) => {
                               const { cx, cy, midAngle, outerRadius, name, percent, index } = props;
@@ -163,10 +301,30 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
  
                               return (
                                 <g>
-                                  <polyline points={`${p1x},${p1y} ${x},${y} ${ex},${y}`} stroke={itemColor} fill="none" strokeWidth={2} opacity={0.8} />
-                                  <circle cx={ex} cy={y} r={3} fill={itemColor} />
-                                  <text x={textX} y={y - 5} fill={itemColor} textAnchor={xDir > 0 ? 'start' : 'end'} dominantBaseline="baseline" fontSize="10" fontWeight="900" style={{textTransform: 'uppercase', letterSpacing: '0.02em', filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.3))'}}>
-                                    {displayName} <tspan fillOpacity={0.8} fontWeight="800">{(percent * 100).toFixed(0)}%</tspan>
+                                  <polyline 
+                                    points={`${p1x},${p1y} ${x},${y} ${ex},${y}`} 
+                                    stroke={itemColor} 
+                                    fill="none" 
+                                    strokeWidth={2.2} 
+                                    strokeLinecap="round"
+                                    opacity={0.95} 
+                                  />
+                                  <circle cx={ex} cy={y} r={3.5} fill={itemColor} stroke={isDark ? '#1c1f26' : '#ffffff'} strokeWidth={1} />
+                                  <text 
+                                    x={textX} 
+                                    y={y - 5} 
+                                    fill={itemColor} 
+                                    textAnchor={xDir > 0 ? 'start' : 'end'} 
+                                    dominantBaseline="baseline" 
+                                    fontSize="10.5" 
+                                    fontWeight="950" 
+                                    style={{
+                                      textTransform: 'uppercase', 
+                                      letterSpacing: '0.04em', 
+                                      filter: isDark ? 'drop-shadow(0px 1px 3px rgba(0,0,0,0.8))' : 'drop-shadow(0px 1px 2px rgba(255,255,255,0.9))'
+                                    }}
+                                  >
+                                    {displayName} <tspan fill={isDark ? '#f8fafc' : '#0f172a'} fontWeight="900" fontSize="10">{(percent * 100).toFixed(0)}%</tspan>
                                   </text>
                                 </g>
                               );
@@ -176,36 +334,38 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                               setSelectedItem(entry.name);
                             }}
                             className="cursor-pointer focus:outline-none"
-                            animationBegin={chartType === 'category' ? 200 : 0}
-                            animationDuration={1200}
+                            animationBegin={chartType === 'category' ? 150 : 0}
+                            animationDuration={1100}
                             animationEasing="ease-out"
                           >
                             {(chartType === 'area' ? data.slice(0, 6) : data.slice(0, 4)).map((entry, index) => {
                               const itemColor = getItemColor(entry.name, index, chartType === 'category', isDark);
                               return (
                                 <Cell 
-                                  key={`cell-${index}`} 
+                                  key={`cell-${chartType}-${isDark ? 'dark' : 'light'}-${index}`} 
                                   fill={itemColor} 
-                                  className="hover:opacity-95 hover:scale-[1.04] transition-all duration-300 origin-center cursor-pointer" 
-                                  style={{ filter: 'url(#pieShadow)' }}
+                                  className="hover:opacity-100 hover:scale-[1.05] transition-all duration-300 origin-center cursor-pointer" 
+                                  style={{ 
+                                    filter: isDark ? undefined : 'url(#neuDonutRaisedLight)'
+                                  }}
                                 />
                               );
                             })}
                           </Pie>
                           <RechartsTooltip wrapperStyle={{ zIndex: 100 }} 
                             contentStyle={{
-                                backgroundColor: 'rgba(15, 23, 42, 0.98)', 
-                                backdropFilter: 'blur(8px)',
-                                border: '1px solid rgba(51, 65, 85, 0.7)', 
-                                borderRadius: '12px',
-                                boxShadow: '0 15px 30px -5px rgba(0, 0, 0, 0.35)',
-                                fontSize: '11px',
+                                backgroundColor: isDark ? 'rgba(28, 31, 38, 0.98)' : 'rgba(255, 255, 255, 0.98)', 
+                                backdropFilter: 'blur(10px)',
+                                border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(15, 23, 42, 0.15)', 
+                                borderRadius: '14px',
+                                boxShadow: isDark ? '0 15px 35px -5px rgba(0, 0, 0, 0.7)' : '0 15px 30px -5px rgba(0, 0, 0, 0.15)',
+                                fontSize: '11.5px',
                                 fontWeight: '950',
-                                color: '#fff',
+                                color: isDark ? '#ffffff' : '#0f172a',
                                 textTransform: 'uppercase',
-                                padding: '8px 12px'
+                                padding: '9px 14px'
                             }}
-                            itemStyle={{ color: '#fff', fontWeight: '950' }}
+                            itemStyle={{ color: isDark ? '#ffffff' : '#0f172a', fontWeight: '950' }}
                             cursor={false}
                           />
                         </PieChart>
@@ -214,7 +374,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                   </div>
                 ) : (
                  <div className="flex-1 flex items-center justify-center">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No Data</p>
+                   <p className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">No Active Records</p>
                  </div>
                )}
             </div>
@@ -230,40 +390,45 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                animate={{ opacity: 1 }}
                exit={{ opacity: 0 }}
                onClick={() => setSelectedItem(null)}
-               className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+               className="absolute inset-0 bg-slate-950/70 backdrop-blur-md"
              />
              <motion.div
                initial={{ opacity: 0, scale: 0.95, y: 20 }}
                animate={{ opacity: 1, scale: 1, y: 0 }}
                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-               className="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden"
+               className="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-[var(--neu-surface)] rounded-3xl border-2 border-slate-300 dark:border-white/15 shadow-[var(--neu-shadow-raised-lg)] overflow-hidden z-10"
              >
-               <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between shrink-0">
+               <div className="p-6 border-b border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0">
                  <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                   <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm border border-blue-500/20">
                      <Info size={20} />
                    </div>
                    <div>
                      <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white">Complaints Detail</h3>
-                     <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-tighter opacity-70">
+                     <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-tighter">
                        {viewBy === 'area' ? 'Deployment Zone' : 'Category'}: {selectedItem}
                      </p>
                    </div>
                  </div>
                  <button 
                    onClick={() => setSelectedItem(null)}
-                   className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
+                   className="w-8 h-8 rounded-full bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors"
                  >
                    <X size={16} />
                  </button>
                </div>
 
                <div className="p-6 overflow-y-auto space-y-3 custom-scrollbar flex-1 bg-slate-50/50 dark:bg-slate-900/50">
-                 {complaints
-                   .filter(c => (viewBy === 'area' ? c.area || 'Unknown Area' : c.category || 'Unknown Category') === selectedItem)
+                 {filteredComplaints
+                   .filter(c => {
+                     const itemKey = viewBy === 'area'
+                       ? (c.area || 'Unknown Area').trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+                       : getNormalizedCategory(c.category || 'Unknown Category');
+                     return itemKey === selectedItem;
+                   })
                    .sort((a, b) => b.createdAt - a.createdAt)
                    .map((complaint, idx) => (
-                     <div key={`${complaint.id}-${idx}`} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+                     <div key={`${complaint.id}-${idx}`} className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-[var(--neu-shadow-raised-sm)] border border-slate-100 dark:border-slate-700">
                          <div className="flex items-start justify-between gap-4 mb-3">
                            <div className="flex-1">
                               <p className="text-xs font-black uppercase text-slate-900 dark:text-white mb-0.5">{complaint.category}</p>
@@ -291,7 +456,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                                if (prog.percentage <= 0) return null;
                                return (
                                  <div className="w-16 flex flex-col items-end gap-0.5" title={prog.stepText}>
-                                   <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40">
+                                   <div className="w-full bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] h-1 rounded-full overflow-hidden border border-slate-200/40 dark:border-slate-700/40">
                                      <div 
                                        className="bg-blue-500 h-full rounded-full"
                                        style={{ width: `${prog.percentage}%` }}
@@ -307,7 +472,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                          </div>
 
                          {complaint.description && (
-                           <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-white/10 mt-3">
+                           <div className="p-3 bg-[var(--neu-surface)] rounded-lg border border-slate-100 dark:border-white/10 mt-3">
                              <p className="text-xs font-medium text-slate-600 dark:text-slate-300 line-clamp-2">{complaint.description}</p>
                            </div>
                          )}
