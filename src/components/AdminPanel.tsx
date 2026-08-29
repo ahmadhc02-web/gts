@@ -1,3 +1,5 @@
+import MyPCTab from './MyPCTab';
+import BillingTab from './BillingTab';
 import { useTheme } from "../hooks/useTheme";
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -413,6 +415,7 @@ export default function AdminPanel({
         setRecycleItems(items);
         setIsRecycleLoading(false);
       }, currentUser.role !== 'super_admin' ? currentUser.dealerId : undefined);
+
 
       return () => unsubscribe();
     }
@@ -3036,6 +3039,11 @@ export default function AdminPanel({
             </div>
           );
         case 'charts':
+  
+
+  
+
+
           return (
             <div key={`section-${section.id}`} className="space-y-4">
               <div 
@@ -3654,8 +3662,251 @@ export default function AdminPanel({
     };
   }, [currentMonthId, billingMonths, activeRows]);
 
-  const inputClasses = "w-full px-4 py-3 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-900 dark:text-slate-100 focus:outline-none focus:shadow-[var(--neu-shadow-inset-deep)] transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
+    const inputClasses = "w-full px-4 py-3 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-900 dark:text-slate-100 focus:outline-none focus:shadow-[var(--neu-shadow-inset-deep)] transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
+
+  const stateProps = {
+    onNavigate: onNavigateProp,
+    activeRows,
+    activeTab,
+    alertAuthorized,
+    animateCellProgress,
+    appConfig,
+    billingAreaFilter,
+    billingColWidths,
+    billingKeyInput,
+    billingMonths,
+    billingPage,
+    billingRowToDelete,
+    billingScrollContainerRef,
+    billingSearchQuery,
+    billingStatusFilter,
+    branding,
+    complaints,
+    currentMainPage,
+    currentMonthId,
+    currentUser,
+    dcRowsList,
+    dragActive,
+    editCompanyName,
+    editFullName,
+    editLineCode,
+    editPassword,
+    editUserRole,
+    editUsername,
+    editingUserId,
+    entrySheetOpenWithUserLedger,
+    expandedRecycleItem,
+    filteredRecycleItems,
+    filteredRows,
+    formError,
+    formSuccess,
+    getBillingSortIcon,
+    googleTokens,
+    handleAddMonth,
+    handleBillingColResizeStart,
+    handleBillingMouseLeave,
+    handleBillingMouseMove,
+    handleBillingSort,
+    handleBulkExport,
+    handleBulkPurge,
+    handleBulkRestore,
+    handleCancelEditUser,
+    handleCopyText,
+    handleCreateSheet,
+    handleCreateUser,
+    handleDeleteBillingMonth,
+    handleDeleteBillingRow,
+    handleDeletePortal,
+    handleDownloadCSV,
+    handleDrag,
+    handleDrop,
+    handleEmptyRecycleBin,
+    handleExecuteRestore,
+    handleFileChange,
+    handleGenerateLocalBackup,
+    handleGetBackup,
+    handleGoogleConnect,
+    handleManualSaveAllRows,
+    handlePermanentDeleteSubscriber,
+    handlePurgeAllBillingData,
+    handlePurgeItem,
+    handleRecheckUsers,
+    handleReconciliationCheck,
+    handleRecoveryCellKeyDown,
+    handleResetAllCRToZero,
+    handleRestoreItem,
+    handleSaveMypc,
+    handleSaveRangeSettings,
+    handleSaveRowField,
+    handleSaveSecurityKey,
+    handleSaveSpreadsheetId,
+    handleStartEditUser,
+    handleTileClick,
+    handleToggleSelect,
+    handleToggleSelectAll,
+    handleUnlockBilling,
+    handleUpdateUser,
+    handleUploadBackup,
+    inputClasses,
+    isAdvanceMode,
+    isAudioMuted,
+    isBatchPrintOpen,
+    isBillingUnlocked,
+    isBulkPurging,
+    isBulkRestoring,
+    isConfiguringNewMonth,
+    isConnecting,
+    isCreating,
+    isCreatingSheet,
+    isEditingSecurityKey,
+    isEmptyRecycleBinModalOpen,
+    isEntrySheetRouteOpen,
+    isExporting,
+    isGeneratingBackup,
+    isLoading,
+    isMicMuted,
+    isNewConnectionCat,
+    isPendingStatus,
+    isRecycleLoading,
+    isRestoringBackup,
+    isSecurityWidgetExpanded,
+    isSuspended,
+    isUpdating,
+    itemsPerPage,
+    labelClasses,
+    lastAutoBackupTime,
+    mainSortedRows,
+    masterClients,
+    micAuthorized,
+    mypcOpenedFile,
+    newCompanyName,
+    newFullName,
+    newLineCode,
+    newMonthName,
+    newMonthYear,
+    newPassword,
+    newSecurityKeyInput,
+    newUserRole,
+    newUsername,
+    onAuthorizeAlerts,
+    onAuthorizeMic,
+    onChangeAdminPass,
+    onCreateUser,
+    onDeleteComplaint,
+    onDeleteUser,
+    onLogout,
+    onRegisterComplaint,
+    onSoundTest,
+    onToggleAudio,
+    onToggleMic,
+    onUpdateBranding,
+    onUpdateComplaint,
+    onUpdateComplaintStatus,
+    onUpdateConfig,
+    onUpdateRemarks,
+    onUpdateUser,
+    onUpdateUserStatus,
+    paginatedRows,
+    processSelectedFile,
+    purgingItemId,
+    recoveryRate,
+    recycleConfirmPhrase,
+    recycleSearchTerm,
+    renderCellProgress,
+    renderHomeSections,
+    resetBillingColumnWidths,
+    restoreFile,
+    restoringItemId,
+    saveBillingColumnWidths,
+    saveBillingMonthTracked,
+    savingMonthIds,
+    selectedDealerForSubAccounts,
+    selectedDealerId,
+    selectedRecycleItemIds,
+    setBillingAreaFilter,
+    setBillingKeyInput,
+    setBillingMonths,
+    setBillingPage,
+    setBillingRowToDelete,
+    setBillingSearchQuery,
+    setBillingStatusFilter,
+    setDragActive,
+    setEditCompanyName,
+    setEditFullName,
+    setEditLineCode,
+    setEditPassword,
+    setEditUserRole,
+    setEditUsername,
+    setEditingUserId,
+    setExpandedRecycleItem,
+    setFormError,
+    setFormSuccess,
+    setGoogleTokens,
+    setIsAdvanceMode,
+    setIsBatchPrintOpen,
+    setIsBillingUnlocked,
+    setIsBulkPurging,
+    setIsBulkRestoring,
+    setIsConfiguringNewMonth,
+    setIsCreating,
+    setIsCreatingSheet,
+    setIsEditingSecurityKey,
+    setIsEmptyRecycleBinModalOpen,
+    setIsExporting,
+    setIsGeneratingBackup,
+    setIsRecycleLoading,
+    setIsRestoringBackup,
+    setIsSecurityWidgetExpanded,
+    setIsUpdating,
+    setMypcOpenedFile,
+    setNewCompanyName,
+    setNewFullName,
+    setNewLineCode,
+    setNewMonthName,
+    setNewMonthYear,
+    setNewPassword,
+    setNewSecurityKeyInput,
+    setNewUserRole,
+    setNewUsername,
+    setPurgingItemId,
+    setRecycleConfirmPhrase,
+    setRecycleSearchTerm,
+    setRestoreFile,
+    setRestoringItemId,
+    setSelectedDealerForSubAccounts,
+    setSelectedDealerId,
+    setSelectedRecoveryRow,
+    setSelectedRecycleItemIds,
+    setSheetName,
+    setSheetRange,
+    setShowDcList,
+    setSpreadsheetId,
+    setUploadedBackupData,
+    setUserToDelete,
+    sheetName,
+    sheetRange,
+    showDcList,
+    spreadsheetId,
+    startBillingScrolling,
+    startDeleteSheetWithProgress,
+    startSheetLoading,
+    stopBillingScrolling,
+    syncRecoveryRowToMasterClient,
+    totalBase,
+    totalCr,
+    totalDC,
+    totalExpected,
+    totalMainPages,
+    totalOutstanding,
+    totalPending,
+    totalRecovered,
+    totalTDC,
+    triggerDeleteBillingRow,
+    uploadedBackupData,
+    users
+  };
+
 
   return (
     <>
@@ -6249,1748 +6500,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'mypc' && (
-          <div id="mypc-virtual-desktop" className="max-w-[115rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
-            {/* Virtual PC Views */}
-            {!mypcOpenedFile && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 max-w-7xl mx-auto pt-2 pb-8">
-                {[
-                  { id: 'nodes_view', icon: Flame, title: 'Active Complainers', desc: 'Monitor dynamic hotspots' },
-                  ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_data_view', icon: BarChart3, title: 'Dealers Data', desc: 'Audit dealer network metrics' }] : []),
-                  { id: 'submit_view', icon: PlusSquare, title: branding?.tabNames?.submit || 'Complain Reg', desc: 'File fresh customer logs' },
-                  { id: 'map_view', icon: MapPinned, title: 'Network Map', desc: 'Diagnostic geographic connection grid' },
-                  { id: 'user_details', icon: Users, title: 'Users Management', desc: 'Manage logins & clearance level' },
-                  ...(currentUser?.role !== 'dealer' ? [{ id: 'dealer_data_viewer', icon: Eye, title: 'Dealer Data', desc: 'View dealer records (read-only)' }] : []),
-                  { id: 'top10_complainers', icon: BarChart2, title: 'Top 10 Complainer', desc: 'High frequency support identifiers' },
-                  { id: 'login_profiles', icon: ShieldCheck, title: 'Login Profiles', desc: 'Active Credentials & Roles Overview' },
-                  { id: 'dealers_view', icon: ShieldAlert, title: 'Dealer Section', desc: 'Authorized Dealers Registry Setup' },
-                  { id: 'system_config', icon: Settings, title: 'Workflow Config', desc: 'Edit Categories & Active Zones' },
-                  { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
-                  { id: 'integrations', icon: CloudUpload, title: 'Google Sheet Link', desc: 'One-Time Enterprise Sync' },
-                  { id: 'branding_panel', icon: Palette, title: 'CUSTOMIZATION', desc: 'Design aesthetics & app layouts' },
-                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' },
-                  { id: 'whatsapp_integration', icon: MessageCircle, title: 'WhatsApp', desc: 'Connect & manage automated messaging' }
-                ].map((item) => (
-                  <motion.div
-                    key={item.id}
-                    whileHover={{ y: -4, scale: 1.01 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      const slug = MYPC_FILE_TO_SLUG[item.id];
-                      if (slug) {
-                        navigate(`/mypc/${slug}`);
-                      } else {
-                        setMypcOpenedFile(item.id as any);
-                      }
-                    }}
-                    className="group cursor-pointer p-5 sm:p-6 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] rounded-[2rem] hover:shadow-[var(--neu-shadow-inset)] flex flex-col items-center sm:items-start text-center sm:text-left space-y-4 transition-all duration-300 relative overflow-hidden active:scale-95"
-                  >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all duration-300 -mr-12 -mt-12 pointer-events-none" />
-                    
-                    <div className="w-12 h-12 rounded-2xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] text-slate-600 dark:text-slate-400 flex items-center justify-center group-hover:text-blue-500 transition-all duration-300 z-10">
-                      <item.icon size={22} strokeWidth={2} />
-                    </div>
-                    <div className="z-10 w-full flex flex-col items-center sm:items-start">
-                      <h4 className="text-[11px] sm:text-[13px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors leading-tight mb-2">{item.title}</h4>
-                      <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 line-clamp-2 leading-relaxed group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">{item.desc}</p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-            {mypcOpenedFile && (
-              <div className="space-y-6 animate-fade-in text-left">
-                <div className="flex items-center justify-between bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] px-5 py-4 rounded-2xl border border-[var(--neu-border)]">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => navigate('/mypc')}
-                      className="px-4 py-2 text-[9px] font-black uppercase tracking-widest bg-[var(--neu-surface)] text-slate-600 dark:text-slate-300 hover:text-blue-500 rounded-xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] active:scale-95 cursor-pointer transition-all flex items-center gap-2"
-                    >
-                      <span>‚óÄ</span> Close Application
-                    </button>
-                    <div>
-                      <span className="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
-                        Running Frame: {
-                          mypcOpenedFile === 'whatsapp_integration' ? 'WhatsApp Business Integration Console' :
-                          mypcOpenedFile === 'dealer_data_viewer' ? 'Read-Only Dealer Data Viewer' :
-                          mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
-                          mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
-                          mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
-                          mypcOpenedFile === 'login_profiles' ? 'Active System Roles & Authentication Overview' :
-                          mypcOpenedFile === 'system_config' ? 'Real-Time Tenant Parameters configuration' :
-                          mypcOpenedFile === 'dealers_view' ? 'Authorized Dealers Setup Protocol' :
-                          mypcOpenedFile === 'branding_panel' ? 'Theme Style & System Signage Configuration' :
-                          mypcOpenedFile === 'settings_info' ? 'System Audio-Voice Matrix & Security' :
-                          mypcOpenedFile === 'complaints_view' ? 'Real-Time Operational Support Request Console' :
-                          mypcOpenedFile === 'nodes_view' ? 'Diagnostic Active Complainers & Hotspot Index' :
-                          mypcOpenedFile === 'dealers_data_view' ? 'Dealers Network Intelligence Audit Matrix' :
-                          mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
-                          mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
-                          'Cloud Sheets Sync Nodes Proxy'
-                        }
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-1 min-h-[420px]">
-                  {/* Subview 1: Client Infrastructure Directory */}
-                  {mypcOpenedFile === 'user_details' && (
-                    <div className="max-w-7xl mx-auto space-y-6 text-left">
-                        <div className="animate-fade-in bg-[var(--neu-surface)] p-6 rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)]">
-                          <ClientManagement 
-                            appConfig={appConfig} 
-                            isAdmin={true} 
-                            currentUser={currentUser} 
-                            currentUserName={users.find(u => u.uid === currentUser.uid)?.username || 'Admin'} 
-                            isBillingUnlocked={isBillingUnlocked}
-                          />
-                        </div>
-                    </div>
-                  )}
-
-                  {/* Subview 2: Top 10 Complainers */}
-                  {mypcOpenedFile === 'top10_complainers' && (
-                    <div className="max-w-4xl mx-auto">
-                      <HighFrequencyNodes complaints={complaints} users={users} />
-                    </div>
-                  )}
-
-                  {/* Subview 3: Login Profiles */}
-                  {mypcOpenedFile === 'login_profiles' && (
-                    <div className="max-w-7xl mx-auto space-y-6 text-left">
-                      {/* Active Session & Core Profile */}
-                      <div className={cn("p-8", getCardStyle(branding.cardStyle))}>
-                        <h3 className="text-lg font-black uppercase tracking-tight mb-4 flex items-center gap-2.5 text-slate-900 dark:text-slate-50">
-                          <ShieldCheck size={20} className="text-emerald-500 animate-pulse" />
-                          Authorized Credentials & Session Dashboard
-                        </h3>
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-8">
-                          Secure system registry listing current operators clearance and session credentials
-                        </p>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="p-5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] space-y-3">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Logged Operator Account</p>
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 border border-[var(--neu-border)] shadow-[var(--neu-shadow-raised-sm)]">
-                                <img 
-                                  src={getAvatarUrl(currentUser.profilePicture)} 
-                                  alt={currentUser.username} 
-                                  className="w-full h-full object-cover" 
-                                  referrerPolicy="no-referrer"
-                                />
-                              </div>
-                              <div className="flex flex-col">
-                                <p className="text-base font-black uppercase tracking-tight text-slate-900 dark:text-white">{currentUser.fullName || currentUser.username}</p>
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">@{currentUser.username}</span>
-                              </div>
-                            </div>
-                            <span className="inline-flex px-3 py-0.5 text-[8px] font-black rounded-full uppercase tracking-widest bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0 select-none">
-                              Active Secure Token
-                            </span>
-                          </div>
-                          <div className="p-5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] space-y-3">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 font-mono">Verified Clearance Clearance</p>
-                            <p className="text-base font-black uppercase tracking-tight text-blue-500 dark:text-blue-400">{currentUser.role.replace('_', ' ')}</p>
-                            <p className="text-[10px] text-slate-400/80 uppercase font-black tracking-widest font-mono">Tenant Mode Verified</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Split Operator Directory Register layout shifted from user_details */}
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left">
-                        <div className="lg:col-span-1">
-                          <div className={cn("p-8 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                            <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3">
-                              <UserPlus size={20} className="text-brand-accent" />
-                              Link Access
-                            </h3>
-                            {formError && (
-                              <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold">
-                                {formError}
-                              </div>
-                            )}
-                            {formSuccess && (
-                              <div className="mb-6 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
-                                {formSuccess}
-                              </div>
-                            )}
-                            <form onSubmit={handleCreateUser} className="space-y-6">
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Employee Username</label>
-                                <input
-                                  type="text"
-                                  value={newUsername}
-                                  onChange={(e) => setNewUsername(e.target.value)}
-                                  placeholder="e.g. john_doe"
-                                  className={cn(inputClasses, "normal-case")}
-                                  required
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Full Name</label>
-                                <input
-                                  type="text"
-                                  value={newFullName}
-                                  onChange={(e) => setNewFullName(e.target.value)}
-                                  placeholder="e.g. John Doe"
-                                  className={cn(inputClasses, "normal-case")}
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Access Password</label>
-                                <input
-                                  type="password"
-                                  value={newPassword}
-                                  onChange={(e) => setNewPassword(e.target.value)}
-                                  placeholder="‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢"
-                                  className={cn(inputClasses, "normal-case")}
-                                  required
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Clearance Level</label>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setNewUserRole('member')}
-                                    className={cn(
-                                      "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                                      newUserRole === 'member' 
-                                        ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] border-slate-900 dark:border-brand-accent" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                                    )}
-                                  >
-                                    Field Agent
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setNewUserRole('liteadmin')}
-                                    className={cn(
-                                      "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                                      newUserRole === 'liteadmin' 
-                                        ? "bg-indigo-600 text-white border-indigo-600 shadow-[var(--neu-shadow-raised)] shadow-indigo-500/20" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                                    )}
-                                  >
-                                    Lite Admin
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setNewUserRole('admin')}
-                                    className={cn(
-                                      "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                                      newUserRole === 'admin' 
-                                        ? "bg-blue-600 text-white border-blue-600 shadow-[var(--neu-shadow-raised)] shadow-blue-500/20" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                                    )}
-                                  >
-                                    Supervisor
-                                  </button>
-                                  {currentUser.role === 'super_admin' && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setNewUserRole('super_admin')}
-                                      className={cn(
-                                        "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border col-span-2 sm:col-span-1",
-                                        newUserRole === 'super_admin' 
-                                          ? "bg-rose-600 text-white border-rose-600 shadow-[var(--neu-shadow-raised)] shadow-rose-500/20" 
-                                          : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                                      )}
-                                    >
-                                      Super Admin
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              <button
-                                type="submit"
-                                disabled={isCreating}
-                                className="w-full py-4 rounded-lg bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] font-bold uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] hover:bg-black dark:hover:bg-blue-700 disabled:opacity-50 transition-all"
-                              >
-                                {isCreating ? 'Processing Reg...' : 'Initialize Link Access Member'}
-                              </button>
-                            </form>
-                          </div>
-                        </div>
-
-                        <div className="lg:col-span-2">
-                          <div className={cn("overflow-hidden bg-[var(--neu-surface)]", getCardStyle(branding.cardStyle))}>
-                            <div className="px-6 py-4 border-b border-[var(--neu-border)] bg-[var(--neu-surface)]">
-                               <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Link Access Directory</h4>
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left">
-                                <thead className="bg-[var(--neu-surface)]">
-                                <tr className="border-b border-[var(--neu-border)]">
-                                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
-                                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Clearance</th>
-                                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Status</th>
-                                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Created From</th>
-                                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Registry Date</th>
-                                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Protocol</th>
-                                </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                                {users
-                                  .filter(u => {
-                                    const isNotDealer = u.role !== 'dealer';
-                                    const isNotSelfSuperAdmin = u.role !== 'super_admin' || u.uid === currentUser.uid;
-                                    
-                                    // Show all users to super_admin and admin, but for dealers only show their own network.
-                                    const belongsToMyTenant = currentUser.role === 'super_admin' || currentUser.role === 'admin' || u.dealerId === currentUser.uid;
-                                    
-                                    return isNotDealer && isNotSelfSuperAdmin && belongsToMyTenant;
-                                  })
-                                  .sort((a, b) => b.createdAt - a.createdAt)
-                                  .map((user, idx) => (
-                                  <tr key={`${user.uid}-${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
-                                    <td className="px-6 py-4 w-[400px]">
-                                      {editingUserId === user.uid ? (
-                                        <div className="space-y-2">
-                                          <input
-                                            type="text"
-                                            value={editUsername}
-                                            onChange={(e) => setEditUsername(e.target.value)}
-                                            placeholder="Username"
-                                            className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)]"
-                                          />
-                                          <input
-                                            type="text"
-                                            value={editFullName}
-                                            onChange={(e) => setEditFullName(e.target.value)}
-                                            placeholder="Full Name"
-                                            className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)]"
-                                          />
-                                          <input
-                                            type="text"
-                                            value={editPassword}
-                                            onChange={(e) => setEditPassword(e.target.value)}
-                                            placeholder="New Password"
-                                            className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)]"
-                                          />
-                                          {currentUser.role === 'super_admin' && user.role === 'dealer' && (
-                                            <input
-                                              type="text"
-                                              value={editLineCode}
-                                              onChange={(e) => setEditLineCode(e.target.value)}
-                                              placeholder="Line Code"
-                                              className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)]"
-                                            />
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <div className="flex items-center gap-3">
-                                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-[var(--neu-border)] shadow-[var(--neu-shadow-raised-sm)]">
-                                            <img 
-                                              src={getAvatarUrl(user.profilePicture)} 
-                                              alt={user.username} 
-                                              className="w-full h-full object-cover" 
-                                              referrerPolicy="no-referrer"
-                                            />
-                                          </div>
-                                          <div className="flex flex-col text-[16px] w-[160px]">
-                                            <span className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.fullName || user.username}</span>
-                                            {user.fullName && <span className="text-[10px] text-[#443838] font-bold uppercase tracking-widest">@{user.username}</span>}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      {editingUserId === user.uid && currentUser.role === 'super_admin' ? (
-                                        <select
-                                          value={editUserRole}
-                                          onChange={(e) => setEditUserRole(e.target.value as any)}
-                                          className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)] uppercase font-black"
-                                        >
-                                          <option value="member">Member</option>
-                                          <option value="liteadmin">Lite Admin</option>
-                                          <option value="admin">Admin</option>
-                                          <option value="super_admin">Super Admin</option>
-                                          <option value="dealer">Dealer</option>
-                                        </select>
-                                      ) : (
-                                        <span className={cn(
-                                          "px-2.5 py-1 rounded text-xs font-black uppercase tracking-widest border",
-                                          user.role === 'super_admin' ? "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/30" :
-                                          user.role === 'admin' ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/30" :
-                                          user.role === 'liteadmin' ? "bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/30" :
-                                          user.role === 'dealer' ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/30" :
-                                          "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-[var(--neu-border)]"
-                                        )}>
-                                          {user.role}
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                       <span className={cn(
-                                         "px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest border",
-                                         user.status === 'pending' ? "bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-900/30 animate-pulse" :
-                                         user.status === 'blocked' ? "bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/30" :
-                                         "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/30"
-                                       )}>
-                                         {user.status || 'active'}
-                                       </span>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest bg-[var(--neu-surface)] px-2 py-1 rounded border border-[var(--neu-border)]">
-                                        {user.createdByName || (user.createdBy === 'system' ? 'System' : 'Unknown Agent')}
-                                      </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-[11px] font-medium text-slate-400 uppercase tracking-tighter">{new Date(user.createdAt).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 text-right">
-                                      <div className="flex justify-end gap-2">
-                                        {editingUserId === user.uid ? (
-                                          <>
-                                            <button
-                                              onClick={() => handleUpdateUser(user.uid)}
-                                              disabled={isUpdating}
-                                              className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all border-none bg-transparent cursor-pointer"
-                                              title="Save Changes"
-                                            >
-                                              <Check size={16} />
-                                            </button>
-                                            <button
-                                              onClick={handleCancelEditUser}
-                                              className="p-2 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/50 rounded-lg transition-all border-none bg-transparent cursor-pointer"
-                                              title="Cancel"
-                                            >
-                                              <X size={16} />
-                                            </button>
-                                          </>
-                                        ) : (
-                                          <>
-                                            {user.uid !== currentUser.uid && (
-                                              <button
-                                                onClick={() => {
-                                                  window.dispatchEvent(new CustomEvent('openChat', { detail: user.uid }));
-                                                }}
-                                                className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all border-none bg-transparent cursor-pointer"
-                                                title="Private Message"
-                                              >
-                                                <MessageSquare size={16} />
-                                              </button>
-                                            )}
-                                            {user.uid !== currentUser.uid && currentUser.role === 'super_admin' && (
-                                              <>
-                                                {user.status === 'pending' && (
-                                                  <button
-                                                    onClick={() => onUpdateUserStatus(user.uid, 'active')}
-                                                    className="p-2 text-emerald-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all border-none bg-transparent cursor-pointer"
-                                                    title="Approve Request"
-                                                  >
-                                                    <CheckCircle size={16} />
-                                                  </button>
-                                                )}
-                                                {user.status !== 'blocked' ? (
-                                                  <button
-                                                    onClick={() => onUpdateUserStatus(user.uid, 'blocked')}
-                                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all border-none bg-transparent cursor-pointer"
-                                                    title="Block User"
-                                                  >
-                                                    <Ban size={16} />
-                                                  </button>
-                                                ) : (
-                                                  <button
-                                                    onClick={() => onUpdateUserStatus(user.uid, 'active')}
-                                                    className="p-2 text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all border-none bg-transparent cursor-pointer"
-                                                    title="Unblock User"
-                                                  >
-                                                    <CheckCircle size={16} />
-                                                  </button>
-                                                )}
-                                              </>
-                                            )}
-                                            <button
-                                              onClick={() => handleStartEditUser(user)}
-                                              className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all border-none bg-transparent cursor-pointer"
-                                              title="Edit Credentials"
-                                            >
-                                              <Pencil size={16} />
-                                            </button>
-                                            {user.uid !== currentUser.uid && (
-                                              <button
-                                                onClick={() => setUserToDelete(user)}
-                                                className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all border-none bg-transparent cursor-pointer"
-                                                title="Revoke Access"
-                                              >
-                                                <Trash2 size={16} />
-                                              </button>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Subview 4: System Configurations */}
-                  {mypcOpenedFile === 'system_config' && (
-                    <div className="max-w-7xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-                        {/* Category Management */}
-                        <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                          <div className="flex items-center justify-between mb-6">
-                            <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Service Categories</h4>
-                            <Layers size={16} className="text-blue-500" />
-                          </div>
-                          
-                          <div className="space-y-4">
-                            <div className="flex gap-2">
-                              <input 
-                                type="text" 
-                                placeholder="Add Category..." 
-                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-900 dark:text-white"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    const val = e.currentTarget.value.trim();
-                                    if (val && !appConfig.categories.includes(val)) {
-                                      onUpdateConfig({ ...appConfig, categories: [...appConfig.categories, val] });
-                                      e.currentTarget.value = '';
-                                    }
-                                  }
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
-                                  if (inputEl) {
-                                    const val = inputEl.value.trim();
-                                    if (val && !appConfig.categories.includes(val)) {
-                                      onUpdateConfig({ ...appConfig, categories: [...appConfig.categories, val] });
-                                      inputEl.value = '';
-                                    }
-                                  }
-                                }}
-                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
-                              >
-                                <Plus size={14} /> Add
-                              </button>
-                            </div>
-                            
-                            <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
-                              {appConfig.categories.map((cat, i) => (
-                                <div key={`cat-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-[var(--neu-surface)] rounded-lg border border-slate-205 dark:border-white/10 text-[10px] font-bold uppercase tracking-tight">
-                                  <span className="text-slate-700 dark:text-slate-300 uppercase">{cat}</span>
-                                  <button 
-                                    onClick={() => {
-                                      if (appConfig.categories.length > 1) {
-                                        onUpdateConfig({ ...appConfig, categories: appConfig.categories.filter(c => c !== cat) });
-                                      } else {
-                                        toast.error('At least one category is required.');
-                                      }
-                                    }}
-                                    className="text-slate-400 hover:text-red-500 opacity-100 transition-all cursor-pointer font-bold bg-transparent border-none p-1"
-                                  >
-                                    ‚úï
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Status Management */}
-                        <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                          <div className="flex items-center justify-between mb-6">
-                            <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Workflow Statuses</h4>
-                            <Activity size={16} className="text-amber-500" />
-                          </div>
-                          
-                          <div className="space-y-4">
-                            <div className="flex gap-2">
-                              <input 
-                                type="text" 
-                                placeholder="Add Status..." 
-                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-amber-500/20 text-slate-900 dark:text-white"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    const val = e.currentTarget.value.trim();
-                                    if (val && !appConfig.statuses.includes(val)) {
-                                      onUpdateConfig({ ...appConfig, statuses: [...appConfig.statuses, val] });
-                                      e.currentTarget.value = '';
-                                    }
-                                  }
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
-                                  if (inputEl) {
-                                    const val = inputEl.value.trim();
-                                    if (val && !appConfig.statuses.includes(val)) {
-                                      onUpdateConfig({ ...appConfig, statuses: [...appConfig.statuses, val] });
-                                      inputEl.value = '';
-                                    }
-                                  }
-                                }}
-                                className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
-                              >
-                                <Plus size={14} /> Add
-                              </button>
-                            </div>
-                            
-                            <div className="flex flex-wrap gap-2">
-                              {appConfig.statuses.map((stat, i) => (
-                                <div key={`stat-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-[var(--neu-surface)] rounded-lg border border-slate-205 dark:border-white/10 text-[10px] font-bold uppercase tracking-tight">
-                                  <span className="text-slate-700 dark:text-slate-300">{stat}</span>
-                                  <button 
-                                    onClick={() => {
-                                      if (appConfig.statuses.length > 1) {
-                                        onUpdateConfig({ ...appConfig, statuses: appConfig.statuses.filter(s => s !== stat) });
-                                      } else {
-                                        toast.error('At least one status is required.');
-                                      }
-                                    }}
-                                    className="text-slate-400 hover:text-red-500 opacity-100 transition-all cursor-pointer font-bold bg-transparent border-none p-1"
-                                  >
-                                    ‚úï
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Priority Management */}
-                        <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                          <div className="flex items-center justify-between mb-6">
-                            <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Priority Levels</h4>
-                            <ShieldAlert size={16} className="text-rose-500" />
-                          </div>
-                          
-                          <div className="space-y-4">
-                            <div className="flex gap-2">
-                              <input 
-                                type="text" 
-                                placeholder="Add Priority..." 
-                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-slate-900 dark:text-white"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    const val = e.currentTarget.value.trim();
-                                    if (val && !appConfig.priorities.includes(val)) {
-                                      onUpdateConfig({ ...appConfig, priorities: [...appConfig.priorities, val] });
-                                      e.currentTarget.value = '';
-                                    }
-                                  }
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
-                                  if (inputEl) {
-                                    const val = inputEl.value.trim();
-                                    if (val && !appConfig.priorities.includes(val)) {
-                                      onUpdateConfig({ ...appConfig, priorities: [...appConfig.priorities, val] });
-                                      inputEl.value = '';
-                                    }
-                                  }
-                                }}
-                                className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
-                              >
-                                <Plus size={14} /> Add
-                              </button>
-                            </div>
-                            
-                            <div className="flex flex-wrap gap-2">
-                              {appConfig.priorities.map((pri, i) => (
-                                <div key={`pri-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-[var(--neu-surface)] rounded-lg border border-slate-205 dark:border-white/10 text-[10px] font-bold uppercase tracking-tight">
-                                  <span className="text-slate-700 dark:text-slate-300">{pri}</span>
-                                  <button 
-                                    onClick={() => {
-                                      if (appConfig.priorities.length > 1) {
-                                        onUpdateConfig({ ...appConfig, priorities: appConfig.priorities.filter(p => p !== pri) });
-                                      } else {
-                                        toast.error('At least one priority level is required.');
-                                      }
-                                    }}
-                                    className="text-slate-400 hover:text-red-500 opacity-100 transition-all cursor-pointer font-bold bg-transparent border-none p-1"
-                                  >
-                                    ‚úï
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Zone Management */}
-                        <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                          <div className="flex items-center justify-between mb-6">
-                            <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Operation Zones</h4>
-                            <MapPin size={16} className="text-emerald-500" />
-                          </div>
-                          
-                          <div className="space-y-4">
-                            <div className="flex gap-2">
-                              <input 
-                                type="text" 
-                                placeholder="Add Zone..." 
-                                className="flex-1 text-[11px] font-bold px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 dark:text-white"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    const val = e.currentTarget.value.trim();
-                                    if (val && !appConfig.zones?.includes(val)) {
-                                      onUpdateConfig({ ...appConfig, zones: [...(appConfig.zones || []), val] });
-                                      e.currentTarget.value = '';
-                                    }
-                                  }
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  const inputEl = e.currentTarget.previousElementSibling as HTMLInputElement;
-                                  if (inputEl) {
-                                    const val = inputEl.value.trim();
-                                    if (val && !appConfig.zones?.includes(val)) {
-                                      onUpdateConfig({ ...appConfig, zones: [...(appConfig.zones || []), val] });
-                                      inputEl.value = '';
-                                    }
-                                  }
-                                }}
-                                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0 cursor-pointer"
-                              >
-                                <Plus size={14} /> Add
-                              </button>
-                            </div>
-                            
-                            <div className="flex flex-wrap gap-2 max-h-[300px] overflow-y-auto pr-1">
-                              {appConfig.zones?.map((zone, i) => (
-                                <div key={`zone-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-[var(--neu-surface)] rounded-lg border border-slate-205 dark:border-white/10 text-[10px] font-bold uppercase tracking-tight">
-                                  <span className="text-slate-700 dark:text-slate-300">{zone}</span>
-                                  <button 
-                                    onClick={() => {
-                                      if (appConfig.zones.length > 1) {
-                                        onUpdateConfig({ ...appConfig, zones: appConfig.zones.filter(z => z !== zone) });
-                                      } else {
-                                        toast.error('At least one zone is required.');
-                                      }
-                                    }}
-                                    className="text-slate-400 hover:text-red-500 opacity-100 transition-all cursor-pointer font-bold bg-transparent border-none p-1"
-                                  >
-                                    ‚úï
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 flex items-start gap-4">
-                        <Info className="text-blue-600 mt-0.5" size={16} />
-                        <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed uppercase tracking-widest">
-                          System configuration shifts are propagated in real-time to all members. Changes to categories, statuses, and zones will immediately reflect in the submission and auditing forms.
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Subview 5: Branding Customizer */}
-                  {mypcOpenedFile === 'branding_panel' && (
-                    <div className="max-w-7xl mx-auto w-full px-4">
-                      <EditorPanel branding={branding} onUpdate={onUpdateBranding} />
-                    </div>
-                  )}
-
-                  {/* Subview 6: Integrations Sync */}
-                  {mypcOpenedFile === 'integrations' && (
-                    <div className="max-w-4xl mx-auto space-y-6 text-left animate-in fade-in duration-300">
-                      <div className={cn("p-8 sm:p-12", getCardStyle(branding.cardStyle))}>
-                        {window.self !== window.top && !googleTokens && (
-                          <div className="mb-8 p-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-slate-800 dark:text-slate-200">
-                            <div className="flex gap-4 items-start">
-                              <span className="text-2xl mt-0.5">‚ö†Ô∏è</span>
-                              <div className="space-y-2">
-                                <h4 className="text-sm font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
-                                  Running Inside iframe / Hugging Face
-                                </h4>
-                                <p className="text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400">
-                                  Hugging Face runs this app inside a sandboxed iframe, which blocks Google login popups. 
-                                  To authorize your Google account smoothly without any blockers, click the button below to open this app directly in a separate browser tab:
-                                </p>
-                                <div className="pt-2">
-                                  <a
-                                    href={window.location.href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase tracking-widest text-[10px] transition-all shadow-[var(--neu-shadow-raised-lg)] active:scale-95"
-                                  >
-                                    Open in Direct Tab
-                                    <ExternalLink size={12} />
-                                  </a>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
-                          <div className="flex items-center gap-5">
-                            <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-center text-emerald-600">
-                              <FileSpreadsheet size={32} />
-                            </div>
-                            <div>
-                              <h3 className="text-2xl font-black uppercase tracking-tight">Google Sheets Sync</h3>
-                              <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">One-Time Enterprise Synchronization</p>
-                            </div>
-                          </div>
-
-                          {!googleTokens ? (
-                            <div className="flex flex-col sm:flex-row gap-4">
-                              <button
-                                onClick={() => handleGoogleConnect('server')}
-                                disabled={isConnecting}
-                                className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-[var(--neu-shadow-raised-lg)] shadow-brand-accent/20 active:scale-95 disabled:opacity-50 border-none cursor-pointer"
-                              >
-                                <Zap size={14} className="text-amber-400" />
-                                {isConnecting ? 'Linking Permanent...' : 'Connect Permanent Sync'}
-                              </button>
-                              <button
-                                onClick={() => handleGoogleConnect('firebase')}
-                                disabled={isConnecting}
-                                className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-800 dark:text-slate-200 font-black uppercase tracking-widest text-[11px] hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50 border-none cursor-pointer"
-                              >
-                                <ExternalLink size={14} />
-                                {isConnecting ? 'Linking Firebase...' : 'Fast Connect (Firebase)'}
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                              {googleTokens && !googleTokens.refresh_token ? (
-                                <div className="px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 animate-pulse">
-                                  <span className="relative flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                                  </span>
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
-                                    Reconnect Required for Background Sync
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Sync Active</span>
-                                </div>
-                              )}
-                              <button 
-                                onClick={() => { googleSheetsService.clearAuth(); setGoogleTokens(null); }} 
-                                className="text-xs font-black uppercase tracking-widest text-rose-500 hover:text-rose-600 transition-colors py-2 px-3 hover:bg-rose-500/5 rounded-xl border border-transparent hover:border-rose-500/15 cursor-pointer bg-transparent"
-                              >
-                                Disconnect
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                          <div className="space-y-6">
-                            <h4 className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-                              <Zap size={16} className="text-brand-accent" />
-                              How it works
-                            </h4>
-                            <p className="text-slate-500 font-medium text-sm leading-relaxed">
-                              Once authorized, every operational log will be mirrored to your chosen Google Spreadsheet in real-time. This provides an immutable enterprise backup outside the main database.
-                            </p>
-                            <div className="space-y-3 font-semibold uppercase tracking-widest">
-                              {[
-                                'Real-time data propagation',
-                                'Enterprise-grade CSV backups',
-                                'Immutable audit logs'
-                              ].map((feature, i) => (
-                                <div key={i} className="flex items-center gap-3 text-[10px] font-black text-slate-400">
-                                  <CheckCircle size={14} className="text-emerald-500 shrink-0" />
-                                  {feature}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {googleTokens && (
-                            <div className="space-y-6 bg-slate-50/50 dark:bg-slate-900/30 p-6 rounded-2xl border border-[var(--neu-border)]">
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                   <label className={labelClasses}>Spreadsheet ID</label>
-                                   <div className="flex gap-2">
-                                     <input 
-                                       type="text" 
-                                       value={spreadsheetId} 
-                                       onChange={(e) => setSpreadsheetId(e.target.value)} 
-                                       className={inputClasses} 
-                                       placeholder="Paste Spreadsheet ID here" 
-                                     />
-                                     <button 
-                                       onClick={handleCreateSheet}
-                                       disabled={isCreatingSheet}
-                                       className="px-4 rounded-xl bg-emerald-600 text-white font-black text-[9px] uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50 transition-all flex items-center justify-center shrink-0 min-w-[100px] border-none cursor-pointer"
-                                     >
-                                       {isCreatingSheet ? 'Creating...' : 'Create New'}
-                                     </button>
-                                   </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                   <div className="space-y-2">
-                                      <label className={labelClasses}>Tab Name</label>
-                                      <input type="text" value={sheetName} onChange={(e) => setSheetName(e.target.value)} className={inputClasses} placeholder="Sheet1" />
-                                   </div>
-                                   <div className="space-y-2">
-                                      <label className={labelClasses}>Range</label>
-                                      <input type="text" value={sheetRange} onChange={(e) => setSheetRange(e.target.value)} className={inputClasses} placeholder="A1" />
-                                   </div>
-                                </div>
-                                
-                                <button 
-                                  onClick={() => {
-                                    handleSaveSpreadsheetId();
-                                    handleSaveRangeSettings();
-                                  }} 
-                                  className="w-full py-4 rounded-xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] font-black uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] hover:shadow-brand-accent/20 transition-all active:scale-95 border-none cursor-pointer"
-                                >
-                                  Initialize Synchronization
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {!googleTokens && (
-                            <div className="flex items-center justify-center p-8 border-2 border-dashed border-[var(--neu-border)] rounded-2xl">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] text-center leading-relaxed">
-                                Please link your Google account<br/>to reveal mirroring parameters
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {googleTokens && (
-                        <div className="flex flex-col items-center gap-4 mt-2">
-                           <button
-                            onClick={handleBulkExport}
-                            disabled={isExporting}
-                            className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-[var(--neu-surface)] border border-slate-205 dark:border-white/10 text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 transition-all shadow-[var(--neu-shadow-raised-sm)] cursor-pointer"
-                          >
-                            {isExporting ? 'Exporting...' : 'Perform Bulk System Export'}
-                            <CloudUpload size={14} className={isExporting ? "animate-bounce" : ""} />
-                          </button>
-                          <div className="flex flex-col items-center p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-[var(--neu-border)]/60 max-w-sm w-full text-center">
-                            {googleTokens && !googleTokens.refresh_token ? (
-                              <>
-                                <div className="flex items-center gap-2 mb-1 justify-center">
-                                  <span className="relative flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                                  </span>
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                                    Background Auto Sync: Idle
-                                  </span>
-                                </div>
-                                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                  Automatic background backup is currently paused because your account has not been granted offline refresh permissions yet. Please disconnect and reconnect your Google Account to automatically sync.
-                                </p>
-                              </>
-                            ) : (
-                              <>
-                                <div className="flex items-center gap-2 mb-1 justify-center">
-                                  <span className="relative flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                  </span>
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                    Background Auto Sync: Active
-                                  </span>
-                                </div>
-                                <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                                  Saves full system logs, users, clients, and configuration automatically to Google Sheets every 10 minutes.
-                                </p>
-                              </>
-                            )}
-                            {lastAutoBackupTime ? (
-                              <div className="mt-3 flex flex-col gap-0.5">
-                                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 animate-pulse">
-                                  LAST EXPORTED: <span className="font-mono text-emerald-600 dark:text-emerald-400">{new Date(lastAutoBackupTime).toLocaleTimeString()}</span>
-                                </span>
-                                <span className="text-[9px] font-semibold text-slate-400/85 uppercase tracking-wider">
-                                  ({new Date(lastAutoBackupTime).toLocaleDateString()})
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="mt-3 font-mono text-[9px] font-bold text-amber-500 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded">
-                                Pending Initial Sync
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Real Offline A to Z Local Backup and Restore Panel */}
-                      <div className={cn("p-8 sm:p-12 mt-6", getCardStyle(branding.cardStyle))}>
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-8 pb-8 border-b border-[var(--neu-border)]">
-                          <div className="flex items-center gap-5">
-                            <div className="w-16 h-16 rounded-2xl bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center text-brand-accent">
-                              <HardDriveDownload size={32} />
-                            </div>
-                            <div>
-                              <h3 className="text-2xl font-black uppercase tracking-tight">Enterprise Backup & Restore</h3>
-                              <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">A to Z Absolute Database Preservation</p>
-                            </div>
-                          </div>
-                          
-                          <button
-                            type="button"
-                            onClick={handleGenerateLocalBackup}
-                            disabled={isGeneratingBackup}
-                            className="inline-flex items-center justify-center gap-3 px-8 py-5 rounded-xl bg-slate-900 dark:bg-brand-accent hover:bg-black dark:hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-[var(--neu-shadow-raised-lg)] shadow-brand-accent/10 active:scale-95 disabled:opacity-50 border-none cursor-pointer"
-                          >
-                            {isGeneratingBackup ? 'Compiling Archive...' : 'Download Full System Backup'}
-                            <HardDriveDownload size={16} />
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mt-6">
-                          <div className="space-y-6">
-                            <h4 className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-                              <Info size={16} className="text-brand-accent" />
-                              Absolute Backups Include
-                            </h4>
-                            <p className="text-slate-500 font-medium text-sm leading-relaxed">
-                              Downloads an instant local Snapshot containing every complaint logged, and all corresponding timestamps, details, custom brand definitions, profiles configurations, registered client details and offline structures safely.
-                            </p>
-                            <div className="grid grid-cols-2 gap-3 pb-4">
-                              {[
-                                'Complaints with date & time',
-                                'Registered panel users',
-                                'Skins & branding configuration',
-                                'Operational logs / activity stream',
-                                'Clients registry profiles',
-                                'System matrices and maps data'
-                              ].map((item, i) => (
-                                <div key={i} className="flex items-center gap-2.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                  <CheckCircle size={14} className="text-emerald-500 shrink-0" />
-                                  <span className="truncate">{item}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="space-y-6">
-                            <h4 className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-                              <CloudUpload size={16} className="text-brand-accent" />
-                              Power System Restoration
-                            </h4>
-
-                            {/* Drag and Drop Region */}
-                            {!restoreFile ? (
-                              <div
-                                onDragEnter={handleDrag}
-                                onDragOver={handleDrag}
-                                onDragLeave={handleDrag}
-                                onDrop={handleDrop}
-                                className={cn(
-                                  "p-8 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 min-h-[160px]",
-                                  dragActive 
-                                    ? "border-brand-accent bg-brand-accent/10" 
-                                    : "border-slate-205 dark:border-white/10 hover:border-slate-350 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/40"
-                                )}
-                                onClick={() => document.getElementById('restore-file-input2')?.click()}
-                              >
-                                <input
-                                  id="restore-file-input2"
-                                  type="file"
-                                  accept=".json,application/json"
-                                  className="hidden"
-                                  onChange={handleFileChange}
-                                />
-                                <CloudUpload size={32} className="text-slate-400 mb-3" />
-                                <p className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">
-                                  Drag & Drop Backup File (.json)
-                                </p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                                  or click to select file
-                                </p>
-                              </div>
-                            ) : (
-                              <div className="p-6 bg-slate-50 dark:bg-slate-900/40 border border-[var(--neu-border)] rounded-2xl space-y-4">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div className="space-y-1">
-                                    <p className="text-xs font-bold font-mono text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
-                                      {restoreFile.name}
-                                    </p>
-                                    <p className="text-[10px] text-slate-400 font-medium font-mono">
-                                      {(restoreFile.size / 1024).toFixed(2)} KB
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => { setRestoreFile(null); setUploadedBackupData(null); }}
-                                    className="p-1 rounded bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors border-none cursor-pointer"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </div>
-
-                                {uploadedBackupData && (
-                                  <div className="p-3 bg-white/60 dark:bg-slate-950/40 rounded-xl space-y-1 text-[10px] border border-[var(--neu-border)]">
-                                    <div className="flex justify-between font-bold text-slate-500 uppercase tracking-wider">
-                                      <span>Compiled On:</span>
-                                      <span className="font-mono text-slate-800 dark:text-slate-300 text-right">
-                                        {new Date(uploadedBackupData.exportedAt).toLocaleDateString()} {new Date(uploadedBackupData.exportedAt).toLocaleTimeString()}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between font-bold text-slate-500 uppercase tracking-wider flex-wrap gap-1">
-                                      <span>Exporter:</span>
-                                      <span className="font-mono text-slate-800 dark:text-slate-300 break-all text-right max-w-[150px] truncate">
-                                        {uploadedBackupData.metadata?.exportedBy || "Anonymous"}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between font-bold text-slate-500 uppercase tracking-wider text-right">
-                                      <span>Records volume:</span>
-                                      <span className="font-mono text-brand-accent text-right">
-                                        {uploadedBackupData.data?.complaints?.length || 0} complaints, {uploadedBackupData.data?.clients?.length || 0} clients
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={handleExecuteRestore}
-                                  disabled={isRestoringBackup}
-                                  className="w-full py-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black uppercase tracking-widest text-[11px] transition-all shadow-[var(--neu-shadow-raised-lg)] active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 border-none cursor-pointer"
-                                >
-                                  {isRestoringBackup ? 'Rewriting Database...' : 'CONFIRM & RESTORE FULL SYSTEM'}
-                                  <CheckCircle size={14} />
-                                </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                  {/* Subview 7: Security & Audio Matrix settings_info */}
-                  {mypcOpenedFile === 'settings_info' && (
-                    <div className="max-w-2xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
-                      <div className="business-card p-10 bg-[var(--neu-surface)] rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)]">
-                        <div className="flex items-center gap-5 mb-10">
-                          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-[var(--neu-shadow-raised-sm)]">
-                            <Volume2 size={28} />
-                          </div>
-                          <div>
-                            <h3 className="text-xl font-black uppercase tracking-tight">System Audio & Matrix</h3>
-                            <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">Notification Matrix & Hardware Control</p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-8">
-                          {/* Audio Matrix Section */}
-                          <div className="space-y-4">
-                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Audio & Speaker Hub</h4>
-                            {!alertAuthorized ? (
-                              <div className="p-6 rounded-2xl bg-amber-500/5 border border-amber-500/20 text-center">
-                                <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mb-4 leading-relaxed uppercase tracking-widest text-center mt-1">
-                                  Synthesizer and alert speakers are restricted by current policy.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={onAuthorizeAlerts}
-                                  className="w-full py-4 rounded-xl bg-amber-500 text-white font-black uppercase tracking-widest text-xs shadow-[var(--neu-shadow-raised-lg)] hover:bg-amber-600 transition-all border-none cursor-pointer"
-                                >
-                                  Initialize Speaker Matrix
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)]">
-                                  <div className="flex items-center gap-3">
-                                    {isAudioMuted ? <VolumeX className="text-rose-500" size={18} /> : <Volume2 className="text-emerald-500" size={18} />}
-                                    <div>
-                                      <p className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Alert Audio</p>
-                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{isAudioMuted ? 'Notifications Suspended' : 'Notifications Active'}</p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={onToggleAudio}
-                                    className={cn(
-                                      "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border-none cursor-pointer",
-                                      isAudioMuted ? "bg-emerald-500 text-white shadow-[var(--neu-shadow-raised-lg)]" : "bg-rose-500 text-white shadow-[var(--neu-shadow-raised-lg)]"
-                                    )}
-                                  >
-                                    {isAudioMuted ? 'Turn On' : 'Turn Off'}
-                                  </button>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  onClick={onSoundTest}
-                                  className="w-full py-3 rounded-xl border border-[var(--neu-border)] text-slate-600 dark:text-slate-400 font-black uppercase tracking-widest text-[10px] hover:bg-slate-50 dark:hover:bg-slate-900 transition-all flex items-center justify-center gap-3 bg-transparent cursor-pointer"
-                                >
-                                  <Zap size={14} className="text-amber-500" />
-                                  Execute Speaker Sync Test
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Microphone Section */}
-                          <div className="space-y-4 pt-4 border-t border-[var(--neu-border)]">
-                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Tactical Voice Input</h4>
-                            {!micAuthorized ? (
-                              <div className="p-6 rounded-2xl bg-blue-500/5 border border-blue-500/20 text-center">
-                                <p className="text-xs font-bold text-blue-600 dark:text-blue-400 mb-4 leading-relaxed uppercase tracking-widest text-center mt-1">
-                                  Microphone capture protocols are currently offline.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={onAuthorizeMic}
-                                  className="w-full py-4 rounded-xl bg-blue-600 text-white font-black uppercase tracking-widest text-xs shadow-[var(--neu-shadow-raised-lg)] hover:bg-blue-700 transition-all border-none cursor-pointer"
-                                >
-                                  Authorize Mic Input
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="space-y-4">
-                                <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)]">
-                                  <div className="flex items-center gap-3">
-                                    {isMicMuted ? <VolumeX className="text-rose-500" size={18} /> : <Mic className="text-blue-500" size={18} />}
-                                    <div>
-                                      <p className="text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">Tactical Mic</p>
-                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{isMicMuted ? 'Capture Suppressed' : 'Capture Active'}</p>
-                                    </div>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={onToggleMic}
-                                    className={cn(
-                                      "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border-none cursor-pointer",
-                                      isMicMuted ? "bg-emerald-500 text-white shadow-[var(--neu-shadow-raised-lg)]" : "bg-rose-500 text-white shadow-[var(--neu-shadow-raised-lg)]"
-                                    )}
-                                  >
-                                    {isMicMuted ? 'Turn On' : 'Turn Off'}
-                                  </button>
-                                </div>
-
-                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-white/10">
-                                  <MicVisualizer isMuted={isMicMuted} isAuthorized={micAuthorized} />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Subview 8: Dealer Section dealers_view */}
-                  {mypcOpenedFile === 'dealers_view' && (
-                    currentUser.role === 'super_admin' ? (
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left animate-in fade-in duration-300">
-                        {/* Dealer Setup Form */}
-                        <div className="lg:col-span-1">
-                          <div className={cn("p-8 border border-slate-200 dark:border-white/10 bg-[var(--neu-surface)]", getCardStyle(branding.cardStyle))}>
-                            <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3 text-emerald-600 dark:text-emerald-400">
-                              <ShieldAlert size={20} />
-                              Dealer Setup
-                            </h3>
-                            {formError && (
-                              <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold">
-                                {formError}
-                              </div>
-                            )}
-                            {formSuccess && (
-                              <div className="mb-6 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
-                                {formSuccess}
-                              </div>
-                            )}
-                            <form onSubmit={handleCreateUser} className="space-y-5">
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Name (Full Name)</label>
-                                <input
-                                  type="text"
-                                  value={newFullName}
-                                  onChange={(e) => setNewFullName(e.target.value)}
-                                  placeholder="e.g. John Doe"
-                                  className={cn(inputClasses, "normal-case")}
-                                  required
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Username</label>
-                                <input
-                                  type="text"
-                                  value={newUsername}
-                                  onChange={(e) => setNewUsername(e.target.value)}
-                                  placeholder="e.g. johndoe"
-                                  className={cn(inputClasses, "normal-case")}
-                                  required
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Passkey (Passkey / Password)</label>
-                                <input
-                                  type="text"
-                                  value={newPassword}
-                                  onChange={(e) => setNewPassword(e.target.value)}
-                                  placeholder="e.g. Passkey123"
-                                  className={cn(inputClasses, "normal-case")}
-                                  required
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Line Code (Network VLAN Line Code)</label>
-                                <input
-                                  type="text"
-                                  value={newLineCode}
-                                  onChange={(e) => setNewLineCode(e.target.value)}
-                                  placeholder="e.g. DLR-99"
-                                  className={cn(inputClasses, "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/10 normal-case")}
-                                  required
-                                />
-                              </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Dealer Company Name (Business Entity Name)</label>
-                                <input
-                                  type="text"
-                                  value={newCompanyName}
-                                  onChange={(e) => setNewCompanyName(e.target.value)}
-                                  placeholder="e.g. Tech Solutions"
-                                  className={cn(inputClasses, "normal-case")}
-                                  required
-                                />
-                              </div>
-                              <button
-                                type="submit"
-                                disabled={isCreating}
-                                className="w-full py-3.5 mt-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] hover:shadow-emerald-500/20 disabled:opacity-50 transition-all cursor-pointer block min-h-[44px] border-none"
-                              >
-                                {isCreating ? 'Provisioning...' : 'Create Dealer Account'}
-                              </button>
-                            </form>
-                          </div>
-                        </div>
-
-                        {/* Authorized Dealers Registry List */}
-                        <div className="lg:col-span-2">
-                          <div className="business-card overflow-hidden bg-[var(--neu-surface)] rounded-2xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-raised-lg)]">
-                            <div className="px-6 py-4 border-b border-[var(--neu-border)] bg-[var(--neu-surface)] flex justify-between items-center whitespace-normal break-words">
-                              <h4 className="text-xs font-black uppercase tracking-[0.2em] text-emerald-500">Authorized Dealers Registry</h4>
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left whitespace-nowrap">
-                                <thead className="bg-[var(--neu-surface)]">
-                                  <tr className="border-b border-[var(--neu-border)]">
-                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity / Company</th>
-                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Line Code</th>
-                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Node Status</th>
-                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Protocol</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                                  {users.filter(u => u.role === 'dealer').length === 0 ? (
-                                    <tr>
-                                      <td colSpan={4} className="px-6 py-12 text-center text-slate-400 uppercase font-black tracking-widest text-xs">No Dealers Authorized in Registry</td>
-                                    </tr>
-                                  ) : (
-                                    users.filter(u => u.role === 'dealer').map((dealer, i) => (
-                                      <tr key={`${dealer.uid}-${i}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
-                                        <td className="px-6 py-4">
-                                          {editingUserId === dealer.uid ? (
-                                            <div className="space-y-2">
-                                              <input
-                                                type="text"
-                                                value={editUsername}
-                                                onChange={(e) => setEditUsername(e.target.value)}
-                                                placeholder="Dealer Name"
-                                                className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)]"
-                                              />
-                                              <input
-                                                type="text"
-                                                value={editCompanyName}
-                                                onChange={(e) => setEditCompanyName(e.target.value)}
-                                                placeholder="Company Name"
-                                                className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)]"
-                                              />
-                                              <input
-                                                type="text"
-                                                value={editPassword}
-                                                onChange={(e) => setEditPassword(e.target.value)}
-                                                placeholder="New Passkey"
-                                                className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)]"
-                                              />
-                                            </div>
-                                          ) : (
-                                            <div className="flex flex-col gap-2">
-                                              <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-wider text-xs block">
-                                                üè¢ {dealer.companyName || 'No Company Set'}
-                                              </span>
-                                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                                <div className="px-3 py-1.5 bg-[var(--neu-surface)] rounded-lg border border-[var(--neu-border)] flex flex-col justify-center min-w-[120px]">
-                                                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Login username</span>
-                                                  <span className="text-[11px] font-extrabold text-slate-900 dark:text-indigo-400 select-all tracking-wide break-all">{dealer.username}</span>
-                                                </div>
-                                                <div className="px-3 py-1.5 bg-[var(--neu-surface)] rounded-lg border border-[var(--neu-border)] flex flex-col justify-center min-w-[120px]">
-                                                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500">Authentication Passkey</span>
-                                                  <span className="text-[11px] font-extrabold text-[#00E5FF] select-all tracking-wide break-all font-mono">{dealer.password || '‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢'}</span>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                          {editingUserId === dealer.uid ? (
-                                            <input
-                                              type="text"
-                                              value={editLineCode}
-                                              onChange={(e) => setEditLineCode(e.target.value)}
-                                              className="w-full px-2 py-1 text-sm border rounded bg-[var(--neu-surface)]"
-                                              placeholder="Line Code"
-                                            />
-                                          ) : (
-                                            <div className="flex items-center gap-3">
-                                              <span className="px-3 py-1 bg-[var(--neu-surface)] text-slate-800 dark:text-slate-200 text-[10px] font-black rounded border border-[var(--neu-border)] tracking-wider">
-                                                {dealer.lineCode}
-                                              </span>
-                                              <button
-                                                type="button"
-                                                onClick={async () => {
-                                                  const newStatus = dealer.status === 'blocked' ? 'active' : 'blocked';
-                                                  try {
-                                                    await onUpdateUserStatus(dealer.uid, newStatus);
-                                                    toast.success(newStatus === 'blocked' ? 'üö´ NODE SUSPENDED' : '‚úÖ NODE ACTIVATED', {
-                                                      description: `${dealer.companyName || dealer.username} has been ${newStatus === 'blocked' ? 'suspended' : 'activated'} in real-time.`
-                                                    });
-                                                  } catch (err: any) {
-                                                    toast.error('Failed to change dealer status', { description: err.message });
-                                                  }
-                                                }}
-                                                className={cn(
-                                                  "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[var(--neu-shadow-raised-sm)] cursor-pointer border",
-                                                  dealer.status === 'blocked'
-                                                    ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-600 shadow-rose-500/10"
-                                                    : "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/10"
-                                                )}
-                                              >
-                                                <span className={cn("w-1.5 h-1.5 rounded-full bg-white", dealer.status !== 'blocked' && "animate-pulse")} />
-                                                <span>{dealer.status === 'blocked' ? 'OFF' : 'ON'}</span>
-                                              </button>
-                                            </div>
-                                          )}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                          <div className="flex items-center gap-2">
-                                            {dealer.status === 'blocked' ? (
-                                              <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-wider bg-rose-50 dark:bg-rose-950/25 text-rose-600 dark:text-rose-400 border border-rose-200/50 dark:border-rose-900/30 rounded-lg flex items-center gap-1.5">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
-                                                SUSPENDED
-                                              </span>
-                                            ) : (
-                                              <span className="px-2.5 py-1 text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/25 text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-900/30 rounded-lg flex items-center gap-1.5">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                                ACTIVE
-                                              </span>
-                                            )}
-                                          </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right whitespace-normal">
-                                          <div className="flex justify-end items-center gap-2">
-                                            {editingUserId === dealer.uid ? (
-                                              <>
-                                                <button
-                                                  onClick={() => handleUpdateUser(dealer.uid)}
-                                                  disabled={isUpdating}
-                                                  className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all cursor-pointer bg-transparent border-none"
-                                                  title="Save Changes"
-                                                >
-                                                  <Check size={16} />
-                                                </button>
-                                                <button
-                                                  onClick={handleCancelEditUser}
-                                                  className="p-2 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900/50 rounded-lg transition-all cursor-pointer bg-transparent border-none"
-                                                  title="Cancel"
-                                                >
-                                                  <X size={16} />
-                                                </button>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setSelectedDealerForSubAccounts(dealer)}
-                                                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 text-[10px] font-black rounded-lg border border-indigo-100 dark:border-indigo-900/30 tracking-wider flex items-center gap-1.5 transition-all shadow-[var(--neu-shadow-raised-sm)] cursor-pointer mr-1"
-                                                  title="View Sub Accounts"
-                                                >
-                                                  <Users size={12} />
-                                                  SUB ACCOUNTS
-                                                  <span className="px-1.5 py-0.5 bg-indigo-600 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center min-w-[16px] h-[16px]">
-                                                    {users.filter(u => u.dealerId === dealer.uid && u.role !== 'dealer').length}
-                                                  </span>
-                                                </button>
-
-                                                <button
-                                                  onClick={() => {
-                                                    window.dispatchEvent(new CustomEvent('openChat', { detail: dealer.uid }));
-                                                  }}
-                                                  className="p-2 text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all cursor-pointer bg-transparent border-none"
-                                                  title="Communicate with Dealer"
-                                                >
-                                                  <MessageSquare size={16} />
-                                                </button>
-                                                <button
-                                                  onClick={() => handleStartEditUser(dealer)}
-                                                  className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg transition-all cursor-pointer bg-transparent border-none"
-                                                  title="Edit Dealer"
-                                                >
-                                                  <Pencil size={16} />
-                                                </button>
-                                                <button
-                                                  onClick={() => setUserToDelete(dealer)}
-                                                  className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-all cursor-pointer bg-transparent border-none"
-                                                  title="Revoke Permission"
-                                                >
-                                                  <Trash2 size={16} />
-                                                </button>
-                                              </>
-                                            )}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    ))
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="max-w-xl mx-auto p-12 bg-[var(--neu-surface)] border border-rose-200/50 dark:border-rose-950/50 rounded-3xl text-center space-y-6">
-                        <div className="w-20 h-20 bg-rose-50 dark:bg-rose-950/20 text-rose-500 mx-auto rounded-full flex items-center justify-center">
-                          <ShieldAlert size={40} />
-                        </div>
-                        <div className="space-y-2">
-                          <h4 className="text-lg font-black uppercase text-slate-900 dark:text-white">Access Denied</h4>
-                          <p className="text-xs text-slate-400 uppercase font-bold tracking-widest leading-relaxed">
-                            Secured Admin Node. Your current role lacks super-admin credentials.
-                          </p>
-                        </div>
-                      </div>
-                    )
-                  )}
-
-                  {/* Subview 9: Complaints View complaints_view */}
-                  {mypcOpenedFile === 'complaints_view' && (
-                    <div className="max-w-7xl mx-auto space-y-6 text-left animate-in fade-in duration-300">
-                      {renderHomeSections()}
-                    </div>
-                  )}
-
-                  {/* Subview 10: Active Complainers nodes_view */}
-                  {mypcOpenedFile === 'nodes_view' && (
-                    <div className="max-w-4xl mx-auto text-left animate-in fade-in duration-300">
-                      <HighFrequencyNodes complaints={complaints} users={users} />
-                    </div>
-                  )}
-
-                  {/* Subview 11: Dealers Data dealers_data_view */}
-                  {mypcOpenedFile === 'dealers_data_view' && (
-                    currentUser.role === 'super_admin' ? (
-                      <div className="space-y-8 text-left animate-in fade-in duration-300">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                          <div className="space-y-1">
-                            <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Dealer Intelligence</h3>
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-relaxed">Select an authorized dealer network to audit operational performance</p>
-                          </div>
-                          <div className="flex bg-slate-105 dark:bg-slate-900 p-1 rounded-xl border border-[var(--neu-border)]">
-                            <button 
-                              type="button"
-                              onClick={() => setSelectedDealerId('all')}
-                              className={cn(
-                                "px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all cursor-pointer",
-                                selectedDealerId === 'all' ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)]" : "text-slate-500 hover:text-slate-900"
-                              )}
-                            >
-                              Global View
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                          {users.filter(u => u.role === 'dealer').map((dealer, i) => {
-                            const dealerComplaints = complaints.filter(c => c.dealerId === dealer.uid);
-                            const pending = dealerComplaints.filter(c => c.status === 'pending').length;
-                            const completed = dealerComplaints.filter(c => c.status === 'complete').length;
-                            
-                            return (
-                              <motion.div
-                                key={`${dealer.uid}-${i}`}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => {
-                                  setSelectedDealerId(dealer.uid);
-                                  navigate('/mypc/complaints');
-                                }}
-                                className={cn(
-                                  "p-6 rounded-2xl border-2 transition-all cursor-pointer group",
-                                  selectedDealerId === dealer.uid 
-                                    ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] border-slate-950 dark:border-brand-accent" 
-                                    : "bg-[var(--neu-surface)] border-[var(--neu-border)] hover:border-brand-accent/50"
-                                )}
-                              >
-                                <div className="flex justify-between items-start mb-6">
-                                  <div className={cn(
-                                    "w-12 h-12 rounded-xl flex items-center justify-center",
-                                    selectedDealerId === dealer.uid ? "bg-white/10" : "bg-[var(--neu-surface)]"
-                                  )}>
-                                    <TrendingUp size={24} className={selectedDealerId === dealer.uid ? "text-white" : "text-brand-accent"} />
-                                  </div>
-                                  <div className={cn(
-                                    "px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest border",
-                                    selectedDealerId === dealer.uid ? "bg-white/20 border-white/30" : "bg-[var(--neu-surface)] border-[var(--neu-border)] text-slate-500"
-                                  )}>
-                                    {dealer.lineCode}
-                                  </div>
-                                </div>
-                                
-                                <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate text-slate-950 dark:text-slate-100">{dealer.username}</h4>
-                                <p className={cn("text-[10px] font-bold uppercase tracking-widest mb-6", selectedDealerId === dealer.uid ? "text-white/60" : "text-slate-400")}>Authorized Dealer Network</p>
-                                
-                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10 dark:border-white/10">
-                                  <div>
-                                    <p className={cn("text-[9px] font-black uppercase tracking-widest", selectedDealerId === dealer.uid ? "text-white/40" : "text-slate-500")}>Operations</p>
-                                    <p className="text-xl font-black tracking-tighter">{dealerComplaints.length}</p>
-                                  </div>
-                                  <div>
-                                    <p className={cn("text-[9px] font-black uppercase tracking-widest", selectedDealerId === dealer.uid ? "text-white/40" : "text-slate-500")}>Pending</p>
-                                    <p className="text-xl font-black tracking-tighter text-amber-500">{pending}</p>
-                                  </div>
-                                </div>
-                              </motion.div>
-                            );
-                          })}
-                        </div>
-
-                        {users.filter(u => u.role === 'dealer').length === 0 && (
-                          <div className="p-12 text-center border-2 border-dashed border-[var(--neu-border)] rounded-3xl">
-                            <div className="w-16 h-16 bg-[var(--neu-surface)] rounded-full flex items-center justify-center mx-auto mb-6">
-                              <ShieldAlert size={32} className="text-slate-300" />
-                            </div>
-                            <h4 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">No Active Dealer Networks</h4>
-                            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Authorize dealers in the "Dealer Section" to start auditing their data.</p>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="max-w-xl mx-auto p-12 bg-[var(--neu-surface)] border border-rose-200/50 dark:border-rose-950/50 rounded-3xl text-center space-y-6">
-                        <div className="w-20 h-20 bg-rose-50 dark:bg-rose-950/20 text-rose-500 mx-auto rounded-full flex items-center justify-center">
-                          <ShieldAlert size={40} />
-                        </div>
-                        <div className="space-y-2">
-                          <h4 className="text-lg font-black uppercase text-slate-900 dark:text-white">Access Denied</h4>
-                          <p className="text-xs text-slate-400 uppercase font-bold tracking-widest leading-relaxed">
-                            Secured Admin Node. Your current role lacks super-admin credentials.
-                          </p>
-                        </div>
-                      </div>
-                    )
-                  )}
-
-                  {/* Subview 12: Complain Reg submit_view */}
-                  {mypcOpenedFile === 'submit_view' && (
-                    <div className="max-w-4xl mx-auto text-left animate-in fade-in duration-300">
-                      <div className="text-center space-y-2 mb-10">
-                        <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50">Field Operations</h2>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Capture and process enterprise support requests</p>
-                      </div>
-                      <div className="pt-2 pb-8 relative">
-                        {isSuspended && (
-                          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-950/70 backdrop-blur-md rounded-3xl border border-red-500/20 p-6 text-center animate-in fade-in duration-300">
-                            <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 flex items-center justify-center mb-4 border border-red-200/50">
-                              <ShieldAlert size={28} className="animate-bounce" />
-                            </div>
-                            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-red-600 dark:text-red-400">
-                              Identity Suspended
-                            </h3>
-                            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold uppercase mt-1 max-w-xs leading-relaxed">
-                              Your dealer network access has been deactivated. Complaint registration is frozen.
-                            </p>
-                          </div>
-                        )}
-                        <div className={cn(isSuspended && "blur-[3px] pointer-events-none select-none opacity-30")}>
-                          <ComplaintForm 
-                            onSubmit={async (data) => {
-                              await onRegisterComplaint(data);
-                              navigate('/mypc/complaints');
-                            }} 
-                            isLoading={isLoading || false} 
-                            appConfig={appConfig}
-                            currentUser={currentUser}
-                            branding={branding}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Subview 13: Network Map map_view */}
-                  {mypcOpenedFile === 'map_view' && (
-                    <MapViewer
-                      isOpen={mypcOpenedFile === 'map_view'}
-                      onClose={() => navigate('/mypc')}
-                      user={currentUser}
-                    />
-                  )}
-
-                  {/* Subview 14: Receipt print_receipt_view */}
-                  {mypcOpenedFile === 'print_receipt_view' && (
-                    <ReceiptManager
-                      currentUser={currentUser}
-                      branding={branding}
-                    />
-                  )}
-
-                  {/* Subview 15: WhatsApp Integration whatsapp_integration */}
-                  {mypcOpenedFile === 'whatsapp_integration' && (
-                    <div className="max-w-5xl mx-auto space-y-6 text-left animate-in fade-in duration-300">
-                      {/* Safety / Anti-Ban Warning Header Card */}
-                      <div className="p-4 sm:p-5 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-500/10 text-slate-800 dark:text-amber-200">
-                        <div className="flex gap-3 items-start">
-                          <span className="text-xl shrink-0 mt-0.5">‚ö†Ô∏è</span>
-                          <div>
-                            <h4 className="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">Safe Sending Compliance Warning</h4>
-                            <p className="text-[11px] font-bold mt-1 text-amber-700/95 dark:text-amber-400/90 leading-relaxed">
-                              Avoid sending more than ~50-100 messages per hour to reduce ban risk. Always personalize messages. Personalized tags (like <span className="font-mono text-xs text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-1 py-0.5 rounded">{"{{name}}"}</span> or <span className="font-mono text-xs text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-1 py-0.5 rounded">{"{{amount}}"}</span>) are automatically substituted to maintain natural variations.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                        <WhatsAppConnectPanel onClose={() => setMypcOpenedFile(null)} />
-                        <WhatsAppMessageTemplateBox />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {activeTab === 'mypc' && <MyPCTab {...stateProps} />}
 
         {activeTab === 'sync_status' && (
           <div className="max-w-[115rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
@@ -8342,872 +6852,41 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'billing' && (
-          <div className="max-w-[115rem] mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
-            {/* Configure New Month Popup-card Block */}
-            <AnimatePresence>
-              {isConfiguringNewMonth && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className={cn("p-6 rounded-2xl border space-y-4 max-w-lg mb-4", getCardStyle(branding.cardStyle))}
-                >
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-white/10">
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Establish Monthly Recovery Cycle</span>
-                    <button type="button" onClick={() => setIsConfiguringNewMonth(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Month Label</label>
-                      <input
-                        type="text"
-                        value={newMonthName}
-                        onChange={(e) => setNewMonthName(e.target.value)}
-                        placeholder="e.g. JUN, JUL, OCT"
-                        className="w-full px-4 py-3 text-xs uppercase font-black tracking-widest bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl focus:border-blue-500 select-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Year Tag</label>
-                      <select
-                        value={newMonthYear}
-                        onChange={(e) => setNewMonthYear(e.target.value)}
-                        className="w-full px-4 py-3 text-xs font-mono font-bold bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl focus:border-blue-500"
-                      >
-                        <option value="25">2025</option>
-                        <option value="26">2026</option>
-                        <option value="27">2027</option>
-                        <option value="28">2028</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-blue-500/5 border border-blue-500/10 rounded-lg text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed uppercase tracking-wider">
-                    Note: This will deploy a new billing sheet initialized with all current {masterClients.length} clients registered in the database, with calculated defaults based on their customized bandwidth packages.
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsConfiguringNewMonth(false)}
-                      className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleAddMonth}
-                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors shadow-[var(--neu-shadow-raised-lg)] shadow-blue-500/10"
-                    >
-                      Launch Recovery Cycle
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-
-
-            {/* FLOATING CORNER SECURITY SHIELD */}
-            <div className="fixed bottom-6 left-4 lg:left-[88px] z-[90] flex items-end">
-              <motion.div 
-                layout
-                initial={{ borderRadius: 9999 }}
-                animate={{ 
-                  width: isSecurityWidgetExpanded ? 'auto' : '48px',
-                  borderRadius: isSecurityWidgetExpanded ? 20 : 9999
-                }}
-                className={cn(
-                  "overflow-hidden shadow-[var(--neu-shadow-raised-lg)] border transition-colors flex items-center h-12",
-                  isBillingUnlocked 
-                    ? "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-500/30 backdrop-blur-md" 
-                    : "bg-amber-50 dark:bg-slate-900 border-amber-500/30 backdrop-blur-md",
-                  !isSecurityWidgetExpanded && "cursor-pointer hover:scale-105"
-                )}
-                onClick={() => {
-                  if (!isSecurityWidgetExpanded) setIsSecurityWidgetExpanded(true);
-                }}
-              >
-                {/* Always visible Icon */}
-                <div 
-                  className={cn("w-12 h-12 shrink-0 flex items-center justify-center cursor-pointer transition-colors")}
-                  onClick={(e) => {
-                    if (isSecurityWidgetExpanded) {
-                      e.stopPropagation();
-                      setIsSecurityWidgetExpanded(false);
-                    }
-                  }}
-                  title={isSecurityWidgetExpanded ? "Collapse Widget" : "Open Security Shield"}
-                >
-                  {isBillingUnlocked ? <Unlock size={20} className="text-emerald-600 dark:text-emerald-400" fill="currentColor" /> : <Lock size={20} className="text-amber-600 dark:text-amber-400" fill="currentColor" />}
-                </div>
-
-                {/* Expanded Content */}
-                <AnimatePresence>
-                  {isSecurityWidgetExpanded && (
-                    <motion.div 
-                      key="content"
-                      initial={{ opacity: 0, x: -10, width: 0 }}
-                      animate={{ opacity: 1, x: 0, width: 'auto' }}
-                      exit={{ opacity: 0, x: -10, width: 0 }}
-                      className="flex items-center gap-3 pr-2 lg:pr-4 whitespace-nowrap overflow-hidden"
-                    >
-                      <div className="flex flex-col border-l border-slate-200 dark:border-slate-700/50 pl-3 mr-1 py-1">
-                        <span className={cn("text-[9px] font-black tracking-widest uppercase leading-none mb-0.5",
-                          isBillingUnlocked ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
-                        )}>
-                          {isBillingUnlocked ? "UNLOCKED & ACTIVE" : "SECURED / VIEW-ONLY"}
-                        </span>
-                        <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">
-                          {isBillingUnlocked ? "Write Privileges Enabled" : "Access Key Required"}
-                        </span>
-                      </div>
-
-                      {!isBillingUnlocked ? (
-                        <div className="flex items-center gap-1.5 ml-1">
-                          <input
-                            type="password"
-                            value={billingKeyInput}
-                            onChange={(e) => setBillingKeyInput(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleUnlockBilling();
-                            }}
-                            placeholder="INPUT PASSKEY..."
-                            className="px-3 py-1.5 text-[10px] font-mono font-black tracking-widest bg-[var(--neu-surface)] border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500/50 w-32 md:w-40 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUnlockBilling();
-                            }}
-                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[9px] rounded-lg transition-colors shadow-[var(--neu-shadow-raised-sm)] shrink-0"
-                          >
-                            Verify
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-1.5 ml-1">
-                          {isEditingSecurityKey ? (
-                            <div className="flex items-center gap-1.5 bg-white/50 dark:bg-slate-950/30 p-1 rounded-lg border border-emerald-500/20">
-                              <input
-                                type="text"
-                                value={newSecurityKeyInput}
-                                onChange={(e) => setNewSecurityKeyInput(e.target.value)}
-                                placeholder="NEW KEY..."
-                                className="px-2 py-1 text-[10px] font-mono font-black tracking-widest bg-[var(--neu-surface)] border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500/30 w-28 text-slate-900 dark:text-slate-100"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSaveSecurityKey();
-                                }}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-widest rounded-md transition-colors"
-                              >
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setIsEditingSecurityKey(false);
-                                }}
-                                className="px-2 py-1 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 text-[9px] font-black uppercase tracking-widest transition-colors"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setNewSecurityKeyInput(appConfig.billingSecurityKey || '1239870');
-                                  setIsEditingSecurityKey(true);
-                                }}
-                                className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-black uppercase tracking-widest text-[9px] rounded-lg transition-colors flex items-center gap-1.5 shadow-[var(--neu-shadow-raised-sm)]"
-                              >
-                                Edit Key
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setIsBillingUnlocked(false);
-                                  sessionStorage.removeItem('gts_billing_unlocked');
-                                  window.dispatchEvent(new CustomEvent('gts-billing-unlocked-changed', { detail: false }));
-                                  setBillingKeyInput('');
-                                  toast.success("Billing spreadsheet re-locked successfully.");
-                                }}
-                                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-450 border border-rose-200 dark:border-rose-900/30 font-black uppercase tracking-widest text-[9px] rounded-lg transition-colors shadow-[var(--neu-shadow-raised-sm)]"
-                              >
-                                Relock
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            </div>
-
-            {currentMonthId ? (
-              <>
-                {/* Advanced Bento-Style Metrics Grid */}
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                  {[
-                    {
-                      label: "Expected Revenue",
-                      val: `PKR ${(totalExpected).toLocaleString()}`,
-                      desc: `Base Amount: PKR ${(totalBase).toLocaleString()}`
-                    },
-                    {
-                      label: "CR Payments",
-                      val: `PKR ${(totalCr).toLocaleString()}`,
-                      desc: `Arrears/Credit Recoveries`
-                    },
-                    {
-                      label: "Fees Recovered",
-                      val: `PKR ${(totalRecovered).toLocaleString()}`,
-                      desc: `Actual payments received`
-                    },
-                    {
-                      label: "Outstanding Balances",
-                      val: `PKR ${(totalOutstanding).toLocaleString()}`,
-                      desc: "Pending subscriber fees"
-                    },
-                    {
-                      label: "Recovery Rate",
-                      val: `${(recoveryRate).toFixed(1)}%`,
-                      desc: "In-cycle performance index"
-                    },
-                    {
-                      label: "Subscribers Active",
-                      val: `${activeRows.length} Nodes`,
-                      desc: `TDC: ${totalTDC} | DC: ${totalDC} | Unpaid: ${totalPending}`
-                    }
-                  ].map((card, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      whileHover={{ y: -2, scale: 1.01 }}
-                      transition={{ 
-                        type: "spring",
-                        stiffness: 260,
-                        damping: 20,
-                        delay: i * 0.05
-                      }}
-                      className="group relative p-3 sm:p-4 bg-[var(--neu-surface)]/90 rounded-xl border border-[var(--neu-border)] border-l-4 border-l-slate-800 dark:border-l-slate-400 flex flex-col justify-between overflow-hidden shadow-[var(--neu-shadow-raised-sm)] hover:border-slate-400 dark:hover:border-slate-500 transition-all duration-300 cursor-default"
-                    >
-                      <div className="space-y-2 relative z-10">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-500 leading-none">
-                            {card.label}
-                          </span>
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className="text-lg sm:text-xl md:text-2xl font-extrabold tracking-tight font-sans text-slate-900 dark:text-white leading-none" title={card.val}>
-                            {card.val}
-                          </div>
-                          <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-relaxed whitespace-pre-wrap" title={card.desc}>
-                            {card.desc}
-                          </p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                {/* Filters, Search and Real-Time Grid section */}
-                <div className={cn("p-6 sm:p-8", getCardStyle(branding.cardStyle), "space-y-6")}>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-2 flex-wrap">
-                      <Layers size={16} className="text-blue-500" />
-                      Recovery Rows ({filteredRows.length} listed)
-                      
-                      {/* Header Save Changes Button */}
-                      <AnimatePresence>
-                      </AnimatePresence>
-
-                      <motion.button
-                        layout
-                        whileHover={{ 
-                          scale: 1.05, 
-                          boxShadow: isAdvanceMode 
-                            ? "0px 0px 15px rgba(59, 130, 246, 0.5)" 
-                            : "0px 0px 10px rgba(148, 163, 184, 0.25)"
-                        }}
-                        whileTap={{ scale: 0.95 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                        onClick={() => setIsAdvanceMode(!isAdvanceMode)}
-                        className={cn(
-                          "ml-2 text-[9.5px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded-xl cursor-pointer transition-all duration-300 inline-flex items-center gap-1.5 shrink-0 border relative overflow-hidden",
-                          isAdvanceMode
-                            ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white border-blue-400 font-sans font-black shadow-[var(--neu-shadow-raised-lg)]"
-                            : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-900 dark:border-white/10 dark:text-slate-300 dark:hover:bg-slate-800 font-sans font-black"
-                        )}
-                        title="Toggle view of advanced business parameters"
-                      >
-                        {isAdvanceMode && (
-                          <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
-                        )}
-                        <Zap size={12} className={cn(isAdvanceMode ? "text-amber-300 fill-amber-300 animate-bounce" : "text-blue-500 animate-pulse")} />
-                        <span>{isAdvanceMode ? "‚òÖ Advance Details ON" : "‚ö° Advance Details"}</span>
-                      </motion.button>
-                    </h4>
-
-                    {/* Filters block */}
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      {/* Search box */}
-                      <input
-                        type="text"
-                        value={billingSearchQuery}
-                        onChange={(e) => setBillingSearchQuery(e.target.value)}
-                        placeholder="Search Name, User ID, PPPoE..."
-                        className="px-4 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-[var(--neu-border)] rounded-xl focus:border-blue-500 w-full sm:w-64"
-                      />
-
-                      {/* Status selector */}
-                      <select
-                        value={billingStatusFilter}
-                        onChange={(e) => setBillingStatusFilter(e.target.value)}
-                        className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-[var(--neu-border)] rounded-xl focus:border-blue-500 font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
-                      >
-                        <option value="all">ALL PAYMENT FLAGS</option>
-                        <option value="paid">PAID</option>
-                        <option value="partial">PARTIAL</option>
-                        <option value="unpaid">UNPAID</option>
-                        <option value="tdc">TDC (SUSPENDED)</option>
-                        <option value="dc">DC (DISCONNECTED)</option>
-                        <option value="extra">EXTRA (UNSPECIFIED / EXPENSE)</option>
-                      </select>
-
-                      {/* Area selector */}
-                      <select
-                        value={billingAreaFilter}
-                        onChange={(e) => setBillingAreaFilter(e.target.value)}
-                        className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-[var(--neu-border)] rounded-xl focus:border-blue-500 font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
-                      >
-                        <option value="all">ALL AREAS</option>
-                        {Array.from(new Set(activeRows.map((r: any) => r.area).filter(Boolean))).map((areaName: any, idx) => (
-                          <option key={`area-${areaName}-${idx}`} value={areaName}>{areaName}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={resetBillingColumnWidths}
-                        className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5"
-                        title="Reset Column Widths"
-                      >
-                        <RotateCcw size={14} />
-                        <span className="hidden xl:inline">Reset Widths</span>
-                      </button>
-  
-                    </div>
-                  </div>
-
-                  {/* Absolute Google Sheets Spreadsheet Emulator Layout (Horizontal Scroll single row grid) */}
-                  <div className="border border-[var(--neu-border)] rounded-xl bg-slate-50 dark:bg-slate-950 overflow-hidden shadow-inner hidden md:block">
-                    <div 
-                      ref={billingScrollContainerRef}
-                      onMouseMove={handleBillingMouseMove}
-                      onMouseLeave={handleBillingMouseLeave}
-                      className="overflow-x-auto"
-                    >
-                      <table id="billing-spreadsheet-table" className="w-full border-collapse text-left text-xs text-slate-950 dark:text-slate-100">
-                        <thead>
-                          <tr className="bg-[var(--neu-surface)] border-b border-slate-200 dark:border-white/10 font-extrabold uppercase text-[10px] tracking-wider text-slate-950 dark:text-slate-100 font-sans select-none whitespace-nowrap">
-
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.sr}px`, minWidth: `${billingColWidths.sr}px`, maxWidth: `${billingColWidths.sr}px` }}
-                              onClick={() => handleBillingSort('sr')}
-                            >
-                              <div className="flex items-center justify-center">
-                                Sr#{getBillingSortIcon('sr')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'sr')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.name}px`, minWidth: `${billingColWidths.name}px`, maxWidth: `${billingColWidths.name}px` }}
-                              onClick={() => handleBillingSort('name')}
-                            >
-                              <div className="flex items-center justify-start">
-                                FULL NAME{getBillingSortIcon('name')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'name')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.username}px`, minWidth: `${billingColWidths.username}px`, maxWidth: `${billingColWidths.username}px` }}
-                              onClick={() => handleBillingSort('username')}
-                            >
-                              <div className="flex items-center justify-start">
-                                USER ID (PPPoE){getBillingSortIcon('username')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'username')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.mobile}px`, minWidth: `${billingColWidths.mobile}px`, maxWidth: `${billingColWidths.mobile}px` }}
-                              onClick={() => handleBillingSort('mobileNumber')}
-                            >
-                              <div className="flex items-center justify-start">
-                                MOBILE #{getBillingSortIcon('mobileNumber')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'mobile')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.panelDetails}px`, minWidth: `${billingColWidths.panelDetails}px`, maxWidth: `${billingColWidths.panelDetails}px` }}
-                              onClick={() => handleBillingSort('panelDetails')}
-                            >
-                              <div className="flex items-center justify-start">
-                                PANEL DETAILS{getBillingSortIcon('panelDetails')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'panelDetails')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.area}px`, minWidth: `${billingColWidths.area}px`, maxWidth: `${billingColWidths.area}px` }}
-                              onClick={() => handleBillingSort('area')}
-                            >
-                              <div className="flex items-center justify-center">
-                                AREA{getBillingSortIcon('area')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'area')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.rt}px`, minWidth: `${billingColWidths.rt}px`, maxWidth: `${billingColWidths.rt}px` }}
-                              onClick={() => handleBillingSort('rt')}
-                            >
-                              <div className="flex items-center justify-center">
-                                RT{getBillingSortIcon('rt')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'rt')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.baseAmount}px`, minWidth: `${billingColWidths.baseAmount}px`, maxWidth: `${billingColWidths.baseAmount}px` }}
-                              onClick={() => handleBillingSort('baseAmount')}
-                            >
-                              <div className="flex items-center justify-end">
-                                B. AMOUNT{getBillingSortIcon('baseAmount')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'baseAmount')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.cr}px`, minWidth: `${billingColWidths.cr}px`, maxWidth: `${billingColWidths.cr}px` }}
-                              onClick={() => handleBillingSort('cr')}
-                            >
-                              <div className="flex items-center justify-end">
-                                CR. (ARREARS){getBillingSortIcon('cr')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'cr')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-slate-100/50 dark:bg-slate-900/50" 
-                              style={{ width: `${billingColWidths.totalAmount}px`, minWidth: `${billingColWidths.totalAmount}px`, maxWidth: `${billingColWidths.totalAmount}px` }}
-                              onClick={() => handleBillingSort('totalAmount')}
-                            >
-                              <div className="flex items-center justify-end">
-                                T. AMOUNT{getBillingSortIcon('totalAmount')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'totalAmount')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.billingDay}px`, minWidth: `${billingColWidths.billingDay}px`, maxWidth: `${billingColWidths.billingDay}px` }}
-                              onClick={() => handleBillingSort('billingDay')}
-                            >
-                              <div className="flex items-center justify-center">
-                                BD{getBillingSortIcon('billingDay')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'billingDay')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600" 
-                              style={{ width: `${billingColWidths.paymentReceived}px`, minWidth: `${billingColWidths.paymentReceived}px`, maxWidth: `${billingColWidths.paymentReceived}px` }}
-                              onClick={() => handleBillingSort('paymentReceived')}
-                            >
-                              <div className="flex items-center justify-end">
-                                RECOVERY{getBillingSortIcon('paymentReceived')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'paymentReceived')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.paymentStatus}px`, minWidth: `${billingColWidths.paymentStatus}px`, maxWidth: `${billingColWidths.paymentStatus}px` }}
-                              onClick={() => handleBillingSort('paymentStatus')}
-                            >
-                              <div className="flex items-center justify-center">
-                                STATUS{getBillingSortIcon('paymentStatus')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'paymentStatus')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            {isAdvanceMode && (
-                              <>
-
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.comments}px`, minWidth: `${billingColWidths.comments}px`, maxWidth: `${billingColWidths.comments}px` }}
-                              onClick={() => handleBillingSort('comments')}
-                            >
-                              <div className="flex items-center justify-start">
-                                COMMENTS{getBillingSortIcon('comments')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'comments')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left  " 
-                              style={{ width: `${billingColWidths.occupation}px`, minWidth: `${billingColWidths.occupation}px`, maxWidth: `${billingColWidths.occupation}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-start">
-                                OCCUPATION
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'occupation')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left  " 
-                              style={{ width: `${billingColWidths.pkg}px`, minWidth: `${billingColWidths.pkg}px`, maxWidth: `${billingColWidths.pkg}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-start">
-                                PKG DETAILS
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'pkg')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center  " 
-                              style={{ width: `${billingColWidths.date}px`, minWidth: `${billingColWidths.date}px`, maxWidth: `${billingColWidths.date}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-center">
-                                DATE
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'date')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right  " 
-                              style={{ width: `${billingColWidths.device}px`, minWidth: `${billingColWidths.device}px`, maxWidth: `${billingColWidths.device}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-end">
-                                DEVICE
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'device')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right  " 
-                              style={{ width: `${billingColWidths.abl}px`, minWidth: `${billingColWidths.abl}px`, maxWidth: `${billingColWidths.abl}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-end">
-                                ABL
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'abl')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                              </>
-                            )}
-
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center  " 
-                              style={{ width: `${billingColWidths.act}px`, minWidth: `${billingColWidths.act}px`, maxWidth: `${billingColWidths.act}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-center">
-                                ACT
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'act')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                          </tr>
-</thead>
-                        <tbody 
-                          style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}
-                          className={cn(
-                            "divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[13.5px] font-black text-slate-950 dark:text-zinc-50",
-                            !isBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none"
-                          )}>
-                          {paginatedRows.map((rowRef, localIdx) => {
-                            // Find corresponding absolute row index in full month rows array
-                            const globalRowIdx = rowRef._originalIndex;
-                            if (globalRowIdx === undefined || globalRowIdx === -1) return null;
-                            
-                            const outstandingCr = parseFloat(rowRef.cr) || 0;
-                            const isPaid = rowRef.paymentStatus === 'paid';
-                            const isPartial = rowRef.paymentStatus === 'partial';
-                            const isUnpaid = rowRef.paymentStatus === 'unpaid';
-                            const isTdc = rowRef.paymentStatus === 'tdc';
-                            const isDc = rowRef.paymentStatus === 'dc';
-                            const isExtra = rowRef.paymentStatus === 'extra' || rowRef.name === 'Unspecified Entry';
-
-                            return (
-                              <tr
-                                key={`${rowRef.clientId || rowRef.username || 'row'}-${localIdx}`}
-                                className={cn(
-                                  "hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors whitespace-nowrap",
-                                  !isBillingUnlocked && "cursor-pointer",
-                                  isTdc && "bg-rose-500/5 text-rose-500",
-                                  isDc && "bg-neutral-500/10 text-neutral-500"
-                                )}
-                                onClick={(e) => {
-                                  if (!isBillingUnlocked) {
-                                    setSelectedRecoveryRow(rowRef);
-                                  }
-                                }}
-                              >
-                                {/* Sr# */}
-                                <td className="py-1 px-1 border-r border-[var(--neu-border)] text-center select-none font-sans text-[11px] font-bold">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <span>{localIdx + 1}</span>
-                                  </div>
-                                </td>
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black">
-                                  {renderCellProgress(globalRowIdx, 'name')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_name`}
-                                    type="text"
-                                    value={rowRef.name || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'name', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
-                                    className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                    placeholder="Enter full name"
-                                  />
-                                </td>
-
-                                {/* User ID / Username */}
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black text-black dark:text-white">
-                                  {renderCellProgress(globalRowIdx, 'username')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_username`}
-                                    type="text"
-                                    value={rowRef.username || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
-                                    className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                  />
-                                </td>
-
-                                {/* Mobile */}
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white ">
-                                  {renderCellProgress(globalRowIdx, 'mobileNumber')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_mobileNumber`}
-                                    type="text"
-                                    value={rowRef.mobileNumber || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'mobileNumber', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                    className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap overflow-visible hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                    placeholder="03XXXXXXXXX"
-                                  />
-                                </td>
-
-                                {/* Panel Details */}
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white ">
-                                  {renderCellProgress(globalRowIdx, 'panelDetails')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_panelDetails`}
-                                    type="text"
-                                    value={rowRef.panelDetails || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase())}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'panelDetails', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase(), true)}
-                                    className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                    placeholder="Panel Details"
-                                  />
-                                </td>
-
-                                {/* Area */}
-                                <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans">
-                                  {renderCellProgress(globalRowIdx, 'area')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_area`}
-                                    type="text"
-                                    value={rowRef.area || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'area', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value, true)}
-                                    className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                  />
-                                </td>
-
-                                {/* RT */}
-                                <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans">
-                                  {renderCellProgress(globalRowIdx, 'rt')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_rt`}
-                                    type="text"
-                                    value={rowRef.rt || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'rt', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value, true)}
-                                    className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-blue-900 dark:disabled:text-blue-300 disabled:opacity-100"
-                                  />
-                                </td>
-
-                                {/* Base Amount */}
-                                <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
-                                  {renderCellProgress(globalRowIdx, 'baseAmount')}
-                                  <div className="flex items-center justify-end font-black text-black">
-                                    <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
-                                    <input
-                                      id={`rec_cell_${globalRowIdx}_baseAmount`}
-                                      type="number"
-                                      value={isTdc || isDc ? 0 : (rowRef.baseAmount ?? '')}
-                                      disabled={!isBillingUnlocked}
-                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'baseAmount', activeRows.length)}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
-                                      className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    />
-                                  </div>
-                                </td>
-
-                                {/* Cr. Arrears */}
-                                <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
-                                  {renderCellProgress(globalRowIdx, 'cr')}
-                                  <div className="flex items-center justify-end">
-                                    <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
-                                    <input
-                                      id={`rec_cell_${globalRowIdx}_cr`}
-                                      type="number"
-                                   xúÏ}€r‹»ëˆΩü¢ñvõ∂öÏní:pI*$Q„QX“0t∞°ò–Ä »∆
-›Ë –"94#ˆ)vbÔ˜ÊøÛ£¯I˛¨*™
-@!qh†…%÷∞q®cVfVVÊóÑêÔÜª¥ènú‡ƒ$œ…àêÅÔ]~∞œ∑Mü<N67∑nGPóÂ∆ôk[G7ˇÊ/◊uÊüÁÆg~≥-lﬁ¸’‘ò_@ãˆ9:&ÀrÌè∆w˚Éw˘£cª÷‡¬ıŒ~æ±ÆëM”ﬂ|DÏÌ–/ÏpõıáAÀ£-?∞t=#»Ømë¸Éå–˝ÛÊ±ØOºÀπ“∏∂È}∑˝ÎW∂ÎFoÏG$ØôÜ:¨'¡∂kœ/¬iÖ _∫KøÍ∞ît˝	}¯€”5Ç‡Ω1ÉŸ1Á‰GÑl\œóÆKfŒ|x9ës◊æéIh_ÖCﬂπòÜ‰Ïb˙∆<ÄÊ⁄Ûê,Ë„≈ıp¥ΩOŒ<ﬂ≤˝·‹õ€ƒ˜ñsÀ∂»πg.É»ﬁ~úA«Ü˚£—Œ.T‚Õ√a eí)ùú®‚rÍÑˆŒﬁàXÜˇÌ π}ÊÊ∑ùÒ(*)~ëøï‹coÒ6Ô.Æ~!_å≈¬6†Ÿ¶}@Ôü”YÄ€?/Ì≥oN8Ùñ!¥=X@«œñaËÕ9H?‚}_wÊÛí◊7°GÍB†òW>9Üïúl1˜{¯d?áÙ÷ﬁ~4lºØÒr>»˘(Á˝:πÌ-”	Øá„—hV Ø7*6©îsaç¬ÎÚÉhzÚÍBéí‚wéØÓXŒ˜ÚwBÎ¯w•Ø›Ï¸ë|ÚB√%/f@Ì!˘„Ny[CKXõ∞r∆l•À«èˇ¯Ú›√·‹^˘ù≠_vûéƒµ®ô*XÅkÑ6Íùòíõœ¯Õ¿vm3‰ƒ-Ãmºr∂˜È⁄IVÁfàOˇÚÅH 	>YÙá ™'§WH1CˆlnΩıL∏fHπ≈ A&ÌÂ	D2èú◊[u&Œ∑a A>êxGïÊœﬁi˚Ò¿qS&HP}Ï §ÇÏ‘˜.|;T±r∆˚]ƒ)áŒ|±QÀÕÕ·Wﬂ6øöPˇ◊?‹à5ﬂ~M+˛∑z√Îå)[òWoôL>∫ô‡jàtßà‚“RÇ€‹ƒïë*MÁÜÿ∏è@KrÛ[¢ÿ€AË-` ∆Pê7«wTPUuK  UÌ⁄†Uˆ ‘ä…∫Mt*©-uu´ ör*)W–hK—
-œ™K£ˆ‘%ú®^ÅR5°Ç° !◊+p˛w0*S˜öúéEb∫mÖ˝#8•{f˚Ük±È‹O≥xwºüëÚÒ„gí.ﬂÖ¡¨(ß‚ca\œÄfaòlË©Öî!†aâEóòÒä¯èe:Á◊C®’R(Vœ\,TëQﬁàÏ¡›ôœ÷YV≥˘nÉ™r∏CãF∂/À‰£2≤H!ã…˘rvf˚X˝πÿh†¥‚nXT¢ºÊÑlõ;¥-d+_ï°°g€Å∫ÃÀ9¶"'Çqø™µAñôv‰?¶ í˝ÿ.÷yœ˝14¬e–•‘V∑m´µºgHAÀ˜é-Ï÷§ ë≤HﬁNI%T›K’ıÖG4Ã™Ë®π	®`_› íõƒOT•ﬁµÑïËõF`K±ƒ°{ë)ä9*òï@‹¡“?7L{Îó|∂#9÷êÈLØ˛·≤!(¥„—(£‰/§˚â>%&î¯÷$˘TæˇL‡˝l‘*5—√ç[iP]Jj#ø#∂êﬂ⁄«o®≠ã>l–∂œÛÖ0Ä‹T7©∆ªß£ë÷Ú«[√ﬂ›S⁄»Ô>’l 5ÂE≠cÜdq‹ÿ:l˚±çíô°”Qcø’A„_qsd≠&ù$-¢Ì¬ïF,æóåY|„â¥kàÔÓ¶≠oâ®’‡◊W}‹Ê≈“_∏Ú8F∑Dån	c›QG3˛6CÉ®÷°Xr≥‰-®m+íKFÿ«üﬂüæxsr∏√ü÷*ä‘B1å–í>|zÛ‚m£¬BÀ‹8˛tÚ™Q!¥åÜEÿî¥6é_ˇ˝”áU
-Çm0S&∞jZŸ[TK{ÂÕ®¨»ƒß ∞Î;’/âÈπÀŸßø¡∂ıˇÏùgŸt—`DÌ!n§VbZ√ nO£¨¶E≤ókíf‘!¸Fæí]£Lóå´Gõ4™€˛È%´üq•Ul˘Ùj√Ñ—¢Å?*¨≤OE<„™>[©⁄FÓiÍ6Í∏Mıº¢	Cgƒ®h≤àï˙¯Ë¥\GÔﬁÜﬂŸ—= >Äï)Ù¢˚g”\.ÿ∫∫7<€3Õûÿ5‘‹)ßÜ˙(ìN≈SŸÁÆ lÈTı∆gyÂù≤ÿº˛>p◊˚À]OˇÚgrbáÜ„ﬁïxÒÌ"ÍRO\6m@ßÃ6≠ˆŒ∞Wa™z„≤R:e∂öﬁ?‹˚ÀsOhUüÃV<ih◊1ü€&’Ôh{≥HàçËÿ.!V}gò∞2m=öîvtl\–éBãYÔ.¯¿ú˚eŒˆw«¥…©OˇÌüI3?ö6y¥≈˙«∫WÅAØ¿…èïõÎËóûd∂Î–«j¨&j Ñç0ö$M=«>z…ÚF®ù;ÛUiB;‚¶ñ¿i∞>ﬁ–&¬Ins…TC6…ï∑ÎœGØµÒÈÎÕ¡=«èØÜ‰Zcﬂ=z!&⁄áèøZE∫æx˘∂ÆP’…“ƒs&ç|„8ÅåŸ})Bn7/BnW
-∂[âm
-HÊAÏ".ΩÿÖQÏA‹B≠wJÃRZª+‚ï∑µc± +}ß‚ÙŒâ”CDÂöe2ô=»+Ê¶E'∂k√|¿"¡«I#‹B|∆Qm^ª¿3o»•cÖ”ÚÎn¢QËÔﬂËΩ`∏ŒÌ‚Í◊Gtï˛ÛöqÖyç.üs◊ª< õS«≤Ï˘&π-N‘‰£ıÇJ6ﬁCæ"êDÕe*ˇªfT◊©ÙZÀq≤˙wºeXÌÖÌs éd0–∑$–≈!Êê_mH~q’¿¢â•@Ï}Ωü„çΩ+zc?ñºû,êÑµÀN›ÚÌ»I;√òwÖ{…¢c;tí–ÅπÙœ.<á—"ñºúÓF çp¢YÚ'ﬂ¶8ø{Ôﬁ‚≠âú‰[Ö*}«◊ø£%‡[ç,Ä¢œ<Î∫∏Ù√‹ÛBëãKÄÈòﬂÆÅó√Õ@›˘ˆd$òñw9¸2˙:‹[\}}ˇ¬F‚´qfFèÿˇ∂G˚4VöÀÄp8ë7v™K>ø˚d4“2∂√≤cLœ˝;ô£õ'∑äà⁄£"jØﬁV3oôŸN•¡È
-MC@¯œô‰√ßT◊Qf°¥üÕnf„ag
-O© xµÙŸ“=5.léqËáÆîd≥ª˜U®=≥Û8'ÄÜﬁ,÷ÜK«á°‹º3¬È6c¡êBŒä∂ÿ^≈∑≠•i∆#‚3πfê?ëÅ/á…Òùóe∆{ØÅ∞Ô∑œ`Ü9"N¥ı⁄zTgß%íS#∫ê£ÑTπT≤ú;ô”øg√∑WÖ ’ÀºÏ6¥4fq∏òÇ∂qºnî¬ûªrÄ¶,ö‚ª,d._RI⁄¨únÑh'V#‰¯•Á‰)¥m¢W-Ë⁄Á°j›˘2Q[KÓ*˛ÕôõLô`ﬂ∞`±3œµ0:E!ÂñLÌ@‘$∂çlô KmÜ≠ÜÅÚÒî,@#î¥ÿH›lCŸ|–&ÖKúï¡ÿRböQ√}óù3√ôÙ¸< ¸ÿò·1Ê◊˙eá˙Âä'ÂA€\„Û†{˛ü–=WLEöhèöËl˘a≤µLºsr£L7?eæçûiúbC5EØ¥¬SjJ-zS≥z˛„»òú˚åEr˘ˆÃYŒ®ÆE7SÙHœÑ¡ˆ=Md◊òw0&LC#«d¨√\¿ü;ùŸ·•mœâ™b dÕ4ó‡Ö¡Ï (ı±å`M”/}cA.xGCj√3Ù™ÄÁ˜ˆGYÃ9ÂÍ–«©wIA®u8ès±'√}ﬁ&ﬂf≈SGÜdºE˛»'„‘ˆŸÓò’¯6Ú‘Å%–∏V∆5gŒ<Sπ\/= ÕYd[IS`6mJ˛2é+†ÀX≥µá2Â4Nâç]I“?'˙Cƒô*˛$5=RTßÄ
-°±^~§áØ®≥◊¿£CKZ¡`\z@
-‹¯vxÊí#byÊí ΩÌ;|Ì⁄Ùœó◊o¨Aåœ<æmX¡‘∂√!czõ•Â;Ád •o—*∂õ˚fzuÏÀ¡9≥ß∆w«aΩÃÄ«N7ë3zÿ
-7Ê∂·ÉLŸ$∑%ïîúÌ*ß±‹-≈u„∫)¢M·.¸5õ‹ã'{Ë∫7"1úÜïäß∏äıBDîKNmïørüÓ˚Â√[ÂhWO¨—	ÓèépsêÓuΩ4ˇÁˇVåVñüÀﬁõ≈ãÁ;˝åsd„äﬂ ƒ¿√B}X®™~Â˝ÎøˇìjñﬂÆ<›Áä¿ç&ã9âUõ1ü§s#+Ï÷ﬂ<FSó®öÏw‰8ìE›åfáΩ4V,√¸K≈Á≤d_¬¯É 0nŸ÷D÷≈µvlÕV z£CNáowªlQv„OîÌ…çx‡Å<∞=¯zK˛ı_ˇ{á¥èÓ÷§≤÷›√∫´±Ixk4ﬁ#∞"˛˘ˇ-R≠m@Û0◊r[,•# Ròµê,]Æ·"2ﬁ.`ÖP[‰;ñÅM~ÙÅîÚ«'/ÊñÔ9÷Œå?∑ÌBpUU∑∫ã–Ü¶Á@ù‘Üë¸ú0”∆ôY‹a}#uüß¶DXüuÍbÉc,C}ÎñôÔ@”ÕèŒo6<
-]\Qó˜¸!ªëù>f∆bÂ)yD\jß>Ÿ:~ƒ9âË¬,%ä‘˙Í˘-÷æe_-g +‰ÔÅsR˙?wÊ∂E-ıôß√ÒÃQ∏ÙÁdæt›¢íµMñì?âÒGI <~NPT</'B_O:ùs*A±ì7ÀK· È˙Çÿ;•eEÄÊ∫¢84tiIy\WLhô•eúËã@î¿±ªuÖ∞≥åM‰p+ç?˙<∂Èú;@LØau\CuıE4Uv|8Û(C›¶Z√‚æŸ◊G7ørﬁ0å≈Ë9e!√?$(5Æ}xc	m^∂œ⁄M!kÎjÛ^èW·≠6‘“ô;î2)Úåπ3ÉıNπI$∞®Ê–0ˆ¸È•ÎÂ˙ı@¥î¯ÀÌ—XˇY*êËg÷“g«#P€ˆx_ˇe˛7â˘ü¶¯jÒ0î_eCI∂0€Gvlº6
-∆§—/|ÓÀîÕSm◊*‰Àÿ†<±Ê1πrcFâ#âÁçù'+qî’êã,v(ƒOÜ@¶eŒ£‚X!xÅﬂÒ'Ä⁄ÉŸ÷/%–˛Ÿ`ÿ˛äÙÂáØ,‰9âu¸Â z4¥øS„84Ò+?—*èÎ.˙˜JöŒπj	µ<O≥=»	Îí£âú·AuòKÇáóG"mîµÊÄ±qTì„Dr´„ª¥A{ïí=Hâ"‰Ê«w˜ ¡äb9çÍÉ>U†<¯¢SDQ“îx
-ÙπÛX&hT?∏¶ÄÍ
-œé"w$Mµ2Qr´®ùHs´ƒ]HÓHíπ ö_¥¥Ûl_∑[*qÆ,Å´“∏tîπ∂~Ú‰ÃÀ\Zãè+A…Ù√dGñâY3˛√Ú¬ê∆è√‚>õùïwV9?çb‚K9Úœäø<£[È¬@¥">⁄Âi}í3≠ªR≤ó8X9äÀè£0É)¸oàÚ{	¿ÇÃóıÖ∞qì+å sf‡C}´Ü˘÷Ò≠ﬁ€Zh/*¨∑ ∑•x[û (¶™q≥5bfQa¨ube±q≤• *C¡≤ç
-†3’ê?ePòd€ÑBÖi^Ü6∞¶g3Dó®ﬁzê.ï°\r{Y∫%Ÿ¢µã`,ãƒS@‚LdÖ  ¢uwF4j⁄SœÖäè6~§ç¢-,ˇ≥<ªX¢Y!«¯∞∂K&nwÀF®ª£•Sÿ€ñèpBù*3~ó¬R*8*©ºé>|˝Åº9ia!‡0Ø‰)ÃâÉkŒˆºÇ∂âM€(•k≥UŸ_*◊ i\ÛR∏jNÒú¢¨%ìøµr≤’é≠¢€‘EfUdc:L•äl—Jsß"€–c≤Td_wïµú·ó≤ÑZ’N‘R†∂ñ˛¥qÍ”ÜiO[HyäMwö&Ú¨PGaX©·p¨q„(0avØßS™,ÒM˜S∫Á&±¨ÊÁ{ÔY|ö†[/ÿ¬IdÚ¬Ê˚ü…ÈO?ø]™q∑°”îª'2ÿAZYñu™ƒÉaŸ3a™&ãLáÂ4¥¬¯∏Í -8qB"ÔÈåõ˘!˛îËäÈmvFX°,‚Ìdi8CbπŸVDˆT[V/†Wﬂ˚ËÒA1H›J∞√7.~ü+Œ$v±¢{£êÃä—ò´Rˇ’÷ëBê‚√…®
--ûô∂J§¢“ô=i¬/Uv[&€=][ÛO≈vÄ´#·ä<∂uÓ∂/éO∆„[˜`ñQ⁄⁄∂uıånô&∂á.]◊∆RèÙÂ˝Íz1wb°Aj3æmæ9ÖQfa±=i6≤†≈0Æ⁄≠&≤qIKåº˝Ûû∫,”Ù◊öKö˛:2F÷™UB§èÅiÍ“ÄÏèàhÒ+ﬂHá¿y∏˘¶¶¯¸à.Ø^∏+∆<C˝˘àöjJºEX åAkïÙAka¥ÔçÂæ§wOø]‹;ûõ¬ó≠5ÔMõπé<Xj›äı“’±XIjùyÏz∞+úÀÒ«å≤]Ô‚¬µÈ:*Qgº©R/¥å[E}_–Ô:Ã z RïªÂÎ◊◊
-Øg%ÂÛ˚ßµ˘˝+oF∑õHõ5üà´j>d52oZï,»Õ3f‘ ~ÃZ7ÔqçD√V 4’.◊-E~S3èö-a¬⁄Aπ‚Ri¨ÎZï≤˘æx˘vÖ+∂JöªF	ÓzYÆ]%µ[ÉdrΩ.Ò
-j÷z™VÌ±ï6t0m˛ù4∂≥®àˆ¢¥>π7ÛAÛÿ⁄UA}N:§Ããì$≈ÈôH~OÏÔ´†2ÃA˙b—AmNƒ`ÕbS}4ÆÁΩ√ÇFÅ¥ƒ∑M( ÿ.(-@@˛úH p'Ùè¸Mj\Äß<ïÂpû0ŸY˝ÖÀ‹$ä¡;uz∏∆+#!rÊÕΩ<úN≠‘«√2ëA	Ü,{øD∂¯…ÃIz5@bQmlzH±ï‡∞à`c,N	*Feæ|@R‘^-")>ê_Œ’	ú‡˝Ñ“jﬁÓÅ0sÆ0ﬁ:Ñè:yE>∂êOÃ@K^≤¶!a†òR°8áÅÇˆXﬂ-π¢8{ÖÚ)‰»‘ª<1ﬂ:A8¯∑ ˘ªpîì3› ëk˜©´˙x$D”Í|⁄ü	˙hÊöå‰)·AP&”Ìp…é∂?†+ÔÜY/¯Á…‘ümø|ü˘Âß (†≠{0„Q${0”(ÏÇÆ8…_Edöù-Pv-ì*πÙG¨ËÈ∂3-Éà@MÒêQB–Ë∫7)aëÁdÛ'òÅMr@6)Ì±t¶7›/\¿yKThX·~,srƒRH!iJù|≥ÕP^(˚¬vLXzCÕIH™p¨sPz˜8â+ã3gf–&0t_∫’mÅßªøC[" ôAÆ˝{„¯ƒ	Lo>g KdáúÿÜE^±X◊‡pg∫[C(¢»1ˆoﬂBoAWÎßí√9uÊ¢)üY˘2•Ö´!¥JºÑu;r∆ô√≤Sˆ∆‹πÇ·`î
-kéôÓËñ_ª{•›˚õM,oæí©Aw‘S:ö∂8Ó5Ï≤M;(˝qÌp3 ¶∑∏J!Áæ7É∑|ıR‘^$&£uíºz≤∏˙∫Wöª˙¨ù‹’§<{5ÎÖíŒg¬êJ2iö
-qmdi5¨QQÒäóåœ˝q∞Ú—ˇ}©µ5ú÷ÌybÙ÷ˆ=˝úRõw~¸ò}Õë)æå˜¯/¶æ|a0pòë°]πáC≥ãÏ>U:»õìıÅˆ÷∆xåÒuG‡	v æ]Ïº;[Ësœ7ÉJ#¿¡⁄ Åë»!û!áÉ∫Û=ª"gÚıYÌç«X£xªîÙÊÊECx@ûÇwuc6Íâù`ïçó˝ã,±Ë√ÊjëOíb¯≤·XΩeüíô√é¥0U›$Yπ(7°5”˚∞kî^±#¶õà1Æ8Uìÿ∂0:œ≤L>ÎÕ3B•9Â◊ãóo[º√RøôÚDµ⁄Ω+mløµØÑgûu≠uïcÄ6,Á;åÔöD(0“›ßRRœ8≤=Â&LÈ≥}ë/≥t∂Ñ•∫'¯gÌƒËgïö]ﬁÃaãóæŒå≈◊ Ù…‘ˆmrÈ¿äJç¡Ã¿Ú;—:\=ÉC2ëç39ƒ◊Í2:ƒ™+Õ3<»Â5ÕÙê-≠y∆µÃÊô‘õdÄPÀ™ü	B-ÈuG!‚´43D|Ü>BË\>=GAÁÇH∆™FtfÖtCŸ#±¨Ö›à¬ÚGñï¸‚Jwπè≈ Óä–@§â˝r¸yz!√…Í 7◊ÕI_MrSƒ¶wxgå¶E•‰Gˇ˜%«ÒuZä:Æg†ó'UΩ%=ä¢g‘HÖü Ω"lUT<;bÕÇû„√–!Lü‘*ì…{Út$p8…º‡˜JÂ #r®n|‘üb¬û˙ﬁÖoA.¥12d†B∞¨]DÅoõ_M®˝Î§Ÿ∫˝J´Eq{zUçkÜ¢MØÊ¡'£iÛ
-{C‘Ê’wå™MØ«é‡Æ¬◊0Œ(ÖÆpÜßDû%+-Åßã?bÔ3∫°÷ƒ¨ªºD√‡˚˝=UÒ`oQ—Àkâ_‰o%˜¢jbó7µj˘ATÄÍWíLDº$H„◊‹ééÌN/DtLÃZëÇ1:¬#;Ï/∂§k……’2Êfàu¨ØÂ<;¡‘Óûo«Uw∆ª[AyßWO,Ω⁄;Ø¥WƒwﬁÑPﬂÈ’:{oçπSáÕµ‚Ì’ÅÎW¡•9¨lÁåY‹Œ1iîºnèI3º‹84´∑3ˆ\,∏_Üçµ#õ·_«ôpUà√[ø&Tˆ)z55Òx¥&gV?Yë8Íl *÷áû∏vÂ§|>yÿeK4⁄˝{|ı&h#PÍ–∂&Ú∂EŸ…;G˚Üñ†Méxcc—\*ú”é°Et‰z©PÃIÕUPXË’Ü Æ	…úíA®,ºôçD†‘‚˙Ç∞8¥XuõH1ÙíÃxíàëT5ÅÇBàYëh∑åÕwgÎ
-cC/ît¢ó6OqQJ∑…3ó„bΩ[·˘RjrSÇvR~ô‘¨·ÿªë)¿o∂.1°ÚjgsQ.sq¢ﬁS3üÒ’Ä œ+•4à™oSZßc⁄ï∞fGÛ\§≈Œ<*8m¶›õ‡Ó©6neπ-5∏S±Ω"ÿ\~o@“X‰I˜Lz∑`O‰ˇ=êﬁ´®Ø¸Ì$;≈Ωíß¶ø^rîy!Î•Â£<˝Á"ú˛…Õ8Ü”ﬂ >¨ó“[∑=Kb”ÔQ«)9ÓÇ‰Ì$?G‹∫&ó5¥SI€rí~’pFÂWœyUÂ5N6ëM)r\Yê? yFøŒµ;r›åZ‘ôçÈÀKØ^ïû~2⁄5sñ≠ó[ê„Zõu∏ï◊ë‡STAßM$È'©ƒ„ÌÊ©dÉ[…sBëD$'∆ıVKjc≠h·h"
-Oõ∞F“¢QÜ˜∫ŸÉ#@Z˘
-Ωf∆’[&πèn&ÿZî‰;I3Î∫ún`WêÏÌ Ù0Å„Ç¡#„H>*™≤a$%UM€†]ˆ Tê…VGæaRk:ÙCéBkæb¢nUxV1∫À÷é¯®æï≥äæé¥ﬂ¡ÿL›kÜ@b
-Óˆlâj∞ü—íåß˚yc1"∏Õcr9ÏZ,6‰q)Lÿº÷'  ˜hÑ»M•|,›ÁUéõ⁄Ï _mu«á˘´ÀÙÃØµ9(Ã]»I¡9)ú˚Õ˘3Ì»<ŒÉ¢æ'˛´ŸΩG—Ï˜œgMà’Gãbæm«Ò[l ZR©^bBkY#xkÅ&ïÏ∏"¨¥®ÑÁÉ(‚–sPf€Ã:˜Ê‚ Ê2$ÅËÒ”$Bêòû¢SÁΩQo,ZîÒ-ïYPπ¿#1™5ícéDÌ4®÷%µíﬂ€»Ô-‰7‘ˆE6j]Ñ^5NÅJÓ<i®%<©ΩQÓÔ„QÌ&™Ë‚ÿÒ<⁄˚R3zß#ßœæΩ_ªQYòä"tw	∑BFπãÔÓ¶ÌoÂ!Ñ?©?é¿%jıbÈ/\y,£["!F∑ÑÒåÓ®#õ°Ed˚êÃΩ—Ú,ùó g„¯Û˚”oNw¯”öÖÒ¢Z)à1Z÷áOo^ºmX\hô«üN^5,Üñ“∏Ü¥q¸˙Ôü>º®Vl®ô⁄—&¸÷_$N‹˚Ò¬)HΩ(%41=w9õc’¬:@áÙBÅf⁄äk+±ÊhŒØ%Œ\aØX—§RÍÃ5°Ç5•Œ—ΩögçÊW;÷ìVO¢‚∫NHW‹»˜#mC´JoŸ±˘’vl˙Cúø—H—D/ œ6ÕÂÇß@ΩO›3Õô9‘ﬁ9á:Öÿr/ù÷>˘zUFLß≠GÃ´Ôò˝Êı˘ÅÛﬁŒ{˙ó?ì;4˜~)”ãoQ∑z‰¿i#:gƒi’wäı
-”÷#ñZ—1#÷å¿?æˇ¸¯ƒ±·Ø¨¯ï!ËUƒb@Z8X¶D–i7{µsàÈ¡⁄!Vß¥2ÖΩö*îñtn∞–éD´Ã∫ñ√„ñÆ’1n˚ªc⁄‰‘ßˇÆgBÌÚoãıëu±Û^âW#+9◊≥1=àm€Éë’YUï	#aT+I¢∫ûåÙíÂë–Ç™DÙjK’H"MvÂ¿»õ⁄Dx…≠n&πj».π˙∂Èµ6NåËD´sV§Z†VpZ‰/Wìø/^æ≠/vu“ï&ì“≠	,ÎeπÄÚyÃ.Ω`Ü—ÏI CÕwNS⁄ª;ò∑∂s¡À´}∏˜‹ÚD°ÙB–oY¬PVåë˘V[T@Ûâ◊/P
-(z!¿Çß<2íbJììW‰œæci4U÷.Ü{dfLÀ≤Á©˛∞üáM 7'⁄å∞j·¥-Ùö(/ÄUÃ“üñ‘ko#∑cë{,àê,]`√ÖoœúÂåÄ¬±ÊµNDΩ˛—á⁄Ú›±/aù˙‰≈‹Ú=«⁄·@€$0}€.tÃÌM≥ƒ¢ÕäÆ.ë®∂…Õá∂ì0¥ÕD°Ì%m#1hÛÑ†]'-M z8Û®ıyõÆ}‰ô?˘íFÒ˝√s∫ráËt†éuU!®3w(e ‡åπ3wtsC"|@∆èÄqÆÕ˛Çﬂ#=÷>Hr◊˛â™¥î¯ÀÌ—XˇYöKî~f-}Ê¶µmè˜ı_·µÀZ¬®˝’	V÷ˆMcz†‡—GÜ33ßP-Åc~t~ÉVm¬&rqµ©/æZ:Œ∫i8õ§ﬂ‘µ^€µ
-ë\ wì@¨…ïGb	)`)4L<o,^$±ù”ÓúªﬁÂ0Æl[À¥`…ñˆÃ/A<ë`jXÆ≠≈Ô¯Ü@Ì¡lÎóí@T:Y“Snp}”9W-°ñÁjn€L¸—Dé8R√wíà£«bú“c)(=,iÕc„®&ã9t”V«wiÉˆ*ÖIaKèsÉôˆ O£b9çÍÉÙB¸¯Æ⁄1îÔ±	òèˇ¿p–P˝‡ö™+<bOÓH˛7Q‚˝‘N§Ò~è•@AπIÄ!¢˘Qö;œˆ5gm"ú˙S©Óƒ®£ ÕÜE∑‚Ëjrf¯%vNçUîL?Ãp@∫òƒ>ãˇ∞º§ÉngŸ˛)1ñõYí·Ì˝ÿdQjj,@ªF- Eë∑Ö|$¥ ”˙$gZw•–√ÿZôMbSI0Åˇ—B~üÕí\÷kîIÙ&W!Ú»siÇÿŸs+'cπ®óa<' óú	tÆã€?!⁄—PPÂFnTQ®O“ñ~,ª]h§\j ìÉzÂ€Q0jLUDIPèô+'muÉÅŒóÑä=¸‰¡tBPlèn∆ª∑≥‘·ßôRìOÈBP
-ñmT8#®ÊÊ’$©uS£}ß…¨{Ld›yÎ¨E]±õã∂Ú≈pîqµJdÖ`3◊πWa(MJvˆ#m‘{TÊgÃÚÏbm¥í4∏á%”,YpœâÇ{I\w˘å“≈CS	œ]$,%ø•jÜ]i}˛¯˙ys“¬*Bú∏`^…Sò◊úÌymf‘r®Ÿ™Ïf®2¿P¥–®
-¥PÆPe†é·–mÍÌŸò¡}ê-Z)ñ≤=B˜ [ÿRO9√/eµ™0û`xZ‡iΩ”tß∏,–é*äCSÆé¬ú€¬·∏H7	BR`˛¬Ï^OYÚvæÈ~J˜‹§~∂˜˜?ì”ü~~ˇ∫T„nCß—;R–ã˘p≤|eÅ»%Œì»û	≥P’0Yd:åƒµŒ
-∆«UWn¡â2§Ng‹T&S¢+¶∑ŸOÚ…ssú,Ì gH,7€äéWjÀÚw∏◊Ù~∫D|PR∑íüËMíuCv∂h5Â∆j‘„|§§¯p2™BãÖg¶≠©®tÊ#çó/Uv[&€=][ÛO≈@∑ÈëÑ+hn»π€>œ|MÕ2›CòØ`x]K=“ó˜´ÎÈ'€âÖ©ÕD…7ÅBêâ≠WßŸ»BÄ√∏j∑ö»∆q4$-1Úˆœ{Í≤Ã8Âör…NROˆùı±N∏¿4u—[˚#"Z¸ w“!∞küá∏•|ç≥5fÛ4RSMÈÅ∑¿0P≠=TT?Ç4÷¬hﬂÀ}IÔû~ª∏w<7Mœæ÷ºW "øv<xE9Ósı“’±X%¶v≠yÏz∞+úÀÒ∏Eÿ¯¿ËzÆM◊Qâ:[
-<„÷RäSﬂƒPCÙ §*wÀ◊Ø1,Æ^œJ Á˜OkÛ˚?]!n∫*¯UsêÔÊ!Õ= q˜~›.◊-≈=P!¶∆Rn‰Ü~N(wBTtÎ⁄ÆU	¶È≈À∑+\±U	!Ù≤\ªBXÉhˇ^óx5k=U´ˆÿJ:òf w“ÿŒ¢"
-\ÿã‚soﬁÃg˛—Ûi`ÍS»÷ŒHßØ©<8Èê2/NíMg"˘=±øØÇ©<∂®¯€(^ÄEµ9Éq4ãLı—,Hû˜^‰ÅI¢@Z‚€&lT1¿<ÂœâÄj–êuÊÎ@„Î£∏z”ÄuÔvé˘&æ∂rL∆ıß≤(Ç…ŒÍÁ(Ã$Ê&¡Ω0¯rgB˘“7•z∏∆+C°6´3oÓ	Ó	Èi•>=rc.}zêÁ-ÒŒ’æ%É¸ut{K≥⁄µú>•Ì&∏÷ìJyexÁ(âcJ£ÅP¡@ÅFz≠`0.N÷WÆDÎP—ò¯p™6∂Â´.…<d'Ü'ã,≥7"x´K=Y¿‚î†‚îki˙≠Tˇ¸Ú£„:}πsoHl·€ﬂÈgÔåp∫=3Æ¯ç!Ö#o=ê_€‰˜Øˇ˛Or
-#|á»O·ˇù—¢3Á7˛DiQnƒa∂NòÔ°Â‰_ˇıøçS+€ı⁄a·˚¸?ÖÁ+ñz3H0;`√Æ?£·eTç=)Ë°Ækï0ïä(¨ºÕ,‘.8∑ïíNÅVt®ôïw–∆ÈÅ¬RŒ˜	„†•Ω±n#Î˘G,¡;#†Ã£·‚ÄjÌynÛvÃXπØx±±f™≥5i®…_®å™%\≤(˙)˚7û◊ÿÆ!¯5∆HA√≈“ΩΩxˇbz–ÛÔto∆–äàm9aP≠£ro´`x[‘£T}'É˝ñ∑?V÷ã∫Jÿ+3Ì∂6%Ätâ‰Ãƒ©k”˘÷ã¿æ“ÙÊÁŒ≈“∑âëllgîn’mmŒ(å*ÛÜÙº»Æq∏Ûq,Ïy`Àw”_I1R7N¿P¥>Nm;¸@-J?C)Úv˜0.öúÆ{fPYú°cÁ
-FëAG‰∑·ó…˛ËóîEπ≤È∑ñÔ-®8ÛÈ\Ôé„√Ú√∑û33ëI˛)¸”Ñ§©Mã÷q nﬁ…[i0“éJÓ¥ÀG˘#!œUEº¿éUë9¨íh¿`s«∞@∑xgG—Ù´(¬3˚Pò-·á¸Vùztì˛ù[RƒèT6©ÙM1!e¡-î,Ø1C‚?Â7¢≤˙†ô“O•vcˆqÍ]“Ææµ≠⁄{;f:¬s¬i˙T. ’Â‚⁄‘; ˚åmE#Aﬂñ~ãÔ
-#ªtí©£ÉeÑÊÙ‘ù∑0(Ç°Lvi	Ô<ÀphOÆGKv0oî˜(n-HKò‡¸Û€ﬂ˝   ˇˇ ø†Æ
+        {activeTab === 'billing' && <BillingTab {...stateProps} />}
+          </motion.div>
+          </Suspense>
+          </>
+        )}
+      </div>
+      {isEntrySheetRouteOpen && (
+        <Suspense fallback={<div className="fixed inset-0 z-[250] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}>
+          <EntrySheet
+            isOpen={isEntrySheetRouteOpen}
+            onClose={() => navigate('/admin?tab=billing')}
+            currentUser={currentUser}
+            activeRows={activeRows}
+            currentMonthId={currentMonthId}
+            isBillingUnlocked={isBillingUnlocked}
+            appConfig={appConfig}
+            billingMonths={billingMonths}
+            initialShowUserLedger={entrySheetOpenWithUserLedger}
+            setBillingMonths={setBillingMonths}
+            savingMonthIds={savingMonthIds}
+          />
+        </Suspense>
+      )}
+      {isBatchPrintOpen && (
+        <Suspense fallback={null}>
+          <BatchPrintModal
+            isOpen={isBatchPrintOpen}
+            onClose={() => setIsBatchPrintOpen(false)}
+            currentUser={currentUser}
+            activeRows={activeRows}
+            currentMonthId={currentMonthId}
+            billingMonths={billingMonths}
+          />
+        </Suspense>
+      )}
+    </>
+  );
+}
