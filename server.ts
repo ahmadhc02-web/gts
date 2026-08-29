@@ -2988,6 +2988,18 @@ System instructions:
     );
   });
 
+  // Temporary endpoint to safely download the uncorrupted AdminPanel.tsx directly to user's server
+  app.get("/api/download-clean-admin-panel", (req, res) => {
+    const filePath = path.join(process.cwd(), "src/components/AdminPanel.tsx");
+    if (fs.existsSync(filePath)) {
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=AdminPanel.tsx");
+      fs.createReadStream(filePath).pipe(res);
+    } else {
+      res.status(404).send("File not found");
+    }
+  });
+
   // --- End Google Drive & Sheets Integration ---
 
   // Vite middleware for development
