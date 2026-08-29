@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MapPin, Tag, ChevronDown, BarChart2, X, Info, User, Calendar, Clock, PieChart as PieChartIcon, Activity, WifiOff, Users, Settings, Wifi, HelpCircle } from 'lucide-react';
+import { MapPin, Tag, ChevronDown, BarChart2, X, Info, User, Calendar, Clock, PieChart as PieChartIcon, Activity, WifiOff, Users, Settings, Wifi, HelpCircle, Phone } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { Complaint } from '../types';
 import { cn } from '../lib/utils';
@@ -51,7 +51,10 @@ export const getNormalizedCategory = (rawCategory: string): string => {
   if (lower.includes('slow') || lower.includes('speed') || lower.includes('ping') || lower.includes('latency') || lower.includes('buffering')) {
     return 'Slow Speed';
   }
-  if (lower.includes('new') || lower.includes('conn')) {
+  if (lower.includes('disconnect') || lower.includes('disconn')) {
+    return 'Disconnect';
+  }
+  if ((lower.includes('new') || lower.includes('conn')) && !lower.includes('disconnect') && !lower.includes('disconn')) {
     return 'New Connection';
   }
   if (lower.includes('router') || lower.includes('config') || lower.includes('modem') || lower.includes('wifi')) {
@@ -69,16 +72,58 @@ export const getNormalizedCategory = (rawCategory: string): string => {
 
 const getItemColor = (name: string, index: number, isCategory: boolean, isDark: boolean) => {
   const n = name.trim().toLowerCase();
-  const themeColors = isDark ? DARK_CONTRAST_COLORS : HIGH_CONTRAST_COLORS;
   
-  // Specifically map Redlight issues to a striking red color
-  if (isCategory && (n.includes('redlight') || n.includes('red light') || n.includes('red-light') || n.includes('los light'))) {
-    return isDark ? '#f87171' : '#dc2626';
+  if (isCategory) {
+    // Specifically map distinct, high-contrast, premium colors for categories
+    if (n.includes('new') || n.includes('connection')) {
+      return isDark ? '#3b82f6' : '#2563eb'; // Royal Blue
+    }
+    if (n.includes('slow') || n.includes('speed') || n.includes('ping') || n.includes('latency') || n.includes('buffering')) {
+      return isDark ? '#10b981' : '#059669'; // Emerald Green
+    }
+    if (n.includes('disconnect') || n.includes('offline') || n.includes('disconn')) {
+      return isDark ? '#fb7185' : '#e11d48'; // Rose/Cherry Red
+    }
+    if (n.includes('redlight') || n.includes('red light') || n.includes('red-light') || n.includes('los light') || n.includes('pon light')) {
+      return isDark ? '#f87171' : '#dc2626'; // Red
+    }
+    if (n.includes('router') || n.includes('config') || n.includes('modem') || n.includes('wifi')) {
+      return isDark ? '#a855f7' : '#7c3aed'; // Violet
+    }
+    if (n.includes('wire') || n.includes('fiber') || n.includes('cable') || n.includes('break') || n.includes('drop') || n.includes('joint')) {
+      return isDark ? '#38bdf8' : '#0284c7'; // Sky/Cyan Blue
+    }
+    if (n === 'others' || n === 'other') {
+      return isDark ? '#64748b' : '#94a3b8'; // Slate/Gray for aggregated 'Others'
+    }
+  } else {
+    // For zones/areas: sequential high-contrast colors to guarantee ZERO duplicates in the top 5
+    if (n === 'others' || n === 'other') {
+      return isDark ? '#64748b' : '#94a3b8'; // Slate/Gray for aggregated 'Others'
+    }
+    const areaColors = isDark
+      ? ['#3b82f6', '#10b981', '#fbbf24', '#a855f7', '#38bdf8']
+      : ['#2563eb', '#059669', '#d97706', '#7c3aed', '#0284c7'];
+    return areaColors[index % areaColors.length];
   }
-  let color = themeColors[index % themeColors.length];
-  if (isCategory && (color === '#f87171' || color === '#dc2626')) {
-    color = isDark ? '#f472b6' : '#c026d3';
+
+  // Fallback for custom categories: use a stable hash-based color select to avoid clashes
+  const themeColors = isDark ? DARK_CONTRAST_COLORS : HIGH_CONTRAST_COLORS;
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
+  const colorIndex = Math.abs(hash) % themeColors.length;
+  let color = themeColors[colorIndex];
+  
+  // Guard against returning reserved grays/reds/roses as custom fallbacks
+  if (color === '#64748b' || color === '#94a3b8' || color === '#dc2626' || color === '#f87171' || color === '#fb7185' || color === '#e11d48') {
+    const altColors = isDark 
+      ? ['#3b82f6', '#10b981', '#fbbf24', '#a855f7', '#38bdf8', '#2dd4bf', '#fb923c', '#a3e635']
+      : ['#2563eb', '#059669', '#d97706', '#7c3aed', '#0284c7', '#c026d3', '#0d9488', '#ea580c'];
+    color = altColors[Math.abs(hash) % altColors.length];
+  }
+
   return color;
 };
 
@@ -87,7 +132,7 @@ const getCategoryIcon = (categoryName: string, color: string) => {
   if (name.includes('speed') || name.includes('slow')) {
     return <Activity size={12} style={{ color }} className="shrink-0" />;
   }
-  if (name.includes('offline') || name.includes('break')) {
+  if (name.includes('offline') || name.includes('break') || name.includes('disconnect')) {
     return <WifiOff size={11} style={{ color }} className="shrink-0" />;
   }
   if (name.includes('new') || name.includes('connection')) {
@@ -109,7 +154,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
   const [viewBy, setViewBy] = useState<'area' | 'category'>('area');
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
-  // Filter complaints based on chosen timeframe (Week / Month / Year)
+  // Filter complaints based on chosen timeframe and complete status
   const filteredComplaints = useMemo(() => {
     const now = new Date();
     let startTime = 0;
@@ -124,6 +169,12 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
     }
 
     return complaints.filter(c => {
+      // Show only finalized or complete complaints/connections
+      const statusLower = (c.status || '').toLowerCase();
+      if (statusLower !== 'complete' && statusLower !== 'finalized') {
+        return false;
+      }
+
       if (!c.createdAt) return true; // Include records without timestamp fallback
       const time = typeof c.createdAt === 'number' ? c.createdAt : new Date(c.createdAt).getTime();
       if (isNaN(time)) return true;
@@ -147,6 +198,27 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
   }, [filteredComplaints, chartType]);
+
+  const chartData = useMemo(() => {
+    // Separate 'Other' or 'Others' from the list
+    const nonOthers = data.filter(item => item.name.toLowerCase() !== 'others' && item.name.toLowerCase() !== 'other');
+    const existingOthers = data.find(item => item.name.toLowerCase() === 'others' || item.name.toLowerCase() === 'other');
+
+    // Take top 5 non-Others categories/zones
+    const top5 = nonOthers.slice(0, 5);
+    const result = [...top5];
+
+    // Show 'Other' ONLY if actual 'Other' complaints exist, with exactly their own count (do not group disconnecting or anything else into it!)
+    if (existingOthers && existingOthers.count > 0) {
+      result.push({ name: 'Other', count: existingOthers.count });
+    }
+
+    return result;
+  }, [data]);
+
+  const topNames = useMemo(() => {
+    return new Set(chartData.filter(item => item.name !== 'Other' && item.name !== 'Others').map(item => item.name));
+  }, [chartData]);
 
   const total = filteredComplaints.length;
   
@@ -177,7 +249,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
               }
             >
               {chartType === 'area' ? <MapPin size={11} className="stroke-[2.5]" /> : <Tag size={11} className="stroke-[2.5]" />}
-              {chartType === 'area' ? 'ZONE' : 'CATEGORY'}
+              {chartType === 'area' ? 'ZONES' : 'CATEGORIES'}
             </span>
           </div>
 
@@ -219,7 +291,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                             : "bg-[#f1f3f7] shadow-[inset_2px_2px_5px_rgba(0,0,0,0.1),inset_-2px_-2px_5px_rgba(255,255,255,0.9)] border border-slate-200/60"
                         )}>
                           <span className="text-[10.5px] font-black uppercase tracking-[0.12em] leading-tight drop-shadow-sm text-blue-600 dark:text-blue-400">
-                            {chartType === 'area' ? 'ZONE' : 'CATG.'}
+                            {chartType === 'area' ? 'ZONES' : 'CATG.'}
                           </span>
                           <span className="text-[8.5px] font-extrabold text-slate-600 dark:text-slate-300 tracking-wider">
                             {total} {total === 1 ? 'LOG' : 'LOGS'}
@@ -265,7 +337,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                           {/* 3D Raised Donut Slices */}
                           <Pie 
                             key={`pie-${chartType}-${isDark ? 'dark' : 'light'}`}
-                            data={chartType === 'area' ? data.slice(0, 6) : data.slice(0, 4)} 
+                            data={chartData} 
                             cx="50%" cy="50%" 
                             innerRadius={54} outerRadius={94} 
                             paddingAngle={6}
@@ -338,7 +410,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                             animationDuration={1100}
                             animationEasing="ease-out"
                           >
-                            {(chartType === 'area' ? data.slice(0, 6) : data.slice(0, 4)).map((entry, index) => {
+                            {chartData.map((entry, index) => {
                               const itemColor = getItemColor(entry.name, index, chartType === 'category', isDark);
                               return (
                                 <Cell 
@@ -424,6 +496,9 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                      const itemKey = viewBy === 'area'
                        ? (c.area || 'Unknown Area').trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
                        : getNormalizedCategory(c.category || 'Unknown Category');
+                     if (selectedItem === 'Other' || selectedItem === 'Others') {
+                       return itemKey === 'Other' || itemKey === 'Others';
+                     }
                      return itemKey === selectedItem;
                    })
                    .sort((a, b) => b.createdAt - a.createdAt)
@@ -432,14 +507,28 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                          <div className="flex items-start justify-between gap-4 mb-3">
                            <div className="flex-1">
                               <p className="text-xs font-black uppercase text-slate-900 dark:text-white mb-0.5">{complaint.category}</p>
-                              <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
-                                 <span className="flex items-center gap-1 uppercase">
-                                   <User size={12} /> {complaint.customerName || 'Unknown User'}
-                                 </span>
-                                 <span className="flex items-center gap-1 uppercase">
-                                   {viewBy === 'area' ? <Tag size={12} /> : <MapPin size={12} />}
-                                   {viewBy === 'area' ? complaint.category : complaint.area}
-                                 </span>
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px] font-bold">
+                                   <span className="flex items-center gap-1 text-slate-700 dark:text-slate-300 uppercase">
+                                     <User size={12} className="text-slate-400" /> {complaint.customerName || 'Unknown User'}
+                                   </span>
+                                   {complaint.customerUsername && (
+                                     <span className="text-blue-600 dark:text-blue-400 font-extrabold bg-blue-500/10 dark:bg-blue-500/20 px-1.5 py-0.5 rounded text-[9px]">
+                                       ID: {complaint.customerUsername}
+                                     </span>
+                                   )}
+                                   {complaint.number && (
+                                     <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-extrabold bg-emerald-500/10 dark:bg-emerald-500/20 px-1.5 py-0.5 rounded text-[9px]">
+                                       <Phone size={10} /> {complaint.number}
+                                     </span>
+                                   )}
+                                </div>
+                                <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
+                                  <span className="flex items-center gap-1 uppercase">
+                                    {viewBy === 'area' ? <Tag size={12} /> : <MapPin size={12} />}
+                                    {viewBy === 'area' ? complaint.category : complaint.area}
+                                  </span>
+                                </div>
                               </div>
                            </div>
                            

@@ -765,6 +765,54 @@ function subscribeTable(
           }, 3000);
         })
         .subscribe();
+      
+      // Hook up a dedicated, reliable broadcast channel for notifications to ensure 0-latency instant real-time sync across all clients on delete or clear action
+      if (tableName === 'notifications') {
+        const globalBroadcastChannel = supabase.channel('gts_notifications_global_broadcast');
+        globalBroadcastChannel
+          .on('broadcast', { event: 'clear_all' }, (payload: any) => {
+            console.log('[GLOBAL BROADCAST] Received clear_all event:', payload);
+            const targetDealerId = payload.payload?.dealerId;
+            // Clear only if it is a general clear (super_admin) or if it targeted our specific dealer scope
+            if (!targetDealerId || targetDealerId === 'main' || targetDealerId === dealerId) {
+              globalTableCaches[syncKey] = [];
+              try {
+                localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify([]));
+              } catch (e) {}
+              const subscribers = globalTableSubscribers[syncKey];
+              if (subscribers) {
+                subscribers.forEach((cb) => {
+                  try { cb([]); } catch (err) {}
+                });
+              }
+            }
+          })
+          .on('broadcast', { event: 'delete_notification' }, (payload: any) => {
+            console.log('[GLOBAL BROADCAST] Received delete_notification event:', payload);
+            const { id } = payload.payload || {};
+            if (id) {
+              let cache = globalTableCaches[syncKey] || [];
+              const originalLength = cache.length;
+              cache = cache.filter((item: any) => item.id !== id);
+              if (cache.length !== originalLength) {
+                globalTableCaches[syncKey] = cache;
+                try {
+                  localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
+                } catch (e) {}
+                const subscribers = globalTableSubscribers[syncKey];
+                if (subscribers) {
+                  subscribers.forEach((cb) => {
+                    try { cb(cache); } catch (err) {}
+                  });
+                }
+              }
+            }
+          })
+          .subscribe();
+        
+        (channel as any)._globalBroadcastChannel = globalBroadcastChannel;
+      }
+
       globalTableChannels[syncKey] = channel;
     } catch (e) {}
   }
@@ -783,7 +831,11 @@ function subscribeTable(
           delete realtimeFetchTimers[syncKey];
         }
         if (globalTableChannels[syncKey]) {
-          try { supabase.removeChannel(globalTableChannels[syncKey]); } catch (e) {}
+          const chan = globalTableChannels[syncKey];
+          if (chan._globalBroadcastChannel) {
+            try { chan._globalBroadcastChannel.unsubscribe(); supabase.removeChannel(chan._globalBroadcastChannel); } catch (e) {}
+          }
+          try { supabase.removeChannel(chan); } catch (e) {}
           delete globalTableChannels[syncKey];
         }
         delete globalTableSubscribers[syncKey];
@@ -2090,12 +2142,40 @@ export const supabaseService = {
       if (dealerId && dealerId !== 'main') query = query.eq('dealer_id', dealerId);
       else query = query.neq('id', '');
       await query;
-    } catch (e) {}
+
+      // Broadcast the clear event to the global channel to update all active clients in real-time
+      const globalChannel = supabase.channel('gts_notifications_global_broadcast');
+      globalChannel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await globalChannel.send({
+            type: 'broadcast',
+            event: 'clear_all',
+            payload: { dealerId }
+          });
+          supabase.removeChannel(globalChannel);
+        }
+      });
+    } catch (e) {
+      console.warn("Failed to clear notifications:", e);
+    }
   },
 
   deleteNotification: async (id: string) => {
     try {
       await supabase.from('notifications').delete().eq('id', id);
+
+      // Broadcast the delete event to the global channel to update all active clients in real-time
+      const globalChannel = supabase.channel('gts_notifications_global_broadcast');
+      globalChannel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await globalChannel.send({
+            type: 'broadcast',
+            event: 'delete_notification',
+            payload: { id }
+          });
+          supabase.removeChannel(globalChannel);
+        }
+      });
     } catch (e) {}
   },
 

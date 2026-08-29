@@ -480,7 +480,8 @@ export default function Layout({
 
   const handleClearAll = async () => {
     try {
-      await pocketbaseService.clearAllNotifications();
+      const tenantId = user ? pocketbaseService.getReadTenantId(user) : undefined;
+      await pocketbaseService.clearAllNotifications(tenantId);
     } catch (error) {
       console.error('Failed to clear notifications:', error);
     }
@@ -1109,22 +1110,13 @@ export default function Layout({
               className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[150]"
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, x: 100, y: 100, filter: 'blur(20px)', rotate: -5 }}
-              animate={{ opacity: 1, scale: 1, x: 0, y: 0, filter: 'blur(0px)', rotate: 0 }}
-              exit={{ 
-                opacity: 0, 
-                scale: 0.82, 
-                x: 300, 
-                y: 150, 
-                rotate: -10, 
-                filter: 'blur(40px)',
-                transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] }
-              }}
+              initial={{ opacity: 0, x: 40, scale: 0.96 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 40, scale: 0.96 }}
               transition={{ 
                 type: "spring",
-                damping: 26,
-                stiffness: 220,
-                duration: 0.2
+                damping: 28,
+                stiffness: 250
               }}
               className="fixed bottom-20 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden flex flex-col"
             >
@@ -1719,8 +1711,7 @@ export default function Layout({
                                 <Shield size={18} className="animate-pulse" />
                               </div>
                               <div>
-                                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">IDENTITY PROFILE</h3>
-                                <p className="text-[8px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Access Key Registry Status</p>
+                                <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">PROFILE</h3>
                               </div>
                             </div>
                             <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
@@ -1855,7 +1846,7 @@ export default function Layout({
                         <form onSubmit={handleUpdateProfile} className="p-5 space-y-4">
                           {/* Full Name input */}
                           <div className="space-y-1.5">
-                            <label className="text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 ml-1 block leading-none">Full Display Name</label>
+                            <label className="text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 ml-1 block leading-none">Full Name</label>
                             <div className="relative group">
                               <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors pointer-events-none">
                                 <User size={13.5} />
@@ -1906,7 +1897,7 @@ export default function Layout({
 
                           {/* Email input */}
                           <div className="space-y-1.5">
-                            <label className="text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 ml-1 block leading-none">Recovery Mailbox (OTP Reset Link)</label>
+                            <label className="text-[8.5px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 ml-1 block leading-none">Recovery Mail</label>
                             <div className="relative group">
                               <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors pointer-events-none">
                                 <Mail size={13.5} />
@@ -1936,15 +1927,15 @@ export default function Layout({
                               ) : (
                                 <>
                                   <Sparkles size={11.5} className="opacity-85 text-white dark:text-slate-950" />
-                                  <span>Commit Updates</span>
+                                  <span>Save Changes</span>
                                 </>
                               )}
                             </button>
                           </div>
                         </form>
 
-                        {/* Dashboard Footer with Roles & Termination Option */}
-                        <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-white/10 flex items-center justify-between">
+                        {/* Dashboard Footer with Roles */}
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-white/10 flex items-center justify-center text-center">
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[7px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Security Access</span>
                             <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none">
@@ -1954,16 +1945,6 @@ export default function Layout({
                                user.role === 'dealer' ? 'Level 3 (Main Dealer)' : 'Level 1 (User)'}
                             </span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsProfileOpen(false);
-                              if (onLogout) onLogout();
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-500 text-[8.5px] font-black uppercase tracking-widest transition-all cursor-pointer active:scale-95"
-                          >
-                            Terminate Session
-                          </button>
                         </div>
                       </motion.div>
                     </>
