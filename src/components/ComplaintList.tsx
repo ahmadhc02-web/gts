@@ -651,7 +651,7 @@ export default function ComplaintList({
           iframe,
           .mb-6,
           /* Hide search/filter bar container */
-          .bg-slate-50\\/50, 
+          .bg-slate-50\/50, 
           /* Hide parent section/filters block */
           .grid,
           .flex-wrap,

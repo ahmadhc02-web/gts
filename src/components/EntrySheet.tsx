@@ -143,8 +143,8 @@ export default function EntrySheet({
   const location = useLocation();
   const navigate = useNavigate();
 
-  const matchSheet = location.pathname.match(/\/billingmod\/(?:entrysheet|ledger)\/folder\/([^/]+)\/sheet\/([^/]+)/);
-  const matchFolder = location.pathname.match(/\/billingmod\/(?:entrysheet|ledger)\/folder\/([^/]+)/);
+  const matchSheet = location.pathname.match(/\/billingmod\/(?:entrysheet|ledger)\/folder\/([^\/]+)\/sheet\/([^\/]+)/);
+  const matchFolder = location.pathname.match(/\/billingmod\/(?:entrysheet|ledger)\/folder\/([^\/]+)/);
 
   const urlFolderId = matchSheet ? matchSheet[1] : matchFolder ? matchFolder[1] : null;
   const urlSheetId = matchSheet ? matchSheet[2] : null;
