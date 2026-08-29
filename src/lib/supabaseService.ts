@@ -649,10 +649,39 @@ function subscribeTable(
           if (payload && payload.eventType === 'DELETE' && payload.old) {
             try {
               const oldId = payload.old.id || payload.old.month_id || payload.old.sheet_id;
-              if (oldId) {
+              if (oldId !== undefined) {
                 let cache = globalTableCaches[syncKey] || [];
                 const originalLength = cache.length;
-                cache = cache.filter((item: any) => (item.id || item.month_id || item.sheet_id) !== oldId);
+                
+                if (tableName === 'billing_months') {
+                  const targetMonthId = payload.old.month_id || payload.old.id;
+                  cache = cache.filter((item: any) => {
+                    const itemMonthId = item.id || item.month_id;
+                    const dbIdMatch = item.dbId !== undefined && payload.old.id !== undefined && String(item.dbId) === String(payload.old.id);
+                    return itemMonthId !== targetMonthId && itemMonthId !== String(targetMonthId) && !dbIdMatch;
+                  });
+                } else if (tableName === 'ledger_folders') {
+                  const targetFolderId = payload.old.folder_id || payload.old.id;
+                  cache = cache.filter((item: any) => {
+                    const itemFolderId = item.id || item.folder_id;
+                    const dbIdMatch = item.dbId !== undefined && payload.old.id !== undefined && String(item.dbId) === String(payload.old.id);
+                    return itemFolderId !== targetFolderId && itemFolderId !== String(targetFolderId) && !dbIdMatch;
+                  });
+                } else if (tableName === 'ledger_sheets') {
+                  const targetSheetId = payload.old.sheet_id || payload.old.id;
+                  cache = cache.filter((item: any) => {
+                    const itemSheetId = item.id || item.sheet_id;
+                    const dbIdMatch = item.dbId !== undefined && payload.old.id !== undefined && String(item.dbId) === String(payload.old.id);
+                    return itemSheetId !== targetSheetId && itemSheetId !== String(targetSheetId) && !dbIdMatch;
+                  });
+                } else {
+                  cache = cache.filter((item: any) => {
+                    const itemId = item.id || item.month_id || item.sheet_id || item.folder_id;
+                    const dbIdMatch = item.dbId !== undefined && payload.old.id !== undefined && String(item.dbId) === String(payload.old.id);
+                    return itemId !== oldId && itemId !== String(oldId) && itemId !== payload.old.id && itemId !== String(payload.old.id) && !dbIdMatch;
+                  });
+                }
+
                 if (cache.length !== originalLength) {
                   globalTableCaches[syncKey] = cache;
                   try {
@@ -1175,6 +1204,7 @@ export const supabaseService = {
             const rowsFromData = parseRowsData(em.rows_data ?? em.rows);
             monthMap.set(em.month_id, {
               id: em.month_id,
+              dbId: em.id,
               dealerId: em.dealer_id || dealerId,
               lineCode: em.line_code || '',
               rows: rowsFromData,
@@ -2944,6 +2974,7 @@ export const supabaseService = {
     };
     return subscribeTable('billing_months', callback, (row: any) => ({
       id: row.month_id,
+      dbId: row.id,
       dealerId: row.dealer_id,
       lineCode: row.line_code || '',
       rows: parseRowsData(row.rows_data ?? row.rows),
