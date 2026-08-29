@@ -412,11 +412,14 @@ export default function EntrySheet({
     }
     
     const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
+    const nowIso = new Date().toISOString();
+    const nowTs = Date.now();
 
     try {
       const { data, error } = await supabase.from('ledger_folders').insert({
         name: cleanName,
-        tenant_id: tenantId
+        tenant_id: tenantId,
+        created_at: nowIso
       }).select().single();
 
       if (error) {
@@ -427,16 +430,25 @@ export default function EntrySheet({
 
       if (data) {
         console.log("Successfully created folder in Supabase:", data);
+        const createdTimestamp = data.created 
+          ? new Date(data.created).getTime() 
+          : (data.created_at ? new Date(data.created_at).getTime() : nowTs);
+        
         const nFolder = {
-          id: data.id || data.folder_id || `folder_${Date.now()}`,
+          id: data.id || data.folder_id || `folder_${nowTs}`,
           name: data.name,
-          createdAt: data.created ? new Date(data.created).getTime() : Date.now()
+          createdAt: createdTimestamp,
+          created_at: createdTimestamp,
+          tenantId: tenantId
         };
-        const newFolders = [...folders, nFolder];
+        
+        // Ensure new folder is placed at the top-left 1st position (prepended)
+        const newFolders = [nFolder, ...folders.filter(f => f.id !== nFolder.id)];
         setFolders(newFolders);
-        // Also keep local backup for offline resilience
+        // Also keep local backup & cloud sync for offline resilience
         const originalScopeId = activeDealerId || currentUser?.uid || 'main';
         localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+        pocketbaseService.saveLedgerFolders(newFolders, tenantId).catch(console.warn);
         
         setNewFolderNameInput('');
         setIsCreatingFolder(false);
@@ -975,67 +987,6 @@ export default function EntrySheet({
       console.warn("Failed to subscribe historical ledger sheets:", e);
     }
   }, [isOpen, currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId]);
-
-  useEffect(() => {
-    if (openedFolderId && isOpen) {
-      const fetchFolderSpecificSheets = async () => {
-        try {
-          let query = supabase
-            .from('ledger_sheets')
-            .select('*')
-            .eq('folder_id', openedFolderId);
-          
-          const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-          if (tenantId && tenantId !== 'all') {
-            query = tenantId === 'main' 
-              ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') 
-              : query.eq('dealer_id', tenantId);
-          }
-            
-          const { data, error } = await query;
-            
-          if (error) {
-             console.error(`Failed to fetch sheets for folder ${openedFolderId}:`, error);
-          } else if (data) {
-             console.log(`Explicitly fetched sheets for folder ${openedFolderId}:`, data);
-             // We merge this with ledgerHistory to ensure it's up to date
-             setLedgerHistory(prev => {
-                const map = new Map(prev.map(sh => [sh.id, sh]));
-                data.forEach(r => {
-                  map.set(r.id || r.sheet_id, {
-                    id: r.id || r.sheet_id,
-                    folderId: r.folder_id,
-                    recOfficer: r.rec_officer,
-                    recOfficerLabel: r.rec_officer_label,
-                    area: r.area,
-                    areaLabel: r.area_label,
-                    sheetDate: r.sheet_date,
-                    dateLabel: r.date_label,
-                    table1Rows: parseRowsArray(r.table1_rows),
-                    table2Rows: parseRowsArray(r.table2_rows),
-                    cashReceived: r.cash_received,
-                    sign: r.sign,
-                    submitted: r.submitted,
-                    cashReceivedLabel: r.cash_received_label,
-                    signLabel: r.sign_label,
-                    submittedLabel: r.submitted_label,
-                    footnoteLeft: r.footnote_left,
-                    footnoteRight: r.footnote_right,
-                    dealerId: r.dealer_id,
-               sheetSubtext: r.sheet_subtext || '',
-                    createdAt: r.created_at || r.created ? new Date(r.created_at || r.created).getTime() : Date.now()
-                  });
-                });
-                return Array.from(map.values());
-             });
-          }
-        } catch (err) {
-          console.error("Unexpected error fetching folder specific sheets:", err);
-        }
-      };
-      fetchFolderSpecificSheets();
-    }
-  }, [openedFolderId, isOpen]);
 
   // Synchronize ledger history state with browser local storage cache
   useEffect(() => {
@@ -2094,12 +2045,10 @@ export default function EntrySheet({
             }
           });
 
-          // PREPARE: Reset all base rows to 0 to recalculate from scratch
-          // We filter out excluded names (like "bank") so they don't count as clients
+          // PREPARE: Keep all existing base rows intact so all clients' payments and paid statuses are fully preserved.
+          // Once an entry is recorded and saved, it will NEVER be reset to unpaid automatically.
           const baseRecalculatedRows = targetMonthRows.filter((br: any) => !isExcludedName(br.name)).map((row: any) => ({
-            ...row,
-            paymentReceived: 0,
-            paymentStatus: 'unpaid'
+            ...row
           }));
 
           let updatedCount = 0;
@@ -2115,19 +2064,21 @@ export default function EntrySheet({
             allSheetRows.forEach((r: any) => {
               const amountVal = Number(r.amount) || 0;
               const amountStr = String(r.amount || '').trim().toUpperCase();
-              const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr);
+              const rowStatusStr = String(r.status || '').trim().toUpperCase();
+              const isDcStatus = amountStr === 'DC' || rowStatusStr === 'DC';
+              const isTdcStatus = amountStr === 'TDC' || rowStatusStr === 'TDC';
+              const isPaidStatus = amountStr === 'PAID' || rowStatusStr === 'PAID';
+              const isUnpaidStatus = amountStr === 'UNPAID' || rowStatusStr === 'UNPAID';
+              const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr) || ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(rowStatusStr);
               
               const hasId = Boolean(r.cId && String(r.cId).trim());
               const hasName = Boolean(r.name && String(r.name).trim());
               
               if (!hasId && !hasName && amountVal === 0 && !isStatusString) return;
               if (isExcludedName(r.name)) return;
-
               const client = findClientForEntry(r);
-
               let matchedIdx = -1;
               const hasAnyId = Boolean(r.clientId || r.clientUsername || (r.cId && String(r.cId).trim()));
-
               if (r.clientId || r.clientUsername) {
                 const searchClientId = (r.clientId || '').trim().toLowerCase();
                 const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
@@ -2153,14 +2104,12 @@ export default function EntrySheet({
                   }
                   return acc;
                 }, []);
-
                 if (matchedIndices.length === 1) {
                   matchedIdx = matchedIndices[0];
                 } else if (matchedIndices.length > 1) {
                   console.warn(`Ambiguous same-name case for "${r.name}" in baseRecalculatedRows. Found ${matchedIndices.length} candidate rows. Leaving unmatched.`);
                 }
               }
-
               if (matchedIdx !== -1) {
                 const row = baseRecalculatedRows[matchedIdx];
                 const clientKey = row.id || row.clientId || row.username || `idx_${matchedIdx}`;
@@ -2170,41 +2119,62 @@ export default function EntrySheet({
                 const totalAmount = base + savedOrigCr;
                 
                 let newPaymentReceived = 0;
-                let finalStatus = 'partial';
+                let finalStatus = 'unpaid';
                 
-                if (isStatusString) {
-                  finalStatus = amountStr.toLowerCase();
-                  newPaymentReceived = finalStatus === 'paid' ? totalAmount : 0;
-                  // If there's already a batch payment, A4 status overrides it entirely for simplicity
+                if (isDcStatus) {
+                  finalStatus = 'dc';
+                  newPaymentReceived = 0;
+                  batchPaymentsMap.set(clientKey, 0);
+                } else if (isTdcStatus) {
+                  finalStatus = 'tdc';
+                  newPaymentReceived = 0;
+                  batchPaymentsMap.set(clientKey, 0);
+                } else if (isPaidStatus) {
+                  finalStatus = 'paid';
+                  newPaymentReceived = totalAmount > 0 ? totalAmount : (amountVal > 0 ? amountVal : base);
                   batchPaymentsMap.set(clientKey, newPaymentReceived);
+                } else if (isUnpaidStatus) {
+                  finalStatus = 'unpaid';
+                  newPaymentReceived = 0;
+                  batchPaymentsMap.set(clientKey, 0);
                 } else {
                   const prevBatchPayment = batchPaymentsMap.get(clientKey) || 0;
                   newPaymentReceived = prevBatchPayment + amountVal;
-                  
                   batchPaymentsMap.set(clientKey, newPaymentReceived);
-
-                  if (r.status) {
+                  
+                  if (rowStatusStr === 'DC') {
+                    finalStatus = 'dc';
+                  } else if (rowStatusStr === 'TDC') {
+                    finalStatus = 'tdc';
+                  } else if (newPaymentReceived > 0 || amountVal > 0) {
+                    // Shifting back to active billing when amount entered!
+                    if (newPaymentReceived >= totalAmount && totalAmount > 0) {
+                      finalStatus = 'paid';
+                    } else {
+                      finalStatus = 'partial';
+                    }
+                  } else if (r.status) {
                     finalStatus = r.status.toLowerCase();
                   } else if (row.name === 'Unspecified Entry' || r.name === 'Unspecified Entry') {
                     finalStatus = 'extra';
-                  } else if (newPaymentReceived === 0) {
-                    finalStatus = 'unpaid';
-                  } else if (newPaymentReceived >= totalAmount) {
-                    finalStatus = 'paid';
+                  } else {
+                    finalStatus = (row.paymentStatus === 'dc' || row.paymentStatus === 'tdc') ? row.paymentStatus : 'unpaid';
                   }
                 }
-
+                
+                const clientPhone = client?.mobileNumber || client?.number || client?.phone || row.mobileNumber || row.phone || '';
                 baseRecalculatedRows[matchedIdx] = {
                   ...row,
                   clientId: client?.id || row.clientId || r.clientId || '',
                   username: client?.username || row.username || r.clientUsername || '',
+                  mobileNumber: clientPhone,
+                  phone: clientPhone,
                   _originalCr: savedOrigCr,
                   cr: savedOrigCr,
                   totalAmount: totalAmount,
                   paymentReceived: newPaymentReceived,
                   paymentStatus: finalStatus
                 };
-
               } else {
                 if (client && (isExcludedName(client.name) || isExcludedName(client.username))) return;
                 
@@ -2213,25 +2183,33 @@ export default function EntrySheet({
                 const totalAmount = baseAmount + cr;
                 
                 let finalStatus = 'partial';
-                if (isStatusString) {
-                  finalStatus = amountStr.toLowerCase();
+                if (isDcStatus) {
+                  finalStatus = 'dc';
+                } else if (isTdcStatus) {
+                  finalStatus = 'tdc';
+                } else if (isPaidStatus) {
+                  finalStatus = 'paid';
+                } else if (isUnpaidStatus) {
+                  finalStatus = 'unpaid';
                 } else if (r.status) {
                   finalStatus = r.status.toLowerCase();
                 } else if (r.name === 'Unspecified Entry' || (!r.cId && (!r.name || r.name === 'Unspecified Entry'))) {
                   finalStatus = 'extra';
                 } else if (amountVal === 0) {
                   finalStatus = 'unpaid';
-                } else if (amountVal >= totalAmount) {
+                } else if (amountVal >= totalAmount && totalAmount > 0) {
                   finalStatus = 'paid';
                 }
                 
                 const clientKey = client?.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                const clientPhone = client?.mobileNumber || client?.number || client?.phone || '';
                 const newRow = {
                   id: clientKey,
                   clientId: client?.id || r.clientId || r.cId || '',
                   name: client?.name || r.name || 'Unknown',
                   username: client?.username || r.clientUsername || r.cId || '',
-                  mobileNumber: client?.mobileNumber || '',
+                  mobileNumber: clientPhone,
+                  phone: clientPhone,
                   area: client?.area || r.area || area || '',
                   rt: client?.rt || '',
                   baseAmount: baseAmount,
@@ -2252,8 +2230,6 @@ export default function EntrySheet({
               }
             });
           }
-
-          // Compare with original targetMonthRows to detect changes and add to allSyncedUsersSummary
           baseRecalculatedRows.forEach((newRow: any, idx: number) => {
             const origRow = targetMonthRows.find((br: any) => br.id === newRow.id || br.clientId === newRow.clientId);
             const origPayment = Number(origRow?.paymentReceived) || 0;
@@ -2762,40 +2738,53 @@ export default function EntrySheet({
   const totalAmount2 = table2Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
   // Edit helper for Table 1
+  // Edit helper for Table 1
   const handleT1Change = (index: number, field: keyof Table1Row, value: any) => {
     if (isLocked) return;
     const updated = [...table1Rows];
     let commentsVal = updated[index].comments;
-
+    let statusVal = updated[index].status;
     if (field === 'comments') {
       commentsVal = value;
     } else if (field === 'amount') {
       const orig = updated[index].originalAmount;
-      const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL'].includes(String(value).toUpperCase());
-      if (typeof orig === 'number' && !isStatusString) {
-        const newAmt = parseFloat(value) || 0;
-        if (newAmt > orig) {
-          commentsVal = 'Upgrade';
-        } else if (newAmt < orig) {
-          commentsVal = 'Downgrade';
-        } else {
-          if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
-            commentsVal = '';
-          }
-        }
-      } else if (isStatusString) {
+      const strVal = String(value || '').trim().toUpperCase();
+      const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(strVal);
+      if (isStatusString) {
+        statusVal = strVal.toLowerCase();
         if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
           commentsVal = '';
         }
+      } else {
+        const numVal = parseFloat(value);
+        if (!isNaN(numVal) && numVal > 0) {
+          // Reset DC status so entering an amount shifts DC users back to active billing!
+          if (statusVal === 'dc' || statusVal === 'tdc') {
+            statusVal = 'unpaid';
+          }
+        }
+        if (typeof orig === 'number') {
+          const newAmt = parseFloat(value) || 0;
+          if (newAmt > orig) {
+            commentsVal = 'Upgrade';
+          } else if (newAmt < orig) {
+            commentsVal = 'Downgrade';
+          } else {
+            if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
+              commentsVal = '';
+            }
+          }
+        }
       }
+    } else if (field === 'status') {
+      statusVal = String(value || '').toLowerCase();
     }
-
     updated[index] = {
       ...updated[index],
       [field]: value,
-      comments: commentsVal
+      comments: commentsVal,
+      status: statusVal
     };
-
     if (field === 'name') {
       updated[index].clientId = undefined;
       updated[index].clientUsername = undefined;
@@ -2819,23 +2808,28 @@ export default function EntrySheet({
       (r.username && r.username.toLowerCase() === client.username?.toLowerCase()) || 
       (r.clientId && r.clientId.toLowerCase() === client.id?.toLowerCase())
     );
-
     const updated = [...table1Rows];
     let amount = 0;
     
     if (matchingActiveRow) {
       const isDcOrTdc = matchingActiveRow.paymentStatus === 'dc' || matchingActiveRow.paymentStatus === 'tdc';
-      const totalAmt = isDcOrTdc ? 0 : (parseFloat(matchingActiveRow.totalAmount) || 0);
-      const rcvAmt = isDcOrTdc ? 0 : (parseFloat(matchingActiveRow.paymentReceived) || 0);
+      const totalAmt = parseFloat(matchingActiveRow.totalAmount) || parseFloat(matchingActiveRow.baseAmount) || (client.baseAmount ? Number(client.baseAmount) : 0);
+      const rcvAmt = parseFloat(matchingActiveRow.paymentReceived) || 0;
       const outstanding = totalAmt - rcvAmt;
       amount = outstanding > 0 ? outstanding : totalAmt;
+      if (amount === 0 && client.pkgDetails) {
+        const match = client.pkgDetails.match(/\b(1000|1200|1500|2000|2500|3000|3500|4000|5000|150|200|250|300|350|400|450|500|600|700|800|900)\b/) || client.pkgDetails.match(/\b\d{3,4}\b/);
+        amount = match ? parseInt(match[0], 10) : 0;
+      }
     } else {
       if (client.pkgDetails) {
         const match = client.pkgDetails.match(/\b(1000|1200|1500|2000|2500|3000|3500|4000|5000|150|200|250|300|350|400|450|500|600|700|800|900)\b/) || client.pkgDetails.match(/\b\d{3,4}\b/);
         amount = match ? parseInt(match[0], 10) : 0;
       }
+      if (amount === 0 && client.baseAmount) {
+        amount = Number(client.baseAmount) || 0;
+      }
     }
-
     updated[index] = {
       ...updated[index],
       cId: focusedField === 'name' ? '' : (client.username || client.id || ''),
@@ -2843,7 +2837,8 @@ export default function EntrySheet({
       amount: amount,
       originalAmount: amount,
       clientId: client.id || '',
-      clientUsername: client.username || ''
+      clientUsername: client.username || '',
+      status: (matchingActiveRow?.paymentStatus === 'dc' && amount > 0) ? 'paid' : (matchingActiveRow?.paymentStatus || undefined)
     };
     
     setTable1Rows(updated);
@@ -2851,7 +2846,6 @@ export default function EntrySheet({
     setFocusedField(null);
     setSearchQuery('');
   };
-
   const handleSelectSuggestion = (index: number, client: any) => {
     if (isLocked) return;
 
@@ -3559,15 +3553,54 @@ export default function EntrySheet({
               /* Folders grid styled as real PC drive folder icons */
               <div className="mt-1">
                 {(() => {
+                  const getFolderTimestamp = (f: any): number => {
+                    if (!f) return 0;
+                    if (typeof f.createdAt === 'number' && f.createdAt > 0) return f.createdAt;
+                    if (typeof f.created_at === 'number' && f.created_at > 0) return f.created_at;
+                    if (f.createdAt) {
+                      const t = new Date(f.createdAt).getTime();
+                      if (!isNaN(t) && t > 0) return t;
+                    }
+                    if (f.created_at) {
+                      const t = new Date(f.created_at).getTime();
+                      if (!isNaN(t) && t > 0) return t;
+                    }
+                    if (f.created) {
+                      const t = new Date(f.created).getTime();
+                      if (!isNaN(t) && t > 0) return t;
+                    }
+                    if (typeof f.id === 'string' && f.id.startsWith('folder_')) {
+                      const parts = f.id.split('_');
+                      const parsed = parseInt(parts[1], 10);
+                      if (!isNaN(parsed) && parsed > 0) return parsed;
+                    }
+                    return 0;
+                  };
+
                   const sortedFolders = [...folders].sort((a, b) => {
-                    const timeA = a.createdAt || (a.id.startsWith('folder_') ? parseInt(a.id.split('_')[1]) || 0 : 0);
-                    const timeB = b.createdAt || (b.id.startsWith('folder_') ? parseInt(b.id.split('_')[1]) || 0 : 0);
-                    return timeB - timeA;
+                    const timeA = getFolderTimestamp(a);
+                    const timeB = getFolderTimestamp(b);
+                    if (timeA !== timeB) {
+                      return timeB - timeA; // Newest / latest created folder always FIRST on the top-left
+                    }
+                    return 0;
                   });
+
+                  // Precompute folder stats for zero-lag and zero-flicker rendering
+                  const folderStatsMap: Record<string, { sheets: any[]; totalAmount: number }> = {};
+                  sortedFolders.forEach(folder => {
+                    const fSheets = ledgerHistory.filter(sh => (sh.folderId === folder.id || sheetFolderMap[sh.id] === folder.id) && doesMatchSearch(sh));
+                    const total = fSheets.reduce((sum, sh) => {
+                      const t1 = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
+                      return sum + t1;
+                    }, 0);
+                    folderStatsMap[folder.id] = { sheets: fSheets, totalAmount: total };
+                  });
+
                   return (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
                       {sortedFolders.map((folder, folderIdx) => {
-                        const folderSheets = ledgerHistory.filter(sh => (sh.folderId === folder.id || sheetFolderMap[sh.id] === folder.id) && doesMatchSearch(sh));
+                        const { sheets: folderSheets, totalAmount } = folderStatsMap[folder.id] || { sheets: [], totalAmount: 0 };
                         return (
                           <motion.div
                             key={`folder-${folder.id}-${folderIdx}`}
@@ -3575,7 +3608,6 @@ export default function EntrySheet({
                             animate={{ opacity: 1, y: 0 }}
                             whileHover={{ scale: 1.05 }}
                             transition={{ type: "spring", stiffness: 220, damping: 18 }}
-                            style={{ contentVisibility: 'auto', containIntrinsicSize: '170px' }}
                             onClick={() => navigate(`${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${folder.id}`)}
                             className="group cursor-pointer p-3 bg-transparent border-0 shadow-none hover:bg-slate-100/50 dark:hover:bg-slate-850/30 rounded-2xl flex flex-col items-center justify-start text-center gap-1.5 transition-all duration-300 relative select-none min-h-[170px]"
                           >
@@ -3673,25 +3705,15 @@ export default function EntrySheet({
                               })()}
                               {folderSheets.length > 0 ? (
                                 <>
-                                  {(() => {
-                                    const totalAmount = folderSheets.reduce((sum, sh) => {
-                                      const t1 = (Array.isArray(sh.table1Rows) ? sh.table1Rows : []).reduce((s: number, r: any) => s + (Number(r.amount) || 0), 0);
-                                      return sum + t1;
-                                    }, 0);
-                                    if (totalAmount > 0) {
-                                      return (
-                                        <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 select-none">
-                                          Rs. {totalAmount.toLocaleString()}
-                                        </span>
-                                      );
-                                    } else {
-                                      return (
-                                        <span className="text-[8px] font-black tracking-widest text-slate-400 dark:text-slate-550 uppercase">
-                                          Empty Folder
-                                        </span>
-                                      );
-                                    }
-                                  })()}
+                                  {totalAmount > 0 ? (
+                                    <span className="text-[10px] font-mono font-black text-emerald-600 dark:text-emerald-400 select-none">
+                                      Rs. {totalAmount.toLocaleString()}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[8px] font-black tracking-widest text-slate-400 dark:text-slate-550 uppercase">
+                                      Empty Folder
+                                    </span>
+                                  )}
                                   <span className="text-[9px] font-semibold text-slate-450 dark:text-slate-500 uppercase tracking-wider">
                                     {folderSheets.length} {folderSheets.length === 1 ? 'Sheet' : 'Sheets'}
                                   </span>
@@ -3756,7 +3778,7 @@ export default function EntrySheet({
         ) : (
           /* ================= INSIDE OPENED DIRECTORY VIEW ================= */
           <div className="flex flex-col gap-6 text-left">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {/* Creator Card (the "+" option card explicitly requested) */}
               <motion.div
                 initial={false}
@@ -3799,7 +3821,6 @@ export default function EntrySheet({
                       key={`sheet-${sh.id}-${shIdx}`}
                       initial={false}
                       animate={{ opacity: 1 }}
-                      style={{ contentVisibility: 'auto', containIntrinsicSize: '220px' }}
                       className="p-5 bg-gradient-to-b from-white to-slate-50/50 dark:from-slate-900/90 dark:to-slate-950/90 border border-slate-200/80 dark:border-white/10 hover:border-blue-500/40 dark:hover:border-blue-400/40 rounded-3xl flex flex-col justify-between gap-5 shadow-sm hover:shadow-xl hover:shadow-blue-550/[0.03] group relative select-none transition-all duration-200 hover:scale-[1.015] hover:-translate-y-1"
                     >
                       {/* Visual paper-sheet card layout */}

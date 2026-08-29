@@ -591,6 +591,10 @@ function subscribeTable(
         }
       }
 
+      if (tableName === 'ledger_folders' && Array.isArray(mapped)) {
+        mapped.sort((a: any, b: any) => (b.createdAt || b.created_at || 0) - (a.createdAt || a.created_at || 0));
+      }
+
       if (mapped.length > 0 || !error) {
         // Prevent double re-render if fetched data is identical to cache
         const isIdentical = globalTableCaches[syncKey] && JSON.stringify(globalTableCaches[syncKey]) === JSON.stringify(mapped);
@@ -1855,11 +1859,56 @@ export const supabaseService = {
     }
   },
 
+  getUserForLogin: async (identifier: string): Promise<UserProfile | null> => {
+    try {
+      const clean = identifier.trim();
+      if (!clean) return null;
+
+      const { data: uData } = await supabase
+        .from('users_data')
+        .select('*')
+        .or(`username.ilike.${clean},email.ilike.${clean},uid.eq.${clean}`)
+        .limit(1)
+        .maybeSingle();
+      if (uData) return fromDb('users', uData);
+
+      const { data: lpData } = await supabase
+        .from('login_profiles')
+        .select('*')
+        .or(`username.ilike.${clean},email.ilike.${clean},uid.eq.${clean}`)
+        .limit(1)
+        .maybeSingle();
+      if (lpData) return fromDb('users', lpData);
+
+      const { data: rawData } = await supabase
+        .from('users')
+        .select('*')
+        .or(`username.ilike.${clean},email.ilike.${clean},uid.eq.${clean}`)
+        .limit(1)
+        .maybeSingle();
+      if (rawData) return fromDb('users', rawData);
+
+      return null;
+    } catch (e) {
+      return null;
+    }
+  },
+
   getNetworkOwnerByLineCode: async (lineCode: string): Promise<UserProfile | null> => {
     try {
-      const { data } = await supabase.from('users_data').select('*').eq('line_code', lineCode).limit(1).single();
-      if (!data) return null;
-      return fromDb('users', data);
+      const cleanCode = lineCode.trim();
+      if (!cleanCode) return null;
+      
+      const { data } = await supabase.from('users_data').select('*').ilike('line_code', cleanCode).limit(1).maybeSingle();
+      if (data) return fromDb('users', data);
+
+      const { data: lpData } = await supabase.from('login_profiles').select('*').ilike('line_code', cleanCode).limit(1).maybeSingle();
+      if (lpData) return fromDb('users', lpData);
+
+      const { data: uData } = await supabase.from('users').select('*').ilike('line_code', cleanCode).limit(1).maybeSingle();
+      if (uData) return fromDb('users', uData);
+
+      return null;
     } catch (e) {
       return null;
     }
@@ -2955,7 +3004,14 @@ export const supabaseService = {
 
   // --- LEDGER & FOLDERS ---
   subscribeLedgerFolders: (callback: (folders: any[]) => void, dealerId?: string) => {
-    return subscribeTable('ledger_folders', callback, r => {
+    return subscribeTable('ledger_folders', (foldersList) => {
+      if (Array.isArray(foldersList)) {
+        const sorted = [...foldersList].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        callback(sorted);
+      } else {
+        callback(foldersList);
+      }
+    }, r => {
       const f = fromDb('ledger_folders', r);
       let parsedCreated = Date.now();
       if (f.createdAt) {
@@ -2965,6 +3021,15 @@ export const supabaseService = {
           const t = new Date(f.createdAt).getTime();
           if (!isNaN(t)) parsedCreated = t;
         }
+      } else if (r.created_at) {
+        const t = new Date(r.created_at).getTime();
+        if (!isNaN(t)) parsedCreated = t;
+      } else if (r.created) {
+        const t = new Date(r.created).getTime();
+        if (!isNaN(t)) parsedCreated = t;
+      } else if (f.id && String(f.id).startsWith('folder_')) {
+        const num = parseInt(String(f.id).split('_')[1], 10);
+        if (!isNaN(num) && num > 0) parsedCreated = num;
       }
       return {
         id: f.id,
@@ -3068,7 +3133,7 @@ export const supabaseService = {
       const { data, error } = await supabase.from('ledger_folders').select('*');
       if (!error && data && data.length > 0) {
         const filtered = (data || []).filter(r => !tenantId || tenantId === 'main' || tenantId === 'all' || r.tenant_id === tenantId || r.tenant_id === 'main' || !r.tenant_id);
-        return filtered.map(r => {
+        const mapped = filtered.map(r => {
           const f = fromDb('ledger_folders', r);
           let parsedCreated = Date.now();
           if (f.createdAt) {
@@ -3078,6 +3143,15 @@ export const supabaseService = {
               const t = new Date(f.createdAt).getTime();
               if (!isNaN(t)) parsedCreated = t;
             }
+          } else if (r.created_at) {
+            const t = new Date(r.created_at).getTime();
+            if (!isNaN(t)) parsedCreated = t;
+          } else if (r.created) {
+            const t = new Date(r.created).getTime();
+            if (!isNaN(t)) parsedCreated = t;
+          } else if (f.id && String(f.id).startsWith('folder_')) {
+            const num = parseInt(String(f.id).split('_')[1], 10);
+            if (!isNaN(num) && num > 0) parsedCreated = num;
           }
           return {
             id: f.id,
@@ -3087,6 +3161,9 @@ export const supabaseService = {
             createdAt: parsedCreated
           };
         });
+        // Sort newest folders first (top-left)
+        mapped.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        return mapped;
       }
 
       // Fallback 1: Check branding_config
@@ -3095,7 +3172,9 @@ export const supabaseService = {
       if (bData && bData.length > 0 && bData[0].dashboard_subtext) {
         try {
           const parsed = JSON.parse(bData[0].dashboard_subtext);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+          }
         } catch (e) {}
       }
 
@@ -3105,7 +3184,9 @@ export const supabaseService = {
       if (localCached) {
         try {
           const parsed = JSON.parse(localCached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+          }
         } catch (e) {}
       }
 

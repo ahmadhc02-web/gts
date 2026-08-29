@@ -141,8 +141,8 @@ export default function App() {
   const navigate = useNavigate();
 
   const activeTab = useMemo(() => {
-    return getTabFromPathname(location.pathname);
-  }, [location.pathname]);
+    return getTabFromPathname(location.pathname, location.search);
+  }, [location.pathname, location.search]);
 
   const handleNavigate = useCallback((tabId: string) => {
     const targetPath = getPathnameFromTab(tabId);
@@ -1563,6 +1563,44 @@ export default function App() {
           setError('Access Denied: Your account has been blocked by an administrator.');
           setIsLoading(false);
           return;
+        }
+
+        // Line Code Enforcement: Check if user or parent dealer has a Line Code configured
+        let expectedLineCode = (foundUser.lineCode || '').trim();
+        if (!expectedLineCode && foundUser.dealerId && foundUser.dealerId !== 'main') {
+          const parentDealer = effectiveUsers.find(u => 
+            u.uid === foundUser?.dealerId || 
+            u.username.toLowerCase() === foundUser?.dealerId.toLowerCase()
+          );
+          if (parentDealer?.lineCode && parentDealer.lineCode.trim()) {
+            expectedLineCode = parentDealer.lineCode.trim();
+          }
+        }
+
+        const enteredLineCode = (lineCode || '').trim();
+
+        // If the user has or inherits a Line Code, it is MANDATORY (lazmi) to provide it
+        if (expectedLineCode) {
+          if (!enteredLineCode) {
+            setError('Line Code is required for this account. Please enter your Line Code to login. (لائن کوڈ درج کرنا لازمی ہے)');
+            setIsLoading(false);
+            return;
+          }
+          if (enteredLineCode.toLowerCase() !== expectedLineCode.toLowerCase()) {
+            setError('Invalid Line Code: The entered Line Code does not match your account. (غلط لائن کوڈ)');
+            setIsLoading(false);
+            return;
+          }
+          foundUser.lineCode = expectedLineCode;
+        } else if (enteredLineCode) {
+          // If user provided a Line Code even if not directly configured, validate it in network
+          const networkOwner = await pocketbaseService.getNetworkOwnerByLineCode(enteredLineCode).catch(() => null);
+          if (!networkOwner) {
+            setError('Invalid Line Code: Network Code not recognized.');
+            setIsLoading(false);
+            return;
+          }
+          foundUser.lineCode = enteredLineCode;
         }
 
         setUser(foundUser);

@@ -2,7 +2,7 @@ import { useTheme } from "../hooks/useTheme";
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
+import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import DealerDataViewer from './DealerDataViewer';
@@ -965,6 +965,7 @@ export default function AdminPanel({
   const [isAdvanceMode, setIsAdvanceMode] = useState(false);
   const [selectedRecoveryRow, setSelectedRecoveryRow] = useState<any | null>(null);
   const [billingPage, setBillingPage] = useState(1);
+  const [showDcList, setShowDcList] = useState(false);
 
   // Sync logs dashboard state
   const [syncLogs, setSyncLogs] = useState<any[]>(pocketbaseService.getSyncLogs());
@@ -1761,8 +1762,18 @@ export default function AdminPanel({
         rows = deduplicatedPrevRows.map((r: any) => {
           const prevTotal = parseFloat(r.totalAmount) || 0;
           const prevReceived = parseFloat(r.paymentReceived) || 0;
-          const unpaid = Math.max(0, prevTotal - prevReceived);
           const isTdcOrDc = r.paymentStatus === 'tdc' || r.paymentStatus === 'dc';
+          
+          let unpaid = Math.max(0, prevTotal - prevReceived);
+          
+          if (isTdcOrDc) {
+            unpaid = 0;
+          } else if (r.paymentStatus === 'paid') {
+            unpaid = 0;
+          } else if (r.paymentStatus === 'unpaid') {
+            unpaid = prevTotal;
+          }
+          
           const newBase = isTdcOrDc ? 0 : (parseFloat(r.baseAmount) || 0);
           const matchingClient = currentMasterClients.find(c => c.id === r.clientId || (r.username && c.username && c.username.toLowerCase() === r.username.toLowerCase()));
           return {
@@ -1772,6 +1783,7 @@ export default function AdminPanel({
             totalAmount: newBase + unpaid,
             paymentReceived: 0,
             paymentStatus: isTdcOrDc ? r.paymentStatus : 'unpaid',
+            comments: '',
             panelDetails: r.panelDetails || matchingClient?.panelDetails || ''
           };
         });
@@ -1801,7 +1813,8 @@ export default function AdminPanel({
             clientId: c.id,
             name: c.name || 'Anonymous client',
             username: c.username || `client_${Date.now()}_${i}`,
-            mobileNumber: c.mobileNumber || c.number || '',
+            mobileNumber: c.mobileNumber || c.number || c.phone || '',
+          phone: c.mobileNumber || c.number || c.phone || '',
             area: c.area || '',
             rt: 'BILL',
             baseAmount: cleanBase,
@@ -2078,8 +2091,8 @@ export default function AdminPanel({
         ...matchedClient,
         name: row.name !== undefined && row.name !== '' ? row.name : matchedClient.name,
         username: row.username !== undefined && row.username !== '' ? row.username : matchedClient.username,
-        mobileNumber: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.mobileNumber),
-        number: row.mobileNumber !== undefined ? row.mobileNumber : (row.mobile || matchedClient.number),
+        mobileNumber: row.mobileNumber !== undefined && row.mobileNumber !== '' ? row.mobileNumber : (row.phone || row.mobile || matchedClient.mobileNumber || ''),
+        number: row.mobileNumber !== undefined && row.mobileNumber !== '' ? row.mobileNumber : (row.phone || row.mobile || matchedClient.number || ''),
         area: row.area !== undefined ? row.area : matchedClient.area,
         pkgDetails: row.pkgDetails !== undefined ? row.pkgDetails : matchedClient.pkgDetails,
         baseAmount: (row.baseAmount !== undefined && !isRowTdcOrDc) ? row.baseAmount : matchedClient.baseAmount,
@@ -3130,7 +3143,12 @@ export default function AdminPanel({
       if (match) {
         let changed = false;
         if ((row.name || '') !== (match.name || '')) { row.name = match.name || ''; changed = true; }
-        if ((row.mobileNumber || '') !== (match.mobileNumber || match.number || '')) { row.mobileNumber = match.mobileNumber || match.number || ''; changed = true; }
+        const clientPhone = match.mobileNumber || match.number || match.phone || '';
+        if ((row.mobileNumber || '') !== clientPhone || (row.phone || '') !== clientPhone) {
+          row.mobileNumber = clientPhone;
+          row.phone = clientPhone;
+          changed = true;
+        }
         if ((row.area || '') !== (match.area || '')) { row.area = match.area || ''; changed = true; }
         if ((row.pkgDetails || '') !== (match.pkgDetails || '')) { 
           row.pkgDetails = match.pkgDetails || '';
@@ -3313,9 +3331,20 @@ export default function AdminPanel({
     return Math.min(billingPage, totalPages);
   }, [billingPage, totalPages]);
 
+  const mainSortedRows = useMemo(() => {
+    return sortedRows.filter((r: any) => r.paymentStatus !== 'dc');
+  }, [sortedRows]);
+  
+  const dcRowsList = useMemo(() => {
+    return sortedRows.filter((r: any) => r.paymentStatus === 'dc');
+  }, [sortedRows]);
+
+  const totalMainPages = Math.max(1, Math.ceil(mainSortedRows.length / itemsPerPage));
+  const currentMainPage = Math.min(currentPage, totalMainPages);
+
   const paginatedRows = useMemo(() => {
-    return sortedRows.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  }, [sortedRows, currentPage]);
+    return mainSortedRows.slice((currentMainPage - 1) * itemsPerPage, currentMainPage * itemsPerPage);
+  }, [mainSortedRows, currentMainPage]);
 
   const handleBillingSort = (field: string) => {
     if (billingSortField === field) {
@@ -9063,1344 +9092,44 @@ export default function AdminPanel({
                                       isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30 font-black",
                                       isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600 font-black",
                                       isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black",
-                                      isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black",
-                                      isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black"
-                                    )}
-                                  >
-                                    <option value="unpaid">UNPAID</option>
-                                    <option value="paid">PAID</option>
-                                    <option value="partial">PARTIAL</option>
-                                    <option value="tdc">TDC</option>
-                                    <option value="dc">DC</option>
-                                    <option value="extra">EXTRA</option>
-                                  </select>
-                                </td>
-
-                                {/* Comments & other advance columns */}
-                                {isAdvanceMode && (
-                                  <>
-                                    {/* Comments */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans">
-                                      {renderCellProgress(globalRowIdx, 'comments')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_comments`}
-                                        type="text"
-                                        value={rowRef.comments || ''}
-                                        disabled={false}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'comments', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value, true)}
-                                        className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                        placeholder="Add comment..."
-                                      />
-                                    </td>
-
-                                    {/* Occupation */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans">
-                                      {renderCellProgress(globalRowIdx, 'occ')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_occ`}
-                                        type="text"
-                                        value={rowRef.occ || ''}
-                                        disabled={!isBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'occ', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value, true)}
-                                        className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                      />
-                                    </td>
-
-                                    {/* PKG details */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-blue-900 dark:text-blue-250 font-black font-sans">
-                                      {renderCellProgress(globalRowIdx, 'pkgDetails')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_pkgDetails`}
-                                        type="text"
-                                        value={rowRef.pkgDetails || ''}
-                                        disabled={!isBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'pkgDetails', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value, true)}
-                                        className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-250 text-[12.5px] font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-blue-900 dark:disabled:text-blue-250 disabled:opacity-100"
-                                      />
-                                    </td>
-
-                                    {/* Connection Date */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-center font-sans text-[11px]">
-                                      {renderCellProgress(globalRowIdx, 'connectionDate')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_connectionDate`}
-                                        type="text"
-                                        value={rowRef.connectionDate || ''}
-                                        disabled={!isBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'connectionDate', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value, true)}
-                                        className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-black dark:text-white text-[12px] font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                        placeholder="MM/DD/YY"
-                                      />
-                                    </td>
-
-                                    {/* Device Price */}
-                                    <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
-                                      {renderCellProgress(globalRowIdx, 'devicePrice')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_devicePrice`}
-                                        type="number"
-                                        value={rowRef.devicePrice ?? ''}
-                                        disabled={!isBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'devicePrice', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0, true)}
-                                        className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black text-[12.5px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                      />
-                                    </td>
-
-                                    {/* ABL charges */}
-                                    <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
-                                      {renderCellProgress(globalRowIdx, 'abl')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_abl`}
-                                        type="number"
-                                        value={rowRef.abl ?? ''}
-                                        disabled={!isBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'abl', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
-                                        className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black text-[12.5px] hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                      />
-                                    </td>
-                                  </>
-
-                                )}
-
-                                {/* Actions (Always rendered for standard and advance lists) */}
-                                <td className="py-1 px-1 text-center font-sans">
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    <WhatsAppSendButton
-                                      name={rowRef.name || ''}
-                                      mobileNumber={rowRef.mobileNumber || ''}
-                                      totalAmount={rowRef.totalAmount}
-                                      baseAmount={rowRef.baseAmount}
-                                      paymentStatus={rowRef.paymentStatus || 'unpaid'}
-                                      username={rowRef.username || ''}
-                                      area={rowRef.area || ''}
-                                    />
-                                    <button
-                                      type="button"
-                                      disabled={!isBillingUnlocked}
-                                      onClick={() => triggerDeleteBillingRow(globalRowIdx)}
-                                      className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded transition-colors disabled:opacity-45 "
-                                      title={isBillingUnlocked ? "Exclude row from current month's sheet" : "Unlock billing sheet to discard registers"}
-                                    >
-                                      <X size={12} />
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      disabled={!isBillingUnlocked}
-                                      onClick={() => handlePermanentDeleteSubscriber(rowRef, globalRowIdx)}
-                                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded transition-colors disabled:opacity-45 "
-                                      title={isBillingUnlocked ? "Permanently delete subscriber from whole system" : "Unlock billing sheet to permanently delete"}
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-
-                          {filteredRows.length === 0 && (
-                            <tr>
-                              <td colSpan={isAdvanceMode ? 21 : 13} className="py-12 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-[var(--neu-surface)]">
-                                No billing records aligned with search filters.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                        <tfoot className="sticky bottom-0 z-20 bg-[var(--neu-surface)] shado border-t-2 border-slate-300 dark:border-slate-700">
-                          <tr className="font-sans font-black uppercase text-[11px] tracking-wider text-black dark:text-white">
-                            <td colSpan={6} className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black text-black dark:text-white">
-                              SHEET TOTALS (FILTERED): 
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black bg-slate-50 dark:bg-slate-950/30 text-black dark:text-white">
-                              {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black text-rose-700 dark:text-rose-400 bg-slate-50 dark:bg-slate-950/30">
-                              {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
-                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-3 border-r border-slate-200/50 dark:border-white\/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white\/10/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
-                              PKR {Math.round(filteredRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td colSpan={isAdvanceMode ? 10 : 2} className="py-4 px-4 border-slate-200/50 dark:border-white\/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
-                              (Cumulative total of {filteredRows.length} shown rows)
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-
-                    {/* Premium Pagination controls */}
-                    {totalPages > 1 && (
-                      <div className="flex items-center justify-between border-t border-[var(--neu-border)] bg-slate-50 dark:bg-slate-900/60 p-3 sm:px-6 select-none flex-wrap gap-3">
-                        <div className="text-[10px] text-slate-400 dark:text-slate-500 font-sans font-bold uppercase tracking-wider">
-                          Showing <span className="text-slate-600 dark:text-slate-400 font-sans">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="text-slate-600 dark:text-slate-400 font-sans">{Math.min(currentPage * itemsPerPage, filteredRows.length)}</span> of <span className="text-slate-600 dark:text-slate-400 font-sans">{filteredRows.length}</span> rows
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={currentPage === 1}
-                            onClick={() => {
-                              setBillingPage(1);
-                              const tbl = document.getElementById('billing-spreadsheet-table');
-                              if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                            }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-[var(--neu-border)] dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
-                            title="First Page"
-                          >
-                            ¬´ First
-                          </button>
-                          <button
-                            type="button"
-                            disabled={currentPage === 1}
-                            onClick={() => {
-                              setBillingPage(prev => Math.max(prev - 1, 1));
-                              const tbl = document.getElementById('billing-spreadsheet-table');
-                              if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                            }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-[var(--neu-border)] dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
-                          >
-                            ‚óÄ Prev
-                          </button>
-                          
-                          <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-900/30 font-sans">
-                            Page {currentPage} of {totalPages}
-                          </div>
-
-                          <button
-                            type="button"
-                            disabled={currentPage === totalPages}
-                            onClick={() => {
-                              setBillingPage(prev => Math.min(prev + 1, totalPages));
-                              const tbl = document.getElementById('billing-spreadsheet-table');
-                              if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                            }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-[var(--neu-border)] dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
-                          >
-                            Next ‚ñ∂
-                          </button>
-                          <button
-                            type="button"
-                            disabled={currentPage === totalPages}
-                            onClick={() => {
-                              setBillingPage(totalPages);
-                              const tbl = document.getElementById('billing-spreadsheet-table');
-                              if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                            }}
-                            className="p-1 px-2.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-[var(--neu-border)] dark:hover:border-slate-700 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer transition-all"
-                            title="Last Page"
-                          >
-                            Last ¬ª
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Compact ultra-premium responsive Mobile Frames view for Android/mobile screens */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
-                    {paginatedRows.map((rowRef, localIdx) => {
-                      const globalRowIdx = rowRef._originalIndex;
-                      if (globalRowIdx === undefined || globalRowIdx === -1) return null;
-                      
-                      const outstandingCr = parseFloat(rowRef.cr) || 0;
-                      const isPaid = rowRef.paymentStatus === 'paid';
-                      const isPartial = rowRef.paymentStatus === 'partial';
-                      const isUnpaid = rowRef.paymentStatus === 'unpaid';
-                      const isTdc = rowRef.paymentStatus === 'tdc';
-                      const isDc = rowRef.paymentStatus === 'dc';
-                      const isExtra = rowRef.paymentStatus === 'extra' || rowRef.name === 'Unspecified Entry';
-
-                      return (
-                        <motion.div 
-                          key={`mobile-billing-frame-${rowRef.clientId || rowRef.username || 'idx'}-${localIdx}`}
-                          initial={false}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          whileHover={{ scale: 1.01 }}
-                          transition={{ duration: 0.15 }}
-                          style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
-                          onClick={(e) => {
-                            if (!isBillingUnlocked) {
-                              setSelectedRecoveryRow(rowRef);
-                            }
-                          }}
-                          className={cn(
-                            "p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between shadow-[var(--neu-shadow-raised-sm)]",
-                            !isBillingUnlocked && "cursor-pointer [&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none",
-                            isTdc 
-                              ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900/60 text-rose-600 dark:text-rose-450" 
-                              : isDc
-                              ? "bg-neutral-500/5 dark:bg-neutral-900/40 border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400"
-                              : isPaid 
-                              ? "bg-emerald-500/5 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-100" 
-                              : isPartial 
-                              ? "bg-amber-500/5 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100" 
-                              : "bg-[var(--neu-surface)]/95 border-[var(--neu-border)] text-slate-800 dark:text-slate-100"
-                          )}
-                        >
-                          {/* Top bar */}
-                          <div className="flex items-start justify-between gap-2 border-b border-dotted border-[var(--neu-border)] pb-2 mb-2">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-[9px] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-700 dark:text-slate-300 font-black px-1.5 py-0.5 rounded shrink-0">
-                                #{globalRowIdx + 1}
-                              </span>
-                              <div className="min-w-0">
-                                <input
-                                  type="text"
-                                  value={rowRef.name || ''}
-                                  disabled={!isBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
-                                  className="w-full bg-transparent px-1 py-0.5 border-none rounded text-xs font-black focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white truncate font-sans"
-                                  placeholder="Name"
-                                />
-                                <div className="text-[10px] text-slate-400 dark:text-slate-500 font-sans font-bold mt-0.5 uppercase tracking-wider flex items-center gap-1">
-                                  <span className="shrink-0">ID:</span>
-                                  <input
-                                    type="text"
-                                    value={rowRef.username || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
-                                    className="bg-transparent border-none p-0 focus:ring-0 text-[10px] text-slate-600 dark:text-slate-300 font-black tracking-tight w-24 truncate font-sans"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Select wrapper */}
-                            <div className="w-24 shrink-0">
-                              <select
-                                id={`rec_cell_${globalRowIdx}_paymentStatus`}
-                                value={rowRef.paymentStatus}
-                                disabled={!isBillingUnlocked}
-                                onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
-                                className={cn(
-                                  "px-2 py-0.5 text-[9px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full bg-slate-50 dark:bg-slate-950 disabled:opacity-100 font-sans",
-                                  isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
-                                  isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-600 border-amber-200 dark:border-amber-900/30 font-black",
-                                  isUnpaid && "bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 font-black",
-                                  isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-250 dark:border-rose-900/50 font-black",
-                                  isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black",
-                                  isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black"
-                                )}
-                              >
-                                <option value="unpaid">UNPAID</option>
-                                <option value="paid">PAID</option>
-                                <option value="partial">PARTIAL</option>
-                                <option value="tdc">TDC</option>
-                                <option value="dc">DC</option>
-                                <option value="extra">EXTRA</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Editable params info cards */}
-                          <div className="grid grid-cols-2 gap-2 text-[11px] mb-2 font-sans">
-                            {/* Mobile Number */}
-                            <div className="space-y-0.5">
-                              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Mobile No</span>
-                              <input
-                                type="text"
-                                value={rowRef.mobileNumber || ''}
-                                disabled={!isBillingUnlocked}
-                                onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
-                                onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[12px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-sans tracking-tight select-all"
-                                placeholder="03XXXXXXXXX"
-                              />
-                            </div>
-
-                            {/* Panel Details */}
-                            <div className="space-y-0.5">
-                              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Panel Details</span>
-                              <input
-                                type="text"
-                                value={rowRef.panelDetails || ''}
-                                disabled={!isBillingUnlocked}
-                                onChange={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase())}
-                                onBlur={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase(), true)}
-                                className="w-full bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[12px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black font-sans tracking-tight"
-                                placeholder="Panel Details"
-                              />
-                            </div>
-
-                            {/* Area & RT */}
-                            <div className="grid grid-cols-2 gap-1 font-sans">
-                              <div className="space-y-0.5">
-                                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Area</span>
-                                <input
-                                  type="text"
-                                  value={rowRef.area || ''}
-                                  disabled={!isBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value, true)}
-                                  className="w-full text-center bg-slate-50/40 dark:bg-slate-950/30 px-1 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[10px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase font-sans"
-                                />
-                              </div>
-                              <div className="space-y-0.5">
-                                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">RT</span>
-                                <input
-                                  type="text"
-                                  value={rowRef.rt || ''}
-                                  disabled={!isBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value, true)}
-                                  className="w-full text-center bg-slate-50/40 dark:bg-slate-950/30 px-1 py-1 border border-slate-150 dark:border-white/10 rounded-lg text-[10px] focus:ring-1 focus:ring-blue-500/30 text-blue-900 dark:text-blue-300 font-black uppercase font-sans"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Base Amount */}
-                            <div className="space-y-0.5">
-                              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Base Amount</span>
-                              <div className="flex items-center bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg focus-within:ring-1 focus-within:ring-blue-500/30">
-                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-black mr-1 shrink-0">PKR</span>
-                                <input
-                                  type="number"
-                                  value={isTdc || isDc ? 0 : (rowRef.baseAmount ?? '')}
-                                  disabled={!isBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
-                                  className="w-full text-right bg-transparent border-none p-0 text-[11px] font-black focus:ring-0 text-black dark:text-white font-sans"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Cr. Arrears */}
-                            <div className="space-y-0.5">
-                              <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest block leading-none">Arrears</span>
-                              <div className="flex items-center bg-slate-50/40 dark:bg-slate-950/30 px-2 py-1 border border-slate-150 dark:border-white/10 rounded-lg focus-within:ring-1 focus-within:ring-blue-500/30">
-                                <span className={cn("text-[9px] font-black mr-1 shrink-0", outstandingCr > 0 ? "text-rose-600" : "text-slate-400")}>PKR</span>
-                                <input
-                                  type="number"
-                                  value={isDc ? 0 : (rowRef.cr ?? '')}
-                                  disabled={!isBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
-                                  className={cn(
-                                    "w-full text-right bg-transparent border-none p-0 text-[11px] focus:ring-0 font-sans",
-                                    outstandingCr > 0 ? "text-rose-600 font-black" : "text-black dark:text-white font-black"
-                                  )}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Recovery Entry */}
-                            <div className="space-y-0.5">
-                              <span className="text-[8px] text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-widest block leading-none">Recovery Received</span>
-                              <div className="flex items-center bg-emerald-500/10 dark:bg-emerald-500/20 px-2 py-1 border border-emerald-300 dark:border-emerald-900/50 rounded-lg focus-within:ring-1 focus-within:ring-emerald-500/30">
-                                <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-black mr-1 shrink-0">PKR</span>
-                                <input
-                                  type="number"
-                                  value={isDc ? 0 : (rowRef.paymentReceived ?? '')}
-                                  disabled={!isBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
-                                  className="w-full text-right bg-transparent border-none p-0 text-[11px] font-black focus:ring-0 text-emerald-950 dark:text-emerald-100 font-sans"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Payable Amt & BD */}
-                            <div className="space-y-0.5 flex flex-col justify-end">
-                              <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold uppercase">
-                                <span>BD Day:</span>
-                                <input
-                                  type="text"
-                                  maxLength={2}
-                                  value={rowRef.billingDay || ''}
-                                  disabled={false}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2))}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2), true)}
-                                  className="w-5 text-center bg-transparent border-none p-0 text-[9px] font-black focus:ring-0 text-black dark:text-white font-sans"
-                                />
-                              </div>
-                              <div className="bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] px-2 py-1 rounded-lg flex items-center justify-between mt-0.5">
-                                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase">PAYABLE</span>
-                                <span className="text-[11px] font-sans font-black text-slate-900 dark:text-zinc-50 shrink-0">
-                                  PKR {isDc ? 0 : (isTdc ? (rowRef.cr || 0) : (rowRef.totalAmount || 0)).toLocaleString()}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Advance params block shown only when isAdvanceMode toggled on */}
-                          {isAdvanceMode && (
-                            <div className="mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-white/10 space-y-2 text-[11px] bg-slate-50/50 dark:bg-black/10 p-2 rounded-xl font-sans">
-                              <div className="space-y-0.5">
-                                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Occupation</span>
-                                <input
-                                  type="text"
-                                  value={rowRef.occ || ''}
-                                  disabled={!isBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value, true)}
-                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded font-sans text-black dark:text-white font-black"
-                                />
-                              </div>
-
-                              <div className="space-y-0.5">
-                                <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Comments</span>
-                                <input
-                                  type="text"
-                                  value={rowRef.comments || ''}
-                                  disabled={false}
-                                  onClick={(e) => e.stopPropagation()}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value, true)}
-                                  className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-1 border border-slate-200/50 dark:border-white/10 rounded font-bold text-black dark:text-white font-sans focus:ring-1 focus:ring-blue-500/30"
-                                  placeholder="No comment..."
-                                />
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-0.5">
-                                  <span className="text-[8px] text-indigo-400 dark:text-indigo-300 font-bold uppercase tracking-wider block">Pkg Details</span>
-                                  <input
-                                    type="text"
-                                    value={rowRef.pkgDetails || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value, true)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-blue-900 dark:text-blue-300 font-bold font-sans"
-                                  />
-                                </div>
-                                <div className="space-y-0.5">
-                                  <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Date</span>
-                                  <input
-                                    type="text"
-                                    value={rowRef.connectionDate || ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value, true)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-center font-sans text-black dark:text-white"
-                                    placeholder="MM/DD/YY"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-0.5">
-                                  <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Device Price</span>
-                                  <input
-                                    type="number"
-                                    value={rowRef.devicePrice ?? ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0, true)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-right font-sans text-black dark:text-white"
-                                  />
-                                </div>
-                                <div className="space-y-0.5">
-                                  <span className="text-[8px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">Abl Charges</span>
-                                  <input
-                                    type="number"
-                                    value={rowRef.abl ?? ''}
-                                    disabled={!isBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
-                                    className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-right font-sans text-black dark:text-white"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-end gap-1 mt-1 pt-1.5 border-t border-slate-200/60 dark:border-white\/10/50">
-                                {isBillingUnlocked && (
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => triggerDeleteBillingRow(globalRowIdx)}
-                                      className="px-2 py-1 text-[9px] font-black uppercase text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-lg transition-colors flex items-center gap-1 shrink-0 select-none cursor-pointer"
-                                      title="Exclude row from current month's sheet"
-                                    >
-                                      <X size={10} />
-                                      <span>Exclude</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => handlePermanentDeleteSubscriber(rowRef, globalRowIdx)}
-                                      className="px-2 py-1 text-[9px] font-black uppercase text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-lg transition-colors flex items-center gap-1 shrink-0 select-none cursor-pointer"
-                                      title="Permanently delete subscriber from whole system"
-                                    >
-                                      <Trash2 size={10} />
-                                      <span>Delete</span>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
-                      );
-                    })}
-                    
-                    {filteredRows.length === 0 && (
-                      <div className="col-span-full py-12 text-center text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 bg-[var(--neu-surface)] rounded-2xl border border-dashed border-[var(--neu-border)] font-sans">
-                        No billing records aligned with search filters.
-                      </div>
-                    )}
-
-                    {/* Compact Pagination for mobile cards */}
-                    {totalPages > 1 && (
-                      <div className="col-span-full flex items-center justify-between py-2 border-t border-slate-200/50 dark:border-white\/10/50 mt-1 select-none flex-wrap gap-2">
-                        <div className="text-[9px] text-slate-400 font-mono font-bold uppercase">
-                          Page {currentPage} of {totalPages} ({filteredRows.length} total)
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            disabled={currentPage === 1}
-                            onClick={() => {
-                              setBillingPage(1);
-                            }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white/10 rounded-lg bg-[var(--neu-surface)] cursor-pointer font-sans"
-                          >
-                            ¬´ First
-                          </button>
-                          <button
-                            type="button"
-                            disabled={currentPage === 1}
-                            onClick={() => {
-                              setBillingPage(prev => Math.max(prev - 1, 1));
-                            }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white/10 rounded-lg bg-[var(--neu-surface)] cursor-pointer font-sans"
-                          >
-                            ‚óÄ Prev
-                          </button>
-                          <button
-                            type="button"
-                            disabled={currentPage === totalPages}
-                            onClick={() => {
-                              setBillingPage(prev => Math.min(prev + 1, totalPages));
-                            }}
-                            className="p-1 px-2.5 text-[9px] font-black uppercase tracking-wider text-slate-500 hover:text-blue-500 disabled:opacity-40  border border-slate-200 dark:border-white/10 rounded-lg bg-[var(--neu-surface)] cursor-pointer font-sans"
-                          >
-                            Next ‚ñ∂
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200/60 dark:border-white/10">
-                    <div>
-                      Month: <span className="text-slate-700 dark:text-slate-300 font-sans">{currentMonthId}</span> | 
-                      Master clients in pool: <span className="text-slate-700 dark:text-slate-300 font-sans">{masterClients.length}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                      Auto-saving local edits to secure real-time cloud registry
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className={cn("p-12 text-center", getCardStyle(branding.cardStyle), "space-y-4 shadow-[var(--neu-shadow-raised-sm)] border")}>
-                <div className="w-16 h-16 rounded-full bg-blue-50 dark:bg-blue-950/20 text-blue-500 flex items-center justify-center mx-auto text-2xl">
-                  <FileSpreadsheet size={32} />
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-lg font-black uppercase tracking-tight text-slate-800 dark:text-slate-100">Setup Billing Cycle Database</h4>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest leading-relaxed max-w-md mx-auto">
-                    You do not have any billing months created for your WiFi ISP. Create a monthly sheet (e.g. MAY-26 or JUN-26) to generate recovery spreadsheets.
-                  </p>
-                </div>
-                {isBillingUnlocked && (
-                  <button
-                    type="button"
-                    onClick={() => setIsConfiguringNewMonth(true)}
-                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-[var(--neu-shadow-raised-lg)] shadow-blue-500/10 inline-flex items-center gap-2"
-                  >
-                    <PlusSquare size={14} />
-                    Deploy First Recovery Sheet
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        </motion.div>
-        </Suspense>
-        </>
-      )}
-
-      {/* Interactive A4 Ledger Entry Sheet Modal overlay */}
-      {isEntrySheetRouteOpen && (
-        <Suspense fallback={
-          <div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 select-none">
-            <RouteLoadingFallback />
-          </div>
-        }>
-          <EntrySheet
-          isOpen={isEntrySheetRouteOpen}
-          onClose={() => {
-            
-            if (location.pathname.startsWith('/billingmod/entrysheet') || location.pathname.startsWith('/billingmod/ledger')) {
-              navigate('/billingmod');
-            }
-          }}
-          currentUser={currentUser}
-          activeRows={activeRows}
-          currentMonthId={currentMonthId}
-          isBillingUnlocked={isBillingUnlocked}
-          appConfig={appConfig}
-          billingMonths={billingMonths}
-          setBillingMonths={setBillingMonths}
-          savingMonthIds={savingMonthIds}
-          initialShowUserLedger={entrySheetOpenWithUserLedger}
-          />
-        </Suspense>
-      )}
-
-        {/* Batch Print Multi-month Dialog Overlay */}
-        <Suspense fallback={null}>
-          <BatchPrintModal
-            isOpen={isBatchPrintOpen}
-            onClose={() => setIsBatchPrintOpen(false)}
-            billingMonths={billingMonths}
-          />
-        </Suspense>
-
-      {/* Recovery Row Details Modal */}
-      <AnimatePresence>
-        {selectedRecoveryRow && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm sm:p-6">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-[var(--neu-surface)] rounded-2xl shadow-[var(--neu-shadow-raised-lg)] border border-[var(--neu-border)] w-full max-w-4xl lg:max-w-5xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300"
-            >
-              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[var(--neu-border)] bg-[var(--neu-surface)]">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                    <UserPlus size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Recovery Details</h3>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{selectedRecoveryRow.username || 'N/A'}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSelectedRecoveryRow(null)}
-                  className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              
-              <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {/* Basic Details */}
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-[var(--neu-border)] pb-2">Client Information</h4>
-                    
-                    <div className="space-y-3">
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Full Name</div>
-                        <div className="text-sm font-black text-slate-800 dark:text-slate-100">{selectedRecoveryRow.name || '‚Äî'}</div>
-                      </div>
-                      
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">User ID (PPPoE)</div>
-                        <div className="text-sm font-black text-blue-600 dark:text-blue-400">{selectedRecoveryRow.username || '‚Äî'}</div>
-                      </div>
-                      
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Mobile Number</div>
-                        <div className="text-sm font-black text-slate-800 dark:text-slate-100">{selectedRecoveryRow.mobileNumber || '‚Äî'}</div>
-                      </div>
-                      
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Area</div>
-                        <div className="text-sm font-black text-slate-800 dark:text-slate-100">{selectedRecoveryRow.area || '‚Äî'}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Billing Details */}
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 border-b border-[var(--neu-border)] pb-2">Financial Status</h4>
-                    
-                    <div className="space-y-3">
-                      <div>
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Payment Status</div>
-                        <div className={cn(
-                          "inline-block px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border",
-                          selectedRecoveryRow.paymentStatus === 'paid' && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30",
-                          selectedRecoveryRow.paymentStatus === 'partial' && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30",
-                          selectedRecoveryRow.paymentStatus === 'unpaid' && "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-400 dark:border-slate-600",
-                          selectedRecoveryRow.paymentStatus === 'tdc' && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50",
-                          selectedRecoveryRow.paymentStatus === 'dc' && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700",
-                          (selectedRecoveryRow.paymentStatus === 'extra' || selectedRecoveryRow.name === 'Unspecified Entry') && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30"
-                        )}>
-                          {selectedRecoveryRow.paymentStatus?.toUpperCase() || 'UNPAID'}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-[var(--neu-border)]">
-                          <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Base Amount</div>
-                          <div className="text-sm font-black text-slate-800 dark:text-slate-100">PKR {selectedRecoveryRow.baseAmount || 0}</div>
-                        </div>
-                        <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-[var(--neu-border)]">
-                          <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Arrears (Cr.)</div>
-                          <div className={cn("text-sm font-black", parseFloat(selectedRecoveryRow.cr || 0) > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-800 dark:text-slate-100")}>PKR {selectedRecoveryRow.cr || 0}</div>
-                        </div>
-                      </div>
-
-                      <div className="bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] rounded-lg p-3 border border-slate-200 dark:border-slate-700">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Total Amount</span>
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Recovery</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-base font-black text-slate-900 dark:text-white">PKR {(selectedRecoveryRow.totalAmount || 0).toLocaleString()}</span>
-                          <span className="text-base font-black text-emerald-600 dark:text-emerald-400">PKR {selectedRecoveryRow.paymentReceived || 0}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Advance Details */}
-                <div className="space-y-4 pt-4 border-t border-[var(--neu-border)]">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 flex items-center gap-2">
-                    <Zap size={14} /> Advanced Parameters
-                  </h4>
-                  
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    {/* Full-width landscape-optimized comments box */}
-                    <div className="col-span-2 sm:col-span-3 bg-slate-50 dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-150 dark:border-white/10 space-y-2 shadow-[var(--neu-shadow-raised-sm)]">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-blue-500 dark:text-blue-400 flex items-center gap-1.5">
-                        üí¨ Comments & Remarks
-                      </div>
-                      <textarea
-                        value={selectedRecoveryRow.comments || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSelectedRecoveryRow((prev: any) => prev ? { ...prev, comments: val } : null);
-                          const rowIdx = selectedRecoveryRow._originalIndex;
-                          if (rowIdx !== undefined && rowIdx !== -1) {
-                            handleSaveRowField(rowIdx, 'comments', val);
-                          }
-                        }}
-                        onBlur={(e) => {
-                          const val = e.target.value;
-                          const rowIdx = selectedRecoveryRow._originalIndex;
-                          if (rowIdx !== undefined && rowIdx !== -1) {
-                            handleSaveRowField(rowIdx, 'comments', val, true);
-                          }
-                        }}
-                        className="w-full text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 bg-[var(--neu-surface)] p-3 rounded-xl border border-slate-200 dark:border-white/10 focus:ring-2 focus:ring-blue-500/40 outline-none leading-relaxed resize-y min-h-[90px]"
-                        placeholder="Type comments or remarks..."
-                      />
-                    </div>
-
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-[var(--neu-border)]">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Occupation</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.occ || '‚Äî'}</div>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-[var(--neu-border)]">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Panel Details</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.panelDetails || '‚Äî'}</div>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-[var(--neu-border)]">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Package Details</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.pkgDetails || '‚Äî'}</div>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-[var(--neu-border)]">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Installation Date</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.date || '‚Äî'}</div>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-[var(--neu-border)]">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Device/Router</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.device || '‚Äî'}</div>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-[var(--neu-border)]">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">ABL</div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{selectedRecoveryRow.abl || '‚Äî'}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Floating Bottom-Right Save Button when rows are edited */}
-      <AnimatePresence>
-        {(activeTab === 'billing' || location.pathname.startsWith('/billingmod')) && (hasPendingEdits || isManualSaving) && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="fixed bottom-6 right-6 z-[999] flex items-center gap-2 select-none"
-          >
-            <button
-              type="button"
-              disabled={isManualSaving}
-              onClick={handleManualSaveAllRows}
-              className={cn(
-                "flex items-center gap-3 px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider shadow-[var(--neu-shadow-raised-lg)] transition-all duration-300 transform active:scale-95 cursor-pointer border",
-                isManualSaving
-                  ? "bg-blue-600 text-white border-blue-400/50 shadow-blue-600/40 cursor-not-allowed"
-                  : "bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 hover:from-amber-500 hover:to-orange-500 text-white border-amber-400/50 shadow-amber-600/50 hover:shadow-amber-500/70 hover:scale-105"
-              )}
-            >
-              {isManualSaving ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin text-white shrink-0" />
-                  <div className="flex flex-col text-left">
-                    <span className="font-extrabold text-[12px] leading-none">SAVING TO DATABASE...</span>
-                    <span className="text-[9px] text-blue-100 font-medium normal-case tracking-normal opacity-90 mt-0.5">Storing all updated rows safely</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="w-5 h-5 text-amber-200 shrink-0 animate-bounce" />
-                  <div className="flex flex-col text-left">
-                    <span className="font-extrabold text-[12px] leading-none normal-case">Waiting for saving</span>
-                    <span className="text-[9px] text-amber-100 font-medium normal-case tracking-normal opacity-90 mt-0.5">Click to update database permanently</span>
-                  </div>
-                </>
-              )}
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Edit User / Dealer Modal */}
-      <AnimatePresence>
-        {editingUserId && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10 rounded-2xl p-6 sm:p-8 max-w-lg w-full shadow-[var(--neu-shadow-raised-lg)] space-y-6 text-left"
-            >
-              <div className="flex justify-between items-start border-b border-slate-100 dark:border-white/10 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl">
-                    <ShieldAlert size={22} />
-                  </div>
-                  <div>
-                    <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                      {editUserRole === 'dealer' ? 'Edit Dealer Account Details' : 'Edit Account Details'}
-                    </h3>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      Update credentials, organization info, and VLAN line code
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCancelEditUser}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
-                {/* Username */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <User size={12} />
-                    {editUserRole === 'dealer' ? 'Dealer Username (Login ID)' : 'Username'}
-                  </label>
-                  <input
-                    type="text"
-                    value={editUsername}
-                    onChange={(e) => setEditUsername(e.target.value)}
-                    placeholder="e.g. JOHN_DOE"
-                    className="w-full px-4 py-2.5 rounded-lg border border-[var(--neu-border)] bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
-                  />
-                </div>
-
-                {/* Full Name */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <User size={12} />
-                    Full / Contact Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editFullName}
-                    onChange={(e) => setEditFullName(e.target.value)}
-                    placeholder="e.g. John Doe"
-                    className="w-full px-4 py-2.5 rounded-lg border border-[var(--neu-border)] bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {/* Company Name */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <Building2 size={12} />
-                    Company / Franchise Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editCompanyName}
-                    onChange={(e) => setEditCompanyName(e.target.value)}
-                    placeholder="e.g. GALAXY BROADBAND"
-                    className="w-full px-4 py-2.5 rounded-lg border border-[var(--neu-border)] bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                {/* Line Code / VLAN Code */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 font-extrabold">
-                    <Key size={12} />
-                    Line Code / VLAN Code
-                  </label>
-                  <input
-                    type="text"
-                    value={editLineCode}
-                    onChange={(e) => setEditLineCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. DLR-99 / VLAN-102"
-                    className="w-full px-4 py-2.5 rounded-lg border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/20 dark:bg-emerald-950/20 text-slate-900 dark:text-emerald-300 text-sm font-bold tracking-wider focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
-                  />
-                  <p className="text-[10px] text-slate-400 font-medium">This VLAN/Line Code will automatically be attached to all accounts created by this dealer.</p>
-                </div>
-
-                {/* Password / Passkey */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <Lock size={12} />
-                    Authentication Passkey
-                  </label>
-                  <input
-                    type="text"
-                    value={editPassword}
-                    onChange={(e) => setEditPassword(e.target.value)}
-                    placeholder="‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢"
-                    className="w-full px-4 py-2.5 rounded-lg border border-[var(--neu-border)] bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    required
-                  />
-                </div>
-
-                {/* Node Access Role */}
-                {currentUser.role === 'super_admin' && (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                      <ShieldAlert size={12} />
-                      Node Access Role
-                    </label>
-                    <select
-                      value={editUserRole}
-                      onChange={(e) => setEditUserRole(e.target.value as any)}
-                      className="w-full px-4 py-2.5 rounded-lg border border-[var(--neu-border)] bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                      <option value="member">Member (Operator)</option>
-                      <option value="editor">Editor (Sub-Admin)</option>
-                      <option value="admin">Admin</option>
-                      <option value="dealer">Dealer Network Node</option>
-                      <option value="super_admin">Super Admin</option>
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-white/10">
-                <button
-                  type="button"
-                  onClick={handleCancelEditUser}
-                  className="flex-1 py-3 rounded-xl border border-[var(--neu-border)] text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-xs hover:bg-slate-100 dark:hover:bg-slate-900 transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleUpdateUser(editingUserId)}
-                  disabled={isUpdating}
-                  className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-wider text-xs shadow-[var(--neu-shadow-raised-lg)] shadow-emerald-500/20 transition-all cursor-pointer border-none flex items-center justify-center gap-2"
-                >
-                  {isUpdating ? 'Saving...' : (
-                    <>
-                      <Check size={16} />
-                      Save Account Details
-                    </>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Sub Accounts Operator Modal */}
-      <AnimatePresence>
-        {selectedDealerForSubAccounts && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10 rounded-2xl p-6 sm:p-8 max-w-4xl w-full shadow-[var(--neu-shadow-raised-lg)] space-y-6 text-left flex flex-col max-h-[90vh]"
-            >
-              <div className="flex justify-between items-start border-b border-slate-100 dark:border-white/10 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-indigo-500/10 text-indigo-500 rounded-xl">
-                    <Users size={22} />
-                  </div>
-                  <div>
-                    <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                      üè¢ {selectedDealerForSubAccounts.companyName || 'No Company Set'} Sub-Accounts
-                    </h3>
-                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      Line / VLAN Code: <span className="text-emerald-500 font-mono font-bold">{selectedDealerForSubAccounts.lineCode}</span> | Dealer ID: <span className="font-mono font-bold text-indigo-400">{selectedDealerForSubAccounts.username}</span>
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedDealerForSubAccounts(null);
-                    setVisiblePasswords({});
-                  }}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="overflow-y-auto flex-1 pr-1">
-                {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').length === 0 ? (
-                  <div className="text-center py-12 space-y-3">
-                    <div className="w-12 h-12 bg-[var(--neu-surface)] rounded-full flex items-center justify-center mx-auto text-slate-400">
-                      <UserX size={24} />
-                    </div>
-                    <h4 className="text-sm font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">No Sub-Accounts Registered</h4>
-                    <p className="text-xs font-semibold text-slate-400 max-w-xs mx-auto uppercase tracking-wider">
-                      This network line currently has no secondary operator accounts registered under its VLAN.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="border border-slate-100 dark:border-white/10 rounded-xl overflow-hidden">
-                    <table className="w-full text-left whitespace-nowrap">
-                      <thead className="bg-[var(--neu-surface)]">
-                        <tr className="border-b border-slate-100 dark:border-white/10">
-                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Full Name / Login ID</th>
-                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Passkey Credentials</th>
-                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Access Node Role</th>
-                          <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Line Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                        {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').map((subUser, idx) => {
-                          const isPassVisible = !!visiblePasswords[subUser.uid];
-                          return (
-                            <tr key={`subuser-${subUser.uid || idx}-${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-[var(--neu-surface)] flex items-center justify-center font-extrabold text-xs text-slate-600 dark:text-slate-300 uppercase">
-                                    {subUser.username ? subUser.username.substring(0, 2) : 'OP'}
-                                  </div>
-                                  <div>
-                                    <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-wider text-xs block">
-                                      {subUser.fullName || 'No Contact Set'}
-                                    </span>
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mt-0.5 block select-all">
-                                      @{subUser.username}
-                                    </span>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-mono font-bold tracking-wider text-slate-700 dark:text-[#00E5FF] select-all bg-[var(--neu-surface)] px-2.5 py-1 rounded border border-slate-100 dark:border-white/5">
-                                    {isPassVisible ? (subUser.password || '‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢') : '‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢‚Ä¢'}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setVisiblePasswords(prev => ({
-                                        ...prev,
-                                        [subUser.uid]: !prev[subUser.uid]
-                                      }));
-                                    }}
-                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded transition-colors cursor-pointer bg-transparent border-none"
-                                    title={isPassVisible ? "Hide Password" : "Show Password"}
-                                  >
-                                    {isPassVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(subUser.password || '');
-                                      toast.success("Passkey Copied to Clipboard");
-                                    }}
-                                    className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded transition-colors cursor-pointer bg-transparent border-none"
-                                    title="Copy Passkey"
-                                  >
-                                    <Copy size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-[var(--neu-surface)] border border-slate-200 dark:border-white/5 text-slate-500 dark:text-slate-400">
-                                  {subUser.role?.replace('_', ' ')}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    const newStatus = subUser.status === 'blocked' ? 'active' : 'blocked';
-                                    try {
-                                      await onUpdateUserStatus(subUser.uid, newStatus);
-                                      toast.success(newStatus === 'blocked' ? 'üö´ OPERATOR SUSPENDED' : '‚úÖ OPERATOR RESTORED', {
-                                        description: `@${subUser.username} status has been updated in real-time.`
-                                      });
-                                    } catch (err: any) {
-                                      toast.error('Failed to change status', { description: err.message });
-                                    }
-                                  }}
-                                  className={cn(
-                                    "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-[var(--neu-shadow-raised-sm)] cursor-pointer border ml-auto",
-                                    subUser.status === 'blocked'
-                                      ? "bg-rose-500 hover:bg-rose-600 text-white border-rose-600 shadow-rose-500/10"
-                                      : "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/10"
-                                  )}
-                                >
-                                  {subUser.status === 'blocked' ? <UserX size={12} /> : <UserCheck size={12} />}
-                                  <span>{subUser.status === 'blocked' ? 'SUSPENDED' : 'ACTIVE'}</span>
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-white/10">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedDealerForSubAccounts(null);
-                    setVisiblePasswords({});
-                  }}
-                  className="px-6 py-3 rounded-xl border border-[var(--neu-border)] text-slate-600 dark:text-slate-300 font-bold uppercase tracking-wider text-xs hover:bg-slate-100 dark:hover:bg-slate-900 transition-all cursor-pointer"
-                >
-                  Close Operator Registry
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <DeleteConfirmationModal
-        isOpen={!!billingRowToDelete}
-        onClose={() => setBillingRowToDelete(null)}
-        title="Delete Billing Record Row"
-        itemType="Billing Row"
-        itemName={billingRowToDelete?.clientName || undefined}
-        onTrash={async () => {
-          if (billingRowToDelete) {
-            await handleDeleteBillingRow(billingRowToDelete.rowIndex, false);
-          }
-        }}
-        onPermanentDelete={async () => {
-          if (billingRowToDelete) {
-            await handleDeleteBillingRow(billingRowToDelete.rowIndex, true);
-          }
-        }}
-      />
-
-      <DeleteConfirmationModal
-        isOpen={isSheetDeleteConfirmModalOpen}
-        onClose={() => setIsSheetDeleteConfirmModalOpen(false)}
-        title="Delete Recovery Sheet"
-        itemType="Recovery Sheet"
-        itemName={sheetIdToDelete || undefined}
-        onTrash={async () => {
-          if (sheetIdToDelete) {
-            await handleDeleteBillingMonth(sheetIdToDelete, false);
-          }
-        }}
-        onPermanentDelete={async () => {
-          if (sheetIdToDelete) {
-            await handleDeleteBillingMonth(sheetIdToDelete, true);
-          }
-        }}
-      />
-
-        </div>
-
-      {/* Floating Save Bar for Billing Column Widths */}
-      <AnimatePresence>
-        {showSaveBillingWidthsBar && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className="fixed bottom-6 right-6 z-50 flex items-center gap-4 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)] rounded-2xl px-5 py-4"
-          >
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-slate-900 dark:text-white">Unsaved Widths</span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">Save layout for future sessions</span>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowSaveBillingWidthsBar(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                disabled={savingBillingWidths}
-              >
-                Dismiss
-              </button>
-              <button
-                onClick={saveBillingColumnWidths}
-                disabled={savingBillingWidths}
-                className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow hover:shadow-[var(--neu-shadow-raised-lg)] transition-all flex items-center gap-2"
-              >
-                {savingBillingWidths ? (
-                  <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Saving...</span>
-                ) : (
-                  <span className="flex items-center gap-2"><Save size={14} /> Save Widths</span>
-                )}
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
-  );
-}
+                                      isDc && "bg-neutral-200 dark:bg-neutral-800 text-neuxúÏ]Èr€»µ˛üßËhR#*1%í"ΩËJv…ñùQ≈ˆ®,;IïØKÅàâX ®eUÂ)íá»ˇ¸πˇÚ(Û$˜ún,ç–h‡2éêäGƒ“ÎŸ˙Ù9_ûa∑üt:ƒ4ºØΩ⁄ùxwÓ^∫ûIΩ‘-ˆ¢t∏rù†}i√Ø[è~E¥.À}ﬂìÔø'[ó£ˆtÊMm⁄Ó∆ïƒ∑û:{˝aÕo=IZﬁÈIçãæÌtˆˆSÕ”j›ŒΩ∆kœµä:tßÅÂ:‰⁄∞gÙhkÊLÀ‹z˛È˝ŸÒÈ…·∫PQº†äÒÀ∞±§Oèﬂ÷*,0á[œ?ûº™UñQ≥ä§µı¸ıü?~8ÆR–·ûOm: ﬂ=‹ÃÚ∑Ê{ø%Ø‹…Ñ:ÅOæ'n0¶1Ãk√R2tÌŸƒÒ…o˜ …mn˘«¸≥wÆIëiZ:›—ºT+uZ√ L2¥ﬂoL`ƒ=jÅuM…ÙÆ›%”€vwwÒ®˝Ò˘⁄Zmîm~gÁÀﬁ”ê=}√Ò∑Ù⁄-ˆ®üø¢∂}Êπ#è˙~kdªóÜ˝¡Ω95oëÌaÿ°m-ff=≤úÈ,–|òy4ˇãGáCh≈≈oÊb˝˜Qı—≠ùê‡nä,¥´'•‚Ù>˜‹õÙj7™î¸Ìod{[øf”ÚçKõBá~m˘/-€∂ú—'«vá_©©_äÎº≤≠·◊£yãÓê£ÁÑÓ˙Å;Ö˘ô#9∞•=¨∞±·åh\¸2mzn\S‚7µÕ¬UÜ7¢¡.üJ’˛Åﬁù∏7éTÔ:tØ©wáæ—¢èHqå!r<ÒwmÍåÇq•Fº¥g^=DØRˇéæi_ÕlõL,ß}”};jÉLu|–P„p‰ıN¬ÊéÎP‚π3‡Lì´Îœ›ﬁÓ`z˚8|8Û< +¯J¯q	ml∏íf_0%-ÿ#7c+†Ç˛&cú¥ÿ4ÿÀÒmˆ÷^∑÷Ω»ﬂäÔÖ’Ñd Wù~›rZ¡ö*∫|∫ß©ƒ¥t
+^(±è_æ]TX´d¥rúŸS{É¥I≈Ü·ahÒå!±À'/≤Ÿ¯Õg¬åz÷h,Gƒ√|TêÓ¶u-é¡ïMo	Ùh‚∑á@–†óˇ:ÛÎÍÆıj∑ épƒÇYØ˘8Ù¡*ùxåGY£åV◊>Ä—ET®±öû*”T0äîT§¶úŸ‰íz˙äJVUP+yÒ¢íñjJO-§\ê÷dÈJééé†‰ÈêÇ—ßol◊Zí˙Au‹© ÑÎ™!ﬁ÷:hƒ+-Ñ ˙H•ëêÉAé	R¶¢é“—J±‡ZÉ~
+≈>j–⁄∫ä|6¶Sjx∏Ü`Ô^·,~!üø?8hﬂ–ÀØV–vgjÄ)Â,\ÁÀAÚ;ÒuÀqJ^◊óö*ï$ÚfıÈ°FÂ•4ïyÍbv˛GÒ¯^Q}Èöw≈•WÆà¨4$,∂¸ôweÈŒn¯ı∏¶k<Ùhz‚è”ΩiÓ\¥˚”€ã«ˇ6hßoti¥:èÿˇv;¯<‰¢†›Kõ≤oàﬂ}íjHÀFåô-Æ}ÍÒh˛¯^2a˙»‡˝ò<€$£§yQOS≤∏¯ï	ôÕ{C√ß ‹‡Sî 7ñI˝ e%eM§h‹ïZØfjg∆àíèn`ÿæzÏJâ?k.uD„ÆcAèÂÒx oŸ“KäÃﬂ¡xó…˜¨:-ä6ô
+Ù®9“VÀxD<¶—Ú;“Úvß∆.ùŒ#ò˘\°õ√H•∑uÊÌ^¬O†Ï ‘Ë;èü›¿}Î–éjè≤EÓ&ŒãÁ˙\·u£◊ÒF⁄3ÃnıK8z%Û0ÙæµÒˇeÛEÄ¬hçå±_w;»Á⁄~[œ7éVÿs{ƒˇK'‘3lS“O—]∂É3ä2ÓTS9KßúUX’PX™ò+†û»òHª”_ê}h[Wm`TòAõ^Ú ·s∑Év|.#ˇd9CfR∞oÿÊ≈•kõ:ñE!ÌñÃmK¥'vjmôÂãŒ™ﬂ√ö¿‰fÍ)q\Åaò2fC´≥	õÛ¡®/qZZ«∞∂FjÎë√7Ø@'ÜÂúª^FÓyx@ÁÓ¡Ã\•ôπ‰Yy0:7ôgL–ˇt…tÙ`êÆ” ùÃ¬∆ŒƒΩ"siæ˘F∆}∏∑A<∏∑L€û¢cµËxånˆ¸«°ü:˜ZƒgùX≥	Z\∏®¬‡•!∂Á⁄≈18s60Ô`LòùFûìÆ*HÀÛí7î:D∂¥svT3Õ’∆ƒ°?9 R}Lx8ﬂ:`˚57û1%#ﬁQPÑ‹Ω&€´≤=Ët2rKAπj	t>vo‡MÂÔ„úFÙ;©†¶y´5‰´≠hÍHõtw»o˘dúQè-¬@ZuÔ√Õ``Å⁄µ2±9±úLÂÈzë\&€âõ|X∑)˘lUÄl¨‡AÂ~O9ç#±a†ê$˛ŸSoIç,•L·‡¸EıW≤_-Oj°ÆZÅ$·TLôÕK‰ßOÉpG+huïªMxÅ¥π\⁄‰àòÓpÜäowDÉ◊6≈?_ﬁùö≠ÌK^d€üz‘0˝1•Aõ	ΩÌ“Ú≠+“Ç“w∞ä]ÇÕ>u˜èΩiÕ…%◊ñ⁄z€üÄåo?"ó∏ì7jx†S∂…}I%˜Íï'xÈà¬D∞käUõ$]¯Vn®6˘Fqv√µﬂ!°UâRqkXrbDõ‘hj≈õ«“∫_∫è´†3ﬂı⁄S◊b¥œv√-T.m√∂’ƒXÅ#ı∆Ú|ÓRΩÆ÷Êˇ˘a≈(/g†ˇ
+fÊπ∆œ∏D6n˘–è@<0Í£V`T5Á˝¸œø£ey]ìÛTüK
+7ú,RXm∆<íÃM⁄à`∑˙|ıN]lj≤ﬂ|M!}zŸK]…AÃøî¬zJ÷%L>»„û-M“∂∏“ù≠X
+Ño¨P“È∑ªY±Ü(ªÒ;{ÈF<»¿ÿú|Ω%?ˇ„ﬂø Îcu<)1ﬁﬂ=›ãÑ∑FÌ5+‚?ˇWãIïæ≈√\◊m±ñÛ„`÷2≥a∏⁄”–y8A_‰;ÿÄí7êíOÆÅÄÅp<rÏòûkô{˛Hú“¬ú?Ÿ∂yñIüˆ–µ}†NÙaƒ?{Ãµ—'Û`lô&u∂à‹¡ÙÃÁÃï¸˘GÀ∑†^ 6‡c∏¿@¯¯ÿÃ≥†È√sÎ'
+OÅBß∑¿M˜˘C6OLåi´≈C˘›‚ßÊ≠RqI"çÉH	ì.\œ¬“Å˜Mz[ƒŒ(+“ﬂÉ‰D˙ø≤j¢´>Û¥››Å9
+fûCúômï¨l≤;¸¿pL`ˆW¥Y‹0”Ó¬Ω¡¢‚y9ñf¿t∆ùŒŸñ¿îﬁÌÚRX¬nIAÏù“≤>±tdeQ<cπ¥§èÊPYL`KÀ8Q°QO)W¬ˆ2∂q∫¬w‡4˛Ëì„OÈ–∫≤Äò^w‹AuıÖ4UúÉ{8qQ†Ó"C+D‹Wzw4ˇóÌHç^°iˇ&NÍ¥-Ë√©)¥yÊSèµÛ<-Ûv˚^è∏^ôÕc9R∆—¸ ∞}™z”p¨	;JìPa†ÂÓ„˚~w‘⁄ıf˝˙ñ}π€È™?K~fŒ<∂=µÌvÍ/k»ø^$ˇ≈ÀÆj€ÂU6OiG«b;g€& k√|i°∞)3vOï]K¥Œ|Ë®sÀ∑pÉ'≤<z∑vd√§Ìàxﬁÿ6púé›π≤›õ6WYlSàÔÅNÀÏGEô	B*ø„ñµ˚ìù/%àŸ`êíÙ˘˚ñUß”|9µÈ5¶÷FŸ/|G´¸=nª®ﬂ+i:ó™%‘ÚÇ¡gƒ°5ÉÿQ¬n°£§Ée∞[r‹Oà¯`7“ï3ËlïµÊÄâq≠&G¯!ÈVGw±A˝J$)¸ítÛ£ª˝Úî›ÉHOkıAmH˙›Mæ!ˆ!~[ò·^N\fÎLDd)hu≈¿	©#¸^∫¸û‹âM°Ò°¸û^ÛãRòˆûT´•íÀí§mELGYÑÎGwJ.Ø,≤µxªåL/»H@∂eª5£?L7 Ì†áÈ%|6π,ŸÓ¨≤¶]ñr‰Ô~ÜKÈ¬¥¥"9öÈi}í3≠˚)¢(µ=L˝å“=˝1(¸Ø= ‰ªTé4€ò/ÎµV∑<⁄∫cZ!ÈªäH:);∂)µ≤≤Îfc/êÖç\ﬁ£^FuXÔb)’ïS©s{Y!u:õ2-%Fã…–”v'÷3íê≠’h‘>§c◊Üäè∂ﬁ`£∞ÖÂ_j‰ÊÆÑ7ƒ5WŒ lcY&j˜:ÿF®{E¨Sÿ€∞è‡,∆à≥LPö¿J~‰ |ÙÈ¸ırz“ i§’ÎºígMƒ´;nVPßÇ*>‰À≠“˛•y5Â˜)üÚz\π O¶⁄∑8©VX≥Ûãm÷GfQ˘æÅë.ıSƒ,l¶ÎÄ?ÜÎ´˜QX”‰Æü˙“äHÄ~ån…ÿè‚Çjø£›&æV
+õØTr÷B˝‘
+Ghø!7'Yi7&tÀÜmIí√2Y*Pí‘fQ_jT∫©Ÿ"tDÑÕaæ qdbG√@NÎ=Ú∞ƒnáÅnN‚&DÎyqL¢{OeW@ ßö-\¢iπ¿/fU3–•¿ñ6YZÆ¥&Ti0•∫•˘1Ùœ
+mÜU¥ªä=ÓﬂÄŒÍılå∆ío˝∫ÍÈ=ò#$“’|Û„=ÀﬁlÎ)˚@ÿ¶â_ÿ~ˇ#9˚·«˜ØK-Ó&löÚÿ-Ü≈«Rœ ¿SK∂w{°≥f°™◊¶»ØR]ÄFæ¸[ª¿œgªñÁ'?âÆòﬁ&óh® á≤t†ìıÛ≤dÈVD÷í[∂X¬£∫˜∞%¢]4–∫ï`ˇÊ-Æ~_H;—$⁄≤√ÑµäπjÀ2ˇÂ‰øéDê‚√^ß
+-n(5J§¢—ôu√Î/ªìm_’÷¸-É}çåÍÂëpEç>∂dÓ≤/ ﬁ‘«ó\É[FjÎ
+∞%+˚R≤Ml›qQÀb§ü^Øn&‚J<4ö÷åÁA€}Çÿ g0 ,gpMñMZ	`1L™Æ÷ŸzICÇº˘˝ûEEÊ–€h)9Ù6Q0≤V-Cj∫ÒÑ¶
+Ü{–!¢«Ø|5êBoœ»w5E˚G»^këÆzáŒ§ÌÁÁ@@Ë™)ãyI¡¶Ë8¥˙Z∏§±N˚µâ‹óx˜ÏÎËõìπ	¿”FÀﬁ§ôõ(ÉS≠[≤]∫<+„Ïl≤å›q•g¡rG|x–íIÿ¯¿Ë∫£ëMëèJÃŸ™ß-e¬z {*†d´ Up§™tÀ∑ØuD\#≤ûïî/Ôü.,Ô£®Ùè√®pF’≥ïÍü´Tˇ¨ä5Å¥¶ìáöï∫j\,ÙBJáucö-¬:¥£Ø§wÑ¡∆Ú™†ª`e¸ÚÌ9∂ 13µòYªÆÍPô8Ãe≠,^¡Ã⁄L”™9±“Ñ¶<™$I|+*¢ Ö©Ëî‹õ˘àbåw:U Ò@í∂QxqíDì^*Óâ˝}ÎWŒ/Ç¶+⁄®ÕIßäB˝¨ı◊¡2yÔFòâañ!ÒË
+wãJô=ù?'Bö¥ÄjàY–aˆÛ–ÄóÖnòû r¨CòÏ¨}Æá©…‚$ä°UÜ∏",#?o‚:nä°RÌÎÉ÷êV	¬&{øb≥pæD>ºj‡T»N65‡“RP*D(¶'•\&bK—Ôú9Â’ Œ‹˘Â\+[˚6ÅÜˇz ÃúkX+◊9yE>˘‘Û…GÊ°%/Y”4AròQ!EáÅÅˆXï˝≤\Q≤D˘»0voNÜo-?h˝⁄èˇ.\ÂZjÄÅ»Õ˚$VΩ”ZIP˚3¡ Õ|Äß5<’Õå…d=\≤§ÅıÀ˚Ñ!zziÍœ∂?}üÊ'`Æª0„aûØ?QXÏÇ≠ÿÀgä"2ç	gå]sàF.˛à›"€∂¿e∆”e4RDﬂE4dH
+[wûyA∂Äÿ&diØ–ã•ÚΩ©xºêÅÛXThX·Ç,≥r	ƒRH!…ô#˘~õvöQ¬zL‡
+L Cäƒ$U8÷9¶}N‚sÊa&_áÓKW£™%–·x?%Ô¥]Â¬ ◊æı¸ƒÚáÆ„0≤GN®aíW,Ÿ’?‹Ô/†
+1∂ò¯ß˛◊¿ù"∑~,Ÿùìg.úÚây¿pZ∏m#‹O&¨Zë3®¬ëù¡∞7⁄W÷-£T‡9Êª√%ørıä›˚%¶Îldl‡äzå£Iﬂ≤Ô`ï=§æoAÈèàMÉmü›ÈP
+πÚ‹	ºÂ¡®óbJ"uNˇç˙ÌMo/˙•Á¸^6sŒ/)?ÈóıB:Ì§«ñè±)D˝HIÀyçíâWÃ:0>}¸XcgÂ‹˚Æ‘›åÌyrjπ™Ô±ÍÁîZøÛ›«ÏkMÒπ€Áøò˘ÚôÅdÈåvÂö}ÕÓ£—ANO6gö„çnWsX ◊∑8Ot‡ÎhÔ›ÂT}LwΩ1®4|¨	Ëà‚ôÊp`<ﬂ√P∞+å&ﬂÊhn<∫)Â—âñK…NoÓ©Q!PÑS∫º1Î¨IúË/◊ØNtâEù7∑0©—ˆxÜ°é\6,sÌCπNÕÃqGÇ™qí¨\≠8°≥˚tyØ(éQßõc\q8*ÚŸ¿<ÀJ˘l<OGÎH~ø|€ÿËñFŒî‰©\ºb3`˝≠|%∏tÕ;5Êe:hÀ¥Æa|€w$¸CÅI›}ö:Û0 mœÄπ	S˙l 
+fv⁄'¬∞ÅÂÆ	W91ÍYEøÀ©´∞Äò‹ªt11¶~‡ë1ı(π±Ä•o0Û∞¸JtW∏è'≤6–}t->∫¥∫R ?]^] ¸liıÒÂ2Î„À%÷»óÀZ(_.Èıä Û£´8?∫OCp¸|m®|7R¥°Ú„±Z ?≥¬i,Ÿ=±¨ãY/øQÍ\≥¨,‰∑∫ì‘»Å&,V>tWàí⁄ëî√s„•ôPV™?nÈÇê˝—U∫?∫tzWÅóé•ÖZÚ‹˚Æd!∫≤ÕwÛ–ß"'eª%Ÿã¬MjMÉQˇ§Îä¿UaÒlè5ã	≠ü¯†ùÙA4éﬂKOGàœã˛b©‹x‘™πG¡<ÒˆÃsGı˝\pcÕ§Å
+È"¿ª&®è/ÜP˚≈oR≥uÅ’jI{º™fã’√—∆´~˙…äÒ¥yÖk√‘Ê’ØWØú»é·.ÿ0…òJ^·O =ã9-®Èä?¢3\P+≤VÑU^laêäælx∞∑PıÚZ¢˘[ÒΩ∞ö(ÊMÆ:˝ ,@ê+9kAºR†∆Øyé≠£éóF~L$Z5c∏áGˆÿ_å•“ìÀÃı0ÎX_Àevå™ΩzπUΩ2Ÿ›Œ;^kÈıﬁy•k≈|ÁMXÓ;^çã˜∆Ñ;FlnîlØ]ø)ÕÅeW.ò≈ÂLëê÷“◊Õ	iÜòª	ÕÍ]ôxÆº^Å≠Î9 :ÄålÜ3r]œ≠†WÖ8ºã◊§·û‡W=UçGczf˘ì™£ïMY≈˙¥'ÆY=ôﬁÔ=,âà¥$ÍÏˇ9∫÷¶hC Påh€}€†Ó‰ù√æik–ä.G}gc’\™úìéi´ËE∞Wí¡ò„ö´‡∞‡’Ñ"^î9!ÉU‡≤f÷RÅ©/ÆÇá´n+ØîÇÈˆbı"
+Çä™FG°haƒ,IµàK∆˙´≥M≤¡KK;·•Ã¬ìBîíeÚƒÊ»XÔñ∏?£©59à©Üv\~ô÷\ ≤w	*S ‡l\cBÂ’ˆÊ2$"3.q¬Ë©â«‰ÉÏ@Â˚éï5´oR['c∫*eÕ∂ÊπJãÇydx⁄
+B{mä{•XµQ+ÎËÌTÉW™∂óúÀØ‚e!CHÍä2È”ﬁ¯S˝ˇhÔÂ(‘Wﬁn|>≈7•OáﬁfÈQÖ¨÷ñèrı_àÄ˙ORa∆†˛»aµñﬁ⁄π_≥&zk‘¿—°øÕªí:¢÷’—∏¨°+’¥¬ØÇQ˘µfÖº¨ÖÚ7íÕ""Rî∏i˚!˝QŒ3¸:◊Ô\(u3f— |‹ö±ºx≠’Ë‡PÜã¢z¡≤ã'ÊúÚ¨ë[õ∏MÛëST¡¶MR⁄+:¶RPcL¬7{R%‹J.ò“
+5"91Óv2J'¬@Ä⁄X4íù2ºü–Õ5$ï/1`b‹æeö˚hﬁ”≠E:~'nÊ¢·WÜÌ”
+©D∫ÎÓ&pjå@≤…áEUvå$!õiª>¥ã∂¿ÈÌ¨(6,’öFáiéBc±b¢mU∏W—˘%{;¢≠˙Fˆ*÷µ•˝∆flﬂ1@ Qj˜∂5ak >Ûtê±–3Çõ‹&OüªQã≠Ù∏Ÿº—; “Ø—	ë{òÚ/¡#±˙ìï£¶÷€»ó[Ω‚Õ¸ÂùıÃØçŸ(<=∫PíJä≥W†8ı6˘3Ì»‹Õ√¢˛F6¸ó≥z≥ŸøΩò5!W_[Ûh3Åﬂb¥5ï%&î±·ô5Èo,—§íwKƒïç|T`ÅE zé ¨#6≥¡Ωπ¿≤πI z}ái¢§Ñûd#˙søìô2∫%√2b¨x&FµFrÃë∞ùZ]©VÚ;b˘°Ö¸Ü‹æ√Z≠—K¬∆I–AÒùße u
+P™ﬂ…˛}‹Y∏â2∫Ñ8v¸$ÌÅÄT≈úﬁ…»©œﬂ,‹®,LEº{
+∑"s››O⁄+ﬁ É≤¯8r ó∞’”ô7µ”cﬁ	1º%ågxG—Ë€-j∂OSj/¥‹);Påkê-éø≥ı¸”˚≥„”ì√=˛t¡¬xQçƒñı·„ÈÒ€ö≈ÊpÎ˘«ìW5ã¡Rj¬êÄ∂ûø˛Û««’äÇ53;öÑø–çâéÓ˝û∏¡¥^x(4∫ˆl‚ËöÖã ‚•Övòi´^õX˘K»5◊ˆ¿Ë≈µD'WX+Vt©îsÑM®‡MYdkØ˙ÁFÛ´ÔI£ªaq´>í:™∏VÏG“Ü:^ïµùèÕØ¶s”ÚÏ¯•üç†©öBy~¸ÚÌ‚¢\%¡ı@^u YÎ5≤nñ+ <K∫äÏ_ f+9w√ Yﬂ4Ω1¿Í¨™… tåf%5∂Ë∆ ^µTèÆ¶4ŸF∞û4±éö‚≠≠ß°6‚∞˜Ë⁄üˇC2ﬂÚ|˚xi´–
+>~˛≤Æ∆-á˘∆KÉ~À‡æY1%'ñ*´Å
+\u&;o¨‰îµÇß<ÆÅù∂~Úä¸ﬁ≥Ã
+ß©M€}<J-<T-6yëÖÏÏ=Â±uR·#l˛É0∑>†>9H~ˆ$g´å–Ëd˘ôb¢=ıËƒöMS◊Òq…ˆ˙çµ˘‰⁄¢7ÏË˘c«Ù\À‹è†˜á•ÖÀ˛‹ﬁ‘ÉØæ<peìÎ√~7˜›$ÃwsﬁM¿z◊áÛ^5åw)|˜·ƒEØ¬.ÚæBr‹nŒíÌ0:Ø}Öú€÷Û∂Ã€
+`ﬁñc!ehoé5	w4üìP‡°’>)≥ø‡wGçîö‹¶?†ŸÄ•D_Óv∫Íœ$p¸ÃúyÃCµÌvÍ/˝‡Œf-Ç`‘˛h˘+k˚6Ñ	>2,Á‘¡@kﬂû[?A´∂Ÿë~€Í‚´Åi/
+¢]<[’ze◊*Ï√Çz‹è∑Q{…˘«Ä;vGÛ∆v{bá¨|H-[÷2+‘ü|l|Pß∞◊ ÔxÜÂCÌ˛dÁK…6ë<Y”…Í¶s©ZB-/dd˙ÃÓa/Ω_(oæ≈˚Öè≈]∆ÙYπI bIkò◊j≤àÄ?»l.bÉ˙ï6SõéÖG˝ñYÛëû÷ÍÉ:d5=¯—]π‚F¸ci??zìe1iıÉ[
+Z]·˚ÌÈé$õ˜=i∑^ÓD≤[ˇ8µÕüÓ@†—¸¢√{˜ûTqƒÇ/Îi™Óÿ®¢ ≈Ç•Ït„èÓî\•g{ı¿»ÙÇådáΩgŒ⁄6› è§Vå√œ,û¿?e'ó∫ŸªÉ»eQÍj,¿™yûç•<ê9#ÁAC” =≠Or¶u?8πã”«ŒC%†øjÙÄêÔ≤gîıZÀ%ö9^sL+8P´Ì◊’¡ÎØÎ—\)Nˇ1˙Wéœüu7JNE—ë8mw2a1#	E’Êó••pﬂ`£ﬁkÅ⁄k¯≥V¬ç‡°ØÅeÍ·†Ø}-¯Áã≤O'ubOñM`•Çc$+Û—ßÛ◊»ÈI\§·é÷y%œöàWw‹¨†NU¨ß]+ö∫WÆ/Ç∫rÏt^‘¥|‡©2j:'d∫r|Ûä#õµ€¥ä@fÕ∆¨0nY≥EKS÷l√£í5[∏≤ ‰rÅ_*>4Ã™f‚åà0n,∂∏vTqÕx‚"âucàeU,¨¬sm˘¥ªä#Æ|:´W~<âo˝∫ÍÈ=ò#dÒÉ,ﬁˇHŒ~¯Ò˝ÎRãª	õFΩÀåãpcP.eÀ%;¡Ω–Ÿ≥P’kS‰W	’µ OFæ¸[ª¿Øâ‹ÆÚ¸‰üø›W©>π‰¯≈vËdF˝≈º,Y∫£Rö:CL’˚	ÿ—.h›JAtÛP(Ω›(ö–rÃæ°#§¯∞◊©BãÖJç©htÊÉ(î/ªìm_’÷¸-∞m÷H¬4˙1öπÀæ4T√Ü∫eVèŒ∞QXã˙X#˝Ùzu3ÉW‚°—¥fB\a†MÃ˛ÂY6i%Ä≈0©∫ZKdÎy8$	ÚÊ˜{ôƒÓÜJ…ï†ÍÆ–vAh™R["z¸ W©Ã(õ^z±„" √—f!h—USÛ"
+-áV_+ÁJÉ46¬iø6ëÀèå˘:˙ÊdÆ|∞»Ü ﬁïû%≤)«w‰⁄•À±R¬·FÀÿÕWz,wƒá&a„£ÎéF6E>*1g´¢d¬z§à 	‹
+Å U•[æ}≠#‚ëı¨§|yˇtay°>Ë'óVH*≠äbPø†~æÁ@÷î◊ﬂ¨‘UgÖ£R Ë¶`ﬂk∆9Èƒ+È•˛m,Ø
+∫V∆/ﬂ.ëc´§k◊J”^ªÆ*-{R°◊ ‚Ã¨Õ4≠ö+Mÿ`ä)?‹Kﬂää(Ha* ŒΩ9üñsÓzò#ïƒ2ﬁÈ®Ï5Y¶Ç$m£‚$âX#ΩÏQÏ∑~AÄTûXî‚m§(¿¢ç⁄út™(‘ﬂ«ÍPºí˜nÅI¬,C‚—!‡ÔT1¿<Âœâêù|f`>/ãu¿‰„0Èxh@çÖ∂˜úÌcæÉâÖØ©OûìÓ‚SYóeV¿dgÌs=D'ë:LµÚçgLKqEXÜD>lZ'Æ„
+Ò1Ì)’>ôgÓ§D„yO‹+yàÔI+üëÓ#jaÔÔ(ÿ])*4ìKîù9‰BS)±∏≠¿_T”DÕK√√DGIñGí˛©ë˝…Ú8CC+huÀR7’ïß‡	"R/‚îùl" ìcí9¢G®9^Hw£ﬂ!˙n´[ „§îÀDl)˙≠÷Tˇ˘ycyæ †<‹„dÒ_AbSè^„gÔå`º;1n˘ç6&kww»ØiÚ˚˘ü'g0¬ø Úì‰ˇ h—r¯çﬂ!-¶Ò@òçÊ{h9˘˘ˇÆEòJ›Æ6ﬂÁˇ)¸8ﬂ≤T˚A¸…˚ñ˝/cjÙSYˆ∫“ì©H 
+ [ÕBÌBt[)ÈXEáäYa9(˛îŸ≥|,Ì‘º›;‰oEI€Ôòß√˘ƒ€⁄uÌ˙Ìò∞r_Òb#ÀTÂlRP•vûs°1*óp√rå«Ïﬂh^#«Üÿ·®¥ß3Ïˆ‚Ö¸Ò,p°Á◊∏8cX.ÑöV‡WÎh¡É‹€2T;†R~'Éåï∑@ñ¯EÊˆ DπÆM aëúô8≥)ñ»ó^ñC◊π≤F3è#^ŸNênÂumŒHÇ*ÛFÍyëc„pÔ|ÊO©„”Ù›‰W\L™ÇπÂ3å°Û1•¡t)˝•§◊ªáQ—‰ ∞ÌKuqÜé≠[Eñ&ﬂÓêü⁄ü{ÉŒóDÖÁ ‡∑¶ÁNQùy8≈À„h∑¸≠k¿ÃÙ“$ˇ˛iL“Ë‘"Ç{àõwÚ>5IGSn˘ÿÂ£¸ëHœö"ÆO#Sƒ.AZ€{Ü	∂≈ã¿∏<
+ß_∆XÖŸ'AàÑÈ∑íÙ‘£yÚwnI°X<í≈§‘7…áå›T∫ïçÈÙ#fh@Ùg˙ç∞É¨>hfÍßT;y:ª7ÿ’∑‘aÔi<Ã8¬≤ÇqÚ4]@bÀEµ…w§˜ôÿ
+GﬂN˝ﬂ#À:Ò‘·`¡p|ÊÅM§«àÔñ&ª§ÑwÆiÿ¥óÆGIv0ß“˚-£µ$ßK:3¿ÂÊ˜ø˙   ˇˇ ˜>]Ò

@@ -229,6 +229,116 @@
     box-shadow: var(--neu-shadow-inset), 0 0 0 2px rgba(37, 99, 235, 0.35);
   }
 
+  /* Neumorphic Form Elements with Floating Labels */
+  .input-group.neu-input {
+    position: relative;
+    background: var(--neu-surface);
+    box-shadow: var(--neu-shadow-inset);
+    border: 1px solid var(--neu-border);
+    border-radius: 15px;
+    transition: all 0.3s ease;
+  }
+  .input-group.neu-input input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 22px 24px 14px 50px;
+    color: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    outline: none;
+    transition: all 0.3s ease;
+  }
+  .input-group.neu-input label {
+    position: absolute;
+    left: 50px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9499b7;
+    font-size: 14px;
+    font-weight: 400;
+    pointer-events: none;
+    transition: all 0.3s ease;
+  }
+  .input-group.neu-input input:focus + label,
+  .input-group.neu-input input:not(:placeholder-shown) + label {
+    top: 8px;
+    font-size: 11px;
+    color: #10b981;
+    transform: translateY(0);
+  }
+  .input-icon {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    color: #9499b7;
+    transition: all 0.3s ease;
+  }
+  .neu-input:focus-within .input-icon {
+    color: #10b981;
+  }
+  /* Password toggle within input-group */
+  .password-group {
+    padding-right: 45px;
+  }
+  .neu-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--neu-surface);
+    border: 1px solid var(--neu-border);
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9499b7;
+    box-shadow: var(--neu-shadow-btn);
+    transition: all 0.3s ease;
+  }
+  .neu-toggle:hover {
+    color: #10b981;
+  }
+  .neu-toggle:active {
+    box-shadow: var(--neu-shadow-btn-active);
+  }
+  /* Custom checkbox */
+  .neu-checkbox {
+    width: 20px;
+    height: 20px;
+    background: var(--neu-surface);
+    border: 1px solid var(--neu-border);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--neu-shadow-btn);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .remember-wrapper input[type="checkbox"]:checked + .checkbox-label .neu-checkbox {
+    box-shadow: var(--neu-shadow-btn-active);
+  }
+  .neu-checkbox svg {
+    width: 12px;
+    height: 12px;
+    color: #10b981;
+    opacity: 0;
+    transform: scale(0);
+    transition: all 0.3s ease;
+  }
+  .remember-wrapper input[type="checkbox"]:checked + .checkbox-label .neu-checkbox svg {
+    opacity: 1;
+    transform: scale(1);
+  }
+
   .business-card {
     background: var(--neu-surface);
     box-shadow: var(--neu-shadow-raised);
@@ -383,8 +493,8 @@
 }
 
 .gts-toggle {
-  background-color: #2563eb;
-  background: linear-gradient(to right, #3b82f6, #1d4ed8);
+  background-color: #059669;
+  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
   color: #fff;
   position: relative;
   left: -100%;
@@ -1654,3 +1764,577 @@
   }
 }
 
+
+/* Neumorphism Login Form Styles */
+.neumorphism-wrapper {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #e0e5ec;
+    min-height: 100vh;
+    width: 100vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    line-height: 1.6;
+    transition: background 0.3s ease;
+}
+
+.dark .neumorphism-wrapper {
+    background: #282a2e;
+}
+.dark .neumorphism-wrapper .login-card {
+    background: #282a2e;
+    box-shadow: 20px 20px 60px rgba(0,0,0,0.5), -20px -20px 60px rgba(255,255,255,0.05);
+}
+.dark .neumorphism-wrapper .neu-icon,
+.dark .neumorphism-wrapper .neu-input,
+.dark .neumorphism-wrapper .neu-toggle,
+.dark .neumorphism-wrapper .neu-checkbox,
+.dark .neumorphism-wrapper .neu-button,
+.dark .neumorphism-wrapper .neu-social {
+    background: #282a2e;
+}
+
+.dark .neumorphism-wrapper .neu-icon {
+    box-shadow: 8px 8px 20px rgba(0,0,0,0.5), -8px -8px 20px rgba(255,255,255,0.05), inset 0 0 0 rgba(0,0,0,0.5), inset 0 0 0 rgba(255,255,255,0.05);
+}
+.dark .neumorphism-wrapper .neu-icon:hover {
+    box-shadow: 4px 4px 10px rgba(0,0,0,0.5), -4px -4px 10px rgba(255,255,255,0.05), inset 4px 4px 10px rgba(0,0,0,0.5), inset -4px -4px 10px rgba(255,255,255,0.05);
+}
+
+.dark .neumorphism-wrapper .neu-input {
+    box-shadow: inset 8px 8px 16px rgba(0,0,0,0.5), inset -8px -8px 16px rgba(255,255,255,0.05);
+}
+.dark .neumorphism-wrapper .neu-input:focus-within {
+    box-shadow: inset 4px 4px 8px rgba(0,0,0,0.5), inset -4px -4px 8px rgba(255,255,255,0.05);
+}
+
+.dark .neumorphism-wrapper .neu-toggle {
+    box-shadow: 4px 4px 10px rgba(0,0,0,0.5), -4px -4px 10px rgba(255,255,255,0.05);
+}
+.dark .neumorphism-wrapper .neu-toggle:active {
+    box-shadow: inset 2px 2px 5px rgba(0,0,0,0.5), inset -2px -2px 5px rgba(255,255,255,0.05);
+}
+
+.dark .neumorphism-wrapper .neu-checkbox {
+    box-shadow: 3px 3px 8px rgba(0,0,0,0.5), -3px -3px 8px rgba(255,255,255,0.05);
+}
+.dark .remember-wrapper input[type="checkbox"]:checked + .checkbox-label .neu-checkbox {
+    box-shadow: inset 2px 2px 5px rgba(0,0,0,0.5), inset -2px -2px 5px rgba(255,255,255,0.05);
+}
+
+.dark .neumorphism-wrapper .neu-button {
+    box-shadow: 8px 8px 20px rgba(0,0,0,0.5), -8px -8px 20px rgba(255,255,255,0.05);
+    color: #e2e8f0;
+}
+.dark .neumorphism-wrapper .neu-button:hover {
+    box-shadow: 12px 12px 30px rgba(0,0,0,0.5), -12px -12px 30px rgba(255,255,255,0.05);
+}
+.dark .neumorphism-wrapper .neu-button:active {
+    box-shadow: inset 4px 4px 10px rgba(0,0,0,0.5), inset -4px -4px 10px rgba(255,255,255,0.05);
+}
+
+.dark .neumorphism-wrapper .neu-social {
+    box-shadow: 6px 6px 15px rgba(0,0,0,0.5), -6px -6px 15px rgba(255,255,255,0.05);
+}
+.dark .neumorphism-wrapper .neu-social:hover {
+    box-shadow: 8px 8px 20px rgba(0,0,0,0.5), -8px -8px 20px rgba(255,255,255,0.05);
+}
+.dark .neumorphism-wrapper .neu-social:active {
+    box-shadow: inset 3px 3px 8px rgba(0,0,0,0.5), inset -3px -3px 8px rgba(255,255,255,0.05);
+}
+
+.dark .login-header h2 { color: #f8fafc; }
+.dark .login-header p { color: #94a3b8; }
+.dark .neu-input input { color: #f8fafc; }
+.dark .divider span { color: #94a3b8; }
+.dark .divider-line { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent); }
+.dark .signup-link p { color: #94a3b8; }
+.dark .signup-link a { color: #cbd5e1; }
+.dark .signup-link a:hover { color: #f8fafc; }
+
+.neumorphism-wrapper .login-container {
+    width: 100%;
+    max-width: 420px;
+}
+
+.neumorphism-wrapper .login-card {
+    background: #e0e5ec;
+    border-radius: 30px;
+    padding: 50px 40px;
+    box-shadow: 
+        20px 20px 60px #bec3cf,
+        -20px -20px 60px #ffffff;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .login-card:hover {
+    transform: translateY(-5px);
+}
+
+.neumorphism-wrapper .login-header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.neumorphism-wrapper .neu-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 24px;
+    background: #e0e5ec;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 
+        8px 8px 20px #bec3cf,
+        -8px -8px 20px #ffffff,
+        inset 0 0 0 #bec3cf,
+        inset 0 0 0 #ffffff;
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .neu-icon:hover {
+    box-shadow: 
+        4px 4px 10px #bec3cf,
+        -4px -4px 10px #ffffff,
+        inset 4px 4px 10px #bec3cf,
+        inset -4px -4px 10px #ffffff;
+}
+
+.neumorphism-wrapper .icon-inner {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6c7293;
+}
+
+.neumorphism-wrapper .icon-inner svg {
+    width: 100%;
+    height: 100%;
+}
+
+.neumorphism-wrapper .login-header h2 {
+    color: #3d4468;
+    font-size: 2rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.neumorphism-wrapper .login-header p {
+    color: #9499b7;
+    font-size: 15px;
+    font-weight: 400;
+}
+
+/* Neumorphic Input Styles */
+.neumorphism-wrapper .form-group {
+    margin-bottom: 28px;
+    position: relative;
+}
+
+.neumorphism-wrapper .neu-input {
+    position: relative;
+    background: #e0e5ec;
+    border-radius: 15px;
+    box-shadow: 
+        inset 8px 8px 16px #bec3cf,
+        inset -8px -8px 16px #ffffff;
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .neu-input:focus-within {
+    box-shadow: 
+        inset 4px 4px 8px #bec3cf,
+        inset -4px -4px 8px #ffffff;
+}
+
+.neumorphism-wrapper .neu-input input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 20px 24px;
+    padding-left: 55px;
+    color: #3d4468;
+    font-size: 16px;
+    font-weight: 500;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .neu-input input::placeholder {
+    color: transparent;
+}
+
+.neumorphism-wrapper .neu-input label {
+    position: absolute;
+    left: 55px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9499b7;
+    font-size: 16px;
+    font-weight: 400;
+    pointer-events: none;
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .neu-input input:focus + label,
+.neumorphism-wrapper .neu-input input:not(:placeholder-shown) + label {
+    top: 8px;
+    font-size: 12px;
+    color: #6c7293;
+    transform: translateY(0);
+}
+
+.neumorphism-wrapper .input-icon {
+    position: absolute;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    color: #9499b7;
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .input-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.neumorphism-wrapper .neu-input:focus-within .input-icon {
+    color: #6c7293;
+}
+
+/* Password Toggle */
+.neumorphism-wrapper .password-group {
+    padding-right: 50px;
+}
+
+.neumorphism-wrapper .neu-toggle {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #e0e5ec;
+    border: none;
+    width: 35px;
+    height: 35px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9499b7;
+    box-shadow: 
+        4px 4px 10px #bec3cf,
+        -4px -4px 10px #ffffff;
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .neu-toggle:hover {
+    color: #6c7293;
+}
+
+.neumorphism-wrapper .neu-toggle:active {
+    box-shadow: 
+        inset 2px 2px 5px #bec3cf,
+        inset -2px -2px 5px #ffffff;
+}
+
+.neumorphism-wrapper .neu-toggle svg {
+    width: 18px;
+    height: 18px;
+}
+
+.neumorphism-wrapper .eye-closed {
+    display: none;
+}
+
+.neumorphism-wrapper .neu-toggle.show-password .eye-open {
+    display: none;
+}
+
+.neumorphism-wrapper .neu-toggle.show-password .eye-closed {
+    display: block;
+}
+
+/* Form Options */
+.neumorphism-wrapper .form-options {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 35px;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.neumorphism-wrapper .remember-wrapper {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.neumorphism-wrapper .remember-wrapper input[type="checkbox"] {
+    display: none;
+}
+
+.neumorphism-wrapper .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+    color: #6c7293;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.neumorphism-wrapper .neu-checkbox {
+    width: 22px;
+    height: 22px;
+    background: #e0e5ec;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 
+        3px 3px 8px #bec3cf,
+        -3px -3px 8px #ffffff;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.neumorphism-wrapper .remember-wrapper input[type="checkbox"]:checked + .checkbox-label .neu-checkbox {
+    box-shadow: 
+        inset 2px 2px 5px #bec3cf,
+        inset -2px -2px 5px #ffffff;
+}
+
+.neumorphism-wrapper .neu-checkbox svg {
+    width: 14px;
+    height: 14px;
+    color: #00c896;
+    opacity: 0;
+    transform: scale(0);
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .remember-wrapper input[type="checkbox"]:checked + .checkbox-label .neu-checkbox svg {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.neumorphism-wrapper .forgot-link {
+    color: #6c7293;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
+
+.neumorphism-wrapper .forgot-link:hover {
+    color: #3d4468;
+}
+
+/* Neumorphic Button */
+.neumorphism-wrapper .neu-button {
+    width: 100%;
+    background: #e0e5ec;
+    border: none;
+    border-radius: 15px;
+    padding: 18px 32px;
+    color: #3d4468;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    position: relative;
+    margin-bottom: 30px;
+    box-shadow: 
+        8px 8px 20px #bec3cf,
+        -8px -8px 20px #ffffff;
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.neumorphism-wrapper .neu-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transition: left 0.5s ease;
+}
+
+.neumorphism-wrapper .neu-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+        12px 12px 30px #bec3cf,
+        -12px -12px 30px #ffffff;
+}
+
+.neumorphism-wrapper .neu-button:hover::before {
+    left: 100%;
+}
+
+.neumorphism-wrapper .neu-button:active {
+    transform: translateY(0);
+    box-shadow: 
+        inset 4px 4px 10px #bec3cf,
+        inset -4px -4px 10px #ffffff;
+}
+
+.neumorphism-wrapper .btn-text {
+    position: relative;
+    z-index: 1;
+    transition: opacity 0.3s ease;
+}
+
+.neumorphism-wrapper .btn-loader {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.neumorphism-wrapper .neu-spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid #bec3cf;
+    border-top: 3px solid #6c7293;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.neumorphism-wrapper .neu-button.loading .btn-text {
+    opacity: 0;
+}
+
+.neumorphism-wrapper .neu-button.loading .btn-loader {
+    opacity: 1;
+}
+
+/* Divider */
+.neumorphism-wrapper .divider {
+    display: flex;
+    align-items: center;
+    margin: 30px 0;
+    gap: 16px;
+}
+
+.neumorphism-wrapper .divider-line {
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #bec3cf, transparent);
+}
+
+.neumorphism-wrapper .divider span {
+    color: #9499b7;
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Social Login */
+.neumorphism-wrapper .social-login {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 30px;
+}
+
+.neumorphism-wrapper .neu-social {
+    width: 50px;
+    height: 50px;
+    background: #e0e5ec;
+    border: none;
+    border-radius: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6c7293;
+    box-shadow: 
+        6px 6px 15px #bec3cf,
+        -6px -6px 15px #ffffff;
+    transition: all 0.3s ease;
+}
+
+.neumorphism-wrapper .neu-social:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+        8px 8px 20px #bec3cf,
+        -8px -8px 20px #ffffff;
+}
+
+.neumorphism-wrapper .neu-social:active {
+    transform: translateY(0);
+    box-shadow: 
+        inset 3px 3px 8px #bec3cf,
+        inset -3px -3px 8px #ffffff;
+}
+
+.neumorphism-wrapper .neu-social svg {
+    width: 22px;
+    height: 22px;
+}
+
+/* Signup Link */
+.neumorphism-wrapper .signup-link {
+    text-align: center;
+}
+
+.neumorphism-wrapper .signup-link p {
+    color: #9499b7;
+    font-size: 14px;
+}
+
+.neumorphism-wrapper .signup-link a {
+    color: #6c7293;
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.3s ease;
+}
+
+.neumorphism-wrapper .signup-link a:hover {
+    color: #3d4468;
+}
+
+@media (max-width: 480px) {
+    .neumorphism-wrapper {
+        padding: 16px;
+    }
+    .neumorphism-wrapper .login-card {
+        padding: 35px 25px;
+        border-radius: 20px;
+    }
+    .neumorphism-wrapper .login-header h2 {
+        font-size: 1.75rem;
+    }
+    .neumorphism-wrapper .neu-input input {
+        padding: 18px 20px;
+        padding-left: 50px;
+    }
+    .neumorphism-wrapper .neu-input label {
+        left: 50px;
+    }
+    .neumorphism-wrapper .form-options {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+}
