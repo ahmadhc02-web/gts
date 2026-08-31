@@ -6,7 +6,7 @@ import { globalLoading } from '../contexts/LoadingContext';
 
 let activeLineCode: string | undefined = undefined;
 
-import { sendMessage, getTemplate, getStatus } from '../whatsapp_data/whatsappApi';
+import { sendMessage, getTemplate, getStatus , sendPushNotification } from '../whatsapp_data/whatsappApi';
 
 const isExcludedFromRecovery = (name?: string, username?: string) => {
   const check = (str?: string) => {
@@ -73,7 +73,8 @@ export const mappings: Record<string, Record<string, string>> = {
     companyName: 'company_name',
     status: 'status',
     profilePicture: 'profile_picture',
-    email: 'email'
+    email: 'email',
+    fcmToken: 'fcm_token'
   },
   complaints: {
     id: 'id',
@@ -2016,6 +2017,14 @@ export const supabaseService = {
     return user;
   },
 
+
+  updateUserFcmToken: async (uid: string, token: string) => {
+    try {
+      await upsertSupabase('users', 'uid', uid, { fcm_token: token }, true);
+    } catch (err) {
+      console.warn('Failed to save FCM token to Supabase:', err);
+    }
+  },
   updateUserStatus: async (uid: string, status: UserProfile['status'], authorName: string) => {
     await upsertSupabase('users', 'uid', uid, { status });
   },
@@ -2250,6 +2259,21 @@ export const supabaseService = {
         })();
       }
       
+
+      // Push Notification
+      try {
+        const relevantUsers = await supabaseService.getUsers(tenantId);
+        const tokens = relevantUsers.filter((u: any) => u.fcmToken).map((u: any) => u.fcmToken) as string[];
+        if (tokens.length > 0) {
+          await sendPushNotification(
+            tokens, 
+            'New Complaint', 
+            `${complaint.customerName} (${complaint.area})`
+          );
+        }
+      } catch (err) {
+        console.warn('Could not send push notification:', err);
+      }
       return complaint;
     }, 'Registering complaint...');
   },
@@ -2376,6 +2400,24 @@ export const supabaseService = {
             console.warn('Failed to send WhatsApp completed notification', e);
           }
         })();
+      }
+
+      // Push Notification for status update
+      try {
+        const templates = await getTemplate();
+        if (templates && templates.completedStatusValue && status.toLowerCase() === templates.completedStatusValue.toLowerCase()) {
+            const relevantUsers = await supabaseService.getUsers(dealerId);
+            const tokens = relevantUsers.filter((u: any) => u.fcmToken).map((u: any) => u.fcmToken) as string[];
+            if (tokens.length > 0) {
+              await sendPushNotification(
+                tokens, 
+                'Complaint Completed', 
+                `${customerName}'s complaint is now ${status}`
+              );
+            }
+        }
+      } catch (err) {
+        console.warn('Could not send push notification for status update:', err);
       }
     }, 'Updating complaint status...');
   },

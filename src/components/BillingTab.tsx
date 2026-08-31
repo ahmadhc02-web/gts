@@ -1282,20 +1282,29 @@ export default function BillingTab(props: BillingTabProps) {
                                   className="py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-center font-sans"
                                   style={{ width: `${billingColWidths.act}px`, minWidth: `${billingColWidths.act}px`, maxWidth: `${billingColWidths.act}px`, overflow: 'hidden' }}
                                 >
-                                  <div className="flex items-center justify-center">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        triggerDeleteBillingRow(globalRowIdx);
-                                      }}
-                                      disabled={!isBillingUnlocked}
-                                      className="p-1 rounded bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-450 hover:bg-rose-100 dark:hover:bg-rose-900/50 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
-                                      title="Delete Row"
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
-                                  </div>
+                                    <div className="flex items-center justify-center gap-1">
+                                      <WhatsAppSendButton
+                                        name={rowRef.name || ''}
+                                        mobileNumber={rowRef.mobileNumber || rowRef.phone || rowRef.number || ''}
+                                        totalAmount={rowRef.totalAmount}
+                                        baseAmount={rowRef.baseAmount}
+                                        paymentStatus={rowRef.paymentStatus || 'unpaid'}
+                                        username={rowRef.username || rowRef.clientId || ''}
+                                        area={rowRef.area || ''}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          triggerDeleteBillingRow(globalRowIdx);
+                                        }}
+                                        disabled={!isBillingUnlocked}
+                                        className="p-1 rounded bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-450 hover:bg-rose-100 dark:hover:bg-rose-900/50 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+                                        title="Delete Row"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
                                 </td>
                               </tr>
                             );
@@ -1464,6 +1473,16 @@ export default function BillingTab(props: BillingTabProps) {
                                 #{globalRowIdx + 1}
                               </span>
                               {isBillingUnlocked && (
+                                <div className="flex items-center gap-1">
+                                  <WhatsAppSendButton
+                                    name={rowRef.name || ""}
+                                    mobileNumber={rowRef.mobileNumber || rowRef.phone || rowRef.number || ""}
+                                    totalAmount={rowRef.totalAmount}
+                                    baseAmount={rowRef.baseAmount}
+                                    paymentStatus={rowRef.paymentStatus || "unpaid"}
+                                    username={rowRef.username || rowRef.clientId || ""}
+                                    area={rowRef.area || ""}
+                                  />
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -1475,6 +1494,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 >
                                   <Trash2 size={13} />
                                 </button>
+                                </div>
                               )}
                               <div className="min-w-0">
                                 <input
@@ -2105,6 +2125,16 @@ export default function BillingTab(props: BillingTabProps) {
                                 #{globalRowIdx + 1}
                               </span>
                               {isBillingUnlocked && (
+                                <div className="flex items-center gap-1">
+                                  <WhatsAppSendButton
+                                    name={rowRef.name || ""}
+                                    mobileNumber={rowRef.mobileNumber || rowRef.phone || rowRef.number || ""}
+                                    totalAmount={rowRef.totalAmount}
+                                    baseAmount={rowRef.baseAmount}
+                                    paymentStatus={rowRef.paymentStatus || "unpaid"}
+                                    username={rowRef.username || rowRef.clientId || ""}
+                                    area={rowRef.area || ""}
+                                  />
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -2116,6 +2146,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 >
                                   <Trash2 size={13} />
                                 </button>
+                                </div>
                               )}
                               <div className="min-w-0">
                                 <input

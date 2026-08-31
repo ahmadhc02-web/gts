@@ -8,6 +8,7 @@ import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as App
 import { pocketbaseService, supabaseService, fromDb } from './lib/supabaseService';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { googleSheetsService } from './services/googleSheetsService';
+import { sendPushNotification } from './whatsapp_data/whatsappApi';
 import { Toaster, toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
@@ -18,6 +19,8 @@ import GlobalProgressLoader from './components/GlobalProgressLoader';
 import { Clock } from 'lucide-react';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { Capacitor } from "@capacitor/core";
+import { PushNotifications } from "@capacitor/push-notifications";
 
 function lazyWithRetry<T extends ComponentType<any>>(
   importFn: () => Promise<{ default: T }>
@@ -137,6 +140,47 @@ export default function App() {
     }
     setLineCodeReady(true);
   };
+
+  // Push Notifications Setup
+  useEffect(() => {
+    if (Capacitor.isNativePlatform() && user?.uid) {
+      const setupPush = async () => {
+        try {
+          const permStatus = await PushNotifications.requestPermissions();
+          if (permStatus.receive === "granted") {
+            await PushNotifications.register();
+          }
+        } catch (e) {
+          console.warn("Push permission error:", e);
+        }
+      };
+      
+      PushNotifications.removeAllListeners().then(() => {
+        PushNotifications.addListener("registration", async (token) => {
+          console.log("FCM Token:", token.value);
+          if (user.uid) {
+            await pocketbaseService.updateUserFcmToken(user.uid, token.value).catch(err => {
+               console.warn("Failed to update FCM token:", err);
+            });
+          }
+        });
+        
+        PushNotifications.addListener("registrationError", (error: any) => {
+          console.warn("Push registration error: ", JSON.stringify(error));
+        });
+        
+        PushNotifications.addListener("pushNotificationReceived", (notification) => {
+          console.log("Push received: ", JSON.stringify(notification));
+        });
+        
+        PushNotifications.addListener("pushNotificationActionPerformed", (notification) => {
+          console.log("Push action performed: ", JSON.stringify(notification));
+        });
+        
+        setupPush();
+      });
+    }
+  }, [user?.uid]);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -1726,6 +1770,22 @@ export default function App() {
         console.warn("Could not broadcast complaint registration:", err);
       }
 
+
+      // Push Notification
+      try {
+        const tenantIdForPush = newComplaint.dealerId || 'main';
+        const relevantUsers = await pocketbaseService.getUsers(tenantIdForPush);
+        const tokens = relevantUsers.filter(u => u.fcmToken).map(u => u.fcmToken) as string[];
+        if (tokens.length > 0) {
+          await sendPushNotification(
+            tokens, 
+            'New Complaint', 
+            `${newComplaint.customerName} (${newComplaint.area})`
+          );
+        }
+      } catch (err) {
+        console.warn("Could not send push notification:", err);
+      }
       if (!silent) toast.success('Complaint submitted and verified successfully!');
       
       // Update local cache manually (with duplicates prevention)
@@ -1824,6 +1884,22 @@ export default function App() {
       } : c));
 
       await pocketbaseService.updateComplaintStatus(id, status, customerName, user.fullName || user.username, user.uid, remarks, reviews);
+
+      // Push Notification for status update
+      try {
+        const tenantIdForPush = complaint?.dealerId || 'main';
+        const relevantUsers = await pocketbaseService.getUsers(tenantIdForPush);
+        const tokens = relevantUsers.filter(u => u.fcmToken).map(u => u.fcmToken) as string[];
+        if (tokens.length > 0) {
+          await sendPushNotification(
+            tokens, 
+            'Complaint Status Updated', 
+            `${customerName}'s complaint is now ${status}`
+          );
+        }
+      } catch (err) {
+        console.warn("Could not send push notification for status update:", err);
+      }
       toast.success(`Status updated to ${status}`);
 
       // Auto-sync for Operational Logs (History)

@@ -54,3 +54,21 @@ export async function sendMessage(phone: string, message: string) {
   }
   return data;
 }
+
+export async function sendPushNotification(tokens: string[], title: string, body: string, data?: any) {
+  try {
+    const res = await fetch(`${API_URL}/send-push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokens, title, body, data })
+    });
+    if (!res.ok) {
+      console.warn('Push notification failed with status', res.status);
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    console.warn('Network error sending push notification:', err);
+    return null;
+  }
+}

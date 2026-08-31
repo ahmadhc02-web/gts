@@ -45,6 +45,7 @@ export interface Complaint {
 }
 
 export interface UserProfile {
+  fcmToken?: string;
   uid: string;
   username: string;
   password?: string; // Added for simplified demo auth

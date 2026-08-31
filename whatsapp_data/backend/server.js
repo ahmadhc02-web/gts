@@ -4,6 +4,16 @@ const cors = require('cors');
 const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, logoutBaileys, registerMessageLogCallback } = require('./baileysClient');
 const { createClient } = require('@supabase/supabase-js');
 
+
+const admin = require("firebase-admin");
+let firebaseApp = null;
+try {
+  const serviceAccount = require("./firebase-service-account.json");
+  firebaseApp = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+  console.log("[Firebase] Admin initialized successfully");
+} catch (e) {
+  console.warn("[Firebase] Failed to initialize (firebase-service-account.json might be missing):", e.message);
+}
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -56,6 +66,40 @@ app.get('/qr', async (req, res) => {
 app.post('/disconnect', async (req, res) => {
   await logoutBaileys();
   res.json({ success: true });
+});
+
+
+app.post('/send-push', async (req, res) => {
+  try {
+    const { tokens, title, body, data } = req.body;
+    if (!firebaseApp) {
+      return res.status(503).json({ success: false, error: 'Firebase not configured on server' });
+    }
+    if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
+      return res.status(400).json({ success: false, error: 'Missing or invalid tokens' });
+    }
+    if (!title || !body) {
+      return res.status(400).json({ success: false, error: 'Missing title or body' });
+    }
+
+    const messagePayload = {
+      notification: { title, body },
+      data: data || {},
+      tokens: tokens
+    };
+
+    const response = await admin.messaging().sendEachForMulticast(messagePayload);
+    
+    res.json({
+      success: true,
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      responses: response.responses.map(r => ({ success: r.success, error: r.error ? r.error.message : null }))
+    });
+  } catch (err) {
+    console.error('Failed to send push notifications:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/send-message', async (req, res) => {
