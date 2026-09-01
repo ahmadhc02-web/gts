@@ -1609,7 +1609,6 @@ export default function EntrySheet({
           submittedLabel: s.submittedLabel || 'SUBMITTED',
           footnoteLeft: s.footnoteLeft || 'Enterprise Ledger Dispatch System',
           footnoteRight: s.footnoteRight || 'GENv2.5 // A4 PRINTABLE',
-          author: currentUser?.fullName || currentUser?.username || 'admin',
           updatedAt: Date.now()
         };
 
@@ -2017,6 +2016,7 @@ export default function EntrySheet({
       // 4. Update currently loaded sheet references in editor with updated rows
       const lastSavedId = currentLoadedId || currentSyncSheets[activeSheetIdx]?.id;
       if (lastSavedId) {
+        lastLoadedSheetIdRef.current = lastSavedId;
         const targetFolder = openedFolderId || sheetFolderMap[lastSavedId] || 'all';
         const targetPath = `${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${targetFolder}/sheet/${lastSavedId}`;
         if (location.pathname !== targetPath) {
@@ -2044,10 +2044,18 @@ export default function EntrySheet({
       const activeSavedPayload = sheetPayloads[activeSheetIdx];
       if (activeSavedPayload) {
         setTable1Rows(activeSavedPayload.table1Rows);
+        setTable2Rows(activeSavedPayload.table2Rows);
       }
 
-      // Update originalActiveRows to the current saved rows
-      const activeRowsNow = table1Rows.filter(r => (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status);
+      // Update originalActiveRows to all saved rows across all sheets/pages in current session
+      const activeRowsNow: any[] = [];
+      sheetPayloads.forEach(sp => {
+        (Array.isArray(sp.table1Rows) ? sp.table1Rows : []).forEach((r: any) => {
+          if ((r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status) {
+            activeRowsNow.push(r);
+          }
+        });
+      });
       setOriginalActiveRows(activeRowsNow.map(r => ({
         name: (r.name || '').trim(),
         amount: Number(r.amount) || 0,

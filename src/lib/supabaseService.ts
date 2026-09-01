@@ -248,6 +248,13 @@ export function toDb(table: string, obj: any): any {
     }
   }
 
+  const validDbKeys = new Set(Object.values(tableMapping));
+  for (const [key, val] of Object.entries(obj)) {
+    if (validDbKeys.has(key) && result[key] === undefined && val !== undefined) {
+      result[key] = val;
+    }
+  }
+
   if (table === 'chat_messages' && obj.seenBy) {
     if (typeof obj.seenBy === 'object' && !Array.isArray(obj.seenBy)) {
       result['seen_by'] = Object.keys(obj.seenBy);
@@ -287,15 +294,6 @@ export function toDb(table: string, obj: any): any {
       dashboardStats: obj.dashboardStats || [],
       homeSections: obj.homeSections || []
     };
-  } else {
-    for (const [key, val] of Object.entries(obj)) {
-      const dbKey = tableMapping[key];
-      if (!dbKey) {
-        if (key !== 'reviews') {
-          result[key] = val;
-        }
-      }
-    }
   }
   return result;
 }
