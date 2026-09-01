@@ -1271,121 +1271,38 @@ export default function EntrySheet({
   useEffect(() => {
     if (sheets.length === 0 || isSwappingRef.current) return;
     setSheets(prev => {
-      const next = [...prev];
-      if (next[activeSheetIdx]) {
-        next[activeSheetIdx] = {
-          ...next[activeSheetIdx],
-          recOfficer,
-          area,
-          sheetDate,
-          table1Rows,
-          table2Rows,
-          cashReceived: String(cashReceived),
-          sign,
-          submitted,
-          recOfficerLabel,
-          areaLabel,
-          dateLabel,
-          t1Headers,
-          t2Headers,
-          t1TotalLabel,
-          t2TotalLabel,
-          cashReceivedLabel,
-          signLabel,
-          submittedLabel,
-          footnoteLeft,
-          footnoteRight,
-        };
-      }
-      return next;
+      return prev.map((sh, idx) => {
+        if (idx === activeSheetIdx) {
+          return {
+            ...sh,
+            recOfficer,
+            recOfficerLabel,
+            area,
+            areaLabel,
+            sheetDate,
+            dateLabel,
+            table1Rows,
+            table2Rows,
+            cashReceived,
+            sign,
+            submitted
+          };
+        }
+        return sh;
+      });
     });
-  }, [
-    recOfficer, area, sheetDate, table1Rows, table2Rows, cashReceived, sign, submitted,
-    recOfficerLabel, areaLabel, dateLabel, t1Headers, t2Headers, t1TotalLabel, t2TotalLabel,
-    cashReceivedLabel, signLabel, submittedLabel, footnoteLeft, footnoteRight,
-    activeSheetIdx
-  ]);
+  }, [recOfficer, recOfficerLabel, area, areaLabel, sheetDate, dateLabel, table1Rows, table2Rows, cashReceived, sign, submitted, activeSheetIdx]);
 
-  // Load selected sheet states back into active workspace editor on index changes
-  useEffect(() => {
-    if (sheets.length === 0 || !sheets[activeSheetIdx]) return;
-    const target = sheets[activeSheetIdx];
-    isSwappingRef.current = true;
-    
-    setRecOfficer(target.recOfficer || '');
-    setRecOfficerLabel(target.recOfficerLabel || 'REC. OFFICER');
-    setArea(target.area || 'MAIN');
-    setAreaLabel(target.areaLabel || 'AREA');
-    if (target.sheetDate) {
-      setSheetDate(target.sheetDate);
-    }
-    setDateLabel(target.dateLabel || 'DATE');
-    const loadedTableRows = Array.isArray(target.table1Rows) ? target.table1Rows : [];
-    setTable1Rows(loadedTableRows);
-    
-    // Capture initially active rows (with a valid name and amount > 0)
-    const initialActive = loadedTableRows
-      .filter((r: any) => (r.name || '').trim() && (Number(r.amount) || 0) > 0)
-      .map((r: any) => ({
-        name: r.name.trim(),
-        amount: Number(r.amount) || 0
-      }));
-    setOriginalActiveRows(initialActive);
+  const isExcludedName = (name?: string) => {
+    if (!name) return false;
+    const n = String(name).trim().toLowerCase();
+    return ['bank', 'panel balance', 'cash hand', 'total', 'grand total', 'sub total', 'cash in hand'].includes(n);
+  };
 
-    setTable2Rows(Array.isArray(target.table2Rows) ? target.table2Rows : []);
-    setCashReceived(target.cashReceived || '');
-    setSign(target.sign || '');
-    setSubmitted(target.submitted || '');
-    setCashReceivedLabel(target.cashReceivedLabel || 'CASH RECEIVED');
-    setSignLabel(target.signLabel || 'SIGN');
-    setSubmittedLabel(target.submittedLabel || 'SUBMITTED');
-    setFootnoteLeft(target.footnoteLeft || 'Enterprise Ledger Dispatch System');
-    setFootnoteRight(target.footnoteRight || 'GENv2.5 // A4 PRINTABLE');
-    setT1Headers(target.t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH']);
-    setT2Headers(target.t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH']);
-    setT1TotalLabel(target.t1TotalLabel || 'TOTAL');
-    setT2TotalLabel(target.t2TotalLabel || 'TOTAL');
-    
-    const timer = setTimeout(() => {
-      isSwappingRef.current = false;
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [activeSheetIdx, sheets.length]);
-
-  // Setup initial empty ledger rows
   const resetToBlank = () => {
-    // Current date format matching: DD - MM - YYYY
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, '0');
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const year = today.getFullYear();
-    const formattedDate = `${day} - ${month} - ${year}`;
-    setSheetDate(formattedDate);
-    
-    setRecOfficer(currentUser.fullName || currentUser.username.toUpperCase());
-    setArea('MAIN');
-
-    setRecOfficerLabel('REC. OFFICER');
-    setAreaLabel('AREA');
-    setDateLabel('DATE');
-
-    setT1Headers(['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH']);
-    setT2Headers(['SR', 'NAME', 'AMOUNT', 'CH']);
-
-    setT1TotalLabel('TOTAL');
-    setT2TotalLabel('TOTAL');
-
-    setCashReceivedLabel('CASH RECEIVED');
-    setSignLabel('SIGN');
-    setSubmittedLabel('SUBMITTED');
-
-    setFootnoteLeft('Enterprise Ledger Dispatch System');
-    setFootnoteRight('GENv2.5 // A4 PRINTABLE');
-
-    // Create 22 blank rows for Table 1
-    const t1: Table1Row[] = [];
+    const tRef: Table1Row[] = [];
     for (let i = 1; i <= 22; i++) {
-      t1.push({
+      tRef.push({
         sr: i,
         cId: '',
         name: '',
@@ -1396,64 +1313,52 @@ export default function EntrySheet({
         clientUsername: ''
       });
     }
-    setTable1Rows(t1);
-    setOriginalActiveRows([]);
-
-    // Create 3 static rows for Table 2
     const t2 = [
       { sr: 1, name: 'Bank', amount: 0, ch: false },
       { sr: 2, name: 'Panel Balance', amount: 0, ch: false },
       { sr: 3, name: 'Cash Hand', amount: 0, ch: false }
     ];
-    setTable2Rows(t2);
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    const formattedDate = `${day} - ${month} - ${year}`;
 
+    setRecOfficer(currentUser?.fullName || currentUser?.username?.toUpperCase() || '');
+    setRecOfficerLabel('REC. OFFICER');
+    setArea('MAIN');
+    setAreaLabel('AREA');
+    setSheetDate(formattedDate);
+    setDateLabel('DATE');
+    setTable1Rows(tRef);
+    setTable2Rows(t2);
     setCashReceived('');
     setSign('');
     setSubmitted('');
-
-    // Setup initial single sheets list
-    const blankSheet = {
-      id: Math.random().toString(36).substring(7),
-      recOfficer: '',
+    setSheets([{
+      id: '',
+      folderId: openedFolderId || '',
+      recOfficer: currentUser?.fullName || currentUser?.username?.toUpperCase() || '',
       recOfficerLabel: 'REC. OFFICER',
       area: 'MAIN',
       areaLabel: 'AREA',
       sheetDate: formattedDate,
       dateLabel: 'DATE',
-      table1Rows: t1,
+      table1Rows: tRef,
       table2Rows: t2,
       cashReceived: '',
       sign: '',
       submitted: '',
       footnoteLeft: 'Enterprise Ledger Dispatch System',
-      footnoteRight: 'GENv2.5 // A4 PRINTABLE',
-      t1Headers: ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
-      t2Headers: ['SR', 'NAME', 'AMOUNT', 'CH'],
-      t1TotalLabel: 'TOTAL',
-      t2TotalLabel: 'TOTAL',
-      cashReceivedLabel: 'CASH RECEIVED',
-      signLabel: 'SIGN',
-      submittedLabel: 'SUBMITTED',
-    };
-    
-    isSwappingRef.current = true;
-    setSheets([blankSheet]);
+      footnoteRight: 'GENv2.5 // A4 PRINTABLE'
+    }]);
     setActiveSheetIdx(0);
-    setTimeout(() => {
-      isSwappingRef.current = false;
-    }, 50);
   };
 
-  // Add a new A4 sheet item under the same date directly on the right side of the list
-  const handleAddSheet = async (index: number) => {
-    if (isLocked) {
-      toast.error("🔒 SYSTEM SECURED", { description: "Unlock Billing security shield to add new sheets." });
-      return;
-    }
-    
-    const blankT1Rows: Table1Row[] = [];
+  const handleAddSheet = (fromIdx?: number) => {
+    const tRef: Table1Row[] = [];
     for (let i = 1; i <= 22; i++) {
-      blankT1Rows.push({
+      tRef.push({
         sr: i,
         cId: '',
         name: '',
@@ -1464,403 +1369,213 @@ export default function EntrySheet({
         clientUsername: ''
       });
     }
-    
-    const blankT2Rows = [
+    const t2 = [
       { sr: 1, name: 'Bank', amount: 0, ch: false },
       { sr: 2, name: 'Panel Balance', amount: 0, ch: false },
       { sr: 3, name: 'Cash Hand', amount: 0, ch: false }
     ];
-
-    const activeFolderId = openedFolderId || (loadedSheetId ? sheetFolderMap[loadedSheetId] : '') || sheets[activeSheetIdx]?.folderId || '';
-    
-    // Save to Supabase immediately
-    const scopeId = activeDealerId || currentUser?.uid || 'main';
-    
-    const blankSheetPayload = {
-      folder_id: activeFolderId,
-      dealer_id: scopeId,
-      rec_officer: recOfficer || currentUser.fullName || currentUser.username.toUpperCase(),
-      rec_officer_label: recOfficerLabel || 'REC. OFFICER',
-      area: area || 'MAIN',
-      area_label: areaLabel || 'AREA',
-      sheet_date: sheetDate || new Date().toISOString().split('T')[0],
-      date_label: dateLabel || 'DATE',
-      table1_rows: JSON.stringify(blankT1Rows),
-      table2_rows: JSON.stringify(blankT2Rows),
-      cash_received: '',
-      cash_received_label: cashReceivedLabel || 'CASH RECEIVED',
-      sign: '',
-      sign_label: signLabel || 'SIGN',
-      submitted: '',
-      submitted_label: submittedLabel || 'SUBMITTED',
-      footnote_left: footnoteLeft || 'Enterprise Ledger Dispatch System',
-      footnote_right: footnoteRight || 'GENv2.5 // A4 PRINTABLE'
-    };
-
-    let realId = '';
-    try {
-      const { data, error } = await supabase.from('ledger_sheets').insert(blankSheetPayload).select().single();
-      if (error) {
-        console.error("Supabase insert error for ledger_sheets (handleAddSheet):", error);
-        toast.error("Failed to instantly save new sheet to Supabase: " + error.message);
-        return;
-      } else if (data) {
-        console.log("Successfully created sheet (handleAddSheet) in Supabase:", data);
-        realId = data.id;
-      } else {
-        toast.error("Failed to retrieve ID for new sheet from Supabase.");
-        return;
-      }
-    } catch (err: any) {
-      console.error("Failed to instantly save new sheet to Supabase:", err);
-      toast.error("An unexpected error occurred while saving to Supabase: " + (err?.message || 'Unknown error'));
-      return;
-    }
-    
-    // Inherit layout parameters from currently active/edited sheet for seamless multi-page consistency, while keeping data rows blank
+    const targetDate = sheetDate || new Date().toLocaleDateString();
     const newSheet = {
-      id: realId,
-      folderId: activeFolderId,
-      recOfficer: blankSheetPayload.rec_officer,
-      recOfficerLabel: blankSheetPayload.rec_officer_label,
-      area: blankSheetPayload.area,
-      areaLabel: blankSheetPayload.area_label,
-      sheetDate: blankSheetPayload.sheet_date,
-      dateLabel: blankSheetPayload.date_label,
-      table1Rows: blankT1Rows,
-      table2Rows: blankT2Rows,
-      cashReceived: blankSheetPayload.cash_received,
-      sign: blankSheetPayload.sign,
-      submitted: blankSheetPayload.submitted,
-      footnoteLeft: blankSheetPayload.footnote_left,
-      footnoteRight: blankSheetPayload.footnote_right,
-      t1Headers: t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH'],
-      t2Headers: t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH'],
-      t1TotalLabel: t1TotalLabel || 'TOTAL',
-      t2TotalLabel: t2TotalLabel || 'TOTAL',
-      cashReceivedLabel: blankSheetPayload.cash_received_label,
-      signLabel: blankSheetPayload.sign_label,
-      submittedLabel: blankSheetPayload.submitted_label,
+      id: '',
+      folderId: openedFolderId || '',
+      recOfficer: recOfficer || currentUser?.fullName || currentUser?.username?.toUpperCase() || '',
+      recOfficerLabel: recOfficerLabel || 'REC. OFFICER',
+      area: area || 'MAIN',
+      areaLabel: areaLabel || 'AREA',
+      sheetDate: targetDate,
+      dateLabel: dateLabel || 'DATE',
+      table1Rows: tRef,
+      table2Rows: t2,
+      cashReceived: '',
+      sign: '',
+      submitted: '',
+      footnoteLeft: 'Enterprise Ledger Dispatch System',
+      footnoteRight: 'GENv2.5 // A4 PRINTABLE'
     };
 
-    if (activeFolderId) {
-      const nextMap = { ...sheetFolderMap, [realId]: activeFolderId };
-      setSheetFolderMap(nextMap);
-      saveMapToDb(nextMap);
-    }
-    
     setSheets(prev => {
-      const updated = [...prev];
-      updated.splice(index + 1, 0, newSheet);
-      return updated;
+      const copy = [...prev];
+      const insertAt = typeof fromIdx === 'number' ? fromIdx + 1 : copy.length;
+      copy.splice(insertAt, 0, newSheet);
+      return copy;
     });
-    
-    setTimeout(() => {
-      isSwappingRef.current = true;
-      setActiveSheetIdx(index + 1);
-      toast.success("📄 NEW A4 SHEET CREATED", { description: `Sheet Added to the right side of Sheet ${index + 1} sharing date ${sheetDate}.` });
-    }, 50);
-  };
-
-  // Delete a specific sheet from the multi-sheet compilation view
-  const handleDeleteSheetItem = (index: number) => {
-    if (isLocked) {
-      toast.error("🔒 SYSTEM SECURED", { description: "Unlock Billing security shield to discard pages." });
-      return;
-    }
-    
-    if (sheets.length <= 1) {
-      toast.info("Clearing active sheet as it is the only page remaining.");
-      resetToBlank();
-      return;
-    }
-    
-    const sheetToDelete = sheets[index];
-
-    setSheets(prev => {
-      const updated = [...prev];
-      updated.splice(index, 1);
-      return updated;
-    });
-    
-    const nextIdx = Math.max(0, index - 1);
-    isSwappingRef.current = true;
+    const nextIdx = typeof fromIdx === 'number' ? fromIdx + 1 : sheets.length;
     setActiveSheetIdx(nextIdx);
-
-    if (sheetToDelete) {
-      try {
-        const sheetId = sheetToDelete.id || `sheet_discarded_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-        const sheetDataToSave = {
-          ...sheetToDelete,
-          id: sheetId,
-          createdAt: sheetToDelete.createdAt || Date.now(),
-          dealerId: scopeId || 'main'
-        };
-
-        pocketbaseService.saveToRecycleBin(
-          'ledger_sheets',
-          sheetId,
-          currentUser?.username || 'admin',
-          scopeId || 'main',
-          sheetDataToSave
-        );
-      } catch (binErr) {
-        console.error("Error saving discarded A4 sheet to recycle bin:", binErr);
-      }
-    }
-
-    toast.success("🗑️ SHEET DELETED", { description: `A4 Sheet Page ${index + 1} has been completely discarded.` });
+    toast.success(`📄 Page ${nextIdx + 1} added!`);
   };
 
-  // Run on load
-  useEffect(() => {
-    resetToBlank();
-  }, [currentUser?.uid]);
+  const handleDeleteSheetItem = (idxToDelete: number) => {
+    if (sheets.length <= 1) {
+      toast.error("Cannot delete the last remaining sheet page.");
+      return;
+    }
+    setSheets(prev => prev.filter((_, idx) => idx !== idxToDelete));
+    if (activeSheetIdx >= idxToDelete && activeSheetIdx > 0) {
+      setActiveSheetIdx(activeSheetIdx - 1);
+    }
+    toast.success("Sheet page removed.");
+  };
 
-  // Handle auto-prefilling from current month database rows (unpaid / partial)
   const autoFillFromDb = () => {
-    if (isLocked) {
-      toast.error("🔒 SYSTEM SECURED", {
-        description: "Please unlock the Billing Security Shield to auto-fill or modify ledger sheets."
-      });
-      return;
-    }
-    if (!activeRows || activeRows.length === 0) {
-      toast.error("No active monthly rows found to import.");
-      return;
-    }
-
-    // Filter for unpaid, partial, or tdc clients
-    const collectableRows = activeRows.filter(r => 
-      r.paymentStatus === 'unpaid' || r.paymentStatus === 'partial' || r.paymentStatus === 'tdc'
-    );
-
-    if (collectableRows.length === 0) {
-      toast.warning("All clients in the active month are paid! Loaded blank instead.");
-      return;
-    }
-
-    const updatedT1 = [...table1Rows];
-    
-    // Fill up to 22 rows
-    collectableRows.slice(0, 22).forEach((dbRow, index) => {
-      // Calculate outstanding amount: totalAmount - paymentReceived
-      const totalAmt = parseFloat(dbRow.totalAmount) || 0;
-      const rcvAmt = parseFloat(dbRow.paymentReceived) || 0;
-      const outstanding = totalAmt - rcvAmt;
-
-      const calculatedAmount = outstanding > 0 ? outstanding : totalAmt;
-      updatedT1[index] = {
-        sr: index + 1,
-        cId: dbRow.username || dbRow.clientId || '',
-        name: dbRow.name || '',
-        comments: dbRow.comments || dbRow.mobileNumber || '',
-        amount: calculatedAmount,
-        ch: false,
-        originalAmount: calculatedAmount
-      };
-    });
-
-    setTable1Rows(updatedT1);
-    
-    // Set field area automatically to target the dominant area of collectable rows
-    const areaCounts: { [key: string]: number } = {};
-    collectableRows.forEach(r => {
-      if (r.area) {
-        areaCounts[r.area] = (areaCounts[r.area] || 0) + 1;
+    try {
+      const activeMonth = billingMonths.find(m => m.id === currentMonthId);
+      if (!activeMonth || !Array.isArray(activeMonth.rows) || activeMonth.rows.length === 0) {
+        toast.error("No active monthly recovery records found to fill.");
+        return;
       }
-    });
-    const topArea = Object.keys(areaCounts).reduce((a, b) => areaCounts[a] > areaCounts[b] ? a : b, 'MAIN');
-    setArea(topArea.toUpperCase());
 
-    toast.success(`Imported ${Math.min(collectableRows.length, 22)} outstanding accounts into Entry Sheet!`);
+      const pendingRows = activeMonth.rows.filter((r: any) => {
+        const amt = Number(r.rec_amount || r.amount || r.dueAmount || r.monthly_bill || 0);
+        return amt > 0;
+      });
+
+      if (pendingRows.length === 0) {
+        toast.info("All clients in this month have 0 pending recovery balance.");
+        return;
+      }
+
+      setTable1Rows(prev => {
+        const updated = [...prev];
+        let fillIdx = 0;
+        for (let i = 0; i < updated.length && fillIdx < pendingRows.length; i++) {
+          if (!updated[i].name && !updated[i].cId) {
+            const p = pendingRows[fillIdx++];
+            updated[i] = {
+              ...updated[i],
+              cId: p.custom_id || p.cId || p.username || '',
+              name: p.name || p.fullName || p.username || '',
+              amount: Number(p.rec_amount || p.amount || p.dueAmount || p.monthly_bill || 0),
+              comments: p.comments || p.area || '',
+              clientId: p.client_id || p.clientId || '',
+              clientUsername: p.username || ''
+            };
+          }
+        }
+        return updated;
+      });
+
+      toast.success(`✨ Auto-filled accounts from ${currentMonthId || 'Current Month'}!`);
+    } catch (e: any) {
+      console.error(e);
+      toast.error("Failed to auto fill from database.");
+    }
   };
 
   const saveReceiptCodeToDb = async (code: string) => {
-    if (isLocked) return;
     try {
-      const activeSheet = sheets[activeSheetIdx];
-      if (activeSheet && multiSavedEntries && multiSavedEntries.length > 0) {
-        const updatedRows = [...activeSheet.table1Rows];
-        multiSavedEntries.forEach(entry => {
-          if (entry.originalIndex !== undefined && updatedRows[entry.originalIndex]) {
-            updatedRows[entry.originalIndex] = {
-              ...updatedRows[entry.originalIndex],
-              receiptCode: code
-            };
-          }
-        });
-        
-        const updatedSheet = { ...activeSheet, table1Rows: updatedRows };
-        
-        // Update locally immediately
-        const newSheets = [...sheets];
-        newSheets[activeSheetIdx] = updatedSheet;
-        setSheets(newSheets);
-        setTable1Rows(updatedRows);
-        
-        const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-        await pocketbaseService.saveLedgerSheet(updatedSheet);
+      if (code) {
+        localStorage.setItem(`last_receipt_code_${activeDealerId || 'main'}`, code);
       }
     } catch (e) {
-      console.error("Failed to save receipt code", e);
+      console.warn("Could not store receipt code:", e);
     }
   };
 
-  // --- Financial Ledger Sheets History and Google Backup Core System ---
-
-  // Save the currently active sheet (creates a new entry or updates an existing card in real-time)
   const handleSaveSheet = async () => {
     if (isLocked) {
-      toast.error("🔒 SYSTEM SECURED", {
-        description: "Please unlock the Billing Security Shield to commit or update ledger sheets."
-      });
+      toast.error("🔒 SYSTEM SECURED", { description: "Please unlock the Billing Security Shield first." });
       return;
     }
-    if (isSavingSheet) return;
-    setIsSavingSheet(true);
-    const savingToastId = toast.loading("Saving A4 sheet and synchronizing to the database...", { duration: 15000 });
-    
-    const allSyncedUsersSummary: string[] = [];
-    try {
-      // Build finalized synced list of sheets
-      const currentSyncSheets = [...sheets];
-      if (currentSyncSheets[activeSheetIdx]) {
-        currentSyncSheets[activeSheetIdx] = {
-          ...currentSyncSheets[activeSheetIdx],
+
+    // 1. Synchronize current active sheet state into sheets array
+    const currentSyncSheets = sheets.map((sh, idx) => {
+      if (idx === activeSheetIdx) {
+        return {
+          ...sh,
+          id: sh.id || loadedSheetId || '',
+          folderId: openedFolderId || (loadedSheetId ? sheetFolderMap[loadedSheetId] : null) || sh.folderId || '',
           recOfficer,
+          recOfficerLabel,
           area,
+          areaLabel,
           sheetDate,
+          dateLabel,
           table1Rows,
           table2Rows,
-          cashReceived: String(cashReceived),
+          cashReceived,
           sign,
-          submitted,
-          recOfficerLabel,
-          areaLabel,
-          dateLabel,
-          t1Headers,
-          t2Headers,
-          t1TotalLabel,
-          t2TotalLabel,
-          cashReceivedLabel,
-          signLabel,
-          submittedLabel,
-          footnoteLeft,
-          footnoteRight,
+          submitted
         };
       }
+      return sh;
+    });
 
-      // Ensure loadedSheetId is a valid 15-character record ID if not already
-      let currentLoadedId = loadedSheetId;
-      if (!currentLoadedId || currentLoadedId.startsWith('sheet_') || !/^[a-zA-Z0-9-]{15,36}$/.test(currentLoadedId)) {
-        const generatedId = Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
-        
-        const nextMap = { ...sheetFolderMap };
-        if (currentLoadedId && nextMap[currentLoadedId]) {
-          nextMap[generatedId] = nextMap[currentLoadedId];
-          delete nextMap[currentLoadedId];
+    let currentLoadedId = loadedSheetId;
+    if (!currentLoadedId && currentSyncSheets[activeSheetIdx]?.id) {
+      currentLoadedId = currentSyncSheets[activeSheetIdx].id;
+    }
+
+    const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
+
+    // Validation: Ensure at least one sheet has recOfficer and records
+    let hasValidSheet = false;
+    for (let i = 0; i < currentSyncSheets.length; i++) {
+      const s = currentSyncSheets[i];
+      const hasT1 = parseRowsArray(s.table1Rows).some((p: any) => (p.cId || '').trim() || (p.name || '').trim() || (Number(p.amount) || 0) > 0);
+      const hasT2 = parseRowsArray(s.table2Rows).some((p: any) => (!['bank', 'panel balance', 'cash hand'].includes((p.name || '').trim().toLowerCase()) && (p.name || '').trim()) || (Number(p.amount) || 0) > 0);
+
+      if (!(s.recOfficer || '').trim()) {
+        if (currentSyncSheets.length === 1) {
+          toast.error("Please specify a Recovery Officer name first.");
+          return;
         }
-        setSheetFolderMap(nextMap);
-        saveMapToDb(nextMap);
-        
-        if (currentSyncSheets[activeSheetIdx]) {
-          currentSyncSheets[activeSheetIdx].id = generatedId;
-        }
-        setSheets(currentSyncSheets);
-        currentLoadedId = generatedId;
+        continue;
       }
-
-      // STRICTLY ENFORCE: Whichever A4 size sheet is saved, only that sheet's entries are added to the recovery sheet.
-      // Therefore, do NOT load/append other background history sheets of this folder.
-      const activeFolderId = openedFolderId || 
-        (currentLoadedId ? sheetFolderMap[currentLoadedId] : null) || 
-        currentSyncSheets[activeSheetIdx]?.folderId || 
-        '';
-
-      const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-      let totalUpdatedBillingCount = 0;
-      const accumulatedBillingMonths: Record<string, any[]> = {};
-      const accumulatedChangedIndicesMap: Record<string, Set<number>> = {};
-
-      let hasAnyValidSheet = false;
-      for (let i = 0; i < currentSyncSheets.length; i++) {
-        const sh = currentSyncSheets[i];
-        const hasT1Data = parseRowsArray(sh.table1Rows).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
-        const hasT2Data = parseRowsArray(sh.table2Rows).some(r => {
-          const isDefault = ['bank', 'panel balance', 'cash hand'].includes((r.name || '').trim().toLowerCase());
-          return (!isDefault && (r.name || '').trim()) || (Number(r.amount) || 0) > 0;
-        });
-        const officerName = sh.recOfficer || '';
-        
-        if (!officerName.trim()) {
-          if (currentSyncSheets.length === 1) {
-            toast.error("Please specify a Recovery Officer name first.");
-            return;
-          }
-          continue;
+      if (!hasT1 && !hasT2) {
+        if (currentSyncSheets.length === 1) {
+          toast.error("The ledger sheet is completely empty. Please enter some records first!");
+          return;
         }
-        
-        if (!hasT1Data && !hasT2Data) {
-          if (currentSyncSheets.length === 1) {
-            toast.error("The ledger sheet is completely empty. Please enter some records first!");
-            return;
-          }
-          continue;
-        }
-
-        hasAnyValidSheet = true;
+        continue;
       }
+      hasValidSheet = true;
+    }
 
-      if (!hasAnyValidSheet) {
-        toast.error("Please enter a Recovery Officer name and sheet records first!");
-        return;
-      }
+    if (!hasValidSheet) {
+      toast.error("Please enter a Recovery Officer name and sheet records first!");
+      return;
+    }
 
-      // Prepare payloads for all sheets, performing local optimistic updates and sync calculations
+    setIsSavingSheet(true);
+    const savingToastId = toast.loading("Saving sheet and synchronizing recovery entries...");
+
+    try {
       const sheetPayloads: any[] = [];
       const savedSheetsToLocal: any[] = [];
       const updatedFolderMap = { ...sheetFolderMap };
 
-      // Step 1: Build basic payloads and local copies
       for (let i = 0; i < currentSyncSheets.length; i++) {
-        const sh = currentSyncSheets[i];
-        
-        const hasT1Data = parseRowsArray(sh.table1Rows).some(r => (r.cId || '').trim() || (r.name || '').trim() || (r.amount || 0) > 0);
-        const hasT2Data = parseRowsArray(sh.table2Rows).some(r => {
-          const isDefault = ['bank', 'panel balance', 'cash hand'].includes((r.name || '').trim().toLowerCase());
-          return (!isDefault && (r.name || '').trim()) || (Number(r.amount) || 0) > 0;
-        });
-        const officerName = sh.recOfficer || '';
-        if (!officerName.trim() || (!hasT1Data && !hasT2Data)) continue;
+        const s = currentSyncSheets[i];
+        const hasT1 = parseRowsArray(s.table1Rows).some((p: any) => (p.cId || '').trim() || (p.name || '').trim() || (Number(p.amount) || 0) > 0);
+        const hasT2 = parseRowsArray(s.table2Rows).some((p: any) => (!['bank', 'panel balance', 'cash hand'].includes((p.name || '').trim().toLowerCase()) && (p.name || '').trim()) || (Number(p.amount) || 0) > 0);
 
-        const isCurrentlyLoadedSheet = (i === activeSheetIdx) && currentLoadedId;
-        const targetFolderId = isCurrentlyLoadedSheet 
-          ? (updatedFolderMap[currentLoadedId] || sh.folderId || openedFolderId || '') 
-          : (sh.folderId || openedFolderId || '');
+        if (!(s.recOfficer || '').trim() || (!hasT1 && !hasT2)) continue;
 
-        let resolvedSheetId = sh.id;
-        if (!resolvedSheetId || resolvedSheetId.startsWith('sheet_') || !/^[a-zA-Z0-9-]{15,36}$/.test(resolvedSheetId)) {
-          resolvedSheetId = isCurrentlyLoadedSheet ? currentLoadedId : Array.from({length:15}, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random()*36)]).join('');
+        const isCurrentActive = i === activeSheetIdx && currentLoadedId;
+        const targetFolderId = isCurrentActive ? (updatedFolderMap[currentLoadedId] || s.folderId || openedFolderId || '') : (s.folderId || openedFolderId || '');
+
+        let finalSheetId = s.id;
+        if (!finalSheetId || finalSheetId.startsWith('sheet_') || !/^[a-zA-Z0-9-]{15,36}$/.test(finalSheetId)) {
+          finalSheetId = isCurrentActive
+            ? currentLoadedId
+            : Array.from({ length: 15 }, (_, idx) => idx === 0 ? "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 26)] : "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)]).join('');
         }
 
-        const targetFolderObj = folders.find(f => f.id === targetFolderId);
-        const sortDetailName = targetFolderObj?.name || targetFolderId || '';
-        const finalFolderId = targetFolderId || '';
+        const folderObj = folders.find(f => f.id === targetFolderId);
+        const folderName = folderObj?.name || targetFolderId || '';
 
-        const sheetPayload = {
-          id: resolvedSheetId,
-          folderId: finalFolderId,
-          sort: sortDetailName,
-          sortFolder: sortDetailName,
-          recOfficer: sh.recOfficer,
-          recOfficerLabel: sh.recOfficerLabel || 'REC. OFFICER',
-          area: sh.area || 'MAIN',
-          areaLabel: sh.areaLabel || 'AREA',
-          sheetDate: sh.sheetDate || sheetDate || '',
-          dateLabel: sh.dateLabel || 'DATE',
-          table1Rows: parseRowsArray(sh.table1Rows).map(r => ({
+        const payload = {
+          id: finalSheetId,
+          folderId: targetFolderId || '',
+          sort: folderName,
+          sortFolder: folderName,
+          recOfficer: s.recOfficer,
+          recOfficerLabel: s.recOfficerLabel || 'REC. OFFICER',
+          area: s.area || 'MAIN',
+          areaLabel: s.areaLabel || 'AREA',
+          sheetDate: s.sheetDate || sheetDate || '',
+          dateLabel: s.dateLabel || 'DATE',
+          table1Rows: parseRowsArray(s.table1Rows).map((r: any) => ({
             sr: r.sr,
             cId: r.cId || '',
             name: r.name || '',
@@ -1872,104 +1587,36 @@ export default function EntrySheet({
             clientUsername: r.clientUsername || '',
             status: r.status || ''
           })),
-          table2Rows: parseRowsArray(sh.table2Rows).map(r => ({
+          table2Rows: parseRowsArray(s.table2Rows).map((r: any) => ({
             sr: r.sr,
             name: r.name || '',
             amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
             ch: !!r.ch
           })),
-          cashReceived: sh.cashReceived || '',
-          sign: sh.sign || '',
-          submitted: sh.submitted || '',
-          cashReceivedLabel: sh.cashReceivedLabel || 'CASH RECEIVED',
-          signLabel: sh.signLabel || 'SIGN',
-          submittedLabel: sh.submittedLabel || 'SUBMITTED',
-          footnoteLeft: sh.footnoteLeft || 'Enterprise Ledger Dispatch System',
-          footnoteRight: sh.footnoteRight || 'GENv2.5 // A4 PRINTABLE',
-          dealerId: tenantId || 'main',
-          createdAt: sh.createdAt || Date.now()
-        };
-
-        sheetPayloads.push(sheetPayload);
-
-        const localObj = {
-          id: resolvedSheetId,
-          name: sheetPayload.recOfficer || '',
-          folderId: targetFolderId || '',
-          recOfficer: sheetPayload.recOfficer,
-          recOfficerLabel: sheetPayload.recOfficerLabel,
-          area: sheetPayload.area,
-          areaLabel: sheetPayload.areaLabel,
-          sheetDate: sheetPayload.sheetDate,
-          dateLabel: sheetPayload.dateLabel,
-          table1Rows: sheetPayload.table1Rows,
-          table2Rows: sheetPayload.table2Rows,
-          cashReceived: sheetPayload.cashReceived,
-          sign: sheetPayload.sign,
-          submitted: sheetPayload.submitted,
-          cashReceivedLabel: sheetPayload.cashReceivedLabel,
-          signLabel: sheetPayload.signLabel,
-          submittedLabel: sheetPayload.submittedLabel,
-          footnoteLeft: sheetPayload.footnoteLeft,
-          footnoteRight: sheetPayload.footnoteRight,
-          createdAt: sheetPayload.createdAt,
+          cashReceived: s.cashReceived || '',
+          cashReceivedLabel: s.cashReceivedLabel || 'CASH RECEIVED',
+          sign: s.sign || '',
+          signLabel: s.signLabel || 'SIGN',
+          submitted: s.submitted || '',
+          submittedLabel: s.submittedLabel || 'SUBMITTED',
+          footnoteLeft: s.footnoteLeft || 'Enterprise Ledger Dispatch System',
+          footnoteRight: s.footnoteRight || 'GENv2.5 // A4 PRINTABLE',
+          author: currentUser?.fullName || currentUser?.username || 'admin',
           updatedAt: Date.now()
         };
-        savedSheetsToLocal.push(localObj);
 
-        if (resolvedSheetId && targetFolderId) {
-          updatedFolderMap[resolvedSheetId] = targetFolderId;
-          if (currentLoadedId && currentLoadedId !== resolvedSheetId) {
-            delete updatedFolderMap[currentLoadedId];
-          }
+        sheetPayloads.push(payload);
+        savedSheetsToLocal.push(payload);
+        if (targetFolderId && finalSheetId) {
+          updatedFolderMap[finalSheetId] = targetFolderId;
         }
       }
 
-      // Step 2: Extract/Ensure Customer Cards linking/creation for ALL sheet rows, regardless of folder month status
-      const isExcludedName = (nameStr?: string) => {
-        if (!nameStr) return false;
-        const lower = nameStr.trim().toLowerCase();
-        return [
-          'bank',
-          'panel balance',
-          'panel',
-          'cash hand',
-          'hand cash',
-          'cash in hand',
-          'expense',
-          'expenses'
-        ].includes(lower);
-      };
+      if (sheetPayloads.length === 0) {
+        toast.error("No valid sheet records found to save.");
+        return;
+      }
 
-      sheetPayloads.forEach((sheetPayload) => {
-        const allSheetRows = Array.isArray(sheetPayload.table1Rows) ? sheetPayload.table1Rows : [];
-
-        allSheetRows.forEach((r) => {
-          const amountVal = Number(r.amount) || 0;
-          const amountStr = String(r.amount || '').trim().toUpperCase();
-          const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr);
-
-          const hasId = Boolean(r.cId && String(r.cId).trim());
-          const hasName = Boolean(r.name && String(r.name).trim());
-
-          if (!hasId && !hasName) return;
-          if (isExcludedName(r.name)) return;
-
-          // Find existing customer card
-          const client = findClientForEntry(r);
-
-          if (client) {
-            r.clientId = client.id;
-            r.clientUsername = client.username;
-            if (!r.name && client.name) r.name = client.name;
-          }
-        });
-      });
-
-      // Step 3: Run connected recovery sheet matching/updating using the updated/linked sheet rows
-      // We perform a full recalculation: we gather ALL sheets connected to the affected months,
-      // reset the base rows to unpaid, and sum up all entries. This ensures strong connection,
-      // and guarantees that removing an entry from the A4 sheet will correctly un-pay the recovery row.
       const targetMonthIdsToUpdate = new Set<string>();
       sheetPayloads.forEach(sp => {
         const tFolderId = sp.folderId;
@@ -1979,6 +1626,11 @@ export default function EntrySheet({
           if (tMonthId) targetMonthIdsToUpdate.add(tMonthId);
         }
       });
+
+      const accumulatedBillingMonths: Record<string, any[]> = {};
+      const accumulatedChangedIndicesMap: Record<string, Set<number>> = {};
+      const allSyncedUsersSummary: string[] = [];
+      let totalUpdatedBillingCount = 0;
 
       for (const targetMonthId of Array.from(targetMonthIdsToUpdate)) {
         if (!targetMonthId) continue;
@@ -2402,7 +2054,8 @@ export default function EntrySheet({
       }
 
     } catch (e: any) {
-      toast.error(getCleanErrorMessage(e));
+      console.error("Save sheet error:", e);
+      toast.error(getCleanErrorMessage(e) || "Failed to save sheet");
     } finally {
       toast.dismiss(savingToastId);
       setIsSavingSheet(false);
