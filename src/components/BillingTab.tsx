@@ -1191,7 +1191,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         id={`rec_cell_${globalRowIdx}_comments`}
                                         type="text"
                                         value={rowRef.comments || ''}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={false}
                                         onClick={(e) => e.stopPropagation()}
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'comments', activeRows.length)}
@@ -1614,7 +1614,8 @@ export default function BillingTab(props: BillingTabProps) {
                                   <input
                                     type="text"
                                     value={rowRef.comments || ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={false}
+                                    onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value, true)}
                                     className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-[11px] font-sans text-black dark:text-white"
@@ -1980,7 +1981,7 @@ export default function BillingTab(props: BillingTabProps) {
                                           id={`rec_cell_${globalRowIdx}_comments`}
                                           type="text"
                                           value={rowRef.comments || ''}
-                                          disabled={!isBillingUnlocked}
+                                          disabled={false}
                                           onClick={(e) => e.stopPropagation()}
                                           onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
                                           onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'comments', activeRows.length)}
@@ -2266,7 +2267,8 @@ export default function BillingTab(props: BillingTabProps) {
                                   <input
                                     type="text"
                                     value={rowRef.comments || ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={false}
+                                    onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value, true)}
                                     className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-[11px] font-sans text-black dark:text-white"
