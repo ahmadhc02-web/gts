@@ -671,6 +671,7 @@ export default function EntrySheet({
         isSwappingRef.current = true;
         setSheets([blankSheet]);
         setActiveSheetIdx(0);
+    setOriginalActiveRows([]);
         setTimeout(() => {
           isSwappingRef.current = false;
         }, 50);
@@ -911,7 +912,7 @@ export default function EntrySheet({
   const [multiSavedEntries, setMultiSavedEntries] = useState<{ name: string; amount: number; comments?: string; originalIndex?: number }[] | null>(null);
   const [showMultiSlipConfirm, setShowMultiSlipConfirm] = useState(false);
   const [pendingActiveRows, setPendingActiveRows] = useState<{ name: string; amount: number; comments?: string; originalIndex?: number }[]>([]);
-  const [originalActiveRows, setOriginalActiveRows] = useState<{ name: string; amount: number; comments?: string }[]>([]);
+  const [originalActiveRows, setOriginalActiveRows] = useState<{ name: string; amount: number; comments?: string; cId?: string; clientId?: string; clientUsername?: string; status?: string }[]>([]);
   
   // New states for manual receipt selection
   const [showReceiptSelectionPopup, setShowReceiptSelectionPopup] = useState(false);
@@ -1494,7 +1495,16 @@ export default function EntrySheet({
           table2Rows,
           cashReceived,
           sign,
-          submitted
+          submitted,
+          footnoteLeft,
+          footnoteRight,
+          t1Headers,
+          t2Headers,
+          t1TotalLabel,
+          t2TotalLabel,
+          cashReceivedLabel,
+          signLabel,
+          submittedLabel
         };
       }
       return sh;
@@ -1513,7 +1523,6 @@ export default function EntrySheet({
       const s = currentSyncSheets[i];
       const hasT1 = parseRowsArray(s.table1Rows).some((p: any) => (p.cId || '').trim() || (p.name || '').trim() || (Number(p.amount) || 0) > 0);
       const hasT2 = parseRowsArray(s.table2Rows).some((p: any) => (!['bank', 'panel balance', 'cash hand'].includes((p.name || '').trim().toLowerCase()) && (p.name || '').trim()) || (Number(p.amount) || 0) > 0);
-
       if (!(s.recOfficer || '').trim()) {
         if (currentSyncSheets.length === 1) {
           toast.error("Please specify a Recovery Officer name first.");
@@ -1548,7 +1557,6 @@ export default function EntrySheet({
         const s = currentSyncSheets[i];
         const hasT1 = parseRowsArray(s.table1Rows).some((p: any) => (p.cId || '').trim() || (p.name || '').trim() || (Number(p.amount) || 0) > 0);
         const hasT2 = parseRowsArray(s.table2Rows).some((p: any) => (!['bank', 'panel balance', 'cash hand'].includes((p.name || '').trim().toLowerCase()) && (p.name || '').trim()) || (Number(p.amount) || 0) > 0);
-
         if (!(s.recOfficer || '').trim() || (!hasT1 && !hasT2)) continue;
 
         const isCurrentActive = i === activeSheetIdx && currentLoadedId;
@@ -1607,6 +1615,7 @@ export default function EntrySheet({
 
         sheetPayloads.push(payload);
         savedSheetsToLocal.push(payload);
+
         if (targetFolderId && finalSheetId) {
           updatedFolderMap[finalSheetId] = targetFolderId;
         }
@@ -1617,15 +1626,44 @@ export default function EntrySheet({
         return;
       }
 
+      // Link clients for all rows
+      const isExcludedName = (nameStr?: string) => {
+        if (!nameStr) return false;
+        const lower = nameStr.trim().toLowerCase();
+        return [
+          'bank', 'panel balance', 'panel', 'cash hand', 'hand cash',
+          'cash in hand', 'expense', 'expenses'
+        ].includes(lower);
+      };
+
+      sheetPayloads.forEach((sheetPayload) => {
+        const allSheetRows = Array.isArray(sheetPayload.table1Rows) ? sheetPayload.table1Rows : [];
+        allSheetRows.forEach((r: any) => {
+          const hasId = Boolean(r.cId && String(r.cId).trim());
+          const hasName = Boolean(r.name && String(r.name).trim());
+          if (!hasId && !hasName) return;
+          if (isExcludedName(r.name)) return;
+
+          const client = findClientForEntry(r);
+          if (client) {
+            r.clientId = client.id;
+            r.clientUsername = client.username;
+            if (!r.name && client.name) r.name = client.name;
+          }
+        });
+      });
+
+      // Target Months to update
       const targetMonthIdsToUpdate = new Set<string>();
       sheetPayloads.forEach(sp => {
         const tFolderId = sp.folderId;
-        if (tFolderId) {
-          const fObj = folders.find(f => f.id === tFolderId);
-          const tMonthId = (folderMonthMap[tFolderId] || fObj?.connectedMonthId) || currentMonthId;
-          if (tMonthId) targetMonthIdsToUpdate.add(tMonthId);
-        }
+        const fObj = folders.find(f => f.id === tFolderId);
+        const tMonthId = (tFolderId ? (folderMonthMap[tFolderId] || fObj?.connectedMonthId) : undefined) || currentMonthId;
+        if (tMonthId) targetMonthIdsToUpdate.add(tMonthId);
       });
+      if (targetMonthIdsToUpdate.size === 0 && currentMonthId) {
+        targetMonthIdsToUpdate.add(currentMonthId);
+      }
 
       const accumulatedBillingMonths: Record<string, any[]> = {};
       const accumulatedChangedIndicesMap: Record<string, Set<number>> = {};
@@ -1634,11 +1672,10 @@ export default function EntrySheet({
 
       for (const targetMonthId of Array.from(targetMonthIdsToUpdate)) {
         if (!targetMonthId) continue;
-        
+
         let targetMonthRows: any[] = [];
         let fetchedFresh = false;
 
-        // REQUIREMENT: ALWAYS fetch fresh from the database before recalculating to prevent silently overwriting concurrent edits
         try {
           const directMonth = await pocketbaseService.getBillingMonthDirect(targetMonthId, activeDealerId || 'main');
           if (directMonth && Array.isArray(directMonth.rows) && directMonth.rows.length > 0) {
@@ -1646,10 +1683,9 @@ export default function EntrySheet({
             fetchedFresh = true;
           }
         } catch (err) {
-          console.warn(`Direct DB fetch for target month ${targetMonthId} failed, falling back to local state:`, err);
+          console.warn(`Direct DB fetch for target month ${targetMonthId} failed:`, err);
         }
 
-        // Fallback to local state if network fails or returns empty
         if (targetMonthRows.length === 0) {
           targetMonthRows = accumulatedBillingMonths[targetMonthId] || [];
           if (targetMonthRows.length === 0) {
@@ -1657,163 +1693,196 @@ export default function EntrySheet({
             targetMonthRows = targetMonthDoc?.rows || [];
           }
         }
+        if (targetMonthRows.length === 0 && activeRows && activeRows.length > 0) {
+          targetMonthRows = activeRows;
+        }
 
         if (targetMonthRows.length === 0) {
-          console.warn(`Target month ${targetMonthId} has no rows or does not exist. Skipping sync to prevent accidental recreation or overwriting.`);
+          console.warn(`Target month ${targetMonthId} has no rows. Skipping recovery sync.`);
           continue;
         }
 
-        const localRowCount = (accumulatedBillingMonths[targetMonthId] || []).length || (billingMonths.find(m => m.id === targetMonthId)?.rows || []).length;
-        if (fetchedFresh && targetMonthRows.length !== localRowCount && localRowCount > 0) {
-          console.log(`[Sync Safety] Fresh fetch for month ${targetMonthId} returned ${targetMonthRows.length} rows, differing from local state (${localRowCount} rows). Using fresh rows.`);
-        }
-
         try {
-          // Identify all folders connected to this month
-          const monthFolderIds = new Set<string>();
-          folders.forEach(f => {
-            const tId = folderMonthMap[f.id] || f.connectedMonthId;
-            if (tId === targetMonthId) monthFolderIds.add(f.id);
-          });
-          sheetPayloads.forEach(sp => {
-            const tFolderId = sp.folderId;
-            const fObj = folders.find(f => f.id === tFolderId);
-            const tId = (tFolderId ? (folderMonthMap[tFolderId] || fObj?.connectedMonthId) : undefined) || currentMonthId;
-            if (tId === targetMonthId && tFolderId) monthFolderIds.add(tFolderId);
-          });
-
-          // Collect ALL relevant sheets (historical + currently saving payloads)
-          const allRelevantSheetsMap = new Map<string, any>();
-          ledgerHistory.forEach(sh => {
-            const fId = updatedFolderMap[sh.id] || sheetFolderMap[sh.id] || sh.folderId;
-            if (monthFolderIds.has(fId) || (openedFolderId && fId === openedFolderId)) {
-              allRelevantSheetsMap.set(sh.id, sh);
-            }
-          });
-          sheetPayloads.forEach(sp => {
-            const fId = sp.folderId || openedFolderId;
-            if (monthFolderIds.has(fId) || (openedFolderId && fId === openedFolderId)) {
-              allRelevantSheetsMap.set(sp.id, sp); // Overwrite historical with new unsaved state
-            }
-          });
-
-          // PREPARE: Keep all existing base rows intact so all clients' payments and paid statuses are fully preserved.
-          // Once an entry is recorded and saved, it will NEVER be reset to unpaid automatically.
+          // Copy all target month rows intact
           const baseRecalculatedRows = targetMonthRows.filter((br: any) => !isExcludedName(br.name)).map((row: any) => ({
-            ...row
+            ...row,
+            _originalCr: row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0),
+            cr: row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0),
+            totalAmount: parseFloat(row.baseAmount || 0) + (row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0))
           }));
 
-          let updatedCount = 0;
           if (!accumulatedChangedIndicesMap[targetMonthId]) {
             accumulatedChangedIndicesMap[targetMonthId] = new Set<number>();
           }
-          
-          const batchPaymentsMap = new Map<string, number>();
 
-          // ITERATE OVER ALL SHEETS TO SUM PAYMENTS
-          for (const sh of allRelevantSheetsMap.values()) {
-            const allSheetRows = Array.isArray(sh.table1Rows) ? sh.table1Rows : [];
-            allSheetRows.forEach((r: any) => {
+          // Helper to match a row
+          const findRowIndex = (r: any): number => {
+            const hasId = Boolean(r.cId && String(r.cId).trim());
+            const hasName = Boolean(r.name && String(r.name).trim());
+            const client = findClientForEntry(r);
+
+            let matchedIdx = -1;
+            if (r.clientId || r.clientUsername) {
+              const searchClientId = (r.clientId || '').trim().toLowerCase();
+              const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
+              matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
+                (searchClientId && br.clientId && String(br.clientId).trim().toLowerCase() === searchClientId) ||
+                (searchClientUsername && br.username && String(br.username).trim().toLowerCase() === searchClientUsername) ||
+                (searchClientUsername && br.clientId && String(br.clientId).trim().toLowerCase() === searchClientUsername) ||
+                (searchClientId && br.id && String(br.id).trim().toLowerCase() === searchClientId)
+              );
+            }
+            if (matchedIdx === -1 && hasId) {
+              const searchId = String(r.cId).trim().toLowerCase();
+              matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
+                (br.clientId && String(br.clientId).trim().toLowerCase() === searchId) ||
+                (br.username && String(br.username).trim().toLowerCase() === searchId) ||
+                (br.id && String(br.id).trim().toLowerCase() === searchId)
+              );
+            }
+            if (matchedIdx === -1 && client) {
+              const cId = (client.id || '').trim().toLowerCase();
+              const cUser = (client.username || '').trim().toLowerCase();
+              matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
+                (cId && br.clientId && String(br.clientId).trim().toLowerCase() === cId) ||
+                (cUser && br.username && String(br.username).trim().toLowerCase() === cUser) ||
+                (cId && br.id && String(br.id).trim().toLowerCase() === cId)
+              );
+            }
+            if (matchedIdx === -1 && hasName) {
+              const searchName = String(r.name).trim().toLowerCase();
+              matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
+                br.name && String(br.name).trim().toLowerCase() === searchName
+              );
+            }
+            return matchedIdx;
+          };
+
+          // 1. Check if any previously active row from THIS sheet was removed
+          const currentActiveRowsInPayload = new Set<string>();
+          sheetPayloads.forEach(sp => {
+            (Array.isArray(sp.table1Rows) ? sp.table1Rows : []).forEach((r: any) => {
+              const amt = Number(r.amount) || 0;
+              const hasValidName = Boolean(r.name && String(r.name).trim() && !isExcludedName(r.name));
+              const hasValidId = Boolean(r.cId && String(r.cId).trim());
+              if ((hasValidName || hasValidId) && (amt > 0 || r.status)) {
+                if (r.name) currentActiveRowsInPayload.add(String(r.name).trim().toLowerCase());
+                if (r.cId) currentActiveRowsInPayload.add(String(r.cId).trim().toLowerCase());
+                if (r.clientUsername) currentActiveRowsInPayload.add(String(r.clientUsername).trim().toLowerCase());
+                if (r.clientId) currentActiveRowsInPayload.add(String(r.clientId).trim().toLowerCase());
+              }
+            });
+          });
+
+          if (originalActiveRows && originalActiveRows.length > 0) {
+            originalActiveRows.forEach((orig: any) => {
+              const origName = (orig.name || '').trim().toLowerCase();
+              const origCId = (orig.cId || '').trim().toLowerCase();
+              const origUser = (orig.clientUsername || '').trim().toLowerCase();
+              const origId = (orig.clientId || '').trim().toLowerCase();
+              const origAmount = Number(orig.amount) || 0;
+
+              const isStillPresent = (origName && currentActiveRowsInPayload.has(origName)) ||
+                                     (origCId && currentActiveRowsInPayload.has(origCId)) ||
+                                     (origUser && currentActiveRowsInPayload.has(origUser)) ||
+                                     (origId && currentActiveRowsInPayload.has(origId));
+
+              if (origAmount > 0 && !isStillPresent) {
+                const rIdx = findRowIndex(orig);
+                if (rIdx !== -1) {
+                  const rObj = baseRecalculatedRows[rIdx];
+                  baseRecalculatedRows[rIdx] = {
+                    ...rObj,
+                    paymentReceived: 0,
+                    paymentStatus: 'unpaid'
+                  };
+                  accumulatedChangedIndicesMap[targetMonthId].add(rIdx);
+                  totalUpdatedBillingCount++;
+                  allSyncedUsersSummary.push(`${rObj.name} (${rObj.username || rObj.clientId || ''}): UNPAID (0) [REMOVED]`);
+                }
+              }
+            });
+          }
+
+          // Helper to find original active row for comparison
+          const findOriginalMatch = (r: any) => {
+            const rName = (r.name || '').trim().toLowerCase();
+            const rCId = (r.cId || '').trim().toLowerCase();
+            const rUser = (r.clientUsername || '').trim().toLowerCase();
+            const rId = (r.clientId || '').trim().toLowerCase();
+
+            return (originalActiveRows || []).find((orig: any) => {
+              const origName = (orig.name || '').trim().toLowerCase();
+              const origCId = (orig.cId || '').trim().toLowerCase();
+              const origUser = (orig.clientUsername || '').trim().toLowerCase();
+              const origId = (orig.clientId || '').trim().toLowerCase();
+
+              if (rId && origId && rId === origId) return true;
+              if (rUser && origUser && rUser === origUser) return true;
+              if (rCId && origCId && rCId === origCId) return true;
+              if (rName && origName && rName === origName) return true;
+              return false;
+            });
+          };
+
+          // 2. Process ONLY the rows of the current saving sheet(s) (sheetPayloads)
+          sheetPayloads.forEach(sp => {
+            const sheetRows = Array.isArray(sp.table1Rows) ? sp.table1Rows : [];
+            sheetRows.forEach((r: any) => {
               const amountVal = Number(r.amount) || 0;
               const amountStr = String(r.amount || '').trim().toUpperCase();
               const rowStatusStr = String(r.status || '').trim().toUpperCase();
+
               const isDcStatus = amountStr === 'DC' || rowStatusStr === 'DC';
               const isTdcStatus = amountStr === 'TDC' || rowStatusStr === 'TDC';
               const isPaidStatus = amountStr === 'PAID' || rowStatusStr === 'PAID';
               const isUnpaidStatus = amountStr === 'UNPAID' || rowStatusStr === 'UNPAID';
               const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr) || ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(rowStatusStr);
-              
+
               const hasId = Boolean(r.cId && String(r.cId).trim());
               const hasName = Boolean(r.name && String(r.name).trim());
-              
               if (!hasId && !hasName && amountVal === 0 && !isStatusString) return;
               if (isExcludedName(r.name)) return;
+
               const client = findClientForEntry(r);
-              let matchedIdx = -1;
-              const hasAnyId = Boolean(r.clientId || r.clientUsername || (r.cId && String(r.cId).trim()));
-              if (r.clientId || r.clientUsername) {
-                const searchClientId = (r.clientId || '').trim().toLowerCase();
-                const searchClientUsername = (r.clientUsername || '').trim().toLowerCase();
-                matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
-                  (searchClientId && br.clientId && String(br.clientId).trim().toLowerCase() === searchClientId) ||
-                  (searchClientUsername && br.username && String(br.username).trim().toLowerCase() === searchClientUsername) ||
-                  (searchClientUsername && br.clientId && String(br.clientId).trim().toLowerCase() === searchClientUsername)
-                );
-              }
-              if (matchedIdx === -1 && hasId) {
-                const searchId = String(r.cId).trim().toLowerCase();
-                matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
-                  (br.clientId && String(br.clientId).trim().toLowerCase() === searchId) ||
-                  (br.username && String(br.username).trim().toLowerCase() === searchId) ||
-                  (br.id && String(br.id).trim().toLowerCase() === searchId)
-                );
-              }
-              if (matchedIdx === -1 && hasName && !hasAnyId) {
-                const searchName = String(r.name).trim().toLowerCase();
-                const matchedIndices = baseRecalculatedRows.reduce((acc: number[], br: any, idx: number) => {
-                  if (br.name && String(br.name).trim().toLowerCase() === searchName) {
-                    acc.push(idx);
-                  }
-                  return acc;
-                }, []);
-                if (matchedIndices.length === 1) {
-                  matchedIdx = matchedIndices[0];
-                } else if (matchedIndices.length > 1) {
-                  console.warn(`Ambiguous same-name case for "${r.name}" in baseRecalculatedRows. Found ${matchedIndices.length} candidate rows. Leaving unmatched.`);
-                }
-              }
+              const matchedIdx = findRowIndex(r);
+
               if (matchedIdx !== -1) {
                 const row = baseRecalculatedRows[matchedIdx];
-                const clientKey = row.id || row.clientId || row.username || `idx_${matchedIdx}`;
-                
                 const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
                 const base = parseFloat(row.baseAmount || 0);
                 const totalAmount = base + savedOrigCr;
-                
                 let newPaymentReceived = 0;
                 let finalStatus = 'unpaid';
-                
+
                 if (isDcStatus) {
                   finalStatus = 'dc';
                   newPaymentReceived = 0;
-                  batchPaymentsMap.set(clientKey, 0);
                 } else if (isTdcStatus) {
                   finalStatus = 'tdc';
                   newPaymentReceived = 0;
-                  batchPaymentsMap.set(clientKey, 0);
-                } else if (isPaidStatus) {
-                  finalStatus = 'paid';
-                  newPaymentReceived = totalAmount > 0 ? totalAmount : (amountVal > 0 ? amountVal : base);
-                  batchPaymentsMap.set(clientKey, newPaymentReceived);
                 } else if (isUnpaidStatus) {
                   finalStatus = 'unpaid';
                   newPaymentReceived = 0;
-                  batchPaymentsMap.set(clientKey, 0);
-                } else {
-                  const prevBatchPayment = batchPaymentsMap.get(clientKey) || 0;
-                  newPaymentReceived = prevBatchPayment + amountVal;
-                  batchPaymentsMap.set(clientKey, newPaymentReceived);
-                  
-                  if (rowStatusStr === 'DC') {
-                    finalStatus = 'dc';
-                  } else if (rowStatusStr === 'TDC') {
-                    finalStatus = 'tdc';
-                  } else if (newPaymentReceived > 0 || amountVal > 0) {
-                    // Shifting back to active billing when amount entered!
-                    if (newPaymentReceived >= totalAmount && totalAmount > 0) {
-                      finalStatus = 'paid';
-                    } else {
-                      finalStatus = 'partial';
-                    }
-                  } else if (r.status) {
-                    finalStatus = r.status.toLowerCase();
-                  } else if (row.name === 'Unspecified Entry' || r.name === 'Unspecified Entry') {
-                    finalStatus = 'extra';
+                } else if (amountVal > 0 || isPaidStatus) {
+                  newPaymentReceived = amountVal > 0 ? amountVal : (totalAmount > 0 ? totalAmount : base);
+                  if (isPaidStatus) {
+                    finalStatus = 'paid';
+                  } else if (amountVal >= totalAmount || totalAmount <= 0) {
+                    finalStatus = 'paid';
                   } else {
-                    finalStatus = (row.paymentStatus === 'dc' || row.paymentStatus === 'tdc') ? row.paymentStatus : 'unpaid';
+                    finalStatus = 'partial';
                   }
+                } else if (rowStatusStr === 'DC') {
+                  finalStatus = 'dc';
+                } else if (rowStatusStr === 'TDC') {
+                  finalStatus = 'tdc';
+                } else if (r.status) {
+                  finalStatus = r.status.toLowerCase();
+                } else {
+                  finalStatus = 'unpaid';
+                  newPaymentReceived = 0;
                 }
-                
                 const clientPhone = client?.mobileNumber || client?.number || client?.phone || row.mobileNumber || row.phone || '';
                 baseRecalculatedRows[matchedIdx] = {
                   ...row,
@@ -1827,32 +1896,48 @@ export default function EntrySheet({
                   paymentReceived: newPaymentReceived,
                   paymentStatus: finalStatus
                 };
+
+                accumulatedChangedIndicesMap[targetMonthId].add(matchedIdx);
+
+                // Notification filtering: Only include user in notification if NEW or EDITED
+                const origMatch = findOriginalMatch(r);
+                let isEntryNew = !origMatch;
+                let isEntryEdited = false;
+
+                if (origMatch) {
+                  const origAmount = Number(origMatch.amount) || 0;
+                  const origStatus = String(origMatch.status || '').trim().toLowerCase();
+                  const origComments = String(origMatch.comments || '').trim();
+                  const currentComments = String(r.comments || '').trim();
+                  const currentStatus = String(r.status || '').trim().toLowerCase();
+
+                  const isAmountChanged = origAmount !== amountVal;
+                  const isStatusChanged = origStatus !== currentStatus;
+                  const isCommentsChanged = origComments !== currentComments;
+                  const isRecoveryChanged = (row.paymentReceived !== newPaymentReceived) || (row.paymentStatus !== finalStatus);
+
+                  isEntryEdited = isAmountChanged || isStatusChanged || isCommentsChanged || isRecoveryChanged;
+                }
+
+                if (isEntryNew || isEntryEdited) {
+                  totalUpdatedBillingCount++;
+                  const tag = isEntryNew ? '[NEW]' : '[EDITED]';
+                  allSyncedUsersSummary.push(`${baseRecalculatedRows[matchedIdx].name} (${baseRecalculatedRows[matchedIdx].username || baseRecalculatedRows[matchedIdx].clientId || ''}): ${finalStatus.toUpperCase()} (${newPaymentReceived}) ${tag}`);
+                }
               } else {
-                if (client && (isExcludedName(client.name) || isExcludedName(client.username))) return;
-                
+                // New user not present in targetMonthRows
                 const baseAmount = client ? (Number(client.baseAmount) || 0) : amountVal;
                 const cr = client ? (Number(client.cr) || 0) : 0;
                 const totalAmount = baseAmount + cr;
-                
+
                 let finalStatus = 'partial';
-                if (isDcStatus) {
-                  finalStatus = 'dc';
-                } else if (isTdcStatus) {
-                  finalStatus = 'tdc';
-                } else if (isPaidStatus) {
-                  finalStatus = 'paid';
-                } else if (isUnpaidStatus) {
-                  finalStatus = 'unpaid';
-                } else if (r.status) {
-                  finalStatus = r.status.toLowerCase();
-                } else if (r.name === 'Unspecified Entry' || (!r.cId && (!r.name || r.name === 'Unspecified Entry'))) {
-                  finalStatus = 'extra';
-                } else if (amountVal === 0) {
-                  finalStatus = 'unpaid';
-                } else if (amountVal >= totalAmount && totalAmount > 0) {
-                  finalStatus = 'paid';
-                }
-                
+                if (isDcStatus) finalStatus = 'dc';
+                else if (isTdcStatus) finalStatus = 'tdc';
+                else if (isPaidStatus) finalStatus = 'paid';
+                else if (isUnpaidStatus) finalStatus = 'unpaid';
+                else if (amountVal >= totalAmount && totalAmount > 0) finalStatus = 'paid';
+                else if (amountVal === 0) finalStatus = 'unpaid';
+
                 const clientKey = client?.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                 const clientPhone = client?.mobileNumber || client?.number || client?.phone || '';
                 const newRow = {
@@ -1876,31 +1961,16 @@ export default function EntrySheet({
                   devicePrice: client?.devicePrice || '',
                   abl: client?.abl || ''
                 };
-                
-                batchPaymentsMap.set(clientKey, newRow.paymentReceived);
+
+                const newIdx = baseRecalculatedRows.length;
                 baseRecalculatedRows.push(newRow);
+                accumulatedChangedIndicesMap[targetMonthId].add(newIdx);
+                totalUpdatedBillingCount++;
+                allSyncedUsersSummary.push(`${newRow.name} (${newRow.username || newRow.clientId || ''}): ${finalStatus.toUpperCase()} (${newRow.paymentReceived}) [NEW]`);
               }
             });
-          }
-          baseRecalculatedRows.forEach((newRow: any, idx: number) => {
-            const origRow = targetMonthRows.find((br: any) => br.id === newRow.id || br.clientId === newRow.clientId);
-            const origPayment = Number(origRow?.paymentReceived) || 0;
-            const origStatus = (origRow?.paymentStatus || 'unpaid').toLowerCase();
-            const newPayment = Number(newRow.paymentReceived) || 0;
-            const newStatus = (newRow.paymentStatus || 'unpaid').toLowerCase();
-
-            if (origPayment !== newPayment || origStatus !== newStatus || (!origRow && newPayment > 0)) {
-              accumulatedChangedIndicesMap[targetMonthId].add(idx);
-              updatedCount++;
-              
-              const pName = newRow.name;
-              const pUser = newRow.username || newRow.clientId || '';
-              const detailStr = newStatus.toUpperCase();
-              allSyncedUsersSummary.push(`${pName} (${pUser}): ${detailStr}`);
-            }
           });
 
-          totalUpdatedBillingCount += updatedCount;
           accumulatedBillingMonths[targetMonthId] = baseRecalculatedRows;
         } catch (billingErr: any) {
           console.error("Failed to auto-update billing status:", billingErr);
@@ -1944,7 +2014,7 @@ export default function EntrySheet({
         }
       }
 
-      // 4. Update currently loaded sheet references in editor with updated rows (with linked client details!) and sync URL
+      // 4. Update currently loaded sheet references in editor with updated rows
       const lastSavedId = currentLoadedId || currentSyncSheets[activeSheetIdx]?.id;
       if (lastSavedId) {
         const targetFolder = openedFolderId || sheetFolderMap[lastSavedId] || 'all';
@@ -1953,6 +2023,7 @@ export default function EntrySheet({
           navigate(targetPath, { replace: true });
         }
       }
+
       setSheets(prev => {
         return prev.map((sh, idx) => {
           const matchingPayload = sheetPayloads[idx];
@@ -1975,11 +2046,16 @@ export default function EntrySheet({
         setTable1Rows(activeSavedPayload.table1Rows);
       }
 
-      const activeRows = table1Rows.filter(r => (r.name || '').trim() && (Number(r.amount) || 0) > 0);
-      setOriginalActiveRows(activeRows.map(r => ({
+      // Update originalActiveRows to the current saved rows
+      const activeRowsNow = table1Rows.filter(r => (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status);
+      setOriginalActiveRows(activeRowsNow.map(r => ({
         name: (r.name || '').trim(),
         amount: Number(r.amount) || 0,
-        comments: (r.comments || '').trim()
+        comments: (r.comments || '').trim(),
+        cId: r.cId || '',
+        clientId: r.clientId || '',
+        clientUsername: r.clientUsername || '',
+        status: r.status || ''
       })));
 
       // 6. PARALLEL FAST DATABASE SYNC (Save A4 sheets and connected recovery rows concurrently)
@@ -2020,10 +2096,10 @@ export default function EntrySheet({
         throw new Error(errMsg);
       }
 
-      // 5. SUCCESS NOTIFICATIONS (Shown only after successful save)
+      // 5. SUCCESS NOTIFICATIONS
       const primaryOfficerName = currentSyncSheets[0]?.recOfficer || recOfficer || 'Recovery Officer';
       toast.success("📄 A4 Size Sheet Saved Successfully!", {
-        description: `Sheet for "${primaryOfficerName}" has been securely saved to the database.`,
+        description: `Sheet for "${primaryOfficerName}" has been securely saved.`,
         duration: 4000
       });
 
@@ -2041,16 +2117,6 @@ export default function EntrySheet({
           ),
           duration: 6000
         });
-      } else if (totalUpdatedBillingCount > 0) {
-        toast.success("🎯 Connected Recovery Sheet Synced!", {
-          description: `Updated ${totalUpdatedBillingCount} subscriber recovery amount(s) in connected recovery sheet (${currentMonthId || 'Active Month'}).`,
-          duration: 5000
-        });
-      } else {
-        toast.success("🎯 Connected Recovery Sheet Synced!", {
-          description: `All recovery entries are permanently synchronized with recovery sheet database (${currentMonthId || 'Active Month'}).`,
-          duration: 4000
-        });
       }
 
     } catch (e: any) {
@@ -2062,8 +2128,7 @@ export default function EntrySheet({
     }
   };
 
-  // Restores a historical ledger card directly back into the live active A4 view
-  const loadSheetIntoEditor = (sheet: any) => {
+    const loadSheetIntoEditor = (sheet: any) => {
     setRecOfficer(sheet.recOfficer || '');
     setRecOfficerLabel(sheet.recOfficerLabel || 'REC. OFFICER');
     setArea(sheet.area || 'MAIN');
@@ -2151,6 +2216,16 @@ export default function EntrySheet({
       t2TotalLabel: sheet.t2TotalLabel || 'TOTAL',
     };
     
+    const initialActive = reT1.filter((r: any) => (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status);
+    setOriginalActiveRows(initialActive.map((r: any) => ({
+      name: (r.name || '').trim(),
+      amount: Number(r.amount) || 0,
+      comments: (r.comments || '').trim(),
+      cId: r.cId || '',
+      clientId: r.clientId || '',
+      clientUsername: r.clientUsername || '',
+      status: r.status || ''
+    })));
     isSwappingRef.current = true;
     setSheets([restoredSheet]);
     setActiveSheetIdx(0);
@@ -2491,7 +2566,7 @@ export default function EntrySheet({
       originalAmount: amount,
       clientId: client.id || '',
       clientUsername: client.username || '',
-      status: (matchingActiveRow?.paymentStatus === 'dc' && amount > 0) ? 'paid' : (matchingActiveRow?.paymentStatus || undefined)
+      status: amount > 0 ? 'paid' : ((matchingActiveRow?.paymentStatus === 'dc' && amount > 0) ? 'paid' : (matchingActiveRow?.paymentStatus || undefined))
     };
     
     setTable1Rows(updated);
