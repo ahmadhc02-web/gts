@@ -199,6 +199,7 @@ export const mappings: Record<string, Record<string, string>> = {
     name: 'name',
     parentId: 'parent_id',
     tenantId: 'tenant_id',
+    lineCode: 'line_code',
     createdAt: 'created_at'
   },
   branding_config: {
@@ -567,6 +568,12 @@ function subscribeTable(
               const parsed = JSON.parse(bData[0].dashboard_subtext);
               if (Array.isArray(parsed) && parsed.length > 0) {
                 mapped = parsed;
+                if (Array.isArray(mapped) && mapped.length > 0) {
+                  mapped = mapped.filter((f: any) => {
+                    const fLc = f.lineCode || f.line_code || '';
+                    return activeLineCode ? fLc === activeLineCode : !fLc;
+                  });
+                }
               }
             }
           } catch (e) {}
@@ -578,6 +585,12 @@ function subscribeTable(
                 const parsed = JSON.parse(localSaved);
                 if (Array.isArray(parsed) && parsed.length > 0) {
                   mapped = parsed;
+                  if (Array.isArray(mapped) && mapped.length > 0) {
+                    mapped = mapped.filter((f: any) => {
+                      const fLc = f.lineCode || f.line_code || '';
+                      return activeLineCode ? fLc === activeLineCode : !fLc;
+                    });
+                  }
                 }
               } catch (e) {}
             }
@@ -1064,7 +1077,13 @@ export const supabaseService = {
   // --- CONFIG COLLECTIONS ---
   async getCategories(tenantId: string = 'main'): Promise<string[]> {
     try {
-      const { data } = await supabase.from('categories_config').select('*');
+      let query = supabase.from('categories_config').select('*');
+      if (activeLineCode) {
+        query = query.eq('line_code', activeLineCode);
+      } else {
+        query = query.or('line_code.is.null,line_code.eq.');
+      }
+      const { data } = await query;
       if (data && data.length > 0) {
         const items = data
           .map(r => r.value || r.name || r.category || r.category_name || r.title || r.label)
@@ -1079,7 +1098,13 @@ export const supabaseService = {
 
   async getStatuses(tenantId: string = 'main'): Promise<string[]> {
     try {
-      const { data } = await supabase.from('statuses_config').select('*');
+      let query = supabase.from('statuses_config').select('*');
+      if (activeLineCode) {
+        query = query.eq('line_code', activeLineCode);
+      } else {
+        query = query.or('line_code.is.null,line_code.eq.');
+      }
+      const { data } = await query;
       if (data && data.length > 0) {
         const items = data
           .map(r => r.value || r.name || r.status || r.status_name || r.title || r.label)
@@ -1094,7 +1119,13 @@ export const supabaseService = {
 
   async getPriorities(tenantId: string = 'main'): Promise<string[]> {
     try {
-      const { data } = await supabase.from('priority_config').select('*');
+      let query = supabase.from('priority_config').select('*');
+      if (activeLineCode) {
+        query = query.eq('line_code', activeLineCode);
+      } else {
+        query = query.or('line_code.is.null,line_code.eq.');
+      }
+      const { data } = await query;
       if (data && data.length > 0) {
         const items = data
           .map(r => r.value || r.name || r.priority || r.priority_name || r.title || r.label)
@@ -1109,7 +1140,13 @@ export const supabaseService = {
 
   async getZones(tenantId: string = 'main'): Promise<string[]> {
     try {
-      const { data } = await supabase.from('zone_config').select('*');
+      let query = supabase.from('zone_config').select('*');
+      if (activeLineCode) {
+        query = query.eq('line_code', activeLineCode);
+      } else {
+        query = query.or('line_code.is.null,line_code.eq.');
+      }
+      const { data } = await query;
       if (data && data.length > 0) {
         const items = data
           .map(r => r.value || r.name || r.zone || r.zone_name || r.title || r.label)
@@ -1124,7 +1161,13 @@ export const supabaseService = {
 
   async saveConfigItems(collection: string, items: string[], tenantId: string = 'main') {
     try {
-      const { data: existingSup, error: selErr } = await supabase.from(collection).select('*');
+      let query = supabase.from(collection).select('*');
+      if (activeLineCode) {
+        query = query.eq('line_code', activeLineCode);
+      } else {
+        query = query.or('line_code.is.null,line_code.eq.');
+      }
+      const { data: existingSup, error: selErr } = await query;
       if (selErr) {
         console.warn(`saveConfigItems select error for ${collection}:`, selErr.message);
         if (selErr.message.includes('relation') && selErr.message.includes('does not exist')) {
@@ -1184,17 +1227,17 @@ export const supabaseService = {
           if (inserted) break;
 
           try {
-            const res = await supabase.from(collection).insert([{ [key]: item, config_type: collection, tenant_id: tenantId }]);
+            const res = await supabase.from(collection).insert([{ [key]: item, config_type: collection, tenant_id: tenantId, line_code: activeLineCode || '' }]);
             if (!res.error) { inserted = true; break; }
           } catch (e) {}
 
           try {
-            const res = await supabase.from(collection).insert([{ [key]: item, tenant_id: tenantId }]);
+            const res = await supabase.from(collection).insert([{ [key]: item, tenant_id: tenantId, line_code: activeLineCode || '' }]);
             if (!res.error) { inserted = true; break; }
           } catch (e) {}
 
           try {
-            const res = await supabase.from(collection).insert([{ [key]: item }]);
+            const res = await supabase.from(collection).insert([{ [key]: item, line_code: activeLineCode || '' }]);
             if (!res.error) { inserted = true; break; }
           } catch (e) {}
         }
@@ -1661,18 +1704,35 @@ export const supabaseService = {
     if (existingRowsParsed.length > 0) {
       const incomingRowsMap = new Map();
       rows.forEach(r => {
-        const key = r.username ? `u_${String(r.username).toLowerCase().trim()}` : (r.clientId ? `i_${String(r.clientId)}` : null);
-        if (key) incomingRowsMap.set(key, r);
+        const uKey = r.username ? `u_${String(r.username).toLowerCase().trim()}` : null;
+        const iKey = r.clientId ? `i_${String(r.clientId).toLowerCase().trim()}` : null;
+        const idKey = r.id ? `id_${String(r.id).toLowerCase().trim()}` : null;
+        
+        if (uKey) incomingRowsMap.set(uKey, r);
+        if (iKey) incomingRowsMap.set(iKey, r);
+        if (idKey) incomingRowsMap.set(idKey, r);
       });
 
       existingRowsParsed.forEach(er => {
-        const key = er.username ? `u_${String(er.username).toLowerCase().trim()}` : (er.clientId ? `i_${String(er.clientId)}` : null);
+        const uKey = er.username ? `u_${String(er.username).toLowerCase().trim()}` : null;
+        const iKey = er.clientId ? `i_${String(er.clientId).toLowerCase().trim()}` : null;
+        const idKey = er.id ? `id_${String(er.id).toLowerCase().trim()}` : null;
+        
         const oldComment = String(er.comments || '').trim();
-        if (key && oldComment !== '') {
+        if ((uKey || iKey || idKey) && oldComment !== '') {
           totalExistingComments++;
-          const incRow = incomingRowsMap.get(key);
+          
+          let incRow = null;
+          if (uKey && incomingRowsMap.has(uKey)) incRow = incomingRowsMap.get(uKey);
+          else if (iKey && incomingRowsMap.has(iKey)) incRow = incomingRowsMap.get(iKey);
+          else if (idKey && incomingRowsMap.has(idKey)) incRow = incomingRowsMap.get(idKey);
+          
           const newComment = incRow ? String(incRow.comments || '').trim() : '';
-          if (newComment !== oldComment && newComment === '') { 
+          
+          // PRESERVE COMMENTS: If the new row has empty comments but the old row had comments, we automatically migrate/preserve the comments instead of losing them!
+          if (incRow && newComment === '' && oldComment !== '') {
+             incRow.comments = oldComment;
+          } else if (newComment !== oldComment && newComment === '') { 
             wipedCommentsCount++;
           } else if (newComment !== oldComment) {
              // It's different, also count as wiped/reverted if it's a regression
@@ -2133,6 +2193,7 @@ export const supabaseService = {
       id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       ...cleanData,
       createdAt: Date.now(),
+      lineCode: cleanData.lineCode || activeLineCode || '',
       isRead: false
     };
     try {
@@ -2229,6 +2290,7 @@ export const supabaseService = {
         remarkAuthorName: data.remarks ? member.username : undefined,
         reviews: data.reviews || [],
         dealerId: tenantId,
+        lineCode: activeLineCode || '',
         scheduledAt: data.scheduledAt
       };
       await upsertSupabase('complaints', 'id', complaint.id, toDb('complaints', complaint));
@@ -2238,7 +2300,7 @@ export const supabaseService = {
         (async () => {
           try {
             const statusRes = await getStatus();
-            if (statusRes.state === 'open') {
+            if (statusRes.connected) {
               const templates = await getTemplate();
               const tmpl = templates.complaintRegisteredTemplate;
               if (tmpl) {
@@ -2384,7 +2446,7 @@ export const supabaseService = {
             // Check if this status counts as completed (case-insensitive)
             if (status.toLowerCase() === completedValue.toLowerCase()) {
               const statusRes = await getStatus();
-              if (statusRes.state === 'open') {
+              if (statusRes.connected) {
                 const tmpl = templates.complaintCompletedTemplate;
                 if (tmpl) {
                   const msg = tmpl
@@ -2796,6 +2858,7 @@ export const supabaseService = {
       createdBy: creator.username,
       createdAt: Date.now(),
       dealerId: tenantId,
+      lineCode: activeLineCode || '',
       lat,
       lng,
       label
@@ -3454,6 +3517,7 @@ export const supabaseService = {
           name: String(f.name || ''),
           parentId: String(f.parentId || f.parent_id || ''),
           tenantId: String(tenantId || 'main'),
+          lineCode: String(f.lineCode || activeLineCode || ''),
           createdAt: createdIso
         });
 
@@ -3571,7 +3635,7 @@ export const supabaseService = {
       }
     }
 
-    const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId };
+    const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId, lineCode: sheet.lineCode || activeLineCode || '' };
     const dbRow = toDb('ledger_sheets', itemObj);
 
     // Update memory caches and notify subscribers immediately
@@ -3626,7 +3690,7 @@ export const supabaseService = {
       if (folderIdValue && !validFolderIds.has(folderIdValue)) {
         folderIdValue = '';
       }
-      const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId };
+      const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId, lineCode: sheet.lineCode || activeLineCode || '' };
 
       const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
       const lc = activeLineCode || 'nolc';

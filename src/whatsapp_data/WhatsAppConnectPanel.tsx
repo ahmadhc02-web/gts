@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { QrCode, Smartphone, LogOut, CheckCircle2, Loader2, X, AlertTriangle } from 'lucide-react';
 import { getStatus, getQr, disconnectWhatsApp } from './whatsappApi';
 import { motion } from 'motion/react';
@@ -13,6 +13,9 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
 
   // Status fetching
   const fetchStatusOnly = async () => {
@@ -65,25 +68,22 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
   // Poll status every 3 seconds while disconnected
   useEffect(() => {
     const statusInterval = setInterval(() => {
-      if (!status || !status.connected) {
+      if (!statusRef.current || !statusRef.current.connected) {
         fetchStatusOnly();
       }
     }, 3000);
     return () => clearInterval(statusInterval);
-  }, [status]);
+  }, []);
 
   // Poll QR code every 4 seconds while a QR is expected but not yet connected
   useEffect(() => {
-    let qrInterval: NodeJS.Timeout | null = null;
-    if (status && !status.connected) {
-      qrInterval = setInterval(() => {
+    const qrInterval = setInterval(() => {
+      if (statusRef.current && !statusRef.current.connected) {
         fetchQrOnly();
-      }, 4000);
-    }
-    return () => {
-      if (qrInterval) clearInterval(qrInterval);
-    };
-  }, [status]);
+      }
+    }, 4000);
+    return () => clearInterval(qrInterval);
+  }, []);
 
   const handleDisconnect = async () => {
     setIsLoading(true);

@@ -2827,7 +2827,7 @@ export default function AdminPanel({
         // Correctly associate the new user with the dealer if the current user is a dealer or creating under a dealer
         const effectiveDealerId = currentUser.role === 'dealer' ? currentUser.uid : (currentUser.dealerId && currentUser.dealerId !== 'main' ? currentUser.dealerId : undefined);
         const effectiveDealer = users.find(u => u.uid === effectiveDealerId);
-        const effectiveLineCode = currentUser.role === 'dealer' ? (currentUser.lineCode || '') : (effectiveDealer?.lineCode || currentUser.lineCode || '');
+        const effectiveLineCode = currentUser.lineCode || effectiveDealer?.lineCode || '';
         const effectiveCompanyName = currentUser.role === 'dealer' ? (currentUser.companyName || '') : (effectiveDealer?.companyName || currentUser.companyName || '');
 
         // @ts-ignore - fullName is added to user management

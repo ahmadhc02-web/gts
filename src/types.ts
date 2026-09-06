@@ -41,6 +41,7 @@ export interface Complaint {
   reviews?: ComplaintReview[]; // Chronological array of reviews
   protocols?: ComplaintReview[]; // Chronological array of resolution protocols
   dealerId?: string; // Multi-tenancy support
+  lineCode?: string;
   scheduledAt?: number; // millisecond timestamp
 }
 
@@ -150,6 +151,7 @@ export interface Notification {
   createdAt: number;
   isRead?: boolean;
   dealerId?: string; // Multi-tenancy support
+  lineCode?: string;
   details?: any;
 }
 
@@ -159,6 +161,7 @@ export interface MonitorTarget {
   createdBy: string;
   createdAt: any;
   dealerId?: string;
+  lineCode?: string;
   lat?: number;
   lng?: number;
   label?: string;

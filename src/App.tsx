@@ -2027,7 +2027,7 @@ export default function App() {
       // Auto-inherit dealer context if created by or under a dealer account
       const creatorDealerId = user.role === 'dealer' ? user.uid : (user.dealerId && user.dealerId !== 'main' ? user.dealerId : undefined);
       const creatorDealerObj = users.find(u => u.uid === creatorDealerId);
-      const creatorLineCode = user.role === 'dealer' ? (user.lineCode || '') : (creatorDealerObj?.lineCode || user.lineCode || '');
+      const creatorLineCode = user.lineCode || creatorDealerObj?.lineCode || '';
       const creatorCompanyName = user.role === 'dealer' ? (user.companyName || '') : (creatorDealerObj?.companyName || user.companyName || '');
 
       const finalDealerId = dealerId || creatorDealerId || 'main';

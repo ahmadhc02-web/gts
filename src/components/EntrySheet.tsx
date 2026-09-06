@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { 
   X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
   History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
-  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings, Download, Loader2, AlertTriangle
+  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings, Download, Loader2, AlertTriangle, Copy
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -893,11 +893,14 @@ export default function EntrySheet({
   const getDropdownStyle = () => {
     if (!activeInputElement) return {};
     const rect = activeInputElement.getBoundingClientRect();
+    const desiredWidth = Math.max(370, rect.width);
+    const maxLeft = typeof window !== 'undefined' ? window.innerWidth - desiredWidth - 12 : rect.left;
+    const finalLeft = Math.max(8, Math.min(rect.left, maxLeft));
     return {
       position: 'fixed' as const,
       top: `${rect.bottom + 4}px`,
-      left: `${rect.left}px`,
-      width: `${Math.max(290, rect.width)}px`,
+      left: `${finalLeft}px`,
+      width: `${desiredWidth}px`,
       zIndex: 1000000,
     };
   };
@@ -4717,10 +4720,24 @@ export default function EntrySheet({
                           style={{ fontSize: `${tableFontSize}px` }}
                           className="flex-1 min-w-0 border-none p-0 text-slate-900 bg-transparent font-black tracking-tight focus:bg-slate-100 outline-none"
                         />
-                        {row.clientUsername && (
-                          <span className="print:hidden text-[9px] font-bold text-indigo-600 bg-indigo-50 dark:text-indigo-400 dark:bg-indigo-950 px-1 py-0.5 rounded leading-none shrink-0">
-                            @{row.clientUsername}
-                          </span>
+                        {(row.clientUsername || (row.cId && row.name)) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const textToCopy = (row.clientUsername || row.cId || '').trim();
+                              if (textToCopy) {
+                                navigator.clipboard.writeText(textToCopy);
+                                toast.success(`Copied: ${textToCopy}`, { duration: 2500, icon: '📋' });
+                              }
+                            }}
+                            title="Click to copy User ID"
+                            className="print:hidden text-[9px] font-black text-slate-500 hover:text-indigo-600 bg-slate-100/80 hover:bg-indigo-50 active:scale-95 dark:text-slate-400 dark:bg-slate-800 dark:hover:bg-indigo-900/40 px-1.5 py-0.5 rounded leading-none shrink-0 border border-slate-200/60 hover:border-indigo-200 dark:border-slate-700 dark:hover:border-indigo-800/60 cursor-pointer transition-all duration-200 flex items-center gap-1 select-none group/copy overflow-hidden"
+                          >
+                            <span className="truncate max-w-[60px] group-hover/copy:max-w-none transition-all duration-300">@{row.clientUsername || row.cId}</span>
+                            <Copy size={9} className="opacity-0 w-0 -ml-1 group-hover/copy:w-auto group-hover/copy:opacity-100 group-hover/copy:ml-0 transition-all duration-300 ease-out text-indigo-500" />
+                          </button>
                         )}
                       </div>
                     </td>
@@ -6751,85 +6768,115 @@ export default function EntrySheet({
       {focusedRowIndex !== null && focusedField !== null && activeInputElement && (
         <div 
           style={getDropdownStyle()}
-          className="fixed bg-white dark:bg-slate-950 border border-slate-350 dark:border-white/10 shadow-2xl rounded-xl p-1.5 max-h-56 overflow-y-auto print:hidden font-sans pointer-events-auto text-slate-900 dark:text-slate-100"
+          className="fixed bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.15)] dark:shadow-[0_12px_40px_-15px_rgba(0,0,0,0.5)] rounded-2xl p-2 max-h-72 overflow-y-auto print:hidden font-sans pointer-events-auto text-slate-900 dark:text-slate-100 scrollbar-thin z-[1000000]"
         >
-          <div className="text-[8px] font-black tracking-wider uppercase text-slate-500 dark:text-slate-400 px-2 py-1 border-b border-slate-150 dark:border-white/10 mb-1">
-            Search by User ID / Name
+          <div className="flex items-center justify-between text-[8.5px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-500 px-3 py-2 mb-1.5 border-b border-slate-100 dark:border-slate-800/80">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
+              Select Customer Entry
+            </span>
+            <span className="text-indigo-500 font-mono font-bold bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded-md">
+              {getFilteredSuggestions(focusedField, searchQuery).length} Found
+            </span>
           </div>
           {getFilteredSuggestions(focusedField, searchQuery).length === 0 ? (
-            <div className="text-[10px] text-slate-500 dark:text-slate-450 py-3 text-center font-medium">No matches found</div>
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 py-6 text-center font-medium">No matching accounts found</div>
           ) : (
-            getFilteredSuggestions(focusedField, searchQuery).map((cObj, idx) => {
-              const matchingActiveRow = activeRows?.find(r => 
-                (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
-                (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
-              );
-              
-              const getStatusBadge = (statusKey: string | undefined) => {
-                const s = (statusKey || 'active').toLowerCase();
-                switch (s) {
-                  case 'paid':
-                    return {
-                      label: 'Paid',
-                      class: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
-                    };
-                  case 'partial':
-                    return {
-                      label: 'Partial',
-                      class: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 border-blue-200 dark:border-blue-800/60'
-                    };
-                  case 'unpaid':
-                    return {
-                      label: 'Unpaid',
-                      class: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
-                    };
-                  case 'dc':
-                    return {
-                      label: 'DC',
-                      class: 'bg-slate-100 text-slate-700 dark:bg-slate-850 dark:text-slate-400 border-slate-200 dark:border-white/10'
-                    };
-                  case 'tdc':
-                    return {
-                      label: 'TDC',
-                      class: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
-                    };
-                  default:
-                    return {
-                      label: 'Active',
-                      class: 'bg-slate-50 text-slate-700 dark:bg-slate-900/50 dark:text-slate-350 border-slate-150 dark:border-white/10'
-                    };
+            <div className="space-y-1">
+              {getFilteredSuggestions(focusedField, searchQuery).map((cObj, idx) => {
+                const matchingActiveRow = activeRows?.find(r => 
+                  (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
+                  (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
+                );
+                
+                let userTotalAmt = 0;
+                if (matchingActiveRow) {
+                  userTotalAmt = Number(matchingActiveRow.totalAmount) || ((Number(matchingActiveRow.baseAmount) || 0) + (Number(matchingActiveRow.cr) || 0));
                 }
-              };
-
-              const statusObj = getStatusBadge(matchingActiveRow?.paymentStatus);
-
-              return (
-                <button
-                  key={`cobj-${cObj.id || cObj.username || idx}-${idx}`}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  onClick={() => handleSelectSuggestion(focusedRowIndex, cObj)}
-                  className="w-full flex items-center justify-between text-left px-2 sm:px-2.5 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg transition-colors group cursor-pointer"
-                >
-                  <div className="flex flex-col min-w-0 pr-2">
-                    <span className="text-[11px] font-bold text-slate-900 dark:text-slate-100 group-hover:text-white truncate">
-                      {cObj.name}
-                    </span>
-                    <span className="text-[9px] text-slate-400 dark:text-slate-500 group-hover:text-white/80 font-mono truncate">
-                      @{cObj.username || cObj.id} {cObj.area ? `• ${cObj.area}` : ''}
-                    </span>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${statusObj.class} group-hover:bg-white group-hover:text-slate-950 group-hover:border-white transition-colors`}>
-                      {statusObj.label}
-                    </span>
-                  </div>
-                </button>
-              );
-            })
+                if (!userTotalAmt && (cObj.totalAmount || cObj.baseAmount)) {
+                  userTotalAmt = Number(cObj.totalAmount) || ((Number(cObj.baseAmount) || 0) + (Number(cObj.cr) || 0));
+                }
+                if (!userTotalAmt && cObj.pkgDetails) {
+                  const match = String(cObj.pkgDetails).match(/\b(1000|1200|1500|2000|2500|3000|3500|4000|5000|150|200|250|300|350|400|450|500|600|700|800|900)\b/) || String(cObj.pkgDetails).match(/\b\d{3,4}\b/);
+                  userTotalAmt = match ? parseInt(match[0], 10) : 0;
+                }
+                
+                const getStatusBadge = (statusKey: string | undefined) => {
+                  const s = (statusKey || 'active').toLowerCase();
+                  switch (s) {
+                    case 'paid':
+                      return {
+                        label: 'Paid',
+                        class: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
+                      };
+                    case 'partial':
+                      return {
+                        label: 'Partial',
+                        class: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 border-blue-200 dark:border-blue-800/60'
+                      };
+                    case 'unpaid':
+                      return {
+                        label: 'Unpaid',
+                        class: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
+                      };
+                    case 'dc':
+                      return {
+                        label: 'DC',
+                        class: 'bg-slate-100 text-slate-700 dark:bg-slate-850 dark:text-slate-400 border-slate-200 dark:border-white/10'
+                      };
+                    case 'tdc':
+                      return {
+                        label: 'TDC',
+                        class: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                      };
+                    default:
+                      return {
+                        label: 'Active',
+                        class: 'bg-slate-50 text-slate-700 dark:bg-slate-900/50 dark:text-slate-350 border-slate-150 dark:border-white/10'
+                      };
+                  }
+                };
+                const statusObj = getStatusBadge(matchingActiveRow?.paymentStatus);
+                return (
+                  <button
+                    key={`cobj-${cObj.id || cObj.username || idx}-${idx}`}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={() => handleSelectSuggestion(focusedRowIndex, cObj)}
+                    className="w-full flex items-center justify-between gap-3 text-left px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700/60 transition-all duration-200 ease-out group cursor-pointer select-none"
+                  >
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-[12px] font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
+                        {cObj.name}
+                      </span>
+                      <div className="flex items-center gap-1.5 text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate mt-0.5">
+                        <span className="font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1 rounded-sm">@{cObj.username || cObj.id}</span>
+                        {cObj.area && <span>• {cObj.area}</span>}
+                        {cObj.pkgDetails && <span className="text-slate-400 dark:text-slate-500 truncate">({cObj.pkgDetails})</span>}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex flex-col items-end">
+                        <span className="text-[7.5px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 leading-none mb-0.5">
+                          T. Amount
+                        </span>
+                        <span className="text-[12px] font-mono font-black text-emerald-600 dark:text-emerald-400 group-hover:text-emerald-500 group-hover:scale-105 transition-transform origin-right leading-none">
+                          <span className="text-[9px] text-emerald-500/70 mr-0.5">Rs.</span>{userTotalAmt.toLocaleString()}
+                        </span>
+                      </div>
+                      
+                      <div className={`flex items-center justify-center min-w-[50px] h-6 text-[9px] font-black px-2 rounded-lg border uppercase tracking-wider ${statusObj.class} shadow-sm group-hover:shadow transition-all`}>
+                        {statusObj.label}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
