@@ -1145,8 +1145,8 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                     { id: 'pending_requests', label: 'Pending Requests' },
                     { id: 'new_connection_pending', label: 'New Connection' },
                     { id: 'in_operation', label: 'In Operation' },
-                    { id: 'finalized', label: 'Finalized' },
-                    { id: 'connection_complete', label: 'Connection Complete' }
+                    { id: 'customer_review', label: 'Costumer review' },
+                    { id: 'finalized', label: 'Finalized' }
                   ].map((stat) => (
                     <div key={stat.id} className="space-y-1.5">
                       <label className={labelClasses}>{stat.label}</label>

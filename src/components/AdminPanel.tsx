@@ -15,7 +15,7 @@ import { googleSheetsService } from '../services/googleSheetsService';
 import { supabaseService as pocketbaseService, fromDb, globalTableCaches } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
-import { AppConfig } from '../constants';
+import { AppConfig, isPermanentWorkflowStatus, ensurePermanentStatuses } from '../constants';
 import MicVisualizer from './MicVisualizer';
 import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
@@ -248,6 +248,20 @@ export default function AdminPanel({
   // Setup Dealer and Tenant scoping helpers early for downstream dependency arrays and memos
   const isDealerTied = currentUser.role === 'dealer' || (currentUser.dealerId && currentUser.dealerId !== 'main') || Boolean(currentUser.lineCode);
   const activeDealerId = isDealerTied ? pocketbaseService.getTenantId(currentUser) : undefined;
+
+  // Permissions & Clearance Flags
+  const isDealerUser = isDealerTied;
+  const isFullAdmin = currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'dealer' || currentUser.role === 'editor' || isDealerTied;
+  const isLiteAdmin = currentUser.role === 'liteadmin';
+  const isMember = currentUser.role === 'member';
+
+  const canEditComplaints = true; // all roles can edit & change status
+  // Only Sub-Dealer and Super Admin can delete complaints & recovery/billing rows; Admin profile clearance cannot delete
+  const isSubDealerUser = (currentUser.role === 'dealer' || isDealerUser) && currentUser.role !== 'admin';
+  const canDeleteComplaints = currentUser.role === 'super_admin' || isSubDealerUser;
+  const canDeleteBillingRows = currentUser.role === 'super_admin' || isSubDealerUser;
+  const canManageClients = currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'liteadmin' || currentUser.role === 'dealer' || isDealerUser;
+  const canWriteBilling = isFullAdmin; // only Admin, Super Admin, and Dealer/Sub-dealer can unlock/edit billing; member and liteadmin are strictly view-only
 
   // --- Local Enterprise Backup & Restore state ---
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
@@ -1475,7 +1489,13 @@ export default function AdminPanel({
         const scopedData = filterScopedBillingMonths(data);
         const sorted = [...scopedData].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setBillingMonths(sorted);
-        setCurrentMonthId(prev => (!prev && sorted.length > 0 ? sorted[0].id : prev));
+        setCurrentMonthId(prev => {
+          if (sorted.length === 0) return '';
+          if (!prev || !sorted.some((m: any) => m.id === prev)) {
+            return sorted[0].id;
+          }
+          return prev;
+        });
       }).catch(console.error);
       return;
     }
@@ -1530,7 +1550,8 @@ export default function AdminPanel({
       });
 
       setCurrentMonthId(prev => {
-        if (!prev && sorted.length > 0) {
+        if (sorted.length === 0) return '';
+        if (!prev || !sorted.some((m: any) => m.id === prev)) {
           return sorted[0].id;
         }
         return prev;
@@ -2345,6 +2366,10 @@ export default function AdminPanel({
   };
 
   const triggerDeleteBillingRow = (rowIndex: number) => {
+    if (!canDeleteBillingRows) {
+      toast.error("🔒 ACCESS DENIED", { description: "Only Sub-Dealer and Super Admin accounts can delete recovery rows." });
+      return;
+    }
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete rows from billing sheets." });
       return;
@@ -2358,6 +2383,10 @@ export default function AdminPanel({
   };
 
   const handleDeleteBillingRow = async (rowIndex: number, isPermanent: boolean = false) => {
+    if (!canDeleteBillingRows) {
+      toast.error("🔒 ACCESS DENIED", { description: "Only Sub-Dealer and Super Admin accounts can delete recovery rows." });
+      return;
+    }
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete rows from billing sheets." });
       return;
@@ -2417,6 +2446,10 @@ export default function AdminPanel({
   };
 
   const handlePermanentDeleteSubscriber = async (rowRef: any, globalRowIdx: number) => {
+    if (!canDeleteBillingRows) {
+      toast.error("🔒 ACCESS DENIED", { description: "Only Sub-Dealer and Super Admin accounts can delete subscribers." });
+      return;
+    }
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to delete subscribers." });
       return;
@@ -2608,13 +2641,19 @@ export default function AdminPanel({
     return cat.trim().toLowerCase() === 'new connection';
   };
 
+  const isCustomerReviewStatus = (s?: string) => {
+    if (!s) return false;
+    const lower = s.trim().toLowerCase();
+    return lower === 'customer review' || lower === 'costumer review' || lower === 'customer reviews' || lower === 'costumer reviews' || lower === 'customer_review';
+  };
+
   const stats = [
     { label: branding.tabNames?.total_registry || 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: branding.tabNames?.pending_requests || 'Pending Requests', value: complaints.filter(c => isPendingStatus(c.status)).length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
     { label: branding.tabNames?.new_connection_pending || 'New Connection', value: complaints.filter(c => isNewConnectionCat(c.category) && isPendingStatus(c.status)).length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
     { label: branding.tabNames?.in_operation || 'In Operation', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'in process' || (c.status || '').toString().trim().toLowerCase() === 'in_process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'complete' && !isNewConnectionCat(c.category)).length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.connection_complete || 'Connection Complete', value: complaints.filter(c => isNewConnectionCat(c.category) && (c.status || '').toString().trim().toLowerCase() === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
+    { label: branding.tabNames?.customer_review || branding.tabNames?.costumer_review || 'Costumer review', value: complaints.filter(c => isCustomerReviewStatus(c.status)).length, tooltip: 'Operational tickets undergoing customer review & service verification.', color: 'border-indigo-500', textColor: 'text-indigo-500', icon: <MessageSquare size={18} />, filter: { status: 'customer review', priority: 'all', category: 'all' } },
+    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'complete').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
   ];
 
   const handleTileClick = (filter: any) => {
@@ -2910,13 +2949,13 @@ export default function AdminPanel({
           { id: 'registry', visible: true, order: 2 }
         ];
 
-    return [...sections].sort((a, b) => a.order - b.order).map(section => {
+    return [...sections].sort((a, b) => a.order - b.order).map((section, sIdx) => {
       if (!section.visible) return null;
 
       switch(section.id) {
         case 'stats':
           return (
-            <div key={`section-${section.id}`} className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-6">
+            <div key={`section-${section.id}-${sIdx}`} className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-6">
               {stats.map((stat, idx) => {
                 const isTileActive = (
                   forcedStatus === stat.filter.status &&
@@ -2985,7 +3024,8 @@ export default function AdminPanel({
                         idx === 1 ? { color: isDark ? '#f87171' : '#a23838' } :
                         idx === 2 ? { color: isDark ? '#34d399' : '#12ac86', borderColor: '#757575' } :
                         idx === 3 ? (isDark ? { color: '#ffffff' } : { color: '#000000' }) :
-                        idx === 4 ? { color: isDark ? '#38bdf8' : '#00b8db' } :
+                        idx === 4 ? { color: '#6dc2d2' } :
+                        idx === 5 ? { color: isDark ? '#34d399' : '#059669' } :
                         undefined
                       }
                     >
@@ -3032,6 +3072,26 @@ export default function AdminPanel({
                         </svg>
                       </div>
                     )}
+                    {(stat.label === 'Costumer review' || stat.label === 'Customer Review' || stat.label === branding.tabNames?.customer_review || stat.label === branding.tabNames?.costumer_review) && (
+                      <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
+                        <svg 
+                          viewBox="0 0 80 30" 
+                          width="100%" 
+                          height="100%" 
+                          className="overflow-visible"
+                          style={{ backgroundColor: isDark ? '#383b42' : '#f2f4f7' }}
+                        >
+                          <path
+                            d="M 0,16 Q 20,4 40,20 T 65,10 T 80,18"
+                            fill="none"
+                            stroke="#6366f1"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                          />
+                          <circle cx="80" cy="18" r="3" fill="#6366f1" className="animate-pulse" />
+                        </svg>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               );
@@ -3045,7 +3105,7 @@ export default function AdminPanel({
 
 
           return (
-            <div key={`section-${section.id}`} className="space-y-4">
+            <div key={`section-${section.id}-${sIdx}`} className="space-y-4">
               <div 
                 className="text-center mb-4 cursor-pointer select-none group"
                 onDoubleClick={() => setIsChartsVisible(!isChartsVisible)}
@@ -3090,7 +3150,7 @@ export default function AdminPanel({
           );
         case 'registry':
           return (activeTab === 'complaints') ? (
-            <div key={`section-${section.id}`} className="space-y-6">
+            <div key={`section-${section.id}-${sIdx}`} className="space-y-6">
               <motion.div
                 key="complaints-list"
                 initial={{ opacity: 0, y: 5 }}
@@ -3126,6 +3186,7 @@ export default function AdminPanel({
                     onUpdateRemarks={onUpdateRemarks}
                     onEdit={onUpdateComplaint}
                     isAdmin={true}
+                    canDelete={canDeleteComplaints}
                     currentUser={currentUser}
                     forcedStatusFilter={forcedStatus}
                     forcedPriorityFilter={forcedPriority}
@@ -3667,6 +3728,11 @@ export default function AdminPanel({
 
   const stateProps = {
     onNavigate: onNavigateProp,
+    canManageClients,
+    canWriteBilling,
+    canDeleteComplaints,
+    canDeleteBillingRows,
+    canEditComplaints,
     activeRows,
     activeTab,
     alertAuthorized,
@@ -3685,6 +3751,7 @@ export default function AdminPanel({
     complaints,
     currentMainPage,
     currentMonthId,
+    setCurrentMonthId,
     currentUser,
     dcRowsList,
     dragActive,
@@ -4021,12 +4088,12 @@ export default function AdminPanel({
                     </div>
                   ) : (
                     <div className="max-h-64 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
-                      {billingMonths.map((m) => {
+                      {billingMonths.map((m, mIdx) => {
                         const isSelected = sheetIdToDelete === m.id;
                         return (
                           <motion.button
                             type="button"
-                            key={`sheet-item-${m.id}`}
+                            key={`sheet-item-${m.id || 'sheet'}-${mIdx}`}
                             onClick={() => setSheetIdToDelete(m.id)}
                             whileHover={{ y: -1 }}
                             whileTap={{ scale: 0.99 }}
@@ -4628,7 +4695,7 @@ export default function AdminPanel({
         {activeTab === 'clients' && (
           <ClientManagement 
             appConfig={appConfig} 
-            isAdmin={true} 
+            isAdmin={canManageClients} 
             currentUser={currentUser} 
             currentUserName={users.find(u => u.uid === currentUser.uid)?.username || 'Admin'} 
             isBillingUnlocked={isBillingUnlocked}
@@ -4771,7 +4838,7 @@ export default function AdminPanel({
                             : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
                         )}
                       >
-                        Supervisor
+                        Admin
                       </button>
                       {currentUser.role === 'super_admin' && (
                         <button
@@ -5572,23 +5639,43 @@ export default function AdminPanel({
                   </div>
                   
                   <div className="flex flex-wrap gap-2">
-                    {appConfig.statuses.map((stat, i) => (
-                      <div key={`stat-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-[var(--neu-surface)] rounded-lg border border-[var(--neu-border)] text-[10px] font-bold uppercase tracking-tight">
-                        <span className="text-slate-700 dark:text-slate-300">{stat}</span>
-                        <button 
-                          onClick={() => {
-                            if (appConfig.statuses.length > 1) {
-                              onUpdateConfig({ ...appConfig, statuses: appConfig.statuses.filter(s => s !== stat) });
-                            } else {
-                              toast.error('At least one status is required.');
-                            }
-                          }}
-                          className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <X size={10} />
-                        </button>
-                      </div>
-                    ))}
+                    {appConfig.statuses.map((stat, i) => {
+                      const isPerm = isPermanentWorkflowStatus(stat);
+                      return (
+                        <div key={`stat-${i}`} className={cn(
+                          "group relative flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-tight transition-all",
+                          isPerm 
+                            ? "bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/30 text-amber-900 dark:text-amber-200" 
+                            : "bg-[var(--neu-surface)] border-[var(--neu-border)] text-slate-700 dark:text-slate-300"
+                        )}>
+                          <span className={cn(isPerm ? "font-black" : "")}>{stat}</span>
+                          {isPerm ? (
+                            <span className="text-amber-600 dark:text-amber-400 flex items-center gap-0.5 select-none" title="Permanent Core Status (Protected & Non-deletable)">
+                              <Lock size={11} />
+                            </span>
+                          ) : (
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (isPerm) {
+                                  toast.error('🔒 Permanent Status', { description: 'This core workflow status cannot be deleted.' });
+                                  return;
+                                }
+                                if (appConfig.statuses.length > 1) {
+                                  onUpdateConfig({ ...appConfig, statuses: appConfig.statuses.filter(s => s !== stat) });
+                                } else {
+                                  toast.error('At least one status is required.');
+                                }
+                              }}
+                              className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                              title="Delete status"
+                            >
+                              <X size={10} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -6242,7 +6329,7 @@ export default function AdminPanel({
 
                   <div className="space-y-4 relative">
                     <AnimatePresence mode="popLayout">
-                      {filteredRecycleItems.map((item) => {
+                      {filteredRecycleItems.map((item, idx) => {
                         const details = item.details || {};
                         const isExpanded = expandedRecycleItem === item.id;
                         const deletedAt = details.deletedAt || item.created_at;
@@ -6259,7 +6346,7 @@ export default function AdminPanel({
 
                         return (
                           <motion.div
-                            key={item.id}
+                            key={`recycle-item-${item.id || 'rec'}-${idx}`}
                             layout
                             initial={{ opacity: 0, y: 15, scale: 0.98 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -6852,7 +6939,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'billing' && <BillingTab {...stateProps} />}
+        {activeTab === 'billing' && <BillingTab {...stateProps} forceViewOnly={!canWriteBilling} />}
           </motion.div>
           </Suspense>
           </>

@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
-import DealerDataViewer from './DealerDataViewer';
 import ComplaintForm from './ComplaintForm';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { WhatsAppSendButton, WhatsAppConnectPanel, WhatsAppMessageTemplateBox } from '../whatsapp_data';
@@ -14,7 +13,7 @@ import { googleSheetsService } from '../services/googleSheetsService';
 import { supabaseService as pocketbaseService, fromDb, globalTableCaches } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
-import { AppConfig } from '../constants';
+import { AppConfig, isPermanentWorkflowStatus, ensurePermanentStatuses } from '../constants';
 import MicVisualizer from './MicVisualizer';
 import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
@@ -33,7 +32,6 @@ const ReceiptManager = lazy(() => import('./ReceiptManager'));
 
 const MYPC_FILE_TO_SLUG: Record<string, string> = {
   'nodes_view': 'active-nodes',
-  'dealers_data_view': 'dealers-data',
   'submit_view': 'complain-reg',
   'map_view': 'network-map',
   'user_details': 'users-management',
@@ -58,6 +56,7 @@ export default function MyPCTab(props: MyPCTabProps) {
   const navigate = useNavigate();
     const {
     onNavigate,
+    canManageClients,
     activeRows,
     activeTab,
     alertAuthorized,
@@ -298,6 +297,8 @@ export default function MyPCTab(props: MyPCTabProps) {
     users
   } = props;
 
+  const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin';
+  const canAccessLoginProfiles = currentUser?.role === 'super_admin' || isSubDealerUser;
 
   return (
 
@@ -307,14 +308,12 @@ export default function MyPCTab(props: MyPCTabProps) {
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 max-w-7xl mx-auto pt-2 pb-8">
                 {[
                   { id: 'nodes_view', icon: Flame, title: 'Active Complainers', desc: 'Monitor dynamic hotspots' },
-                  ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_data_view', icon: BarChart3, title: 'Dealers Data', desc: 'Audit dealer network metrics' }] : []),
                   { id: 'submit_view', icon: PlusSquare, title: branding?.tabNames?.submit || 'Complain Reg', desc: 'File fresh customer logs' },
                   { id: 'map_view', icon: MapPinned, title: 'Network Map', desc: 'Diagnostic geographic connection grid' },
                   { id: 'user_details', icon: Users, title: 'Users Management', desc: 'Manage logins & clearance level' },
-                  ...(currentUser?.role !== 'dealer' ? [{ id: 'dealer_data_viewer', icon: Eye, title: 'Dealer Data', desc: 'View dealer records (read-only)' }] : []),
                   { id: 'top10_complainers', icon: BarChart2, title: 'Top 10 Complainer', desc: 'High frequency support identifiers' },
-                  { id: 'login_profiles', icon: ShieldCheck, title: 'Login Profiles', desc: 'Active Credentials & Roles Overview' },
-                  { id: 'dealers_view', icon: ShieldAlert, title: 'Dealer Section', desc: 'Authorized Dealers Registry Setup' },
+                  ...(canAccessLoginProfiles ? [{ id: 'login_profiles', icon: ShieldCheck, title: 'Login Profiles', desc: 'Active Credentials & Roles Overview' }] : []),
+                  ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_view', icon: ShieldAlert, title: 'Dealer Section', desc: 'Authorized Dealers Registry Setup' }] : []),
                   { id: 'system_config', icon: Settings, title: 'Workflow Config', desc: 'Edit Categories & Active Zones' },
                   { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
                   { id: 'integrations', icon: CloudUpload, title: 'Google Sheet Link', desc: 'One-Time Enterprise Sync' },
@@ -364,7 +363,6 @@ export default function MyPCTab(props: MyPCTabProps) {
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
                         Running Frame: {
                           mypcOpenedFile === 'whatsapp_integration' ? 'WhatsApp Business Integration Console' :
-                          mypcOpenedFile === 'dealer_data_viewer' ? 'Read-Only Dealer Data Viewer' :
                           mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
                           mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
                           mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
@@ -375,7 +373,6 @@ export default function MyPCTab(props: MyPCTabProps) {
                           mypcOpenedFile === 'settings_info' ? 'System Audio-Voice Matrix & Security' :
                           mypcOpenedFile === 'complaints_view' ? 'Real-Time Operational Support Request Console' :
                           mypcOpenedFile === 'nodes_view' ? 'Diagnostic Active Complainers & Hotspot Index' :
-                          mypcOpenedFile === 'dealers_data_view' ? 'Dealers Network Intelligence Audit Matrix' :
                           mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
                           mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
                           'Cloud Sheets Sync Nodes Proxy'
@@ -392,7 +389,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                         <div className="animate-fade-in bg-[var(--neu-surface)] p-6 rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)]">
                           <ClientManagement 
                             appConfig={appConfig} 
-                            isAdmin={true} 
+                            isAdmin={canManageClients ?? false} 
                             currentUser={currentUser} 
                             currentUserName={users.find(u => u.uid === currentUser.uid)?.username || 'Admin'} 
                             isBillingUnlocked={isBillingUnlocked}
@@ -410,6 +407,7 @@ export default function MyPCTab(props: MyPCTabProps) {
 
                   {/* Subview 3: Login Profiles */}
                   {mypcOpenedFile === 'login_profiles' && (
+                    canAccessLoginProfiles ? (
                     <div className="max-w-7xl mx-auto space-y-6 text-left">
                       {/* Active Session & Core Profile */}
                       <div className={cn("p-8", getCardStyle(branding.cardStyle))}>
@@ -538,7 +536,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                                         : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
                                     )}
                                   >
-                                    Supervisor
+                                    Admin
                                   </button>
                                   {currentUser.role === 'super_admin' && (
                                     <button
@@ -783,7 +781,20 @@ export default function MyPCTab(props: MyPCTabProps) {
                         </div>
                       </div>
                     </div>
-                  )}
+                  ) : (
+                    <div className="max-w-xl mx-auto p-12 bg-[var(--neu-surface)] border border-rose-200/50 dark:border-rose-950/50 rounded-3xl text-center space-y-6">
+                      <div className="w-20 h-20 bg-rose-50 dark:bg-rose-950/20 text-rose-500 mx-auto rounded-full flex items-center justify-center">
+                        <ShieldAlert size={40} />
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className="text-lg font-black uppercase text-slate-900 dark:text-white">Access Denied</h4>
+                        <p className="text-xs text-slate-400 uppercase font-bold tracking-widest leading-relaxed">
+                          Secured Admin Node. Login profiles are accessible to Sub-Dealer and Super Admin accounts only.
+                        </p>
+                      </div>
+                    </div>
+                  )
+                )}
 
                   {/* Subview 4: System Configurations */}
                   {mypcOpenedFile === 'system_config' && (
@@ -894,23 +905,43 @@ export default function MyPCTab(props: MyPCTabProps) {
                             </div>
                             
                             <div className="flex flex-wrap gap-2">
-                              {appConfig.statuses.map((stat, i) => (
-                                <div key={`stat-sys-${i}`} className="group relative flex items-center gap-2 px-3 py-1.5 bg-[var(--neu-surface)] rounded-lg border border-slate-205 dark:border-white/10 text-[10px] font-bold uppercase tracking-tight">
-                                  <span className="text-slate-700 dark:text-slate-300">{stat}</span>
-                                  <button 
-                                    onClick={() => {
-                                      if (appConfig.statuses.length > 1) {
-                                        onUpdateConfig({ ...appConfig, statuses: appConfig.statuses.filter(s => s !== stat) });
-                                      } else {
-                                        toast.error('At least one status is required.');
-                                      }
-                                    }}
-                                    className="text-slate-400 hover:text-red-500 opacity-100 transition-all cursor-pointer font-bold bg-transparent border-none p-1"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ))}
+                              {appConfig.statuses.map((stat, i) => {
+                                const isPerm = isPermanentWorkflowStatus(stat);
+                                return (
+                                  <div key={`stat-sys-${i}`} className={cn(
+                                    "group relative flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-tight transition-all",
+                                    isPerm
+                                      ? "bg-amber-500/10 dark:bg-amber-500/15 border-amber-500/30 text-amber-900 dark:text-amber-200"
+                                      : "bg-[var(--neu-surface)] border-slate-205 dark:border-white/10 text-slate-700 dark:text-slate-300"
+                                  )}>
+                                    <span className={cn(isPerm ? "font-black" : "")}>{stat}</span>
+                                    {isPerm ? (
+                                      <span className="text-amber-600 dark:text-amber-400 flex items-center gap-0.5 select-none" title="Permanent Core Status (Protected & Non-deletable)">
+                                        <Lock size={11} />
+                                      </span>
+                                    ) : (
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          if (isPerm) {
+                                            toast.error('🔒 Permanent Status', { description: 'This core workflow status cannot be deleted.' });
+                                            return;
+                                          }
+                                          if (appConfig.statuses.length > 1) {
+                                            onUpdateConfig({ ...appConfig, statuses: appConfig.statuses.filter(s => s !== stat) });
+                                          } else {
+                                            toast.error('At least one status is required.');
+                                          }
+                                        }}
+                                        className="text-slate-400 hover:text-red-500 opacity-100 transition-all cursor-pointer font-bold bg-transparent border-none p-1"
+                                        title="Delete status"
+                                      >
+                                        ✕
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -1856,109 +1887,6 @@ export default function MyPCTab(props: MyPCTabProps) {
                     <div className="max-w-4xl mx-auto text-left animate-in fade-in duration-300">
                       <HighFrequencyNodes complaints={complaints} users={users} />
                     </div>
-                  )}
-
-                  {/* Subview 11: Dealers Data dealers_data_view */}
-                  {mypcOpenedFile === 'dealers_data_view' && (
-                    currentUser.role === 'super_admin' ? (
-                      <div className="space-y-8 text-left animate-in fade-in duration-300">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                          <div className="space-y-1">
-                            <h3 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Dealer Intelligence</h3>
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-relaxed">Select an authorized dealer network to audit operational performance</p>
-                          </div>
-                          <div className="flex bg-slate-105 dark:bg-slate-900 p-1 rounded-xl border border-[var(--neu-border)]">
-                            <button 
-                              type="button"
-                              onClick={() => setSelectedDealerId('all')}
-                              className={cn(
-                                "px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all cursor-pointer",
-                                selectedDealerId === 'all' ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)]" : "text-slate-500 hover:text-slate-900"
-                              )}
-                            >
-                              Global View
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                          {users.filter(u => u.role === 'dealer').map((dealer, i) => {
-                            const dealerComplaints = complaints.filter(c => c.dealerId === dealer.uid);
-                            const pending = dealerComplaints.filter(c => c.status === 'pending').length;
-                            const completed = dealerComplaints.filter(c => c.status === 'complete').length;
-                            
-                            return (
-                              <motion.div
-                                key={`${dealer.uid}-${i}`}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                onClick={() => {
-                                  setSelectedDealerId(dealer.uid);
-                                  navigate('/mypc/complaints');
-                                }}
-                                className={cn(
-                                  "p-6 rounded-2xl border-2 transition-all cursor-pointer group",
-                                  selectedDealerId === dealer.uid 
-                                    ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] border-slate-950 dark:border-brand-accent" 
-                                    : "bg-[var(--neu-surface)] border-[var(--neu-border)] hover:border-brand-accent/50"
-                                )}
-                              >
-                                <div className="flex justify-between items-start mb-6">
-                                  <div className={cn(
-                                    "w-12 h-12 rounded-xl flex items-center justify-center",
-                                    selectedDealerId === dealer.uid ? "bg-white/10" : "bg-[var(--neu-surface)]"
-                                  )}>
-                                    <TrendingUp size={24} className={selectedDealerId === dealer.uid ? "text-white" : "text-brand-accent"} />
-                                  </div>
-                                  <div className={cn(
-                                    "px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest border",
-                                    selectedDealerId === dealer.uid ? "bg-white/20 border-white/30" : "bg-[var(--neu-surface)] border-[var(--neu-border)] text-slate-500"
-                                  )}>
-                                    {dealer.lineCode}
-                                  </div>
-                                </div>
-                                
-                                <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate text-slate-950 dark:text-slate-100">{dealer.username}</h4>
-                                <p className={cn("text-[10px] font-bold uppercase tracking-widest mb-6", selectedDealerId === dealer.uid ? "text-white/60" : "text-slate-400")}>Authorized Dealer Network</p>
-                                
-                                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10 dark:border-white/10">
-                                  <div>
-                                    <p className={cn("text-[9px] font-black uppercase tracking-widest", selectedDealerId === dealer.uid ? "text-white/40" : "text-slate-500")}>Operations</p>
-                                    <p className="text-xl font-black tracking-tighter">{dealerComplaints.length}</p>
-                                  </div>
-                                  <div>
-                                    <p className={cn("text-[9px] font-black uppercase tracking-widest", selectedDealerId === dealer.uid ? "text-white/40" : "text-slate-500")}>Pending</p>
-                                    <p className="text-xl font-black tracking-tighter text-amber-500">{pending}</p>
-                                  </div>
-                                </div>
-                              </motion.div>
-                            );
-                          })}
-                        </div>
-
-                        {users.filter(u => u.role === 'dealer').length === 0 && (
-                          <div className="p-12 text-center border-2 border-dashed border-[var(--neu-border)] rounded-3xl">
-                            <div className="w-16 h-16 bg-[var(--neu-surface)] rounded-full flex items-center justify-center mx-auto mb-6">
-                              <ShieldAlert size={32} className="text-slate-300" />
-                            </div>
-                            <h4 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">No Active Dealer Networks</h4>
-                            <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Authorize dealers in the "Dealer Section" to start auditing their data.</p>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="max-w-xl mx-auto p-12 bg-[var(--neu-surface)] border border-rose-200/50 dark:border-rose-950/50 rounded-3xl text-center space-y-6">
-                        <div className="w-20 h-20 bg-rose-50 dark:bg-rose-950/20 text-rose-500 mx-auto rounded-full flex items-center justify-center">
-                          <ShieldAlert size={40} />
-                        </div>
-                        <div className="space-y-2">
-                          <h4 className="text-lg font-black uppercase text-slate-900 dark:text-white">Access Denied</h4>
-                          <p className="text-xs text-slate-400 uppercase font-bold tracking-widest leading-relaxed">
-                            Secured Admin Node. Your current role lacks super-admin credentials.
-                          </p>
-                        </div>
-                      </div>
-                    )
                   )}
 
                   {/* Subview 12: Complain Reg submit_view */}

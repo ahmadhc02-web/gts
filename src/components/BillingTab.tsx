@@ -22,12 +22,14 @@ import RouteLoadingFallback from './RouteLoadingFallback';
 
 
 interface BillingTabProps {
+  forceViewOnly?: boolean;
   [key: string]: any;
 }
 
 export default function BillingTab(props: BillingTabProps) {
   const navigate = useNavigate();
     const {
+    forceViewOnly = false,
     onNavigate,
     activeRows,
     activeTab,
@@ -193,6 +195,7 @@ export default function BillingTab(props: BillingTabProps) {
     setBillingRowToDelete,
     setBillingSearchQuery,
     setBillingStatusFilter,
+    setCurrentMonthId,
     setDragActive,
     setEditCompanyName,
     setEditFullName,
@@ -269,13 +272,21 @@ export default function BillingTab(props: BillingTabProps) {
     users
   } = props;
 
+  const effectiveBillingUnlocked = forceViewOnly ? false : isBillingUnlocked;
+
+  // Only Sub-Dealer and Super Admin can delete recovery/billing rows
+  const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin';
+  const canDeleteBillingRows = props.canDeleteBillingRows !== undefined 
+    ? Boolean(props.canDeleteBillingRows) 
+    : (currentUser?.role === 'super_admin' || isSubDealerUser);
+
 
   return (
 
           <div className="max-w-[115rem] mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
             {/* Configure New Month Popup-card Block */}
             <AnimatePresence>
-              {isConfiguringNewMonth && (
+              {!forceViewOnly && isConfiguringNewMonth && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -340,6 +351,7 @@ export default function BillingTab(props: BillingTabProps) {
 
 
             {/* FLOATING CORNER SECURITY SHIELD */}
+            {!forceViewOnly && (
             <div className="fixed bottom-6 left-4 lg:left-[88px] z-[90] flex items-end">
               <motion.div 
                 layout
@@ -350,7 +362,7 @@ export default function BillingTab(props: BillingTabProps) {
                 }}
                 className={cn(
                   "overflow-hidden shadow-[var(--neu-shadow-raised-lg)] border transition-colors flex items-center h-12",
-                  isBillingUnlocked 
+                  effectiveBillingUnlocked 
                     ? "bg-emerald-50 dark:bg-emerald-950/80 border-emerald-500/30 backdrop-blur-md" 
                     : "bg-amber-50 dark:bg-slate-900 border-amber-500/30 backdrop-blur-md",
                   !isSecurityWidgetExpanded && "cursor-pointer hover:scale-105"
@@ -370,7 +382,7 @@ export default function BillingTab(props: BillingTabProps) {
                   }}
                   title={isSecurityWidgetExpanded ? "Collapse Widget" : "Open Security Shield"}
                 >
-                  {isBillingUnlocked ? <Unlock size={20} className="text-emerald-600 dark:text-emerald-400" fill="currentColor" /> : <Lock size={20} className="text-amber-600 dark:text-amber-400" fill="currentColor" />}
+                  {effectiveBillingUnlocked ? <Unlock size={20} className="text-emerald-600 dark:text-emerald-400" fill="currentColor" /> : <Lock size={20} className="text-amber-600 dark:text-amber-400" fill="currentColor" />}
                 </div>
 
                 {/* Expanded Content */}
@@ -385,16 +397,16 @@ export default function BillingTab(props: BillingTabProps) {
                     >
                       <div className="flex flex-col border-l border-slate-200 dark:border-slate-700/50 pl-3 mr-1 py-1">
                         <span className={cn("text-[9px] font-black tracking-widest uppercase leading-none mb-0.5",
-                          isBillingUnlocked ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
+                          effectiveBillingUnlocked ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
                         )}>
-                          {isBillingUnlocked ? "UNLOCKED & ACTIVE" : "SECURED / VIEW-ONLY"}
+                          {effectiveBillingUnlocked ? "UNLOCKED & ACTIVE" : "SECURED / VIEW-ONLY"}
                         </span>
                         <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none">
-                          {isBillingUnlocked ? "Write Privileges Enabled" : "Access Key Required"}
+                          {effectiveBillingUnlocked ? "Write Privileges Enabled" : "Access Key Required"}
                         </span>
                       </div>
 
-                      {!isBillingUnlocked ? (
+                      {!effectiveBillingUnlocked ? (
                         <div className="flex items-center gap-1.5 ml-1">
                           <input
                             type="password"
@@ -487,6 +499,7 @@ export default function BillingTab(props: BillingTabProps) {
                 </AnimatePresence>
               </motion.div>
             </div>
+            )}
 
             {currentMonthId ? (
               <>
@@ -525,7 +538,7 @@ export default function BillingTab(props: BillingTabProps) {
                     }
                   ].map((card, i) => (
                     <motion.div
-                      key={i}
+                      key={`billing-summary-tile-${card.label}-${i}`}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       whileHover={{ y: -2, scale: 1.01 }}
@@ -948,7 +961,7 @@ export default function BillingTab(props: BillingTabProps) {
                           style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}
                           className={cn(
                             "divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[13.5px] font-black text-slate-950 dark:text-zinc-50",
-                            !isBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none"
+                            !effectiveBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none"
                           )}>
                           {paginatedRows.map((rowRef, localIdx) => {
                             // Find corresponding absolute row index in full month rows array
@@ -968,12 +981,12 @@ export default function BillingTab(props: BillingTabProps) {
                                 key={`${rowRef.clientId || rowRef.username || 'row'}-${localIdx}`}
                                 className={cn(
                                   "hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors whitespace-nowrap",
-                                  !isBillingUnlocked && "cursor-pointer",
+                                  !effectiveBillingUnlocked && "cursor-pointer",
                                   isTdc && "bg-rose-500/5 text-rose-500",
                                   isDc && "bg-neutral-500/10 text-neutral-500"
                                 )}
                                 onClick={(e) => {
-                                  if (!isBillingUnlocked) {
+                                  if (!effectiveBillingUnlocked) {
                                     setSelectedRecoveryRow(rowRef);
                                   }
                                 }}
@@ -990,7 +1003,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     id={`rec_cell_${globalRowIdx}_name`}
                                     type="text"
                                     value={rowRef.name || ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'name', activeRows.length)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
@@ -1006,7 +1019,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     id={`rec_cell_${globalRowIdx}_username`}
                                     type="text"
                                     value={rowRef.username || ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
@@ -1021,7 +1034,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     id={`rec_cell_${globalRowIdx}_mobileNumber`}
                                     type="text"
                                     value={rowRef.mobileNumber || ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'mobileNumber', activeRows.length)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
@@ -1037,7 +1050,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     id={`rec_cell_${globalRowIdx}_panelDetails`}
                                     type="text"
                                     value={rowRef.panelDetails || ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase())}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'panelDetails', activeRows.length)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase(), true)}
@@ -1053,7 +1066,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     id={`rec_cell_${globalRowIdx}_area`}
                                     type="text"
                                     value={rowRef.area || ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'area', activeRows.length)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value, true)}
@@ -1068,7 +1081,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     id={`rec_cell_${globalRowIdx}_rt`}
                                     type="text"
                                     value={rowRef.rt || ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
                                     onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'rt', activeRows.length)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value, true)}
@@ -1085,7 +1098,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       id={`rec_cell_${globalRowIdx}_baseAmount`}
                                       type="number"
                                       value={isTdc || isDc ? 0 : (rowRef.baseAmount ?? '')}
-                                      disabled={!isBillingUnlocked}
+                                      disabled={!effectiveBillingUnlocked}
                                       onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                       onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'baseAmount', activeRows.length)}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
@@ -1103,7 +1116,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       id={`rec_cell_${globalRowIdx}_cr`}
                                       type="number"
                                       value={isDc ? 0 : (rowRef.cr ?? '')}
-                                      disabled={!isBillingUnlocked}
+                                      disabled={!effectiveBillingUnlocked}
                                       onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                       onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'cr', activeRows.length)}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
@@ -1146,7 +1159,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       id={`rec_cell_${globalRowIdx}_paymentReceived`}
                                       type="number"
                                       value={isDc ? 0 : (rowRef.paymentReceived ?? '')}
-                                      disabled={!isBillingUnlocked}
+                                      disabled={!effectiveBillingUnlocked}
                                       onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                       onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'paymentReceived', activeRows.length)}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
@@ -1161,7 +1174,7 @@ export default function BillingTab(props: BillingTabProps) {
                                   <select
                                     id={`rec_cell_${globalRowIdx}_paymentStatus`}
                                     value={rowRef.paymentStatus}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
                                     className={cn(
                                       "px-2 py-0.5 text-[12px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full min-w-0 bg-[var(--neu-surface)] disabled:opacity-100  font-sans",
@@ -1206,7 +1219,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         id={`rec_cell_${globalRowIdx}_occ`}
                                         type="text"
                                         value={rowRef.occ || rowRef.occupation || ''}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={!effectiveBillingUnlocked}
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'occ', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value, true)}
@@ -1220,7 +1233,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         id={`rec_cell_${globalRowIdx}_pkgDetails`}
                                         type="text"
                                         value={rowRef.pkgDetails || ''}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={!effectiveBillingUnlocked}
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'pkgDetails', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value, true)}
@@ -1234,7 +1247,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         id={`rec_cell_${globalRowIdx}_connectionDate`}
                                         type="text"
                                         value={rowRef.connectionDate || ''}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={!effectiveBillingUnlocked}
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'connectionDate', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value, true)}
@@ -1250,7 +1263,7 @@ export default function BillingTab(props: BillingTabProps) {
                                           id={`rec_cell_${globalRowIdx}_devicePrice`}
                                           type="number"
                                           value={rowRef.devicePrice ?? ''}
-                                          disabled={!isBillingUnlocked}
+                                          disabled={!effectiveBillingUnlocked}
                                           onChange={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                           onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'devicePrice', activeRows.length)}
                                           onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0, true)}
@@ -1267,7 +1280,7 @@ export default function BillingTab(props: BillingTabProps) {
                                           id={`rec_cell_${globalRowIdx}_abl`}
                                           type="number"
                                           value={rowRef.abl ?? ''}
-                                          disabled={!isBillingUnlocked}
+                                          disabled={!effectiveBillingUnlocked}
                                           onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                           onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'abl', activeRows.length)}
                                           onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
@@ -1292,18 +1305,20 @@ export default function BillingTab(props: BillingTabProps) {
                                         username={rowRef.username || rowRef.clientId || ''}
                                         area={rowRef.area || ''}
                                       />
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          triggerDeleteBillingRow(globalRowIdx);
-                                        }}
-                                        disabled={!isBillingUnlocked}
-                                        className="p-1 rounded bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-450 hover:bg-rose-100 dark:hover:bg-rose-900/50 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
-                                        title="Delete Row"
-                                      >
-                                        <Trash2 size={13} />
-                                      </button>
+                                      {canDeleteBillingRows && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            triggerDeleteBillingRow(globalRowIdx);
+                                          }}
+                                          disabled={!effectiveBillingUnlocked}
+                                          className="p-1 rounded bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-450 hover:bg-rose-100 dark:hover:bg-rose-900/50 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+                                          title="Delete Row"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      )}
                                     </div>
                                 </td>
                               </tr>
@@ -1448,13 +1463,13 @@ export default function BillingTab(props: BillingTabProps) {
                           transition={{ duration: 0.15 }}
                           style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
                           onClick={(e) => {
-                            if (!isBillingUnlocked) {
+                            if (!effectiveBillingUnlocked) {
                               setSelectedRecoveryRow(rowRef);
                             }
                           }}
                           className={cn(
                             "p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between shadow-[var(--neu-shadow-raised-sm)]",
-                            !isBillingUnlocked && "cursor-pointer [&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none",
+                            !effectiveBillingUnlocked && "cursor-pointer [&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none",
                             isTdc 
                               ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900/60 text-rose-600 dark:text-rose-450" 
                               : isDc
@@ -1472,7 +1487,7 @@ export default function BillingTab(props: BillingTabProps) {
                               <span className="text-[9px] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-700 dark:text-slate-300 font-black px-1.5 py-0.5 rounded shrink-0">
                                 #{globalRowIdx + 1}
                               </span>
-                              {isBillingUnlocked && (
+                              {effectiveBillingUnlocked && (
                                 <div className="flex items-center gap-1">
                                   <WhatsAppSendButton
                                     name={rowRef.name || ""}
@@ -1483,24 +1498,26 @@ export default function BillingTab(props: BillingTabProps) {
                                     username={rowRef.username || rowRef.clientId || ""}
                                     area={rowRef.area || ""}
                                   />
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    triggerDeleteBillingRow(globalRowIdx);
-                                  }}
-                                  className="p-1 rounded text-rose-600 dark:text-rose-450 hover:bg-rose-100 dark:hover:bg-rose-950/40 shrink-0 cursor-pointer"
-                                  title="Delete Row"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                {canDeleteBillingRows && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      triggerDeleteBillingRow(globalRowIdx);
+                                    }}
+                                    className="p-1 rounded text-rose-600 dark:text-rose-450 hover:bg-rose-100 dark:hover:bg-rose-950/40 shrink-0 cursor-pointer"
+                                    title="Delete Row"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
                                 </div>
                               )}
                               <div className="min-w-0">
                                 <input
                                   type="text"
                                   value={rowRef.name || ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
                                   onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'name', activeRows.length)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
@@ -1510,7 +1527,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <input
                                   type="text"
                                   value={rowRef.username || rowRef.clientId || ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
                                   onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
@@ -1522,7 +1539,7 @@ export default function BillingTab(props: BillingTabProps) {
                             <div className="flex flex-col items-end shrink-0">
                               <select
                                 value={rowRef.paymentStatus}
-                                disabled={!isBillingUnlocked}
+                                disabled={!effectiveBillingUnlocked}
                                 onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
                                 className={cn(
                                   "px-2 py-0.5 text-[10px] font-black uppercase text-center rounded border focus:ring-0  font-sans",
@@ -1563,7 +1580,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <input
                                   type="number"
                                   value={rowRef.paymentReceived ?? ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
                                   className="w-full bg-transparent border-none p-0 text-[14px] font-black text-emerald-900 dark:text-emerald-300 focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -1580,7 +1597,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <input
                                   type="number"
                                   value={rowRef.cr ?? ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
                                   className={cn(
@@ -1596,7 +1613,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <input
                                   type="number"
                                   value={rowRef.baseAmount ?? ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
                                   className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-[var(--neu-border)] rounded text-right font-sans text-black dark:text-white text-[12px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -1626,7 +1643,7 @@ export default function BillingTab(props: BillingTabProps) {
                                   <input
                                     type="number"
                                     value={rowRef.abl ?? ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
                                     className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-right font-sans text-black dark:text-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -1758,7 +1775,7 @@ export default function BillingTab(props: BillingTabProps) {
                             </tr>
                           </thead>
                           <tbody 
-                            className={cn("divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[13.5px] font-black text-slate-950 dark:text-zinc-50", !isBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none")}
+                            className={cn("divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[13.5px] font-black text-slate-950 dark:text-zinc-50", !effectiveBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none")}
                           >
                             {/* Insert desktop_map_str here with dcRowsList */}
 
@@ -1779,12 +1796,12 @@ export default function BillingTab(props: BillingTabProps) {
                                   key={`${rowRef.clientId || rowRef.username || 'row'}-${localIdx}`}
                                   className={cn(
                                     "hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors whitespace-nowrap",
-                                    !isBillingUnlocked && "cursor-pointer",
+                                    !effectiveBillingUnlocked && "cursor-pointer",
                                     isTdc && "bg-rose-500/5 text-rose-500",
                                     isDc && "bg-neutral-500/10 text-neutral-500"
                                   )}
                                   onClick={(e) => {
-                                    if (!isBillingUnlocked) {
+                                    if (!effectiveBillingUnlocked) {
                                       setSelectedRecoveryRow(rowRef);
                                     }
                                   }}
@@ -1801,7 +1818,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       id={`rec_cell_${globalRowIdx}_name`}
                                       type="text"
                                       value={rowRef.name || ''}
-                                      disabled={!isBillingUnlocked}
+                                      disabled={!effectiveBillingUnlocked}
                                       onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
                                       onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'name', activeRows.length)}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
@@ -1817,7 +1834,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       id={`rec_cell_${globalRowIdx}_username`}
                                       type="text"
                                       value={rowRef.username || rowRef.clientId || ''}
-                                      disabled={!isBillingUnlocked}
+                                      disabled={!effectiveBillingUnlocked}
                                       onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
                                       onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
@@ -1832,7 +1849,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       id={`rec_cell_${globalRowIdx}_phone`}
                                       type="text"
                                       value={rowRef.mobileNumber || rowRef.phone || rowRef.number || ''}
-                                      disabled={!isBillingUnlocked}
+                                      disabled={!effectiveBillingUnlocked}
                                       onChange={(e) => {
                                         handleSaveRowField(globalRowIdx, 'phone', e.target.value);
                                         handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value);
@@ -1855,7 +1872,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         id={`rec_cell_${globalRowIdx}_packageMbps`}
                                         type="number"
                                         value={rowRef.packageMbps ?? ''}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={!effectiveBillingUnlocked}
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'packageMbps', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'packageMbps', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'packageMbps', parseFloat(e.target.value) || 0, true)}
@@ -1874,7 +1891,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         id={`rec_cell_${globalRowIdx}_baseAmount`}
                                         type="number"
                                         value={isDc ? 0 : (rowRef.baseAmount ?? '')}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={!effectiveBillingUnlocked}
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'baseAmount', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
@@ -1892,7 +1909,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         id={`rec_cell_${globalRowIdx}_cr`}
                                         type="number"
                                         value={isDc ? 0 : (rowRef.cr ?? '')}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={!effectiveBillingUnlocked}
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'cr', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
@@ -1935,7 +1952,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         id={`rec_cell_${globalRowIdx}_paymentReceived`}
                                         type="number"
                                         value={isDc ? 0 : (rowRef.paymentReceived ?? '')}
-                                        disabled={!isBillingUnlocked}
+                                        disabled={!effectiveBillingUnlocked}
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'paymentReceived', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
@@ -1950,7 +1967,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     <select
                                       id={`rec_cell_${globalRowIdx}_paymentStatus`}
                                       value={rowRef.paymentStatus}
-                                      disabled={!isBillingUnlocked}
+                                      disabled={!effectiveBillingUnlocked}
                                       onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
                                       className={cn(
                                         "px-2 py-0.5 text-[12px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full min-w-0 bg-[var(--neu-surface)] disabled:opacity-100  font-sans",
@@ -1996,7 +2013,7 @@ export default function BillingTab(props: BillingTabProps) {
                                           id={`rec_cell_${globalRowIdx}_occ`}
                                           type="text"
                                           value={rowRef.occ || rowRef.occupation || ''}
-                                          disabled={!isBillingUnlocked}
+                                          disabled={!effectiveBillingUnlocked}
                                           onChange={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
                                           onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'occ', activeRows.length)}
                                           onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value, true)}
@@ -2010,7 +2027,7 @@ export default function BillingTab(props: BillingTabProps) {
                                           id={`rec_cell_${globalRowIdx}_pkgDetails`}
                                           type="text"
                                           value={rowRef.pkgDetails || ''}
-                                          disabled={!isBillingUnlocked}
+                                          disabled={!effectiveBillingUnlocked}
                                           onChange={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
                                           onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'pkgDetails', activeRows.length)}
                                           onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value, true)}
@@ -2024,7 +2041,7 @@ export default function BillingTab(props: BillingTabProps) {
                                           id={`rec_cell_${globalRowIdx}_connectionDate`}
                                           type="text"
                                           value={rowRef.connectionDate || ''}
-                                          disabled={!isBillingUnlocked}
+                                          disabled={!effectiveBillingUnlocked}
                                           onChange={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
                                           onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'connectionDate', activeRows.length)}
                                           onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value, true)}
@@ -2040,7 +2057,7 @@ export default function BillingTab(props: BillingTabProps) {
                                             id={`rec_cell_${globalRowIdx}_devicePrice`}
                                             type="number"
                                             value={rowRef.devicePrice ?? ''}
-                                            disabled={!isBillingUnlocked}
+                                            disabled={!effectiveBillingUnlocked}
                                             onChange={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                             onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'devicePrice', activeRows.length)}
                                             onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0, true)}
@@ -2057,7 +2074,7 @@ export default function BillingTab(props: BillingTabProps) {
                                             id={`rec_cell_${globalRowIdx}_abl`}
                                             type="number"
                                             value={rowRef.abl ?? ''}
-                                            disabled={!isBillingUnlocked}
+                                            disabled={!effectiveBillingUnlocked}
                                             onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                             onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'abl', activeRows.length)}
                                             onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
@@ -2101,13 +2118,13 @@ export default function BillingTab(props: BillingTabProps) {
                           transition={{ duration: 0.15 }}
                           style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
                           onClick={(e) => {
-                            if (!isBillingUnlocked) {
+                            if (!effectiveBillingUnlocked) {
                               setSelectedRecoveryRow(rowRef);
                             }
                           }}
                           className={cn(
                             "p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between shadow-[var(--neu-shadow-raised-sm)]",
-                            !isBillingUnlocked && "cursor-pointer [&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none",
+                            !effectiveBillingUnlocked && "cursor-pointer [&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none",
                             isTdc 
                               ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900/60 text-rose-600 dark:text-rose-450" 
                               : isDc
@@ -2125,7 +2142,7 @@ export default function BillingTab(props: BillingTabProps) {
                               <span className="text-[9px] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-700 dark:text-slate-300 font-black px-1.5 py-0.5 rounded shrink-0">
                                 #{globalRowIdx + 1}
                               </span>
-                              {isBillingUnlocked && (
+                              {effectiveBillingUnlocked && (
                                 <div className="flex items-center gap-1">
                                   <WhatsAppSendButton
                                     name={rowRef.name || ""}
@@ -2136,24 +2153,26 @@ export default function BillingTab(props: BillingTabProps) {
                                     username={rowRef.username || rowRef.clientId || ""}
                                     area={rowRef.area || ""}
                                   />
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    triggerDeleteBillingRow(globalRowIdx);
-                                  }}
-                                  className="p-1 rounded text-rose-600 dark:text-rose-450 hover:bg-rose-100 dark:hover:bg-rose-950/40 shrink-0 cursor-pointer"
-                                  title="Delete Row"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                {canDeleteBillingRows && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      triggerDeleteBillingRow(globalRowIdx);
+                                    }}
+                                    className="p-1 rounded text-rose-600 dark:text-rose-450 hover:bg-rose-100 dark:hover:bg-rose-950/40 shrink-0 cursor-pointer"
+                                    title="Delete Row"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
                                 </div>
                               )}
                               <div className="min-w-0">
                                 <input
                                   type="text"
                                   value={rowRef.name || ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
                                   onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'name', activeRows.length)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
@@ -2163,7 +2182,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <input
                                   type="text"
                                   value={rowRef.username || rowRef.clientId || ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
                                   onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
@@ -2175,7 +2194,7 @@ export default function BillingTab(props: BillingTabProps) {
                             <div className="flex flex-col items-end shrink-0">
                               <select
                                 value={rowRef.paymentStatus}
-                                disabled={!isBillingUnlocked}
+                                disabled={!effectiveBillingUnlocked}
                                 onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
                                 className={cn(
                                   "px-2 py-0.5 text-[10px] font-black uppercase text-center rounded border focus:ring-0  font-sans",
@@ -2216,7 +2235,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <input
                                   type="number"
                                   value={rowRef.paymentReceived ?? ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
                                   className="w-full bg-transparent border-none p-0 text-[14px] font-black text-emerald-900 dark:text-emerald-300 focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -2233,7 +2252,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <input
                                   type="number"
                                   value={rowRef.cr ?? ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
                                   className={cn(
@@ -2249,7 +2268,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <input
                                   type="number"
                                   value={rowRef.baseAmount ?? ''}
-                                  disabled={!isBillingUnlocked}
+                                  disabled={!effectiveBillingUnlocked}
                                   onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                   onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
                                   className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-[var(--neu-border)] rounded text-right font-sans text-black dark:text-white text-[12px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -2279,7 +2298,7 @@ export default function BillingTab(props: BillingTabProps) {
                                   <input
                                     type="number"
                                     value={rowRef.abl ?? ''}
-                                    disabled={!isBillingUnlocked}
+                                    disabled={!effectiveBillingUnlocked}
                                     onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                     onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
                                     className="w-full bg-slate-100/30 dark:bg-slate-950 px-2 py-0.5 border border-slate-200/50 dark:border-white/10 rounded text-right font-sans text-black dark:text-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -2354,9 +2373,89 @@ export default function BillingTab(props: BillingTabProps) {
                   </div>
                 </div>
               </>
+            ) : effectiveBillingUnlocked ? (
+              <div className="p-8 sm:p-12 text-center rounded-3xl border-2 border-dashed border-emerald-500/40 bg-emerald-500/5 dark:bg-emerald-950/20 shadow-[var(--neu-shadow-raised)] flex flex-col items-center justify-center gap-4 transition-all">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-lg shadow-emerald-500/10">
+                  <FileSpreadsheet size={32} />
+                </div>
+                <div className="space-y-1.5 max-w-md">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                    <Unlock size={11} className="stroke-[2.5]" />
+                    UNLOCKED & ACTIVE • WRITE PRIVILEGES ENABLED
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-slate-100">
+                    Deploy New Monthly Sheet
+                  </h3>
+                  <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-relaxed">
+                    Deploy a new billing recovery cycle initialized with all registered master clients, or choose an existing sheet from the archive.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsConfiguringNewMonth(true);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-[var(--neu-shadow-raised-lg)] shadow-emerald-600/20 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus size={16} className="stroke-[3]" />
+                    Deploy New Monthly Sheet
+                  </button>
+                  {billingMonths && billingMonths.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase">or Select Sheet:</span>
+                      <select
+                        value={currentMonthId || ''}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            if (setCurrentMonthId) setCurrentMonthId(e.target.value);
+                            window.dispatchEvent(new CustomEvent('gts-billing-month-selected', { detail: e.target.value }));
+                          }
+                        }}
+                        className="px-3 py-2 text-xs font-mono font-bold bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl text-slate-700 dark:text-slate-300 focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="">Choose Month...</option>
+                        {Array.from(new Set((billingMonths || []).map((m: any) => m?.id || m?.month_id).filter(Boolean))).map((monthId: any, mIdx: number) => (
+                          <option key={`m-opt-unlocked-${monthId}-${mIdx}`} value={monthId}>{monthId}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
-              <div className="p-12 text-center text-slate-500 font-bold uppercase text-sm border border-dashed border-slate-300 rounded-xl">
-                Please select or configure a billing month.
+              <div className="p-10 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] flex flex-col items-center justify-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
+                  <Lock size={22} />
+                </div>
+                <div className="text-center">
+                  <p className="text-slate-700 dark:text-slate-300 font-black uppercase text-xs tracking-wider">
+                    Please select or configure a billing month.
+                  </p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                    Unlock write privileges using the Floating Security Shield to deploy a new sheet.
+                  </p>
+                </div>
+                {billingMonths && billingMonths.length > 0 && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <select
+                      value={currentMonthId || ''}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          if (setCurrentMonthId) setCurrentMonthId(e.target.value);
+                          window.dispatchEvent(new CustomEvent('gts-billing-month-selected', { detail: e.target.value }));
+                        }
+                      }}
+                      className="px-4 py-2 text-xs font-mono font-bold bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="">Select Existing Month...</option>
+                      {Array.from(new Set((billingMonths || []).map((m: any) => m?.id || m?.month_id).filter(Boolean))).map((monthId: any, mIdx: number) => (
+                        <option key={`m-opt-locked-${monthId}-${mIdx}`} value={monthId}>{monthId}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             )}
             </div>

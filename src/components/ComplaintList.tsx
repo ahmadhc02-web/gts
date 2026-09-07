@@ -6,7 +6,7 @@ import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown,
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig, ComplaintReview } from '../types';
 import { cn } from '../lib/utils';
 import { getCardStyle } from '../lib/styleUtils';
-import { Network, ShieldAlert, Zap, Layers, Mail } from 'lucide-react';
+import { Network, ShieldAlert, Zap, Layers, Mail, MessageSquare } from 'lucide-react';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
@@ -25,6 +25,7 @@ interface ComplaintListProps {
   onUpdateRemarks?: (id: string, remarks: string) => Promise<void>;
   onEdit?: (id: string, data: Partial<Complaint>) => Promise<void>;
   isAdmin?: boolean;
+  canDelete?: boolean;
   currentUser: UserProfile;
   forcedStatusFilter?: ComplaintStatus | 'all';
   forcedPriorityFilter?: ComplaintPriority | 'all';
@@ -53,6 +54,7 @@ export default function ComplaintList({
   onUpdateRemarks,
   onEdit,
   isAdmin,
+  canDelete: canDeleteProp,
   currentUser,
   forcedStatusFilter = 'all',
   forcedPriorityFilter = 'all',
@@ -61,6 +63,10 @@ export default function ComplaintList({
   branding
 }: ComplaintListProps) {
   const now = Date.now();
+  // Only Sub-Dealer and Super Admin can delete complaints; Admin profile clearance is not permitted to delete
+  const isSubDealerUser = (currentUser.role === 'dealer' || Boolean(currentUser.dealerId && currentUser.dealerId !== 'main') || Boolean(currentUser.lineCode)) && currentUser.role !== 'admin';
+  const allowedToDelete = currentUser.role === 'super_admin' || isSubDealerUser;
+  const canDelete = (canDeleteProp !== undefined ? canDeleteProp : allowedToDelete) && allowedToDelete;
   const customNames = branding.customNames || {};
   const currentUserId = currentUser.uid;
   const [startDate, setStartDate] = React.useState('');
@@ -219,6 +225,9 @@ export default function ComplaintList({
         if (normFilter === 'in process' || normFilter === 'in_process') {
           return normEff === 'in process' || normEff === 'in_process';
         }
+        if (normFilter === 'customer review' || normFilter === 'customer reviews' || normFilter === 'costumer review' || normFilter === 'costumer reviews' || normFilter === 'customer_review') {
+          return normEff === 'customer review' || normEff === 'costumer review' || normEff === 'customer reviews' || normEff === 'costumer reviews' || normEff === 'customer_review';
+        }
         return normEff === normFilter;
       });
     }
@@ -361,13 +370,13 @@ export default function ComplaintList({
   );
 
   const getStatusColor = (status: ComplaintStatus) => {
-    switch (status) {
-      case 'complete': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
-      case 'in process': return 'text-blue-500 bg-blue-500/10 border-blue-500/20';
-      case 'scheduled': return 'text-purple-500 bg-purple-500/10 border-purple-500/20';
-      case 'important': return 'text-amber-500 bg-amber-500/10 border-amber-500/20 shadow-[var(--neu-shadow-raised-sm)] shadow-amber-500/10';
-      case 'pending': default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
-    }
+    const s = (status || '').toString().trim().toLowerCase();
+    if (s === 'complete') return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+    if (s === 'in process' || s === 'in_process') return 'text-blue-500 bg-blue-500/10 border-blue-500/20';
+    if (s === 'customer review' || s === 'costumer review' || s === 'customer reviews' || s === 'costumer reviews') return 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20 shadow-[var(--neu-shadow-raised-sm)] shadow-indigo-500/10';
+    if (s === 'scheduled') return 'text-purple-500 bg-purple-500/10 border-purple-500/20';
+    if (s === 'important') return 'text-amber-500 bg-amber-500/10 border-amber-500/20 shadow-[var(--neu-shadow-raised-sm)] shadow-amber-500/10';
+    return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
   };
 
   const getPriorityColor = (priority: ComplaintPriority) => {
@@ -380,7 +389,8 @@ export default function ComplaintList({
   };
 
   const getStatusIcon = (status: ComplaintStatus) => {
-    if (status === 'complete') {
+    const s = (status || '').toString().trim().toLowerCase();
+    if (s === 'complete') {
       return (
         <motion.div
           initial={{ scale: 0.5, opacity: 0 }}
@@ -394,6 +404,9 @@ export default function ComplaintList({
           <CheckCircle size={16} className="text-emerald-500" />
         </motion.div>
       );
+    }
+    if (s === 'customer review' || s === 'costumer review' || s === 'customer reviews' || s === 'costumer reviews') {
+      return <MessageSquare size={16} className="text-indigo-500" />;
     }
     return <Wifi size={16} className={cn(
       "transition-all duration-500 animate-pulse"
@@ -818,9 +831,9 @@ export default function ComplaintList({
                     className="absolute right-0 mt-2 w-48 neu-raised-lg rounded-2xl border border-white/50 dark:border-white/10 overflow-hidden z-50 text-left"
                   >
                     <div className="p-1.5 space-y-1">
-                      {['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'All Time'].map((r) => (
+                      {['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'All Time'].map((r, rIdx) => (
                         <button
-                          key={r}
+                          key={`timerange-opt-${r}-${rIdx}`}
                           onClick={() => handleTimeRangeChange(r)}
                           className={cn(
                             "w-full text-left px-3 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer",
@@ -889,6 +902,17 @@ export default function ComplaintList({
                 )}
               >
                 In Process
+              </button>
+              <button
+                onClick={() => setStatusFilter('customer review')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                  (statusFilter === 'customer review' || statusFilter === 'customer reviews' || statusFilter === 'Costumer review' || statusFilter === 'costumer review')
+                    ? "neu-raised text-brand-accent"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-330"
+                )}
+              >
+                Costumer Review
               </button>
               <button
                 onClick={() => setStatusFilter('scheduled')}
@@ -1119,7 +1143,7 @@ export default function ComplaintList({
                   onClick={() => handleSort('status')}
                 >
                   <div className="flex items-center justify-center gap-1.5">
-                    <span>Status</span>
+                    <span style={{ fontSize: '13px', paddingLeft: '0px', paddingTop: '0px', paddingRight: '0px' }}>Status</span>
                     {sortConfig.key === 'status' && (
                        sortConfig.direction === 'asc' ? <ChevronUp size={11} className="text-brand-accent" /> : <ChevronDown size={11} className="text-brand-accent" />
                     )}
@@ -1181,6 +1205,7 @@ export default function ComplaintList({
                           "absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-md transition-all duration-300 group-hover:w-1.5",
                           getEffectiveStatus(complaint, now).toLowerCase() === 'complete' ? 'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]' :
                           getEffectiveStatus(complaint, now).toLowerCase() === 'in process' ? 'bg-blue-500 shadow-[2px_0_10px_rgba(59,130,246,0.4)]' :
+                          (getEffectiveStatus(complaint, now).toLowerCase() === 'customer review' || getEffectiveStatus(complaint, now).toLowerCase() === 'costumer review' || getEffectiveStatus(complaint, now).toLowerCase() === 'customer reviews') ? 'bg-indigo-500 shadow-[2px_0_10px_rgba(99,102,241,0.4)]' :
                           getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled' ? 'bg-purple-500 shadow-[2px_0_10px_rgba(168,85,247,0.4)]' :
                           getEffectiveStatus(complaint, now).toLowerCase() === 'hold' ? 'bg-rose-500 shadow-[2px_0_10px_rgba(244,63,94,0.4)]' :
                           'bg-amber-500 shadow-[2px_0_10px_rgba(245,158,11,0.4)]'
@@ -1205,7 +1230,7 @@ export default function ComplaintList({
                               <span className="inline-block text-[14px] w-[120px]">({complaint.number.slice(0,4)}) {complaint.number.slice(4)}</span>
                             </span>
                             {Boolean(complaint.pkgDetails) && (
-                              <span className="inline-block mt-1 text-[11.5px] w-[45px] text-center font-black uppercase tracking-wider text-brand-accent neu-inset px-1.5 py-0.5 rounded truncate">
+                              <span className="inline-block mt-1 text-[11.5px] w-[60px] text-center font-black uppercase tracking-wider text-brand-accent neu-inset px-1.5 py-0.5 rounded truncate" style={{ width: '60px' }}>
                                 {complaint.pkgDetails}
                               </span>
                             )}
@@ -1286,6 +1311,8 @@ export default function ComplaintList({
                                 ? 'text-emerald-700 dark:text-emerald-400' 
                                 : getEffectiveStatus(complaint, now).toLowerCase() === 'in process'
                                 ? 'text-blue-700 dark:text-blue-400'
+                                : (getEffectiveStatus(complaint, now).toLowerCase() === 'customer review' || getEffectiveStatus(complaint, now).toLowerCase() === 'costumer review' || getEffectiveStatus(complaint, now).toLowerCase() === 'customer reviews')
+                                ? 'text-indigo-700 dark:text-indigo-400'
                                 : getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled'
                                 ? 'text-purple-700 dark:text-purple-400'
                                 : getEffectiveStatus(complaint, now).toLowerCase() === 'hold'
@@ -1296,6 +1323,7 @@ export default function ComplaintList({
                                 "w-2 h-2 rounded-full",
                                 getEffectiveStatus(complaint, now).toLowerCase() === 'complete' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
                                 getEffectiveStatus(complaint, now).toLowerCase() === 'in process' ? 'bg-blue-500 shadow-[0_0_6px_#3b82f6]' : 
+                                (getEffectiveStatus(complaint, now).toLowerCase() === 'customer review' || getEffectiveStatus(complaint, now).toLowerCase() === 'costumer review' || getEffectiveStatus(complaint, now).toLowerCase() === 'customer reviews') ? 'bg-indigo-500 shadow-[0_0_6px_#6366f1]' :
                                 getEffectiveStatus(complaint, now).toLowerCase() === 'scheduled' ? 'bg-purple-500 shadow-[0_0_6px_#a855f7]' : 
                                 getEffectiveStatus(complaint, now).toLowerCase() === 'hold' ? 'bg-rose-500 shadow-[0_0_6px_#f43f5e]' : 
                                 'bg-amber-500 shadow-[0_0_6px_#f59e0b]'
@@ -1392,7 +1420,7 @@ export default function ComplaintList({
                                <Pencil size={13} />
                              </button>
                            )}
-                           {isAdmin && onDelete && (
+                           {canDelete && onDelete && (
                              <button
                                onClick={(e) => {
                                  e.stopPropagation();
@@ -2278,7 +2306,7 @@ export default function ComplaintList({
 
                         <div className="grid grid-cols-2 gap-2">
                           {[...appConfig.statuses].sort((a, b) => {
-                            const order = ['pending', 'in process', 'complete', 'hold', 'scheduled'];
+                            const order = ['pending', 'in process', 'customer reviews', 'complete', 'hold', 'scheduled'];
                             const idxA = order.indexOf(a.toLowerCase());
                             const idxB = order.indexOf(b.toLowerCase());
                             if (idxA !== -1 && idxB !== -1) return idxA - idxB;
@@ -2287,7 +2315,7 @@ export default function ComplaintList({
                             return a.localeCompare(b);
                           }).map((s, i) => (
                             <button
-                              key={`stat-${i}`}
+                              key={`complaint-status-btn-${s}-${i}`}
                               onClick={() => {
                                 if (s.toLowerCase() === 'scheduled') {
                                   const existingDate = selectedComplaint.scheduledAt 
@@ -2414,7 +2442,7 @@ export default function ComplaintList({
                           )}
                         </AnimatePresence>
                         
-                        {onDelete && (
+                        {canDelete && onDelete && (
                           <button
                             onClick={() => setComplaintToDelete(selectedComplaint.id)}
                             className="mt-2 w-full py-2.5 text-[8px] sm:text-[9px] font-black text-rose-500 uppercase tracking-widest rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-btn)] hover:shadow-[var(--neu-shadow-inset)] active:scale-95 transition-all"

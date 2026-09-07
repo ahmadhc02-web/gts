@@ -363,7 +363,7 @@ export default function ComplaintPrintPreviewModal({
                 {complaint.reviews && complaint.reviews.length > 0 ? (
                   <div className="space-y-2">
                     {complaint.reviews.map((rev, index) => (
-                      <div key={rev.id} className="text-xs p-3 bg-white border border-slate-150 rounded space-y-1">
+                      <div key={`complaint-rev-${rev.id || 'item'}-${index}`} className="text-xs p-3 bg-white border border-slate-150 rounded space-y-1">
                         <div className="flex justify-between text-[9px] text-slate-400 font-bold uppercase tracking-wider">
                           <span>Feedback Log #{index + 1}</span>
                           <span>{rev.authorName ? `Logged By: ${rev.authorName}` : ""} // {new Date(rev.createdAt).toLocaleDateString()}</span>

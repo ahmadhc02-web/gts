@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity, Flame } from 'lucide-react';
+import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity, Flame, MessageSquare } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintForm from './ComplaintForm';
 import ComplaintList from './ComplaintList';
@@ -139,13 +139,19 @@ export default function MemberPanel({
     return cat.trim().toLowerCase() === 'new connection';
   };
 
+  const isCustomerReviewStatus = (s?: string) => {
+    if (!s) return false;
+    const lower = s.trim().toLowerCase();
+    return lower === 'customer review' || lower === 'costumer review' || lower === 'customer reviews' || lower === 'costumer reviews' || lower === 'customer_review';
+  };
+
   const stats = [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Global volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: 'Pending Requests', value: complaints.filter(c => isPendingStatus(c.status)).length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
     { label: 'New Connection', value: complaints.filter(c => isNewConnectionCat(c.category) && isPendingStatus(c.status)).length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
     { label: 'In Operation', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'in process' || (c.status || '').toString().trim().toLowerCase() === 'in_process').length, tooltip: 'Tasks currently under execution by on-site field technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
-    { label: 'Finalized', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'complete' && !isNewConnectionCat(c.category)).length, tooltip: 'Service successfully restored and verified from the enterprise logs.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
-    { label: 'Connection Complete', value: complaints.filter(c => isNewConnectionCat(c.category) && (c.status || '').toString().trim().toLowerCase() === 'complete').length, tooltip: 'Newly registered connection requests that have been successfully deployed.', color: 'border-cyan-500', textColor: 'text-cyan-500', icon: <Zap size={18} />, filter: { status: 'complete', priority: 'all', category: 'New Connection' } },
+    { label: branding?.tabNames?.customer_review || branding?.tabNames?.costumer_review || 'Costumer review', value: complaints.filter(c => isCustomerReviewStatus(c.status)).length, tooltip: 'Operations currently under customer review and service verification.', color: 'border-indigo-500', textColor: 'text-indigo-500', icon: <MessageSquare size={18} />, filter: { status: 'customer review', priority: 'all', category: 'all' } },
+    { label: 'Finalized', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'complete').length, tooltip: 'Service successfully restored and verified from the enterprise logs.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
   ];
 
   const handleTileClick = (filter: any) => {
@@ -261,6 +267,20 @@ export default function MemberPanel({
                       strokeLinecap="round"
                     />
                     <circle cx="80" cy="4" r="3" fill="#1d4ed8" className="animate-pulse" />
+                  </svg>
+                </div>
+              )}
+              {(stat.label === 'Costumer review' || stat.label === 'Customer Review' || stat.label === branding?.tabNames?.customer_review || stat.label === branding?.tabNames?.costumer_review) && (
+                <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
+                  <svg viewBox="0 0 80 30" width="100%" height="100%" className="overflow-visible">
+                    <path
+                      d="M 0,16 Q 20,4 40,20 T 65,10 T 80,18"
+                      fill="none"
+                      stroke="#6366f1"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    />
+                    <circle cx="80" cy="18" r="3" fill="#6366f1" className="animate-pulse" />
                   </svg>
                 </div>
               )}

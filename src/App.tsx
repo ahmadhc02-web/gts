@@ -10,7 +10,7 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { googleSheetsService } from './services/googleSheetsService';
 import { sendPushNotification } from './whatsapp_data/whatsappApi';
 import { Toaster, toast } from 'sonner';
-import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING } from './constants';
+import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, AppConfig, DEFAULT_BRANDING, ensurePermanentStatuses } from './constants';
 import { AnimatePresence, motion } from 'motion/react';
 import { safeStringify, processScheduledComplaints } from './lib/utils';
 import RouteLoadingFallback from './components/RouteLoadingFallback';
@@ -765,7 +765,10 @@ export default function App() {
     const unsubscribeConfig = pocketbaseService.subscribeConfig((data) => {
       if (data) {
         const fetchedStatuses = data.statuses && data.statuses.length > 0 ? data.statuses : DEFAULT_STATUSES;
-        const finalStatuses = fetchedStatuses.includes('scheduled') ? fetchedStatuses : [...fetchedStatuses, 'scheduled'];
+        let finalStatuses = ensurePermanentStatuses(fetchedStatuses);
+        if (!finalStatuses.includes('scheduled')) {
+          finalStatuses = [...finalStatuses, 'scheduled'];
+        }
         
         setAppConfig({
           categories: data.categories && data.categories.length > 0 ? data.categories : DEFAULT_CATEGORIES,
@@ -880,7 +883,10 @@ export default function App() {
       const config = await pocketbaseService.getAppConfig(tenantId);
       if (config) {
         const fetchedStatuses = config.statuses || DEFAULT_STATUSES;
-        const finalStatuses = fetchedStatuses.includes('scheduled') ? fetchedStatuses : [...fetchedStatuses, 'scheduled'];
+        let finalStatuses = ensurePermanentStatuses(fetchedStatuses);
+        if (!finalStatuses.includes('scheduled')) {
+          finalStatuses = [...finalStatuses, 'scheduled'];
+        }
         
         setAppConfig({
           categories: config.categories || DEFAULT_CATEGORIES,
@@ -1816,6 +1822,12 @@ export default function App() {
 
   const handleDeleteComplaint = async (id: string, isPermanent: boolean = false) => {
     if (!user) return;
+    const isSubDealerUser = (user.role === 'dealer' || Boolean(user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && user.role !== 'admin';
+    const canDelete = user.role === 'super_admin' || isSubDealerUser;
+    if (!canDelete) {
+      toast.error("Access Denied: Only Sub-Dealer and Super Admin accounts can delete complaints.");
+      return;
+    }
     if (isSuspended) {
       toast.error("🔒 INTEGRITY PROTOCOL LOCKED", {
         description: "Your dealer network node is currently frozen by the Super Admin. Deletion is disabled.",
@@ -1935,7 +1947,17 @@ export default function App() {
       const customerName = complaint?.customerName || id;
 
       // Optimistic state update
-      setComplaints(prev => prev.map(c => c.id === id ? { ...c, remarks } : c));
+      setComplaints(prev => prev.map(c => {
+        if (c.id !== id) return c;
+        let parsedProtocols = c.protocols;
+        try {
+          const trimmed = String(remarks).trim();
+          if (trimmed.startsWith('[')) {
+            parsedProtocols = JSON.parse(trimmed);
+          }
+        } catch (e) { /* keep existing protocols on parse failure */ }
+        return { ...c, remarks, protocols: parsedProtocols };
+      }));
 
       await pocketbaseService.updateComplaintRemarks(id, remarks, customerName, user.fullName || user.username, user.uid);
       toast.success('Protocol remarks updated successfully');
@@ -2193,16 +2215,20 @@ export default function App() {
 
   const handleUpdateConfig = (newConfig: AppConfig) => {
     if (!user) return;
-    setAppConfig(newConfig);
+    const sanitizedConfig: AppConfig = {
+      ...newConfig,
+      statuses: ensurePermanentStatuses(newConfig.statuses),
+    };
+    setAppConfig(sanitizedConfig);
     try {
-      safeLocalStorage.setItem('gts_app_config', JSON.stringify(newConfig));
+      safeLocalStorage.setItem('gts_app_config', JSON.stringify(sanitizedConfig));
     } catch (e) {}
     const tenantId = pocketbaseService.getTenantId(user);
-    pocketbaseService.updateConfig(newConfig, user.fullName || user.username, tenantId);
+    pocketbaseService.updateConfig(sanitizedConfig, user.fullName || user.username, tenantId);
     toast.success('System configuration updated');
     
     // Auto-sync to Google Sheets (System Config)
-    googleSheetsService.syncSystemConfig(newConfig, branding);
+    googleSheetsService.syncSystemConfig(sanitizedConfig, branding);
   };
 
   const handleUpdateBranding = async (newBranding: BrandingConfig) => {
@@ -2339,7 +2365,7 @@ export default function App() {
                   </div>
                 </div>
               ) : lineCodeReady ? (
-                (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor') ? (
+                (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor' || user.role === 'liteadmin' || user.role === 'member') ? (
                   <AdminPanel
                     complaints={processedComplaints}
                     users={users}

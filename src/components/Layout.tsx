@@ -531,15 +531,26 @@ export default function Layout({
     }
   ];
 
+  const isSubDealerUser = user ? ((user.role === 'dealer' || Boolean(user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && user.role !== 'admin') : false;
+  const canAccessLoginProfiles = user?.role === 'super_admin' || isSubDealerUser;
+
   const filteredCategories = categories.map(cat => ({
     ...cat,
     items: cat.items.filter(item => {
       // Role-based filtering
       if (!user) return false;
+
+      // Restrict Login Profiles to Super Admin and Sub-Dealer
+      if (item.id === 'users' && !canAccessLoginProfiles) {
+        return false;
+      }
       
-      // If user is member, only show specific items requested: Operations, User Details, Active Complainers, Security
+      // If user is member, only show specific items requested: Operations, Active Complainers, Security
       if (user.role === 'member') {
-        return ['complaints', 'clients', 'nodes', 'settings'].includes(item.id);
+        return ['complaints', 'nodes', 'settings'].includes(item.id);
+      }
+      if (user.role === 'liteadmin') {
+        return ['complaints', 'nodes', 'clients', 'settings'].includes(item.id);
       }
       
       // For other roles, check item.roles if defined
@@ -620,16 +631,20 @@ export default function Layout({
                 { id: 'chat', label: 'AI Help', icon: Sparkles }
               ];
 
-              const permitted = items.filter(item => {
-                if (!user) return false;
-                if (user.role === 'member') {
-                  return ['complaints', 'submit', 'nodes', 'clients', 'settings', 'monitor', 'map', 'chat'].includes(item.id);
-                }
-                if (item.roles && !item.roles.includes(user.role)) {
-                  return false;
-                }
-                return true;
-              });
+              let permitted;
+              if (user.role === 'member') {
+                const order = ['complaints', 'submit', 'nodes', 'billing', 'map', 'settings'];
+                permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
+              } else if (user.role === 'liteadmin') {
+                const order = ['complaints', 'submit', 'nodes', 'clients', 'billing', 'map', 'settings'];
+                permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
+              } else {
+                permitted = items.filter(item => {
+                  if (!user) return false;
+                  if (item.roles && !item.roles.includes(user.role)) return false;
+                  return true;
+                });
+              }
 
               const visible = permitted.filter(item => !(branding?.hiddenTabs || []).includes(item.id));
 
@@ -1369,6 +1384,7 @@ export default function Layout({
               </div>
 
               {/* Right Side: Primary Actions */}
+              {user && (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor' || (user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && (
               <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-center sm:justify-end w-full md:w-auto">
                 <motion.button
                   whileHover={{ scale: 1.02 }}
@@ -1526,6 +1542,7 @@ export default function Layout({
                   </motion.button>
                 )}
               </div>
+              )}
             </div>
           ) : (
             <>

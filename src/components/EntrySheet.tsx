@@ -3841,7 +3841,7 @@ export default function EntrySheet({
           @media print {
             @page {
               size: A4 portrait;
-              margin: 0;
+              margin: 0mm !important;
             }
             html, body {
               margin: 0 !important;
@@ -3850,11 +3850,12 @@ export default function EntrySheet({
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
               width: 210mm !important;
+              max-width: 210mm !important;
               height: auto !important;
-              min-height: 297mm !important;
+              min-height: 0 !important;
               overflow: visible !important;
             }
-            #root {
+            body > *:not(#root) {
               display: none !important;
             }
             .print-overlay-wrapper {
@@ -3864,56 +3865,86 @@ export default function EntrySheet({
               margin: 0 !important;
               overflow: visible !important;
               display: block !important;
-              width: auto !important;
+              width: 210mm !important;
+              max-width: 210mm !important;
               height: auto !important;
             }
             .print-sheet-wrapper-container {
               display: block !important;
-              width: 100% !important;
+              width: 210mm !important;
+              max-width: 210mm !important;
               height: auto !important;
               margin: 0 !important;
               padding: 0 !important;
             }
             .print-sheet-wrapper {
-              position: static !important;
+              position: relative !important;
               width: 210mm !important;
-              height: 297mm !important;
               min-width: 210mm !important;
-              min-height: 297mm !important;
               max-width: 210mm !important;
-              max-height: 297mm !important;
+              height: 296mm !important;
+              max-height: 296mm !important;
+              min-height: 0 !important;
               transform: none !important;
               margin: 0 auto !important;
               padding: 0 !important;
               display: block !important;
               box-shadow: none !important;
               border: none !important;
+              box-sizing: border-box !important;
+              overflow: hidden !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
+            }
+            .print-sheet-wrapper:not(:last-child) {
               page-break-after: always !important;
               break-after: page !important;
+            }
+            .print-sheet-wrapper:last-child {
+              page-break-after: avoid !important;
+              break-after: avoid !important;
             }
             .print-paper-container {
               position: relative !important;
               width: 210mm !important;
-              height: 297mm !important;
               min-width: 210mm !important;
-              min-height: 297mm !important;
               max-width: 210mm !important;
-              max-height: 297mm !important;
+              height: 296mm !important;
+              max-height: 296mm !important;
+              min-height: 0 !important;
               transform: none !important;
-              margin: 0 auto 10mm auto !important;
+              margin: 0 auto !important;
               padding: ${paperPaddingY}mm ${paperPaddingX}mm !important;
               border: none !important;
               box-shadow: none !important;
               background: white !important;
               color: black !important;
               box-sizing: border-box !important;
-              page-break-after: always !important;
               page-break-inside: avoid !important;
               break-inside: avoid !important;
+              page-break-after: avoid !important;
+              break-after: avoid !important;
+              page-break-before: avoid !important;
+              break-before: avoid !important;
               overflow: hidden !important;
               display: flex !important;
               flex-direction: column !important;
               justify-content: flex-start !important;
+            }
+            .print-paper-container .mt-8 {
+              margin-top: 10px !important;
+            }
+            .print-paper-container .pt-4 {
+              padding-top: 4px !important;
+            }
+            .print-paper-container .mt-6 {
+              margin-top: 8px !important;
+            }
+            .print-paper-container .mt-4 {
+              margin-top: 6px !important;
+            }
+            .print-paper-container .pb-4 {
+              padding-bottom: 4px !important;
             }
             /* Super compact print overrides for tables and grids */
             .print-paper-container table {
@@ -5420,7 +5451,7 @@ export default function EntrySheet({
                           @media print {
                             @page {
                               size: A5 portrait;
-                              margin: 0 !important;
+                              margin: 0mm !important;
                             }
                             html, body {
                               background: white !important;
@@ -5428,81 +5459,102 @@ export default function EntrySheet({
                               margin: 0 !important;
                               padding: 0 !important;
                               width: 148mm !important;
+                              max-width: 148mm !important;
                               height: 210mm !important;
+                              max-height: 210mm !important;
+                              overflow: hidden !important;
                               -webkit-print-color-adjust: exact !important;
                               print-color-adjust: exact !important;
+                            }
+                            body > *:not(#print-section) {
+                              display: none !important;
+                              visibility: hidden !important;
+                              height: 0 !important;
+                              max-height: 0 !important;
+                              overflow: hidden !important;
                             }
                             #root, .print\\:hidden, .fixed, .absolute, [class*="fixed"], [class*="absolute"], #root > * {
                               display: none !important;
                             }
                             #print-section {
                               display: block !important;
-                              position: absolute !important;
+                              visibility: visible !important;
+                              position: relative !important;
                               left: 0 !important;
                               top: 0 !important;
                               width: 148mm !important;
+                              max-width: 148mm !important;
                               height: 210mm !important;
-                              padding: 10mm 15mm 15mm 15mm !important;
+                              max-height: 210mm !important;
+                              padding: 8mm 12mm 6mm 12mm !important;
+                              margin: 0 !important;
                               box-sizing: border-box !important;
                               background: white !important;
+                              overflow: hidden !important;
+                              page-break-inside: avoid !important;
+                              break-inside: avoid !important;
+                              page-break-after: avoid !important;
+                              break-after: avoid !important;
+                              page-break-before: avoid !important;
+                              break-before: avoid !important;
                             }
                           }
                         </style>
-                        <div style="width: 100%; max-width: 118mm; height: 185mm; margin: 0 auto; text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; background: #fff; display: flex; flex-direction: column; justify-content: space-between; position: relative;">
+                        <div style="width: 100%; max-width: 124mm; height: 196mm; max-height: 196mm; margin: 0 auto; text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; background: #fff; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; page-break-inside: avoid; break-inside: avoid;">
                           <div>
-                            <h1 style="font-size: 14pt; font-weight: 900; font-family: sans-serif; margin: 5px 0 2px 0; text-transform: uppercase; letter-spacing: 1px; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; width: 100%; display: block;">${receiptConfig.title}</h1>
-                            <p style="font-size: 10.5pt; margin: 0; color: #64748b; font-weight: 500; font-family: sans-serif;">${receiptConfig.address1} ${receiptConfig.address2}</p>
+                            <h1 style="font-size: 13pt; font-weight: 900; font-family: sans-serif; margin: 2px 0 2px 0; text-transform: uppercase; letter-spacing: 0.5px; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; width: 100%; display: block;">${receiptConfig.title}</h1>
+                            <p style="font-size: 9.5pt; margin: 0; color: #64748b; font-weight: 500; font-family: sans-serif;">${receiptConfig.address1} ${receiptConfig.address2}</p>
                             
-                            <div style="background-color: #f1f5f9; border-radius: 6px; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; margin: 18px 0 20px 0;">
-                              <div style="font-size: 14pt; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; color: #1e293b; font-family: sans-serif;">ONLINE RECEIPT</div>
-                              <div style="font-size: 9.5pt; font-weight: bold; color: #475569; text-align: left; line-height: 1.4; font-family: sans-serif;">
+                            <div style="background-color: #f1f5f9; border-radius: 6px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; margin: 10px 0 12px 0;">
+                              <div style="font-size: 13pt; font-weight: 900; text-transform: uppercase; letter-spacing: 1.2px; color: #1e293b; font-family: sans-serif;">ONLINE RECEIPT</div>
+                              <div style="font-size: 9pt; font-weight: bold; color: #475569; text-align: left; line-height: 1.35; font-family: sans-serif;">
                                 <div><b>Date :</b> ${formattedDate}</div>
                                 <div><b>Time :</b> ${displayTimeStr}</div>
                               </div>
                             </div>
 
-                            <div style="text-align: left; margin-bottom: 20px;">
-                              <div style="display: flex; justify-content: space-between; background-color: #137347; color: white; padding: 8px 12px; font-size: 10.5pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; border-radius: 4px;">
+                            <div style="text-align: left; margin-bottom: 12px;">
+                              <div style="display: flex; justify-content: space-between; background-color: #137347; color: white; padding: 6px 10px; font-size: 9.5pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; border-radius: 4px;">
                                 <span>Description</span>
                                 <span>Amount (PKR)</span>
                               </div>
-                              <div style="padding: 0 5px; min-height: 100px;">
+                              <div style="padding: 0 4px; min-height: 70px;">
                                 ${itemsHtml}
                               </div>
                             </div>
                           </div>
                           
                           <div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 0 5px;">
-                              <div style="color: #10b981; border: 3px solid #10b981; border-radius: 4px; padding: 4px 10px; font-size: 22pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; transform: rotate(-12deg); opacity: 0.9; font-family: sans-serif; user-select: none;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px;">
+                              <div style="color: #10b981; border: 2.5px solid #10b981; border-radius: 4px; padding: 3px 8px; font-size: 18pt; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; transform: rotate(-10deg); opacity: 0.9; font-family: sans-serif; user-select: none;">
                                 PAID
                               </div>
                               
-                              <div style="display: flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 4px;">
-                                <div style="font-size: 12pt; font-weight: bold; color: #000;">
-                                  Total: <span style="font-family: monospace; font-size: 13pt; color: #10b981; font-weight: 900; margin-left: 5px;">= ${computedTotal.toFixed(2)}</span>
+                              <div style="display: flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 2px;">
+                                <div style="font-size: 11.5pt; font-weight: bold; color: #000;">
+                                  Total: <span style="font-family: monospace; font-size: 12.5pt; color: #10b981; font-weight: 900; margin-left: 4px;">= ${computedTotal.toFixed(2)}</span>
                                 </div>
                                 ${totalOutstanding > 0 ? `
-                                <div style="font-size: 11pt; font-weight: bold; color: #000;">
-                                  Outstanding payment: <span style="font-family: monospace; font-size: 11.5pt; color: #ef4444; font-weight: 900; margin-left: 5px;">= ${totalOutstanding.toFixed(2)}</span>
+                                <div style="font-size: 10pt; font-weight: bold; color: #000;">
+                                  Outstanding payment: <span style="font-family: monospace; font-size: 10.5pt; color: #ef4444; font-weight: 900; margin-left: 4px;">= ${totalOutstanding.toFixed(2)}</span>
                                 </div>
                                 ` : ''}
                               </div>
                             </div>
 
-                            <div style="border-top: 2.5px solid #000; margin: 15px 0 10px 0;"></div>
+                            <div style="border-top: 2px solid #000; margin: 8px 0 6px 0;"></div>
 
-                            <p style="font-size: 10.5pt; font-style: italic; font-weight: bold; margin: 0 0 5px 0; color: #64748b;">Thank You For Using Our Services.</p>
-                            <p style="font-size: 14pt; font-weight: bold; margin: 0 0 20px 0; color: #475569; letter-spacing: 0.5px;">Contact # 0300 1020757</p>
+                            <p style="font-size: 9.5pt; font-style: italic; font-weight: bold; margin: 0 0 3px 0; color: #64748b;">Thank You For Using Our Services.</p>
+                            <p style="font-size: 12.5pt; font-weight: bold; margin: 0 0 10px 0; color: #475569; letter-spacing: 0.5px;">Contact # 0300 1020757</p>
 
-                            <div style="display: flex; justify-content: space-between; align-items: flex-end; position: relative; min-height: 55px; margin-top: 15px;">
-                              <div style="color: #f1f5f9; font-size: 32pt; font-weight: 900; text-transform: uppercase; letter-spacing: 4px; transform: rotate(-12deg); position: absolute; left: 10px; bottom: 5px; opacity: 0.8; font-family: sans-serif; user-select: none; pointer-events: none;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; position: relative; min-height: 45px; margin-top: 6px;">
+                              <div style="color: #f1f5f9; font-size: 26pt; font-weight: 900; text-transform: uppercase; letter-spacing: 3px; transform: rotate(-10deg); position: absolute; left: 8px; bottom: 4px; opacity: 0.8; font-family: sans-serif; user-select: none; pointer-events: none;">
                                 STAMP
                               </div>
 
-                              <div style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-left: auto; position: relative; width: 140px;">
-                                <div style="width: 100%; border-bottom: 1.5px solid #000; margin-bottom: 5px;"></div>
-                                <span style="font-size: 9pt; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Authorized Sign</span>
+                              <div style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-left: auto; position: relative; width: 130px;">
+                                <div style="width: 100%; border-bottom: 1.5px solid #000; margin-bottom: 4px;"></div>
+                                <span style="font-size: 8.5pt; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Authorized Sign</span>
                               </div>
                             </div>
                           </div>

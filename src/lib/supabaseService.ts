@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget, ComplaintReview } from '../types';
 import { toast } from 'sonner';
-import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES } from '../constants';
+import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, ensurePermanentStatuses } from '../constants';
 import { globalLoading } from '../contexts/LoadingContext';
 
 let activeLineCode: string | undefined = undefined;
@@ -2153,7 +2153,7 @@ export const supabaseService = {
       const merged = {
         ...baseConfig,
         categories: (baseConfig.categories && baseConfig.categories.length > 0) ? baseConfig.categories : (dbCategories.length > 0 ? dbCategories : DEFAULT_CATEGORIES),
-        statuses: (baseConfig.statuses && baseConfig.statuses.length > 0) ? baseConfig.statuses : (dbStatuses.length > 0 ? dbStatuses : DEFAULT_STATUSES),
+        statuses: ensurePermanentStatuses((baseConfig.statuses && baseConfig.statuses.length > 0) ? baseConfig.statuses : (dbStatuses.length > 0 ? dbStatuses : DEFAULT_STATUSES)),
         priorities: (baseConfig.priorities && baseConfig.priorities.length > 0) ? baseConfig.priorities : (dbPriorities.length > 0 ? dbPriorities : DEFAULT_PRIORITIES),
         zones: (baseConfig.zones && baseConfig.zones.length > 0) ? baseConfig.zones : (dbZones.length > 0 ? dbZones : DEFAULT_ZONES),
         billingSecurityKey: baseConfig.billingSecurityKey || '1239870'
