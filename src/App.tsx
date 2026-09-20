@@ -194,27 +194,11 @@ export default function App() {
       navigate(targetPath);
     }
   }, [location.pathname, navigate]);
-  const [complaints, setComplaints] = useState<Complaint[]>(() => {
-    try {
-      const activeDealerId = userState?.role === 'dealer' || (userState?.dealerId && userState?.dealerId !== 'main') ? (userState?.dealerId !== 'main' ? userState?.dealerId : userState?.uid) : 'all';
-      const cached = localStorage.getItem(`gts_cache_v3_complaints_${activeDealerId || 'all'}_${userState?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_complaints_all_${userState?.lineCode || 'nolc'}`);
-      return cached ? JSON.parse(cached) : [];
-    } catch (_) {
-      return [];
-    }
-  });
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
   const processedComplaints = useMemo(() => {
     return processScheduledComplaints(complaints);
   }, [complaints]);
-  const [users, setUsers] = useState<UserProfile[]>(() => {
-    try {
-      const activeDealerId = userState?.role === 'dealer' || (userState?.dealerId && userState?.dealerId !== 'main') ? (userState?.dealerId !== 'main' ? userState?.dealerId : userState?.uid) : 'all';
-      const cached = localStorage.getItem(`gts_cache_v3_users_${activeDealerId || 'all'}_${userState?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_users_all_${userState?.lineCode || 'nolc'}`);
-      return cached ? JSON.parse(cached) : [];
-    } catch (_) {
-      return [];
-    }
-  });
+  const [users, setUsers] = useState<UserProfile[]>([]);
 
   const isSuspended = useMemo(() => {
     if (!user) return false;
