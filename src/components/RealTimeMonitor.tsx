@@ -282,8 +282,8 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         </div>
 
         {/* Chart Frame */}
-        <div className="flex-1 w-full h-full min-h-[220px] min-w-0 relative z-10 -ml-3 mt-1">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+        <div style={{ width: '100%', height: '300px' }} className="flex-1 w-full min-h-[220px] min-w-0 relative z-10 -ml-3 mt-1">
+          <ResponsiveContainer width="100%" height="100%">
             <AreaChart 
               data={chartData} 
               margin={{ top: 20, right: 20, left: -20, bottom: 5 }}

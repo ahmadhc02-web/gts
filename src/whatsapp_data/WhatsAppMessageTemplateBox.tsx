@@ -14,12 +14,14 @@ export default function WhatsAppMessageTemplateBox() {
   useEffect(() => {
     getTemplate()
       .then(data => {
-        setTemplate(data.template);
-        setComplaintRegisteredTemplate(data.complaintRegisteredTemplate || '');
-        setComplaintCompletedTemplate(data.complaintCompletedTemplate || '');
-        setCompletedStatusValue(data.completedStatusValue || '');
+        if (data) {
+          setTemplate(data.template || '');
+          setComplaintRegisteredTemplate(data.complaintRegisteredTemplate || '');
+          setComplaintCompletedTemplate(data.complaintCompletedTemplate || '');
+          setCompletedStatusValue(data.completedStatusValue || '');
+        }
       })
-      .catch(err => console.error('Error fetching template', err));
+      .catch(() => {});
   }, []);
 
   const handleSave = async () => {

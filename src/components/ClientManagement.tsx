@@ -120,8 +120,12 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
   useEffect(() => {
     // Show scoped clients
     const tenantId = pocketbaseService.getReadTenantId(currentUser);
+    const activeDealerId = currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main') ? (currentUser?.dealerId !== 'main' ? currentUser?.dealerId : currentUser?.uid) : 'all';
     const unsubscribe = pocketbaseService.subscribeClients((data) => {
       setClients(data);
+      try {
+        localStorage.setItem(`gts_cache_v3_clients_${activeDealerId || 'all'}_${currentUser?.lineCode || 'nolc'}`, JSON.stringify(data));
+      } catch (e) {}
       setIsLoading(false);
     }, tenantId);
     return () => unsubscribe();

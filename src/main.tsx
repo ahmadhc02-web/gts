@@ -106,10 +106,10 @@ if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'servic
   }
 }
 
-// Force clear stale service worker and caches once to migrate to prompt-mode PWA
+// Force clear stale service worker and caches to ensure latest bundle is used
 if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-  const isSwPromptMigrated = safeLocalStorage.getItem('gts_sw_v3_prompt_migration_done');
-  if (!isSwPromptMigrated) {
+  const isSwV5Migrated = safeLocalStorage.getItem('gts_sw_v5_autoupdate_done');
+  if (!isSwV5Migrated) {
     navigator.serviceWorker.getRegistrations().then(registrations => {
       if (registrations.length > 0) {
         const unregisterPromises = registrations.map(registration => registration.unregister());
@@ -117,38 +117,41 @@ if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'servic
           if ('caches' in window) {
             caches.keys().then(keys => {
               Promise.all(keys.map(key => caches.delete(key))).then(() => {
-                safeLocalStorage.setItem('gts_sw_v3_prompt_migration_done', 'true');
-                console.log("Stale Service Worker and caches fully purged for prompt migration.");
+                safeLocalStorage.setItem('gts_sw_v5_autoupdate_done', 'true');
+                console.log("Stale Service Worker and caches purged for v5 update.");
                 window.location.reload();
               });
             });
           } else {
-            safeLocalStorage.setItem('gts_sw_v3_prompt_migration_done', 'true');
-            (window as any).location.reload();
+            safeLocalStorage.setItem('gts_sw_v5_autoupdate_done', 'true');
+            if (typeof window !== 'undefined') {
+              (window as Window).location.reload();
+            }
           }
         });
       } else {
-        safeLocalStorage.setItem('gts_sw_v3_prompt_migration_done', 'true');
+        if ('caches' in window) {
+          caches.keys().then(keys => {
+            Promise.all(keys.map(key => caches.delete(key))).then(() => {
+              safeLocalStorage.setItem('gts_sw_v5_autoupdate_done', 'true');
+            });
+          });
+        } else {
+          safeLocalStorage.setItem('gts_sw_v5_autoupdate_done', 'true');
+        }
       }
     }).catch(err => {
-      console.error("Service worker v3 migration error:", err);
+      console.error("Service worker v5 migration error:", err);
     });
   }
 }
 
-// Register Service Worker with prompt updates
+// Register Service Worker with automatic background updates
 const updateSW = registerSW({
+  immediate: true,
   onNeedRefresh() {
-    toast('New version available', {
-      description: 'A new version of the app is available.',
-      duration: 100000,
-      action: {
-        label: 'Update now',
-        onClick: () => {
-          updateSW(true);
-        },
-      },
-    });
+    console.log('New version detected - updating service worker...');
+    updateSW(true);
   },
   onOfflineReady() {
     console.log('Application ready for offline use.');

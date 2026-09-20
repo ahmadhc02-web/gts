@@ -35,6 +35,23 @@ export default function WhatsAppSendButton({ name, mobileNumber, totalAmount, ba
         cachedTemplate = data.template;
       }).catch(() => {});
     }
+
+    let intervalId: ReturnType<typeof setInterval>;
+    if (cachedStatus !== true) {
+      intervalId = setInterval(() => {
+        getStatus().then(data => {
+          if (data.connected) {
+            cachedStatus = true;
+            setIsReady(true);
+            clearInterval(intervalId);
+          }
+        }).catch(() => {});
+      }, 15000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
   }, []);
 
   const handleSend = async (e: React.MouseEvent) => {

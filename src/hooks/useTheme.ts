@@ -34,10 +34,15 @@ export function useTheme() {
   });
 
   useEffect(() => {
-    // Ensure DOM is in sync with active theme
+    // Ensure DOM is in sync with active theme only if it changed
     const active = getActiveTheme();
-    applyThemeToDOM(active);
-    setThemeState(active);
+    setThemeState(prevTheme => {
+      if (active !== prevTheme) {
+        applyThemeToDOM(active);
+        return active;
+      }
+      return prevTheme;
+    });
 
     // Observe changes to <html class="...">
     const observer = new MutationObserver(() => {

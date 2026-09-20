@@ -81,12 +81,19 @@
     min-height: 100vh;
   }
 
-  /* Smooth tactile transitions */
-  body, div, aside, header, main, section, nav, footer,
-  p, span, h1, h2, h3, h4, h5, h6,
+  /* Smooth tactile transitions (exclude leaflet map elements to eliminate pin & popup flickering) */
+  body:not(.leaflet-container),
+  div:not(.leaflet-container):not(.leaflet-container *),
+  aside, header, main, section, nav, footer,
+  p:not(.leaflet-container *),
+  span:not(.leaflet-container *),
+  h1, h2, h3, h4, h5, h6,
   table, tr, td, th,
-  button, input, select, textarea,
-  svg, path, label, a {
+  button:not(.leaflet-container *),
+  input, select, textarea,
+  svg:not(.leaflet-container *),
+  path:not(.leaflet-container *),
+  label, a:not(.leaflet-container *) {
     transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, box-shadow, transform;
     transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
     transition-duration: 180ms;

@@ -275,7 +275,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
            <div className="w-full flex items-center relative h-full rounded-2xl overflow-hidden px-4 py-2">
                 {data.length > 0 ? (
                   <div className="flex flex-col w-full h-full justify-between">
-                    <div key={`piechart-wrapper-${isDark ? 'dark' : 'light'}`} className="flex-1 w-full min-h-[210px] min-w-0 relative flex items-center justify-center">
+                    <div key={`piechart-wrapper-${isDark ? 'dark' : 'light'}`} style={{ width: '100%', height: '300px' }} className="flex-1 w-full min-h-[210px] min-w-0 relative flex items-center justify-center">
                       
                       {/* Realistic 3D Raised Neumorphic Center Dial (Outward Embossed Button) */}
                       <div className={cn(
@@ -299,7 +299,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                         </div>
                       </div>
   
-                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                      <ResponsiveContainer width="100%" height="100%">
                         <PieChart margin={{ top: 0, right: 32, left: 32, bottom: 0 }}>
                           <defs>
                             {/* Neumorphic 3D Raised Extrusion Filter for Light Mode */}

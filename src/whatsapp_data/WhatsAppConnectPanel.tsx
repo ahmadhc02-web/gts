@@ -21,14 +21,20 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
   const fetchStatusOnly = async () => {
     try {
       const data = await getStatus();
-      setStatus(data);
-      setError(null);
-      return data;
+      if (data) {
+        setStatus(data);
+        if ((data as any)._error) {
+          setError(`Status check failed: ${(data as any)._error}`);
+        } else {
+          setError(null);
+        }
+        return data;
+      }
+      setStatus({ connected: false, phoneNumber: null });
+      return { connected: false, phoneNumber: null };
     } catch (err) {
-      console.error('Failed to fetch WhatsApp status', err);
-      setError("Cannot reach WhatsApp service — check that the backend is running and VITE_WHATSAPP_SERVICE_URL is configured");
-      setStatus(null);
-      return null;
+      setStatus({ connected: false, phoneNumber: null });
+      return { connected: false, phoneNumber: null };
     } finally {
       setIsLoading(false);
     }
@@ -38,15 +44,18 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
   const fetchQrOnly = async () => {
     try {
       const qrData = await getQr();
-      if (qrData.qr) {
+      if (qrData?.qr) {
         setQrCode(qrData.qr);
-        setError(null);
       } else {
         setQrCode(null);
       }
+      if ((qrData as any)?._error) {
+        setError(`QR fetch failed: ${(qrData as any)._error}`);
+      } else if (qrData?.qr) {
+        setError(null);
+      }
     } catch (err) {
-      console.error('Failed to fetch WhatsApp QR', err);
-      setError("Cannot reach WhatsApp service — check that the backend is running and VITE_WHATSAPP_SERVICE_URL is configured");
+      setQrCode(null);
     }
   };
 

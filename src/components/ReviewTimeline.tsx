@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { ComplaintReview } from '../types';
 import { cn } from '../lib/utils';
+import { getCleanProtocolText } from '../utils/protocolClean';
 
 interface ReviewTimelineProps {
   reviews?: ComplaintReview[];
@@ -29,9 +30,10 @@ export default function ReviewTimeline({ reviews, type = 'review' }: ReviewTimel
     <div className="relative pl-4 border-l-2 border-slate-150 dark:border-white/10 space-y-4">
       {sortedReviews.map((review, idx) => {
         const isLatest = review.id === latestReviewId;
+        const displayText = getCleanProtocolText(review.text);
         return (
           <motion.div
-            key={`rev-${review.id || idx}-${idx}`}
+            key={`rev-${review.id || idx}-${displayText}-${review.createdAt}`}
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3, delay: idx * 0.05 }}
@@ -55,11 +57,16 @@ export default function ReviewTimeline({ reviews, type = 'review' }: ReviewTimel
             <div className="flex justify-between items-start gap-2 mb-1">
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">
-                  {review.authorName || "Customer"}
+                  {review.authorName || (isProtocol ? "Staff" : "Customer")}
                 </span>
                 {isLatest && (
-                  <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 text-[7px] font-black uppercase tracking-wider animate-pulse">
-                    Most Recent
+                  <span className={cn(
+                    "px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-wider",
+                    isProtocol 
+                      ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                      : "bg-indigo-500/10 text-indigo-500 border border-indigo-500/20"
+                  )}>
+                    {isProtocol ? "Active Protocol" : "Most Recent"}
                   </span>
                 )}
               </div>
@@ -75,9 +82,11 @@ export default function ReviewTimeline({ reviews, type = 'review' }: ReviewTimel
 
             <p className={cn(
               "text-xs font-semibold whitespace-pre-wrap leading-relaxed",
-              isLatest ? "text-indigo-900 dark:text-indigo-100 italic" : "text-slate-600 dark:text-slate-400"
+              isLatest 
+                ? (isProtocol ? "text-emerald-900 dark:text-emerald-100 italic" : "text-indigo-900 dark:text-indigo-100 italic")
+                : "text-slate-600 dark:text-slate-400"
             )}>
-              "{review.text}"
+              "{displayText}"
             </p>
           </motion.div>
         );

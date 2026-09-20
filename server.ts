@@ -479,6 +479,213 @@ async function startServer() {
   });
   // --- End Network Ping Proxy Engine ---
 
+  // --- WhatsApp & Notification Bridge Endpoints ---
+  const defaultWhatsAppTemplates = {
+    template: 'Dear {{name}}, this is a reminder that your internet bill of Rs. {{amount}} is due. Please clear it at your earliest convenience. Thank you.',
+    complaintRegisteredTemplate: 'Dear {{name}}, your complaint (#{{complaintId}}) regarding "{{category}}" has been registered. Our team will contact you soon. Thank you for your patience.',
+    complaintCompletedTemplate: 'Dear {{name}}, your complaint (#{{complaintId}}) has been resolved. Thank you for choosing us. Please contact us if the issue persists.',
+    completedStatusValue: 'Resolved'
+  };
+
+  const inMemoryWhatsAppSettings = { ...defaultWhatsAppTemplates };
+
+  const WHATSAPP_SERVICE_BACKEND_URL = process.env.WHATSAPP_SERVICE_URL || process.env.VITE_WHATSAPP_SERVICE_URL || "";
+
+  app.get("/api/whatsapp/status", async (req, res) => {
+    if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+      try {
+        const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/status`, { signal: AbortSignal.timeout(3000) });
+        if (response.ok) {
+          const data = await response.json();
+          return res.json(data);
+        }
+      } catch (err) {}
+    }
+    return res.json({
+      connected: false,
+      phoneNumber: null,
+      rateLimitReached: false,
+      queuedCount: 0
+    });
+  });
+
+  app.get("/api/whatsapp/qr", async (req, res) => {
+    if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+      try {
+        const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/qr`, { signal: AbortSignal.timeout(3000) });
+        if (response.ok) {
+          const data = await response.json();
+          return res.json(data);
+        }
+      } catch (err) {}
+    }
+    return res.json({ qr: null });
+  });
+
+  app.post("/api/whatsapp/disconnect", async (req, res) => {
+    if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+      try {
+        await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/disconnect`, { method: "POST", signal: AbortSignal.timeout(3000) });
+      } catch (err) {}
+    }
+    return res.json({ success: true });
+  });
+
+  app.get("/api/whatsapp/template", async (req, res) => {
+    const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const rawKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
+    const SUPABASE_ANON_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+
+    try {
+      if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+        const suRes = await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_settings?id=eq.main`, {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (suRes.ok) {
+          const rows = await suRes.json();
+          if (Array.isArray(rows) && rows.length > 0) {
+            const data = rows[0];
+            return res.json({
+              template: data.message_template || inMemoryWhatsAppSettings.template,
+              complaintRegisteredTemplate: data.complaint_registered_template || inMemoryWhatsAppSettings.complaintRegisteredTemplate,
+              complaintCompletedTemplate: data.complaint_completed_template || inMemoryWhatsAppSettings.complaintCompletedTemplate,
+              completedStatusValue: data.complaint_completed_status_value || inMemoryWhatsAppSettings.completedStatusValue,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Supabase fetch for whatsapp_settings failed, checking fallback:", err);
+    }
+
+    const db = await getFirestoreOnServer();
+    if (db) {
+      try {
+        const { doc: serverDoc, getDoc: serverGetDoc } = await import("firebase/firestore");
+        const docRef = serverDoc(db, "whatsapp_settings", "main");
+        const snap = await serverGetDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          return res.json({
+            template: data.message_template || data.template || inMemoryWhatsAppSettings.template,
+            complaintRegisteredTemplate: data.complaint_registered_template || data.complaintRegisteredTemplate || inMemoryWhatsAppSettings.complaintRegisteredTemplate,
+            complaintCompletedTemplate: data.complaint_completed_template || data.complaintCompletedTemplate || inMemoryWhatsAppSettings.complaintCompletedTemplate,
+            completedStatusValue: data.complaint_completed_status_value || data.completedStatusValue || inMemoryWhatsAppSettings.completedStatusValue,
+          });
+        }
+      } catch (fbErr) {
+        console.warn("Firestore fetch for whatsapp_settings fallback:", fbErr);
+      }
+    }
+
+    return res.json(inMemoryWhatsAppSettings);
+  });
+
+  app.post("/api/whatsapp/template", async (req, res) => {
+    const { template, complaintRegisteredTemplate, complaintCompletedTemplate, completedStatusValue } = req.body;
+
+    if (template !== undefined) inMemoryWhatsAppSettings.template = template;
+    if (complaintRegisteredTemplate !== undefined) inMemoryWhatsAppSettings.complaintRegisteredTemplate = complaintRegisteredTemplate;
+    if (complaintCompletedTemplate !== undefined) inMemoryWhatsAppSettings.complaintCompletedTemplate = complaintCompletedTemplate;
+    if (completedStatusValue !== undefined) inMemoryWhatsAppSettings.completedStatusValue = completedStatusValue;
+
+    const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const rawKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
+    const SUPABASE_ANON_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+
+    try {
+      if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+        await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_settings`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates",
+          },
+          body: JSON.stringify({
+            id: "main",
+            message_template: inMemoryWhatsAppSettings.template,
+            complaint_registered_template: inMemoryWhatsAppSettings.complaintRegisteredTemplate,
+            complaint_completed_template: inMemoryWhatsAppSettings.complaintCompletedTemplate,
+            complaint_completed_status_value: inMemoryWhatsAppSettings.completedStatusValue,
+            updated_at: new Date().toISOString(),
+          }),
+          signal: AbortSignal.timeout(4000),
+        });
+      }
+    } catch (err) {
+      console.warn("Supabase upsert for whatsapp_settings failed:", err);
+    }
+
+    const db = await getFirestoreOnServer();
+    if (db) {
+      try {
+        const { doc: serverDoc, setDoc: serverSetDoc } = await import("firebase/firestore");
+        const docRef = serverDoc(db, "whatsapp_settings", "main");
+        await serverSetDoc(docRef, {
+          ...inMemoryWhatsAppSettings,
+          updatedAt: Date.now(),
+        }, { merge: true });
+      } catch (fbErr) {
+        console.warn("Firestore save for whatsapp_settings fallback:", fbErr);
+      }
+    }
+
+    return res.json({ success: true });
+  });
+
+  app.post("/api/whatsapp/send-message", async (req, res) => {
+    try {
+      const { phone, message } = req.body;
+      if (!phone || !message) {
+        return res.status(400).json({ success: false, error: "Phone and message are required" });
+      }
+
+      if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+        try {
+          const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/send-message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone, message }),
+            signal: AbortSignal.timeout(10000),
+          });
+          const data = await response.json();
+          return res.status(response.status).json(data);
+        } catch (err: any) {
+          return res.status(502).json({ success: false, error: "External WhatsApp bridge unreachable: " + (err.message || String(err)) });
+        }
+      }
+
+      return res.json({
+        success: true,
+        queued: false,
+        note: "WhatsApp service running in simulated/direct mode (connect device to dispatch real-time SMS/WhatsApp).",
+      });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message || String(error) });
+    }
+  });
+
+  app.post("/api/whatsapp/send-push", async (req, res) => {
+    try {
+      const { tokens } = req.body;
+      if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
+        return res.status(400).json({ success: false, error: "Missing or invalid tokens" });
+      }
+      return res.json({ success: true, count: tokens.length });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+  // --- End WhatsApp Endpoints ---
+
   // --- Password OTP Recovery Endpoints ---
   app.post("/api/auth/send-otp", async (req, res) => {
     try {
@@ -3031,9 +3238,29 @@ System instructions:
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server mode: ${process.env.NODE_ENV === "production" ? "Production (Static)" : "Development (Vite)"}`);
   });
+
+  server.on("error", (err: any) => {
+    if (err?.code === "EADDRINUSE") {
+      console.error(`Port ${PORT} is in use. Exiting process so it can restart cleanly.`);
+      process.exit(1);
+    } else {
+      console.error("Server listener error:", err);
+    }
+  });
+
+  const handleGracefulShutdown = () => {
+    console.log("Shutting down HTTP server gracefully...");
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", handleGracefulShutdown);
+  process.on("SIGINT", handleGracefulShutdown);
 }
 
 startServer();

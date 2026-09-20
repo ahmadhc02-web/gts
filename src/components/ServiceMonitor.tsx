@@ -963,7 +963,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                             </div>
 
                             {/* Chart Graph Frame */}
-                            <div className="flex-1 min-h-0 w-full relative">
+                            <div style={{ width: '100%', height: '300px' }} className="flex-1 min-h-[300px] w-full relative">
                               {detailHistory.length === 0 ? (
                                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-900/10 rounded-2xl p-6 text-center z-10 border border-slate-100/50 dark:border-white/10">
                                   <Activity className="text-sky-500 animate-pulse mb-3" size={32} />
@@ -976,7 +976,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                 </div>
                               ) : null}
 
-                              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                              <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={trendedHistory}>
                                   <defs>
                                     <linearGradient id="detail-grad-sky-active" x1="0" y1="0" x2="0" y2="1">
@@ -1352,13 +1352,13 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                     </span>
                                   </div>
 
-                                  <div className="h-8 sm:h-12 w-full mt-1 sm:mt-2 relative">
+                                  <div style={{ width: '100%', height: '48px' }} className="h-8 sm:h-12 w-full mt-1 sm:mt-2 relative">
                                     {data.history.length === 0 ? (
                                       <div className="absolute inset-0 flex items-center justify-center bg-slate-50/50 dark:bg-slate-900/30 rounded-xl">
                                         <span className="text-[7px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Init...</span>
                                       </div>
                                     ) : null}
-                                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                                    <ResponsiveContainer width="100%" height="100%">
                                       <AreaChart data={data.history}>
                                         <defs>
                                           <linearGradient id={`grad-sky-${target.key}`} x1="0" y1="0" x2="0" y2="1">

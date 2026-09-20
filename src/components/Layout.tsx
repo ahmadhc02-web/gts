@@ -489,6 +489,9 @@ export default function Layout({
 
   const [expandedCats, setExpandedCats] = useState<string[]>(['ops', 'analytics', 'system']);
 
+  const isSubDealerUser = user ? ((user.role === 'dealer' || Boolean(user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && user.role !== 'admin') : false;
+  const canAccessLoginProfiles = user?.role === 'super_admin' || isSubDealerUser;
+
   const categories = [
     {
       id: 'ops',
@@ -507,7 +510,7 @@ export default function Layout({
       items: [
         { id: 'clients', label: branding?.tabNames?.clients || 'USER DETAILS', icon: Contact },
         { id: 'top10', label: 'TOP 10 COMPLAINER', icon: TrendingUp },
-        { id: 'users', label: 'LOGIN PROFILES', icon: Users },
+        { id: 'users', label: isSubDealerUser ? 'SUBACCOUNTS' : 'LOGIN PROFILES', icon: Users },
       ]
     },
     {
@@ -531,9 +534,6 @@ export default function Layout({
     }
   ];
 
-  const isSubDealerUser = user ? ((user.role === 'dealer' || Boolean(user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && user.role !== 'admin') : false;
-  const canAccessLoginProfiles = user?.role === 'super_admin' || isSubDealerUser;
-
   const filteredCategories = categories.map(cat => ({
     ...cat,
     items: cat.items.filter(item => {
@@ -546,7 +546,7 @@ export default function Layout({
       }
       
       // If user is member, only show specific items requested: Operations, Active Complainers, Security
-      if (user.role === 'member') {
+      if (user.role === 'member' || user.role === 'field_agent') {
         return ['complaints', 'nodes', 'settings'].includes(item.id);
       }
       if (user.role === 'liteadmin') {
@@ -632,7 +632,7 @@ export default function Layout({
               ];
 
               let permitted;
-              if (user.role === 'member') {
+              if (user.role === 'member' || user.role === 'field_agent') {
                 const order = ['complaints', 'submit', 'nodes', 'billing', 'map', 'settings'];
                 permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
               } else if (user.role === 'liteadmin') {

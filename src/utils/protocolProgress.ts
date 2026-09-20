@@ -1,17 +1,20 @@
+import { getCleanProtocolText } from './protocolClean';
+
 /**
  * Utility to parse 'Team Resolution Protocol' (remarks) text
  * and return step completion percentage & step text indicator.
  */
 
 export function calculateProtocolProgress(remarks?: string): { percentage: number; stepText: string } {
-  if (!remarks || remarks.trim() === '') {
+  const clean = getCleanProtocolText(remarks);
+  if (!clean) {
     return { percentage: 0, stepText: '' };
   }
 
-  const text = remarks.toLowerCase();
+  const text = clean.toLowerCase();
 
   // 1. Check for explicit percent numbers (e.g., "60%", "progress: 40%")
-  const percentMatch = remarks.match(/\b(\d+)\s*%/);
+  const percentMatch = clean.match(/\b(\d+)\s*%/);
   if (percentMatch) {
     const pct = parseInt(percentMatch[1], 10);
     if (pct >= 0 && pct <= 100) {
@@ -20,7 +23,7 @@ export function calculateProtocolProgress(remarks?: string): { percentage: numbe
   }
 
   // 2. Check for markdown-like checklist (e.g., [x] item 1, [ ] item 2)
-  const checklistMatches = remarks.match(/\[([ xX])\]/g);
+  const checklistMatches = clean.match(/\[([ xX])\]/g);
   if (checklistMatches && checklistMatches.length > 0) {
     const total = checklistMatches.length;
     const checked = checklistMatches.filter(m => m.toLowerCase().includes('x')).length;
@@ -29,7 +32,7 @@ export function calculateProtocolProgress(remarks?: string): { percentage: numbe
   }
 
   // 3. Check for fractional steps (e.g., "Step 2/4", "step 3 of 5", "phase 1/3")
-  const fractionalMatch = remarks.match(/(?:step|phase|stage|task)?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
+  const fractionalMatch = clean.match(/(?:step|phase|stage|task)?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
   if (fractionalMatch) {
     const current = parseInt(fractionalMatch[1], 10);
     const total = parseInt(fractionalMatch[2], 10);
@@ -40,7 +43,7 @@ export function calculateProtocolProgress(remarks?: string): { percentage: numbe
   }
 
   // 4. Check for standalone single-step mentions (e.g., "Step 3", "Phase 2")
-  const singleStepMatch = remarks.match(/(?:step|phase|stage)\s*(\d+)/i);
+  const singleStepMatch = clean.match(/(?:step|phase|stage)\s*(\d+)/i);
   if (singleStepMatch) {
     const step = parseInt(singleStepMatch[1], 10);
     // Let's assume 4 steps by default
@@ -51,7 +54,7 @@ export function calculateProtocolProgress(remarks?: string): { percentage: numbe
 
   // 5. Look for lines or bullet points to guess progress:
   // E.g., count finished keywords vs total steps
-  const sentences = remarks.split(/[.\n;]/).map(s => s.trim()).filter(s => s.length > 0);
+  const sentences = clean.split(/[.\n;]/).map(s => s.trim()).filter(s => s.length > 0);
   if (sentences.length > 1) {
     let completedCount = 0;
     const completionKeywords = ['done', 'ok', 'resolved', 'success', 'complete', 'finished', 'patched', 'fixed', 'active', 'swapped', 'replaced'];

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy, ComponentType } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy, ComponentType } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import { getTabFromPathname, getPathnameFromTab } from './lib/routingUtils';
 import { safeLocalStorage } from './lib/safeLocalStorage';
@@ -240,13 +240,38 @@ export default function App() {
     return false;
   }, [user?.uid, user?.status, user?.dealerId, users]);
   const [userGroups, setUserGroups] = useState<ChatGroup[]>([]);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+    try {
+      const cached = localStorage.getItem(`gts_cache_v3_notifications_${userState?.lineCode || 'nolc'}`);
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return [];
+  });
   const [appConfig, setAppConfig] = useState<AppConfig>(() => {
     try {
       const cached = safeLocalStorage.getItem('gts_app_config');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed && typeof parsed === 'object') return parsed;
+      }
+      
+      const savedUser = safeLocalStorage.getItem('complaint_app_user');
+      let isMain = true;
+      if (savedUser) {
+        const parsedUser = JSON.parse(savedUser);
+        if (parsedUser.role === 'dealer' || (parsedUser.dealerId && parsedUser.dealerId !== 'main')) {
+          isMain = false;
+        }
+      }
+      
+      if (!isMain) {
+        return {
+          categories: [],
+          statuses: ['pending', 'in process', 'customer reviews', 'scheduled', 'complete', 'important'],
+          priorities: [],
+          zones: [],
+          billingSecurityKey: '1239870'
+        };
       }
     } catch (e) {}
     return {
@@ -322,6 +347,89 @@ export default function App() {
     notificationAudio.muted = isAudioMuted;
     chatAudio.muted = isAudioMuted;
   }, [notificationAudio, chatAudio, isAudioMuted]);
+
+  // --- Inactivity Auto-Logout Mechanism (2 Hours) ---
+  const LOGOUT_INACTIVITY_MS = 2 * 60 * 60 * 1000; // 2 hours
+  const ACTIVITY_STORAGE_KEY = 'gts_last_activity_ts';
+
+  const updateLastActivity = React.useCallback(() => {
+    try {
+      localStorage.setItem(ACTIVITY_STORAGE_KEY, String(Date.now()));
+    } catch (e) {}
+  }, []);
+
+  const forceLogoutForInactivity = React.useCallback(() => {
+    try {
+      // Clear all app-specific cached data on this device so no stale
+      // snapshot can ever be reused after a long gap.
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('gts_cache_v3_') || key.startsWith('gts_app_config') || key === ACTIVITY_STORAGE_KEY) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {}
+    setUser(null);
+    toast.info('You were logged out due to 2 hours of inactivity. Please log in again.');
+    navigate('/login');
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const checkInactivity = () => {
+      try {
+        const lastTsRaw = localStorage.getItem(ACTIVITY_STORAGE_KEY);
+        const lastTs = lastTsRaw ? parseInt(lastTsRaw, 10) : Date.now();
+        const elapsed = Date.now() - lastTs;
+        if (elapsed >= LOGOUT_INACTIVITY_MS) {
+          forceLogoutForInactivity();
+          return true;
+        }
+      } catch (e) {}
+      return false;
+    };
+
+    // Check immediately on mount/login (catches a laptop that was closed
+    // for a long time and just reopened).
+    if (checkInactivity()) return;
+    updateLastActivity();
+
+    // Re-check whenever the tab becomes visible again or window regains
+    // focus (catches sleep/lock-screen/closed-lid gaps).
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        if (!checkInactivity()) updateLastActivity();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    // Periodic check every 60 seconds while the tab stays open (catches
+    // someone leaving it open and idle at the desk without closing it).
+    const intervalId = setInterval(() => {
+      checkInactivity();
+    }, 60000);
+
+    // Track real user activity, throttled to avoid excessive writes.
+    let throttleTimer: any = null;
+    const handleUserActivity = () => {
+      if (throttleTimer) return;
+      throttleTimer = setTimeout(() => {
+        updateLastActivity();
+        throttleTimer = null;
+      }, 10000); // update at most once every 10 seconds
+    };
+    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    activityEvents.forEach(evt => window.addEventListener(evt, handleUserActivity, { passive: true }));
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      clearInterval(intervalId);
+      activityEvents.forEach(evt => window.removeEventListener(evt, handleUserActivity));
+      if (throttleTimer) clearTimeout(throttleTimer);
+    };
+  }, [user, forceLogoutForInactivity, updateLastActivity]);
 
   // Suspension warning effect: recurring 30-minute notifications + immediate beep alert
   useEffect(() => {
@@ -605,8 +713,8 @@ export default function App() {
           console.warn("Failed to cache branding locally:", e);
         }
       }
-    });
-  }, [pbAuthReady]);
+    }, user?.lineCode || undefined);
+  }, [pbAuthReady, user?.lineCode]);
 
   // Synchronize unbreakable lifetime translations from Firestore and merge them into branding
   useEffect(() => {
@@ -704,7 +812,14 @@ export default function App() {
 
             // Re-validate current session identity against the fresh registry
             if (user) {
-              const freshUser = currentUsers.find(u => u.username.toLowerCase() === user.username.toLowerCase() || u.uid === user.uid);
+              const freshUser = currentUsers.find(u => {
+                if (!u) return false;
+                const uName = String(u.username || '').trim().toLowerCase();
+                const currentName = String(user?.username || '').trim().toLowerCase();
+                const uUid = String(u.uid || '').trim();
+                const currentUid = String(user?.uid || '').trim();
+                return (uName && currentName && uName === currentName) || (uUid && currentUid && uUid === currentUid);
+              });
               
               if (freshUser) {
                 if (freshUser.status === 'blocked') {
@@ -764,17 +879,17 @@ export default function App() {
     // Subscribe to app config for the current tenant
     const unsubscribeConfig = pocketbaseService.subscribeConfig((data) => {
       if (data) {
-        const fetchedStatuses = data.statuses && data.statuses.length > 0 ? data.statuses : DEFAULT_STATUSES;
+        const fetchedStatuses = data.statuses || [];
         let finalStatuses = ensurePermanentStatuses(fetchedStatuses);
         if (!finalStatuses.includes('scheduled')) {
           finalStatuses = [...finalStatuses, 'scheduled'];
         }
         
         setAppConfig({
-          categories: data.categories && data.categories.length > 0 ? data.categories : DEFAULT_CATEGORIES,
+          categories: data.categories || [],
           statuses: finalStatuses,
-          priorities: data.priorities && data.priorities.length > 0 ? data.priorities : DEFAULT_PRIORITIES,
-          zones: data.zones && data.zones.length > 0 ? data.zones : DEFAULT_ZONES,
+          priorities: data.priorities || [],
+          zones: data.zones || [],
           billingSecurityKey: data.billingSecurityKey || '1239870',
         });
       }
@@ -831,13 +946,17 @@ export default function App() {
     };
   }, [user?.uid, user?.role, user?.dealerId, pbAuthReady, activeTab]);
 
-  // Fetch and subscribe to complaints for live updates across all tabs
+  // Fetch and subscribe to complaints for live updates (paused when in unrelated heavy sections)
   useEffect(() => {
     if (!user) {
       setComplaints([]);
       return;
     }
     if (!pbAuthReady) return;
+    
+    // Only subscribe to live complaints when needed to save resources
+    const shouldSubscribeComplaints = ['dashboard', 'complaints', 'monitor', 'recycle_bin'].includes(activeTab || 'dashboard');
+    if (!shouldSubscribeComplaints) return;
     
     const tenantId = pocketbaseService.getReadTenantId(user);
     
@@ -846,7 +965,7 @@ export default function App() {
     }, tenantId);
 
     return () => unsubscribe();
-  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady]);
+  }, [user?.uid, user?.role, user?.dealerId, pbAuthReady, activeTab]);
 
   // Real-time data fetch functions to instantly synchronize local states from database
   const fetchComplaints = async () => {
@@ -882,17 +1001,17 @@ export default function App() {
       console.log("[Database Sync] Fetching updated branding configs...");
       const config = await pocketbaseService.getAppConfig(tenantId);
       if (config) {
-        const fetchedStatuses = config.statuses || DEFAULT_STATUSES;
+        const fetchedStatuses = config.statuses || [];
         let finalStatuses = ensurePermanentStatuses(fetchedStatuses);
         if (!finalStatuses.includes('scheduled')) {
           finalStatuses = [...finalStatuses, 'scheduled'];
         }
         
         setAppConfig({
-          categories: config.categories || DEFAULT_CATEGORIES,
+          categories: config.categories || [],
           statuses: finalStatuses,
-          priorities: config.priorities || DEFAULT_PRIORITIES,
-          zones: config.zones || DEFAULT_ZONES,
+          priorities: config.priorities || [],
+          zones: config.zones || [],
           billingSecurityKey: config.billingSecurityKey || '1239870',
         });
       }
@@ -941,6 +1060,9 @@ export default function App() {
     const unsubscribe = pocketbaseService.subscribeNotifications((data) => {
       const regularNotifications = data.filter(n => n.type !== 'recycle_bin');
       setNotifications(regularNotifications);
+      try {
+        localStorage.setItem(`gts_cache_v3_notifications_${user?.lineCode || 'nolc'}`, JSON.stringify(regularNotifications));
+      } catch (e) {}
       if (regularNotifications.length > 0) {
         const latest = regularNotifications[0]; // notifications are descending
         
@@ -1240,10 +1362,11 @@ export default function App() {
 
       // Try to find user by username matching email prefix or exact email
       const emailPrefix = email.split('@')[0].toLowerCase();
-      let foundUser = effectiveUsers.find(u => 
-        u.username.toLowerCase() === email.toLowerCase() || 
-        u.username.toLowerCase() === emailPrefix
-      );
+      let foundUser = effectiveUsers.find(u => {
+        if (!u) return false;
+        const uName = String(u.username || '').trim().toLowerCase();
+        return uName === email.toLowerCase() || uName === emailPrefix;
+      });
 
       if (!foundUser) {
         // Automatically provision them as a generic member/user with main dealer
@@ -1278,6 +1401,7 @@ export default function App() {
 
       setUser(foundUser);
       safeLocalStorage.setItem('complaint_app_user', safeStringify(foundUser));
+      updateLastActivity();
       setShowWelcome(true);
       toast.success(`Access Granted: Welcome back, ${foundUser.fullName || foundUser.username}`);
 
@@ -1415,8 +1539,8 @@ export default function App() {
     setIsLoading(true);
     setError(null);
 
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanPass = pass.trim();
+    const cleanUsername = String(username || '').trim().toLowerCase();
+    const cleanPass = String(pass || '').trim();
 
     try {
       // Direct live fetch from database to guarantee up-to-date registry
@@ -1453,7 +1577,7 @@ export default function App() {
       }
 
       let foundUser = effectiveUsers.find(u => 
-        u.username.trim().toLowerCase() === cleanUsername || 
+        (u.username && u.username.trim().toLowerCase() === cleanUsername) || 
         (u.email && u.email.trim().toLowerCase() === cleanUsername) ||
         u.uid === username.trim()
       );
@@ -1474,11 +1598,12 @@ export default function App() {
         try {
           // Try Supabase First if Configured
           if (isSupabaseConfigured && supabase) {
+              const cleanLookup = String(username || '').trim();
               // Direct query execution on users_data first
               const { data: userData, error: userErr } = await supabase
                 .from("users_data")
                 .select("*")
-                .or(`username.eq.${username.trim()},email.eq.${username.trim()},uid.eq.${username.trim()}`)
+                .or(`username.eq.${cleanLookup},email.eq.${cleanLookup},uid.eq.${cleanLookup}`)
                 .limit(1)
                 .maybeSingle();
 
@@ -1488,40 +1613,6 @@ export default function App() {
               } else if (userData) {
                 supabaseUser = userData;
               }
-
-              // Fallback to login_profiles if not found in users_data
-              if (!supabaseUser && !supabaseError) {
-                const { data: profileData, error: profileErr } = await supabase
-                  .from("login_profiles")
-                  .select("*")
-                  .or(`username.eq.${username.trim()},email.eq.${username.trim()},uid.eq.${username.trim()}`)
-                  .limit(1)
-                  .maybeSingle();
-
-                if (profileErr) {
-                  console.log("Supabase login_profiles query error:", profileErr);
-                  supabaseError = profileErr;
-                } else if (profileData) {
-                  supabaseUser = profileData;
-                }
-              }
-
-              // Fallback to users table if not found in either
-              if (!supabaseUser && !supabaseError) {
-                const { data: uData, error: uErr } = await supabase
-                  .from("users")
-                  .select("*")
-                  .or(`username.eq.${username.trim()},email.eq.${username.trim()},uid.eq.${username.trim()}`)
-                  .limit(1)
-                  .maybeSingle();
-
-                if (uErr) {
-                  console.log("Supabase users query error:", uErr);
-                  supabaseError = uErr;
-                } else if (uData) {
-                  supabaseUser = uData;
-                }
-              }
           }
         } catch (dbErr: any) {
           console.warn("Direct database lookup exception:", dbErr);
@@ -1530,16 +1621,18 @@ export default function App() {
         }
 
         if (supabaseUser) {
+          const responseData = supabaseUser;
+          const userRole = responseData?.role?.trim() || 'user';
           // Support password matching via 'password' or 'comments' field
           if (supabaseUser.password === pass || supabaseUser.password === cleanPass || supabaseUser.comments === pass || supabaseUser.comments === cleanPass) {
             const mappedUser = {
               uid: supabaseUser.uid || supabaseUser.id || username,
-              username: supabaseUser.username,
+              username: supabaseUser.username ? String(supabaseUser.username).trim() : username,
               password: supabaseUser.password || supabaseUser.comments,
-              role: supabaseUser.role || 'member',
+              role: userRole,
               fullName: supabaseUser.full_name || supabaseUser.name || '',
               dealerId: supabaseUser.dealer_id || '',
-              lineCode: supabaseUser.line_code || '',
+              lineCode: supabaseUser.line_code ? String(supabaseUser.line_code).trim() : '',
               companyName: supabaseUser.company_name || '',
               createdAt: supabaseUser.created_at || Date.now(),
               email: supabaseUser.email || '',
@@ -1616,18 +1709,20 @@ export default function App() {
         }
 
         // Line Code Enforcement: Check if user or parent dealer has a Line Code configured
-        let expectedLineCode = (foundUser.lineCode || '').trim();
+        let expectedLineCode = String(foundUser.lineCode || '').trim();
         if (!expectedLineCode && foundUser.dealerId && foundUser.dealerId !== 'main') {
           const parentDealer = effectiveUsers.find(u => 
-            u.uid === foundUser?.dealerId || 
-            u.username.toLowerCase() === foundUser?.dealerId.toLowerCase()
+            u && (
+              String(u.uid || '').trim() === String(foundUser?.dealerId || '').trim() || 
+              String(u.username || '').trim().toLowerCase() === String(foundUser?.dealerId || '').trim().toLowerCase()
+            )
           );
-          if (parentDealer?.lineCode && parentDealer.lineCode.trim()) {
-            expectedLineCode = parentDealer.lineCode.trim();
+          if (parentDealer?.lineCode && String(parentDealer.lineCode).trim()) {
+            expectedLineCode = String(parentDealer.lineCode).trim();
           }
         }
 
-        const enteredLineCode = (lineCode || '').trim();
+        const enteredLineCode = String(lineCode || '').trim();
 
         // If the user has or inherits a Line Code, it is MANDATORY (lazmi) to provide it
         if (expectedLineCode) {
@@ -1655,6 +1750,7 @@ export default function App() {
 
         setUser(foundUser);
         safeLocalStorage.setItem('complaint_app_user', safeStringify(foundUser));
+        updateLastActivity();
         setShowWelcome(true);
         toast.success(`Access Granted: Welcome back, ${foundUser.username}`);
 
@@ -1942,25 +2038,54 @@ export default function App() {
       });
       return;
     }
+    
+    // Set updating state
+    setComplaints(prev => prev.map(c => c.id === id ? { ...c, isUpdating: true } : c));
+    
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = complaint?.customerName || id;
 
-      // Optimistic state update
-      setComplaints(prev => prev.map(c => {
-        if (c.id !== id) return c;
-        let parsedProtocols = c.protocols;
+      const trimmed = String(remarks).trim();
+      let parsedProtocols: ComplaintReview[] = [];
+      if (trimmed.startsWith('[')) {
         try {
-          const trimmed = String(remarks).trim();
-          if (trimmed.startsWith('[')) {
-            parsedProtocols = JSON.parse(trimmed);
-          }
-        } catch (e) { /* keep existing protocols on parse failure */ }
-        return { ...c, remarks, protocols: parsedProtocols };
-      }));
+          parsedProtocols = JSON.parse(trimmed);
+        } catch (e) {
+          parsedProtocols = [{
+            id: 'proto-' + Date.now(),
+            text: trimmed,
+            createdAt: Date.now(),
+            authorId: user.uid,
+            authorName: user.fullName || user.username
+          }];
+        }
+      } else if (trimmed) {
+        parsedProtocols = [{
+          id: 'proto-' + Date.now(),
+          text: trimmed,
+          createdAt: Date.now(),
+          authorId: user.uid,
+          authorName: user.fullName || user.username
+        }];
+      }
 
       await pocketbaseService.updateComplaintRemarks(id, remarks, customerName, user.fullName || user.username, user.uid);
       toast.success('Protocol remarks updated successfully');
+
+      // Explicit state update step immediately after the database update
+      setComplaints(prev => prev.map(c => {
+        if (c.id !== id) return c;
+        return { 
+          ...c, 
+          remarks, 
+          protocols: parsedProtocols,
+          remarkAuthorName: user.fullName || user.username,
+          remarkAuthorId: user.uid,
+          updatedAt: Date.now(),
+          isUpdating: false
+        };
+      }));
 
       // Auto-sync for Operational Logs (History)
       if (complaint) {
@@ -1978,6 +2103,8 @@ export default function App() {
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update remarks.');
+      // Revert updating state on failure
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, isUpdating: false } : c));
     }
   };
 
@@ -1990,6 +2117,10 @@ export default function App() {
       });
       return;
     }
+    
+    // Set updating state
+    setComplaints(prev => prev.map(c => c.id === id ? { ...c, isUpdating: true } : c));
+
     try {
       const complaint = complaints.find(c => c.id === id);
       const customerName = data.customerName || complaint?.customerName || id;
@@ -2003,8 +2134,20 @@ export default function App() {
 
       toast.success('Log record updated and verified successfully');
 
+      // If data contains remarks, try to parse it into protocols to maintain clean array structure locally
+      if (data.remarks && !data.protocols) {
+        const trimmed = String(data.remarks).trim();
+        if (trimmed.startsWith('[')) {
+          try {
+            data.protocols = JSON.parse(trimmed);
+          } catch (e) {
+            // fallback
+          }
+        }
+      }
+
       // Update local cache immediately
-      setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...data, isUpdating: false } : c));
 
       // Auto-sync for Operational Logs (History/Updates/Remarks)
       if (complaint) {
@@ -2022,6 +2165,8 @@ export default function App() {
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to update record.');
+      // Revert updating state on failure
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, isUpdating: false } : c));
     }
   };
 
@@ -2033,7 +2178,7 @@ export default function App() {
       return;
     }
 
-    if (users.some(u => u.username.toLowerCase() === trimmedName.toLowerCase())) {
+    if (users.some(u => u && String(u.username || '').trim().toLowerCase() === trimmedName.toLowerCase())) {
       toast.error('Username already exists! Please choose a different name.');
       return;
     }
@@ -2102,11 +2247,24 @@ export default function App() {
       const targetUser = users.find(u => u.uid === uid);
       const username = targetUser?.username || uid;
 
-      // Optimistic UI update
-      setUsers(prev => prev.filter(u => u.uid !== uid));
+      // Find all user IDs to delete (target user + all nested sub-accounts)
+      const idsToDelete = new Set<string>([uid]);
+      let addedMore = true;
+      while (addedMore) {
+        addedMore = false;
+        for (const u of users) {
+          if (!idsToDelete.has(u.uid) && u.dealerId && idsToDelete.has(u.dealerId)) {
+            idsToDelete.add(u.uid);
+            addedMore = true;
+          }
+        }
+      }
+
+      // Optimistic UI update: remove target user and all sub-accounts immediately
+      setUsers(prev => prev.filter(u => !idsToDelete.has(u.uid)));
 
       await pocketbaseService.deleteUser(uid, username, user.fullName || user.username, targetUser);
-      toast.success('User moved to Recycle Bin!');
+      toast.success(idsToDelete.size > 1 ? `User and ${idsToDelete.size - 1} sub-account(s) deleted!` : 'User moved to Recycle Bin!');
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       toast.error('Failed to delete user.');
@@ -2244,7 +2402,7 @@ export default function App() {
         translations: mergedTranslations
       };
       
-      await pocketbaseService.updateBranding(mergedBranding, user.fullName || user.username);
+      await pocketbaseService.updateBranding(mergedBranding, user.fullName || user.username, user?.lineCode || undefined);
       
       if (newBranding.translations !== undefined) {
         await pocketbaseService.updateTranslations(mergedTranslations);
@@ -2365,7 +2523,7 @@ export default function App() {
                   </div>
                 </div>
               ) : lineCodeReady ? (
-                (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor' || user.role === 'liteadmin' || user.role === 'member') ? (
+                (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor' || user.role === 'liteadmin' || user.role === 'member' || user.role === 'field_agent') ? (
                   <AdminPanel
                     complaints={processedComplaints}
                     users={users}

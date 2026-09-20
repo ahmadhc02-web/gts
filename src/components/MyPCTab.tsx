@@ -312,7 +312,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                   { id: 'map_view', icon: MapPinned, title: 'Network Map', desc: 'Diagnostic geographic connection grid' },
                   { id: 'user_details', icon: Users, title: 'Users Management', desc: 'Manage logins & clearance level' },
                   { id: 'top10_complainers', icon: BarChart2, title: 'Top 10 Complainer', desc: 'High frequency support identifiers' },
-                  ...(canAccessLoginProfiles ? [{ id: 'login_profiles', icon: ShieldCheck, title: 'Login Profiles', desc: 'Active Credentials & Roles Overview' }] : []),
+                  ...(canAccessLoginProfiles ? [{ id: 'login_profiles', icon: ShieldCheck, title: isSubDealerUser ? 'Subaccounts' : 'Login Profiles', desc: isSubDealerUser ? 'Manage Dealer Subaccounts' : 'Active Credentials & Roles Overview' }] : []),
                   ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_view', icon: ShieldAlert, title: 'Dealer Section', desc: 'Authorized Dealers Registry Setup' }] : []),
                   { id: 'system_config', icon: Settings, title: 'Workflow Config', desc: 'Edit Categories & Active Zones' },
                   { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
@@ -366,7 +366,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                           mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
                           mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
                           mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
-                          mypcOpenedFile === 'login_profiles' ? 'Active System Roles & Authentication Overview' :
+                          mypcOpenedFile === 'login_profiles' ? (isSubDealerUser ? 'Subaccount Creation & Management' : 'Active System Roles & Authentication Overview') :
                           mypcOpenedFile === 'system_config' ? 'Real-Time Tenant Parameters configuration' :
                           mypcOpenedFile === 'dealers_view' ? 'Authorized Dealers Setup Protocol' :
                           mypcOpenedFile === 'branding_panel' ? 'Theme Style & System Signage Configuration' :
@@ -413,10 +413,10 @@ export default function MyPCTab(props: MyPCTabProps) {
                       <div className={cn("p-8", getCardStyle(branding.cardStyle))}>
                         <h3 className="text-lg font-black uppercase tracking-tight mb-4 flex items-center gap-2.5 text-slate-900 dark:text-slate-50">
                           <ShieldCheck size={20} className="text-emerald-500 animate-pulse" />
-                          Authorized Credentials & Session Dashboard
+                          {isSubDealerUser ? 'Dealer Subaccounts Dashboard' : 'Authorized Credentials & Session Dashboard'}
                         </h3>
                         <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-8">
-                          Secure system registry listing current operators clearance and session credentials
+                          {isSubDealerUser ? 'Create and manage subaccounts linked directly to your dealer profile' : 'Secure system registry listing current operators clearance and session credentials'}
                         </p>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -454,7 +454,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                           <div className={cn("p-8 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
                             <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3">
                               <UserPlus size={20} className="text-brand-accent" />
-                              Link Access
+                              {isSubDealerUser ? 'Create Subaccount' : 'Link Access'}
                             </h3>
                             {formError && (
                               <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold">
@@ -466,9 +466,22 @@ export default function MyPCTab(props: MyPCTabProps) {
                                 {formSuccess}
                               </div>
                             )}
-                            <form onSubmit={handleCreateUser} className="space-y-6">
+                            <form onSubmit={(e) => {
+                              handleCreateUser(e);
+                            }} className="space-y-6">
                               <div className="space-y-1.5">
-                                <label className={labelClasses}>Employee Username</label>
+                                <label className={labelClasses}>Full Name</label>
+                                <input
+                                  type="text"
+                                  value={newFullName}
+                                  onChange={(e) => setNewFullName(e.target.value)}
+                                  placeholder="e.g. John Doe"
+                                  className={cn(inputClasses, "normal-case")}
+                                  required={isSubDealerUser}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className={labelClasses}>{isSubDealerUser ? 'User ID' : 'Employee Username'}</label>
                                 <input
                                   type="text"
                                   value={newUsername}
@@ -478,16 +491,20 @@ export default function MyPCTab(props: MyPCTabProps) {
                                   required
                                 />
                               </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Full Name</label>
-                                <input
-                                  type="text"
-                                  value={newFullName}
-                                  onChange={(e) => setNewFullName(e.target.value)}
-                                  placeholder="e.g. John Doe"
-                                  className={cn(inputClasses, "normal-case")}
-                                />
-                              </div>
+                              
+                              {isSubDealerUser && (
+                                <div className="space-y-1.5">
+                                  <label className={labelClasses}>Line Code (Locked)</label>
+                                  <input
+                                    type="text"
+                                    value={currentUser.lineCode || ''}
+                                    readOnly
+                                    disabled
+                                    className={cn(inputClasses, "normal-case opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-800")}
+                                  />
+                                </div>
+                              )}
+
                               <div className="space-y-1.5">
                                 <label className={labelClasses}>Access Password</label>
                                 <input
@@ -499,67 +516,102 @@ export default function MyPCTab(props: MyPCTabProps) {
                                   required
                                 />
                               </div>
-                              <div className="space-y-1.5">
-                                <label className={labelClasses}>Clearance Level</label>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setNewUserRole('member')}
-                                    className={cn(
-                                      "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                                      newUserRole === 'member' 
-                                        ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] border-slate-900 dark:border-brand-accent" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                                    )}
-                                  >
-                                    Field Agent
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setNewUserRole('liteadmin')}
-                                    className={cn(
-                                      "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                                      newUserRole === 'liteadmin' 
-                                        ? "bg-indigo-600 text-white border-indigo-600 shadow-[var(--neu-shadow-raised)] shadow-indigo-500/20" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                                    )}
-                                  >
-                                    Lite Admin
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setNewUserRole('admin')}
-                                    className={cn(
-                                      "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                                      newUserRole === 'admin' 
-                                        ? "bg-blue-600 text-white border-blue-600 shadow-[var(--neu-shadow-raised)] shadow-blue-500/20" 
-                                        : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                                    )}
-                                  >
-                                    Admin
-                                  </button>
-                                  {currentUser.role === 'super_admin' && (
+
+                              {isSubDealerUser && (
+                                <div className="space-y-1.5">
+                                  <label className={labelClasses}>Clearance Level</label>
+                                  <div className="grid grid-cols-2 gap-2">
                                     <button
                                       type="button"
-                                      onClick={() => setNewUserRole('super_admin')}
+                                      onClick={() => setNewUserRole('member')}
                                       className={cn(
-                                        "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border col-span-2 sm:col-span-1",
-                                        newUserRole === 'super_admin' 
-                                          ? "bg-rose-600 text-white border-rose-600 shadow-[var(--neu-shadow-raised)] shadow-rose-500/20" 
+                                        "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                                        newUserRole === 'member'
+                                          ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 border-slate-900 dark:border-brand-accent"
                                           : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
                                       )}
                                     >
-                                      Super Admin
+                                      Member
                                     </button>
-                                  )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewUserRole('field_agent')}
+                                      className={cn(
+                                        "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                                        newUserRole === 'field_agent'
+                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-[var(--neu-shadow-raised)] shadow-emerald-500/20"
+                                          : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                                      )}
+                                    >
+                                      Field Agent
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
+
+                              {!isSubDealerUser && (
+                                <div className="space-y-1.5">
+                                  <label className={labelClasses}>Clearance Level</label>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewUserRole('member')}
+                                      className={cn(
+                                        "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                                        newUserRole === 'member' 
+                                          ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] border-slate-900 dark:border-brand-accent" 
+                                          : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                                      )}
+                                    >
+                                      Field Agent
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewUserRole('liteadmin')}
+                                      className={cn(
+                                        "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                                        newUserRole === 'liteadmin' 
+                                          ? "bg-indigo-600 text-white border-indigo-600 shadow-[var(--neu-shadow-raised)] shadow-indigo-500/20" 
+                                          : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                                      )}
+                                    >
+                                      Lite Admin
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewUserRole('admin')}
+                                      className={cn(
+                                        "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                                        newUserRole === 'admin' 
+                                          ? "bg-blue-600 text-white border-blue-600 shadow-[var(--neu-shadow-raised)] shadow-blue-500/20" 
+                                          : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                                      )}
+                                    >
+                                      Admin
+                                    </button>
+                                    {currentUser.role === 'super_admin' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setNewUserRole('super_admin')}
+                                        className={cn(
+                                          "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border col-span-2 sm:col-span-1",
+                                          newUserRole === 'super_admin' 
+                                            ? "bg-rose-600 text-white border-rose-600 shadow-[var(--neu-shadow-raised)] shadow-rose-500/20" 
+                                            : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                                        )}
+                                      >
+                                        Super Admin
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                               <button
                                 type="submit"
                                 disabled={isCreating}
                                 className="w-full py-4 rounded-lg bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] font-bold uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] hover:bg-black dark:hover:bg-blue-700 disabled:opacity-50 transition-all"
                               >
-                                {isCreating ? 'Processing Reg...' : 'Initialize Link Access Member'}
+                                 {isCreating ? 'Processing Reg...' : (isSubDealerUser ? 'Create Subaccount' : 'Initialize Link Access Member')}
                               </button>
                             </form>
                           </div>
@@ -568,7 +620,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                         <div className="lg:col-span-2">
                           <div className={cn("overflow-hidden bg-[var(--neu-surface)]", getCardStyle(branding.cardStyle))}>
                             <div className="px-6 py-4 border-b border-[var(--neu-border)] bg-[var(--neu-surface)]">
-                               <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Link Access Directory</h4>
+                               <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{isSubDealerUser ? 'Subaccounts Directory' : 'Link Access Directory'}</h4>
                             </div>
                             <div className="overflow-x-auto">
                               <table className="w-full text-left">

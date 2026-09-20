@@ -115,7 +115,7 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
           foundUser =
             users.find(
               (u) =>
-                u.username.trim().toLowerCase() === cleanUsername ||
+                (u.username && u.username.trim().toLowerCase() === cleanUsername) ||
                 (u.email && u.email.trim().toLowerCase() === cleanUsername) ||
                 u.uid === cleanUsername
             ) || null;
@@ -124,12 +124,12 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
             const parentDealer = users.find(
               (u) =>
                 u.uid === foundUser?.dealerId ||
-                u.username.toLowerCase() === foundUser?.dealerId.toLowerCase()
+                (u.username && foundUser?.dealerId && u.username.toLowerCase() === foundUser.dealerId.toLowerCase())
             );
             if (parentDealer) {
               parentDealerObj = parentDealer;
-              if (parentDealer.lineCode && parentDealer.lineCode.trim()) {
-                parentLineCode = parentDealer.lineCode.trim();
+              if (parentDealer.lineCode && String(parentDealer.lineCode).trim()) {
+                parentLineCode = String(parentDealer.lineCode).trim();
               }
             }
           }
@@ -139,8 +139,8 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
             (await supabaseService.getUserForLogin(foundUser.dealerId));
           if (parent) {
             parentDealerObj = parent;
-            if (parent.lineCode && parent.lineCode.trim()) {
-              parentLineCode = parent.lineCode.trim();
+            if (parent.lineCode && String(parent.lineCode).trim()) {
+              parentLineCode = String(parent.lineCode).trim();
             }
           }
         }
@@ -150,30 +150,30 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
 
         if (foundUser) {
           // Line Code resolution
-          if (foundUser.lineCode && foundUser.lineCode.trim()) {
+          if (foundUser.lineCode && String(foundUser.lineCode).trim()) {
             hasLc = true;
           } else if (parentLineCode) {
             hasLc = true;
           }
 
           // Company Name resolution
-          if (foundUser.companyName && foundUser.companyName.trim()) {
-            resolvedCompany = foundUser.companyName.trim();
-          } else if (parentDealerObj?.companyName && parentDealerObj.companyName.trim()) {
-            resolvedCompany = parentDealerObj.companyName.trim();
+          if (foundUser.companyName && String(foundUser.companyName).trim()) {
+            resolvedCompany = String(foundUser.companyName).trim();
+          } else if (parentDealerObj?.companyName && String(parentDealerObj.companyName).trim()) {
+            resolvedCompany = String(parentDealerObj.companyName).trim();
           } else if (foundUser.dealerId && foundUser.dealerId !== "main") {
             const parent =
               (await supabaseService.getUser(foundUser.dealerId)) ||
               (await supabaseService.getUserForLogin(foundUser.dealerId));
-            if (parent?.companyName && parent.companyName.trim()) {
-              resolvedCompany = parent.companyName.trim();
+            if (parent?.companyName && String(parent.companyName).trim()) {
+              resolvedCompany = String(parent.companyName).trim();
             }
           } else if (foundUser.createdBy) {
             const creator =
               (await supabaseService.getUser(foundUser.createdBy)) ||
               (await supabaseService.getUserForLogin(foundUser.createdBy));
-            if (creator?.companyName && creator.companyName.trim()) {
-              resolvedCompany = creator.companyName.trim();
+            if (creator?.companyName && String(creator.companyName).trim()) {
+              resolvedCompany = String(creator.companyName).trim();
             }
           }
 

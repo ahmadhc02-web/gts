@@ -4,6 +4,18 @@ import { toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, ensurePermanentStatuses } from '../constants';
 import { globalLoading } from '../contexts/LoadingContext';
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms / 1000}s. Please check your connection and try again.`));
+    }, ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 let activeLineCode: string | undefined = undefined;
 
 import { sendMessage, getTemplate, getStatus , sendPushNotification } from '../whatsapp_data/whatsappApi';
@@ -314,6 +326,14 @@ export function fromDb(table: string, obj: any): any {
   }
 
   if (table === 'users') {
+    const responseData = obj;
+    const userRole = responseData?.role ? String(responseData.role).trim() : 'user';
+    result.role = userRole;
+    result.username = responseData?.username ? String(responseData.username).trim() : (result.username ? String(result.username).trim() : '');
+    result.lineCode = responseData?.line_code ? String(responseData.line_code).trim() : (result.lineCode ? String(result.lineCode).trim() : '');
+    result.dealerId = responseData?.dealer_id ? String(responseData.dealer_id).trim() : (result.dealerId ? String(result.dealerId).trim() : '');
+    result.companyName = responseData?.company_name ? String(responseData.company_name).trim() : (result.companyName ? String(result.companyName).trim() : '');
+    result.status = result.status || 'active';
     if (!result.profilePicture || String(result.profilePicture).trim() === '') {
       try {
         const storedPics = JSON.parse(localStorage.getItem('gts_profile_pictures') || '{}');
@@ -528,23 +548,27 @@ function subscribeTable(
         
         
         if (!['branding_config', 'categories_config', 'priority_config', 'statuses_config', 'zone_config'].includes(tableName)) {
+          const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+          const cleanActive = String(activeLineCode || '').trim();
           if (bypassLineCodeFilter === true) {
             // no filter
-          } else if (typeof bypassLineCodeFilter === 'string') {
-            query = query.eq('line_code', bypassLineCodeFilter);
-          } else if (activeLineCode) {
-            query = query.eq('line_code', activeLineCode);
-          } else {
-            query = query.or('line_code.is.null,line_code.eq.');
+          } else if (cleanBypass) {
+            query = query.eq('line_code', cleanBypass);
+          } else if (cleanActive) {
+            query = query.eq('line_code', cleanActive);
           }
         }
         if (dealerId && dealerId !== 'all') {
-          if (tableName === 'ledger_folders') {
-            query = dealerId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null,tenant_id.eq.') : query.eq('tenant_id', dealerId);
-          } else if (tableName === 'ledger_sheets') {
-            query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
-          } else if (!['branding_config'].includes(tableName)) {
-            query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
+          // When activeLineCode is set, records are already strictly isolated to that line_code.
+          // Avoid restricting by dealer_id so subaccounts with line_code see their dealer's data.
+          if (!activeLineCode) {
+            if (tableName === 'ledger_folders') {
+              query = dealerId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null') : query.eq('tenant_id', dealerId);
+            } else if (tableName === 'ledger_sheets') {
+              query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+            } else if (!['branding_config'].includes(tableName)) {
+              query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+            }
           }
         }
         const { data: records, error: fetchErr } = await query;
@@ -712,7 +736,12 @@ function subscribeTable(
           } else if (payload && payload.new) {
             try {
               const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
-              if (isSpecificDealer) {
+              if (activeLineCode) {
+                const rowLineCode = payload.new.line_code;
+                if (rowLineCode && rowLineCode !== activeLineCode) {
+                  return; // Skip updates not belonging to this dealer's line code
+                }
+              } else if (isSpecificDealer) {
                 const rowDealer = payload.new.dealer_id || payload.new.tenant_id;
                 if (tableName === 'billing_months') {
                   if (rowDealer && rowDealer !== dealerId) {
@@ -917,7 +946,8 @@ async function fetchBrandingConfigType(configType: string): Promise<any> {
 
 export const supabaseService = {
   setActiveLineCode: (lineCode?: string) => {
-    activeLineCode = lineCode;
+    const cleanCode = typeof lineCode === 'string' ? lineCode.trim() : (lineCode ? String(lineCode).trim() : '');
+    activeLineCode = cleanCode || undefined;
   },
   // Presence and Cursor Broadcast for Collaboration
   joinBillingPresence(
@@ -1026,18 +1056,21 @@ export const supabaseService = {
   },
 
   getTenantId: (user: UserProfile) => {
+    if (user.dealerId && user.dealerId !== 'main') {
+      return user.dealerId;
+    }
     if (user.role === 'dealer') return user.uid;
     return user.dealerId || 'main';
   },
 
   getReadTenantId: (user: UserProfile) => {
-    if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'member' || user.role === 'editor' || user.role === 'liteadmin') {
-      return undefined;
-    }
     if (user.dealerId && user.dealerId !== 'main') {
       return user.dealerId;
     }
     if (user.role === 'dealer') return user.uid;
+    if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'member' || user.role === 'editor' || user.role === 'liteadmin' || user.role === 'field_agent') {
+      return undefined;
+    }
     return user.dealerId || 'main';
   },
 
@@ -1078,12 +1111,26 @@ export const supabaseService = {
   async getCategories(tenantId: string = 'main'): Promise<string[]> {
     try {
       let query = supabase.from('categories_config').select('*');
-      if (activeLineCode) {
-        query = query.eq('line_code', activeLineCode);
-      } else {
-        query = query.or('line_code.is.null,line_code.eq.');
+      if (tenantId && tenantId !== 'main') {
+        query = query.eq('tenant_id', tenantId);
+      } else if (tenantId === 'main') {
+        query = query.or('tenant_id.eq.main,tenant_id.is.null');
       }
-      const { data } = await query;
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      }
+      let { data, error } = await query;
+      if (error && cleanCode && error.message && error.message.includes('column') && error.message.includes('line_code')) {
+        let fallbackQuery = supabase.from('categories_config').select('*');
+        if (tenantId && tenantId !== 'main') {
+          fallbackQuery = fallbackQuery.eq('tenant_id', tenantId);
+        } else if (tenantId === 'main') {
+          fallbackQuery = fallbackQuery.or('tenant_id.eq.main,tenant_id.is.null');
+        }
+        const res = await fallbackQuery;
+        data = res.data;
+      }
       if (data && data.length > 0) {
         const items = data
           .map(r => r.value || r.name || r.category || r.category_name || r.title || r.label)
@@ -1099,12 +1146,26 @@ export const supabaseService = {
   async getStatuses(tenantId: string = 'main'): Promise<string[]> {
     try {
       let query = supabase.from('statuses_config').select('*');
-      if (activeLineCode) {
-        query = query.eq('line_code', activeLineCode);
-      } else {
-        query = query.or('line_code.is.null,line_code.eq.');
+      if (tenantId && tenantId !== 'main') {
+        query = query.eq('tenant_id', tenantId);
+      } else if (tenantId === 'main') {
+        query = query.or('tenant_id.eq.main,tenant_id.is.null');
       }
-      const { data } = await query;
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      }
+      let { data, error } = await query;
+      if (error && cleanCode && error.message && error.message.includes('column') && error.message.includes('line_code')) {
+        let fallbackQuery = supabase.from('statuses_config').select('*');
+        if (tenantId && tenantId !== 'main') {
+          fallbackQuery = fallbackQuery.eq('tenant_id', tenantId);
+        } else if (tenantId === 'main') {
+          fallbackQuery = fallbackQuery.or('tenant_id.eq.main,tenant_id.is.null');
+        }
+        const res = await fallbackQuery;
+        data = res.data;
+      }
       if (data && data.length > 0) {
         const items = data
           .map(r => r.value || r.name || r.status || r.status_name || r.title || r.label)
@@ -1120,12 +1181,26 @@ export const supabaseService = {
   async getPriorities(tenantId: string = 'main'): Promise<string[]> {
     try {
       let query = supabase.from('priority_config').select('*');
-      if (activeLineCode) {
-        query = query.eq('line_code', activeLineCode);
-      } else {
-        query = query.or('line_code.is.null,line_code.eq.');
+      if (tenantId && tenantId !== 'main') {
+        query = query.eq('tenant_id', tenantId);
+      } else if (tenantId === 'main') {
+        query = query.or('tenant_id.eq.main,tenant_id.is.null');
       }
-      const { data } = await query;
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      }
+      let { data, error } = await query;
+      if (error && cleanCode && error.message && error.message.includes('column') && error.message.includes('line_code')) {
+        let fallbackQuery = supabase.from('priority_config').select('*');
+        if (tenantId && tenantId !== 'main') {
+          fallbackQuery = fallbackQuery.eq('tenant_id', tenantId);
+        } else if (tenantId === 'main') {
+          fallbackQuery = fallbackQuery.or('tenant_id.eq.main,tenant_id.is.null');
+        }
+        const res = await fallbackQuery;
+        data = res.data;
+      }
       if (data && data.length > 0) {
         const items = data
           .map(r => r.value || r.name || r.priority || r.priority_name || r.title || r.label)
@@ -1141,12 +1216,26 @@ export const supabaseService = {
   async getZones(tenantId: string = 'main'): Promise<string[]> {
     try {
       let query = supabase.from('zone_config').select('*');
-      if (activeLineCode) {
-        query = query.eq('line_code', activeLineCode);
-      } else {
-        query = query.or('line_code.is.null,line_code.eq.');
+      if (tenantId && tenantId !== 'main') {
+        query = query.eq('tenant_id', tenantId);
+      } else if (tenantId === 'main') {
+        query = query.or('tenant_id.eq.main,tenant_id.is.null');
       }
-      const { data } = await query;
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      }
+      let { data, error } = await query;
+      if (error && cleanCode && error.message && error.message.includes('column') && error.message.includes('line_code')) {
+        let fallbackQuery = supabase.from('zone_config').select('*');
+        if (tenantId && tenantId !== 'main') {
+          fallbackQuery = fallbackQuery.eq('tenant_id', tenantId);
+        } else if (tenantId === 'main') {
+          fallbackQuery = fallbackQuery.or('tenant_id.eq.main,tenant_id.is.null');
+        }
+        const res = await fallbackQuery;
+        data = res.data;
+      }
       if (data && data.length > 0) {
         const items = data
           .map(r => r.value || r.name || r.zone || r.zone_name || r.title || r.label)
@@ -1162,10 +1251,14 @@ export const supabaseService = {
   async saveConfigItems(collection: string, items: string[], tenantId: string = 'main') {
     try {
       let query = supabase.from(collection).select('*');
-      if (activeLineCode) {
-        query = query.eq('line_code', activeLineCode);
-      } else {
-        query = query.or('line_code.is.null,line_code.eq.');
+      if (tenantId && tenantId !== 'main') {
+        query = query.eq('tenant_id', tenantId);
+      } else if (tenantId === 'main') {
+        query = query.or('tenant_id.eq.main,tenant_id.is.null');
+      }
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
       }
       const { data: existingSup, error: selErr } = await query;
       if (selErr) {
@@ -1280,16 +1373,17 @@ export const supabaseService = {
 
       try {
         let query = supabase.from('billing_months').select('*');
-        if (dealerId && dealerId !== 'main') query = query.eq('dealer_id', dealerId);
-        
+        if (dealerId && dealerId !== 'main') {
+          query = query.eq('dealer_id', dealerId);
+        }
+        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+        const cleanActive = String(activeLineCode || '').trim();
         if (bypassLineCodeFilter === true) {
           // no filter
-        } else if (typeof bypassLineCodeFilter === 'string') {
-          query = query.eq('line_code', bypassLineCodeFilter);
-        } else if (activeLineCode) {
-          query = query.eq('line_code', activeLineCode);
-        } else {
-          query = query.or('line_code.is.null,line_code.eq.');
+        } else if (cleanBypass) {
+          query = query.eq('line_code', cleanBypass);
+        } else if (cleanActive) {
+          query = query.eq('line_code', cleanActive);
         }
 
         const { data: supMonths } = await query;
@@ -1313,16 +1407,17 @@ export const supabaseService = {
 
       try {
         let query = supabase.from('billing_rows').select('*');
-        if (dealerId && dealerId !== 'main') query = query.eq('dealer_id', dealerId);
-        
+        if (dealerId && dealerId !== 'main') {
+          query = query.eq('dealer_id', dealerId);
+        }
+        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+        const cleanActive = String(activeLineCode || '').trim();
         if (bypassLineCodeFilter === true) {
           // no filter
-        } else if (typeof bypassLineCodeFilter === 'string') {
-          query = query.eq('line_code', bypassLineCodeFilter);
-        } else if (activeLineCode) {
-          query = query.eq('line_code', activeLineCode);
-        } else {
-          query = query.or('line_code.is.null,line_code.eq.');
+        } else if (cleanBypass) {
+          query = query.eq('line_code', cleanBypass);
+        } else if (cleanActive) {
+          query = query.eq('line_code', cleanActive);
         }
 
         const { data: rowRecords } = await query;
@@ -1424,14 +1519,14 @@ export const supabaseService = {
     try {
       let query = supabase.from('billing_rows').select('*').eq('month_id', monthId).eq('dealer_id', dealerId);
       
+        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+        const cleanActive = String(activeLineCode || '').trim();
         if (bypassLineCodeFilter === true) {
           // no filter
-        } else if (typeof bypassLineCodeFilter === 'string') {
-          query = query.eq('line_code', bypassLineCodeFilter);
-        } else if (activeLineCode) {
-          query = query.eq('line_code', activeLineCode);
-        } else {
-          query = query.or('line_code.is.null,line_code.eq.');
+        } else if (cleanBypass) {
+          query = query.eq('line_code', cleanBypass);
+        } else if (cleanActive) {
+          query = query.eq('line_code', cleanActive);
         }
 
       const { data: records } = await query;
@@ -1765,7 +1860,7 @@ export const supabaseService = {
         updated_by: updatedBy
       };
 
-      await upsertSupabase('billing_months', 'month_id', monthId, payload, true);
+      await withTimeout(upsertSupabase('billing_months', 'month_id', monthId, payload, true), 20000, 'Saving billing month');
 
       try {
         const cacheKey = `gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`;
@@ -1781,7 +1876,7 @@ export const supabaseService = {
         localStorage.setItem(cacheKey, JSON.stringify(list));
       } catch (e) {}
 
-      await this.syncBillingRows(monthId, dealerId, rows, changedIndices);
+      await withTimeout(this.syncBillingRows(monthId, dealerId, rows, changedIndices), 20000, 'Syncing billing rows');
     } catch (e: any) {
       console.error("Failed to save billing month:", e);
       throw e;
@@ -1979,8 +2074,11 @@ export const supabaseService = {
   getUsers: async (dealerId?: string): Promise<UserProfile[]> => {
     try {
       let query = supabase.from('users_data').select('*');
-      if (dealerId && dealerId !== 'all') {
-        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      } else if (dealerId && dealerId !== 'all') {
+        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
       }
       const { data, error } = await query;
       if (error || !data) return [];
@@ -2002,7 +2100,7 @@ export const supabaseService = {
 
   getUserForLogin: async (identifier: string): Promise<UserProfile | null> => {
     try {
-      const clean = identifier.trim();
+      const clean = String(identifier || '').trim();
       if (!clean) return null;
 
       const { data: uData } = await supabase
@@ -2037,7 +2135,7 @@ export const supabaseService = {
 
   getNetworkOwnerByLineCode: async (lineCode: string): Promise<UserProfile | null> => {
     try {
-      const cleanCode = lineCode.trim();
+      const cleanCode = String(lineCode || '').trim();
       if (!cleanCode) return null;
       
       const { data } = await supabase.from('users_data').select('*').ilike('line_code', cleanCode).limit(1).maybeSingle();
@@ -2089,6 +2187,36 @@ export const supabaseService = {
 
   deleteUser: async (uid: string, username: string, authorName: string, fullUserData?: any) => {
     try {
+      // Find and cascade-delete all sub-accounts under this user first (checking both dealer_id and created_by)
+      const { data: subAccounts } = await supabase
+        .from('users_data')
+        .select('*')
+        .or(`dealer_id.eq.${uid},created_by.eq.${uid}`);
+
+      if (subAccounts && subAccounts.length > 0) {
+        for (const sub of subAccounts) {
+          if (sub.uid === uid) continue; // safety guard
+          try {
+            await supabaseService.createNotification({
+              type: 'recycle_bin',
+              message: `Deleted Sub-Account: ${sub.username || sub.uid}`,
+              authorName: authorName || 'System',
+              dealerId: sub.dealer_id || 'main',
+              details: {
+                originalTable: 'users',
+                originalId: sub.uid,
+                originalData: fromDb('users', sub),
+                deletedAt: Date.now()
+              }
+            });
+            // Recursively cascade-delete any children of this sub-account
+            await supabaseService.deleteUser(sub.uid, sub.username || sub.uid, authorName, fromDb('users', sub));
+          } catch (subErr) {
+            console.warn('Error deleting sub-account:', subErr);
+          }
+        }
+      }
+
       if (fullUserData) {
         await supabaseService.createNotification({
           type: 'recycle_bin',
@@ -2104,7 +2232,9 @@ export const supabaseService = {
         });
       }
       await supabase.from('users_data').delete().eq('uid', uid);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Error in deleteUser:', e);
+    }
   },
 
   updateUserPassword: async (uid: string, username: string, newPass: string, authorName: string) => {
@@ -2120,7 +2250,7 @@ export const supabaseService = {
   },
 
   getAppConfig: async (tenantId: string = 'main'): Promise<any> => {
-    const cacheKey = tenantId || 'main';
+    const cacheKey = `${tenantId || 'main'}_${activeLineCode || 'nolc'}`;
     const now = Date.now();
 
     // 1. Reuse active loading promise if currently fetching (Query Deduplication)
@@ -2134,10 +2264,16 @@ export const supabaseService = {
     }
 
     const fetchPromise = (async () => {
-      const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
+      const specificDocId = activeLineCode ? `app_config_${activeLineCode}` : null;
       let baseConfig: any = {};
       try {
-        const row = await fetchBrandingConfigType(docId);
+        let row = specificDocId ? await fetchBrandingConfigType(specificDocId) : null;
+        if (!row && tenantId && tenantId !== 'main') {
+          row = await fetchBrandingConfigType(`app_config_${tenantId}`);
+        }
+        if (!row) {
+          row = await fetchBrandingConfigType('app_main_config');
+        }
         if (row && row.dashboard_subtext) {
           try { baseConfig = JSON.parse(row.dashboard_subtext); } catch (e) {}
         }
@@ -2150,12 +2286,14 @@ export const supabaseService = {
         supabaseService.getZones(tenantId),
       ]);
 
+      const isMain = !tenantId || tenantId === 'main';
+
       const merged = {
         ...baseConfig,
-        categories: (baseConfig.categories && baseConfig.categories.length > 0) ? baseConfig.categories : (dbCategories.length > 0 ? dbCategories : DEFAULT_CATEGORIES),
-        statuses: ensurePermanentStatuses((baseConfig.statuses && baseConfig.statuses.length > 0) ? baseConfig.statuses : (dbStatuses.length > 0 ? dbStatuses : DEFAULT_STATUSES)),
-        priorities: (baseConfig.priorities && baseConfig.priorities.length > 0) ? baseConfig.priorities : (dbPriorities.length > 0 ? dbPriorities : DEFAULT_PRIORITIES),
-        zones: (baseConfig.zones && baseConfig.zones.length > 0) ? baseConfig.zones : (dbZones.length > 0 ? dbZones : DEFAULT_ZONES),
+        categories: (baseConfig.categories && baseConfig.categories.length > 0) ? baseConfig.categories : (dbCategories.length > 0 ? dbCategories : (isMain ? DEFAULT_CATEGORIES : [])),
+        statuses: ensurePermanentStatuses((baseConfig.statuses && baseConfig.statuses.length > 0) ? baseConfig.statuses : (dbStatuses.length > 0 ? dbStatuses : (isMain ? DEFAULT_STATUSES : []))),
+        priorities: (baseConfig.priorities && baseConfig.priorities.length > 0) ? baseConfig.priorities : (dbPriorities.length > 0 ? dbPriorities : (isMain ? DEFAULT_PRIORITIES : [])),
+        zones: (baseConfig.zones && baseConfig.zones.length > 0) ? baseConfig.zones : (dbZones.length > 0 ? dbZones : (isMain ? DEFAULT_ZONES : [])),
         billingSecurityKey: baseConfig.billingSecurityKey || '1239870'
       };
 
@@ -2207,8 +2345,13 @@ export const supabaseService = {
   clearAllNotifications: async (dealerId?: string) => {
     try {
       let query = supabase.from('notifications').delete();
-      if (dealerId && dealerId !== 'main') query = query.eq('dealer_id', dealerId);
-      else query = query.neq('id', '');
+      if (activeLineCode) {
+        query = query.eq('line_code', activeLineCode);
+      } else if (dealerId && dealerId !== 'main') {
+        query = query.eq('dealer_id', dealerId);
+      } else {
+        query = query.neq('id', '');
+      }
       await query;
 
       // Broadcast the clear event to the global channel to update all active clients in real-time
@@ -2218,7 +2361,7 @@ export const supabaseService = {
           await globalChannel.send({
             type: 'broadcast',
             event: 'clear_all',
-            payload: { dealerId }
+            payload: { dealerId, lineCode: activeLineCode }
           });
           supabase.removeChannel(globalChannel);
         }
@@ -2254,8 +2397,11 @@ export const supabaseService = {
   getComplaints: async (dealerId?: string): Promise<Complaint[]> => {
     try {
       let query = supabase.from('complaints').select('*');
-      if (dealerId && dealerId !== 'all') {
-        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      } else if (dealerId && dealerId !== 'all') {
+        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
       }
       const { data } = await query;
       if (!data) return [];
@@ -2606,7 +2752,12 @@ export const supabaseService = {
   },
 
   updateConfig: async (config: any, authorName: string, tenantId: string = 'main') => {
-    const docId = tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`;
+    const docId = activeLineCode ? `app_config_${activeLineCode}` : (tenantId === 'main' ? 'app_main_config' : `app_config_${tenantId}`);
+    delete globalAppConfigCache[`${tenantId || 'main'}_${activeLineCode || 'nolc'}`];
+    if (activeLineCode) {
+      delete globalAppConfigCache[`${activeLineCode}_${activeLineCode}`];
+      delete globalBrandingConfigCache[`app_config_${activeLineCode}`];
+    }
     delete globalAppConfigCache[tenantId || 'main'];
     delete globalAppConfigCache['main'];
     delete globalBrandingConfigCache[docId];
@@ -2614,20 +2765,35 @@ export const supabaseService = {
     const payload = {
       config_type: docId,
       dashboard_subtext: typeof config === 'string' ? config : JSON.stringify(config),
-      tenant_id: tenantId
+      tenant_id: tenantId,
+      line_code: activeLineCode || ''
     };
     await upsertSupabase('branding_config', 'config_type', docId, payload);
+    if (activeLineCode && tenantId && tenantId !== 'main' && docId !== `app_config_${tenantId}`) {
+      try {
+        await upsertSupabase('branding_config', 'config_type', `app_config_${tenantId}`, {
+          ...payload,
+          config_type: `app_config_${tenantId}`
+        });
+        delete globalBrandingConfigCache[`app_config_${tenantId}`];
+      } catch (e) {}
+    }
     await supabaseService.syncAppConfig(config, tenantId);
 
+    delete globalAppConfigCache[`${tenantId || 'main'}_${activeLineCode || 'nolc'}`];
     delete globalAppConfigCache[tenantId || 'main'];
     delete globalAppConfigCache['main'];
     delete globalBrandingConfigCache[docId];
   },
 
-  subscribeBranding: (callback: (branding: BrandingConfig | null) => void) => {
+  subscribeBranding: (callback: (branding: BrandingConfig | null) => void, lineCode?: string) => {
     const fetchB = async () => {
       try {
-        const row = await fetchBrandingConfigType('branding');
+        const specificType = lineCode ? `branding_${lineCode}` : null;
+        let row = specificType ? await fetchBrandingConfigType(specificType) : null;
+        if (!row) {
+          row = await fetchBrandingConfigType('branding');
+        }
         if (row) callback(fromDb('branding_config', row));
       } catch (e) {}
     };
@@ -2642,8 +2808,11 @@ export const supabaseService = {
     };
   },
 
-  updateBranding: async (branding: BrandingConfig, authorName: string) => {
-    await upsertSupabase('branding_config', 'config_type', 'branding', toDb('branding_config', { ...branding, config_type: 'branding' }));
+  updateBranding: async (branding: BrandingConfig, authorName: string, lineCode?: string) => {
+    const configType = lineCode ? `branding_${lineCode}` : 'branding';
+    delete globalBrandingConfigCache[configType];
+    delete globalBrandingConfigCache['branding'];
+    await upsertSupabase('branding_config', 'config_type', configType, toDb('branding_config', { ...branding, config_type: configType }));
   },
 
   // --- CHAT & MESSAGES ---
@@ -2743,8 +2912,11 @@ export const supabaseService = {
   getGroups: async (dealerId?: string): Promise<ChatGroup[]> => {
     try {
       let query = supabase.from('chat_groups').select('*');
-      if (dealerId && dealerId !== 'all') {
-        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      } else if (dealerId && dealerId !== 'all') {
+        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
       }
       const { data } = await query;
       if (!data) return [];
@@ -2762,8 +2934,11 @@ export const supabaseService = {
   getClients: async (dealerId?: string): Promise<Client[]> => {
     try {
       let query = supabase.from('clients').select('*');
-      if (dealerId && dealerId !== 'all') {
-        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null,dealer_id.eq.') : query.eq('dealer_id', dealerId);
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      } else if (dealerId && dealerId !== 'all') {
+        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
       }
       const { data } = await query;
       if (!data) return [];
@@ -3263,21 +3438,30 @@ export const supabaseService = {
 
   subscribeFolderMonthMap: (callback: (map: any) => void, dealerId?: string) => {
     const tenantId = dealerId || 'main';
-    const prefix = `folder_month_${tenantId}_`;
+    const scopeKey = activeLineCode || tenantId;
+    const prefix = `folder_month_${scopeKey}_`;
     const fetchM = async () => {
       try {
         if (!supabase) return;
-        const { data } = await supabase
+        let { data } = await supabase
           .from('branding_config')
           .select('*')
-          .eq('tenant_id', tenantId)
           .like('config_type', `${prefix}%`);
+        
+        if ((!data || data.length === 0) && activeLineCode && tenantId && tenantId !== 'main') {
+          const fallbackRes = await supabase
+            .from('branding_config')
+            .select('*')
+            .like('config_type', `folder_month_${tenantId}_%`);
+          data = fallbackRes.data;
+        }
         
         const reconstructedMap: Record<string, string> = {};
         if (data && data.length > 0) {
           data.forEach(r => {
-            if (r.config_type.startsWith(prefix)) {
-              const folderId = r.config_type.substring(prefix.length);
+            const usedPrefix = r.config_type.startsWith(prefix) ? prefix : `folder_month_${tenantId}_`;
+            if (r.config_type.startsWith(usedPrefix)) {
+              const folderId = r.config_type.substring(usedPrefix.length);
               reconstructedMap[folderId] = r.dashboard_subtext || '';
             }
           });
@@ -3290,7 +3474,7 @@ export const supabaseService = {
     fetchM();
     let channel: any = null;
     try {
-      const channelName = `rt_folder_month_${tenantId}_${Math.random().toString(36).substring(2, 7)}`;
+      const channelName = `rt_folder_month_${scopeKey}_${Math.random().toString(36).substring(2, 7)}`;
       channel = supabase
         .channel(channelName)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'branding_config' }, () => {
@@ -3310,24 +3494,26 @@ export const supabaseService = {
   updateFolderMonthMap: async (map: any, tenantId: string = 'main') => {
     if (!supabase) return;
     try {
+      const scopeKey = activeLineCode || tenantId;
+      const prefix = `folder_month_${scopeKey}_`;
       const { data: existingRows } = await supabase
         .from('branding_config')
         .select('config_type')
-        .eq('tenant_id', tenantId)
-        .like('config_type', `folder_month_${tenantId}_%`);
+        .like('config_type', `${prefix}%`);
 
       const existingConfigTypes = (existingRows || []).map(r => r.config_type);
       const incomingConfigTypes = new Set<string>();
 
       for (const [folderId, monthId] of Object.entries(map)) {
         if (!folderId) continue;
-        const docId = `folder_month_${tenantId}_${folderId}`;
+        const docId = `folder_month_${scopeKey}_${folderId}`;
         incomingConfigTypes.add(docId);
         
         await upsertSupabase('branding_config', 'config_type', docId, {
           config_type: docId,
           dashboard_subtext: String(monthId || ''),
-          tenant_id: tenantId
+          tenant_id: tenantId,
+          line_code: activeLineCode || ''
         });
       }
 
@@ -3344,10 +3530,16 @@ export const supabaseService = {
   getLedgerFolders: async (tenantId: string = 'main') => {
     try {
       if (!supabase) return [];
-      const { data, error } = await supabase.from('ledger_folders').select('*');
+      let query = supabase.from('ledger_folders').select('*');
+      const cleanCode = String(activeLineCode || '').trim();
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      } else if (tenantId && tenantId !== 'all' && tenantId !== 'main') {
+        query = query.eq('tenant_id', tenantId);
+      }
+      const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        const filtered = (data || []).filter(r => !tenantId || tenantId === 'main' || tenantId === 'all' || r.tenant_id === tenantId || r.tenant_id === 'main' || !r.tenant_id);
-        const mapped = filtered.map(r => {
+        const mapped = data.map(r => {
           const f = fromDb('ledger_folders', r);
           let parsedCreated = Date.now();
           if (f.createdAt) {
@@ -3372,6 +3564,7 @@ export const supabaseService = {
             name: f.name || '',
             parentId: f.parentId || f.parent_id || '',
             tenantId: f.tenantId || f.tenant_id || 'main',
+            lineCode: f.lineCode || r.line_code || '',
             createdAt: parsedCreated
           };
         });
@@ -3381,8 +3574,12 @@ export const supabaseService = {
       }
 
       // Fallback 1: Check branding_config
-      const docId = `ledger_folders_data_${tenantId || 'main'}`;
-      const { data: bData } = await supabase.from('branding_config').select('*').eq('config_type', docId).limit(1);
+      const docId = activeLineCode ? `ledger_folders_data_${activeLineCode}` : `ledger_folders_data_${tenantId || 'main'}`;
+      let { data: bData } = await supabase.from('branding_config').select('*').eq('config_type', docId).limit(1);
+      if ((!bData || bData.length === 0) && activeLineCode && tenantId && tenantId !== 'main') {
+        const fallbackB = await supabase.from('branding_config').select('*').eq('config_type', `ledger_folders_data_${tenantId}`).limit(1);
+        bData = fallbackB.data;
+      }
       if (bData && bData.length > 0 && bData[0].dashboard_subtext) {
         try {
           const parsed = JSON.parse(bData[0].dashboard_subtext);
@@ -3394,7 +3591,9 @@ export const supabaseService = {
 
       // Fallback 2: Check localStorage
       const isSpecificDealer = Boolean(tenantId && tenantId !== 'all' && tenantId !== 'main');
-      const localCached = localStorage.getItem(`gts_ledger_folders_${tenantId || 'main'}`) || (isSpecificDealer ? null : localStorage.getItem(`gts_cache_v3_ledger_folders_all_${activeLineCode || 'nolc'}`));
+      const localCached = localStorage.getItem(`gts_cache_v3_ledger_folders_${tenantId || 'all'}_${activeLineCode || 'nolc'}`) ||
+        localStorage.getItem(`gts_cache_v3_ledger_folders_all_${activeLineCode || 'nolc'}`) ||
+        localStorage.getItem(`gts_ledger_folders_${tenantId || 'main'}`);
       if (localCached) {
         try {
           const parsed = JSON.parse(localCached);
@@ -3421,7 +3620,7 @@ export const supabaseService = {
       });
 
       // Instantly unmap the sheets from global cache
-      const sheetSyncKeys = [`ledger_sheets_${tenantId || 'all'}`, 'ledger_sheets_all', 'ledger_sheets_main', 'ledger_sheets_'];
+      const sheetSyncKeys = [`ledger_sheets_${tenantId || 'all'}_${lc}`, `ledger_sheets_all_${lc}`, `ledger_sheets_${tenantId || 'all'}`, 'ledger_sheets_all', 'ledger_sheets_main', 'ledger_sheets_'];
       sheetSyncKeys.forEach(sKey => {
         if (globalTableCaches[sKey]) {
           globalTableCaches[sKey] = globalTableCaches[sKey].map(sh => {
@@ -3438,7 +3637,7 @@ export const supabaseService = {
       });
 
       // Update backup in branding_config if present
-      const docId = `ledger_folders_data_${tenantId || 'main'}`;
+      const docId = activeLineCode ? `ledger_folders_data_${activeLineCode}` : `ledger_folders_data_${tenantId || 'main'}`;
       try {
         const { data: bData } = await supabase.from('branding_config').select('*').eq('config_type', docId).limit(1);
         if (bData && bData.length > 0 && bData[0].dashboard_subtext) {
@@ -3448,7 +3647,8 @@ export const supabaseService = {
             await upsertSupabase('branding_config', 'config_type', docId, {
               config_type: docId,
               dashboard_subtext: JSON.stringify(updated),
-              tenant_id: tenantId || 'main'
+              tenant_id: tenantId || 'main',
+              line_code: activeLineCode || ''
             });
           }
         }
@@ -3491,12 +3691,23 @@ export const supabaseService = {
       if (!supabase) return;
 
       // 2. Dual-save as JSON backup in branding_config so folders are ALWAYS retained in Supabase DB
-      const docId = `ledger_folders_data_${tenantId || 'main'}`;
+      const docId = activeLineCode ? `ledger_folders_data_${activeLineCode}` : `ledger_folders_data_${tenantId || 'main'}`;
       await upsertSupabase('branding_config', 'config_type', docId, {
         config_type: docId,
         dashboard_subtext: JSON.stringify(folders),
-        tenant_id: tenantId || 'main'
+        tenant_id: tenantId || 'main',
+        line_code: activeLineCode || ''
       });
+      if (activeLineCode && tenantId && tenantId !== 'main' && docId !== `ledger_folders_data_${tenantId}`) {
+        try {
+          await upsertSupabase('branding_config', 'config_type', `ledger_folders_data_${tenantId}`, {
+            config_type: `ledger_folders_data_${tenantId}`,
+            dashboard_subtext: JSON.stringify(folders),
+            tenant_id: tenantId,
+            line_code: activeLineCode
+          });
+        } catch (e) {}
+      }
 
       // 3. Persist directly to Supabase ledger_folders table
       for (const f of folders) {
@@ -3571,17 +3782,19 @@ export const supabaseService = {
 
   getGoogleSheetLinks: async (tenantId: string, bypassLineCodeFilter: boolean | string = false) => {
     try {
-      let query = supabase.from('google_sheet_links').select('*').eq('tenant_id', tenantId);
-      
-        if (bypassLineCodeFilter === true) {
-          // no filter
-        } else if (typeof bypassLineCodeFilter === 'string') {
-          query = query.eq('line_code', bypassLineCodeFilter);
-        } else if (activeLineCode) {
-          query = query.eq('line_code', activeLineCode);
-        } else {
-          query = query.or('line_code.is.null,line_code.eq.');
-        }
+      let query = supabase.from('google_sheet_links').select('*');
+      const cleanCode = String(activeLineCode || '').trim();
+      const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      } else if (cleanBypass) {
+        query = query.eq('line_code', cleanBypass);
+      }
+
+      if (tenantId && tenantId !== 'all') {
+        query = tenantId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null') : query.eq('tenant_id', tenantId);
+      }
 
       const { data } = await query;
       return data || [];
@@ -3592,17 +3805,19 @@ export const supabaseService = {
 
   getLedgerSheets: async (tenantId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
     try {
-      let query = supabase.from('ledger_sheets').select('*').eq('dealer_id', tenantId);
-      
-        if (bypassLineCodeFilter === true) {
-          // no filter
-        } else if (typeof bypassLineCodeFilter === 'string') {
-          query = query.eq('line_code', bypassLineCodeFilter);
-        } else if (activeLineCode) {
-          query = query.eq('line_code', activeLineCode);
-        } else {
-          query = query.or('line_code.is.null,line_code.eq.');
-        }
+      let query = supabase.from('ledger_sheets').select('*');
+      const cleanCode = String(activeLineCode || '').trim();
+      const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+
+      if (cleanCode) {
+        query = query.eq('line_code', cleanCode);
+      } else if (cleanBypass) {
+        query = query.eq('line_code', cleanBypass);
+      }
+
+      if (tenantId && tenantId !== 'all') {
+        query = tenantId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', tenantId);
+      }
 
       const { data } = await query;
       return (data || []).map(r => fromDb('ledger_sheets', r));

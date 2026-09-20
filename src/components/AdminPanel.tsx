@@ -1,7 +1,8 @@
-import MyPCTab from './MyPCTab';
-import BillingTab from './BillingTab';
 import { useTheme } from "../hooks/useTheme";
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+
+const MyPCTab = lazy(() => import('./MyPCTab'));
+const BillingTab = lazy(() => import('./BillingTab'));
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
@@ -732,45 +733,19 @@ export default function AdminPanel({
   const [restoreError, setRestoreError] = useState('');
   const [restoreSuccess, setRestoreSuccess] = useState(false);
 
-  const [billingMonths, setBillingMonths] = useState<any[]>(() => {
-    try {
-      const syncKey = `billing_months_${activeDealerId || 'main'}_${currentUser?.lineCode || 'nolc'}`;
-      if (globalTableCaches[syncKey] && globalTableCaches[syncKey].length > 0) {
-        const cleaned = globalTableCaches[syncKey].filter((m: any) => m.id !== 'JUNE-26' && m.month_id !== 'JUNE-26');
-        return filterScopedBillingMonths(cleaned);
-      }
-      const isSpecificDealer = Boolean(activeDealerId && activeDealerId !== 'main');
-      const raw = isSpecificDealer
-        ? (localStorage.getItem(`gts_cache_v3_${syncKey}`) || localStorage.getItem(`gts_cache_v3_billing_months_${activeDealerId}_${currentUser?.lineCode || 'nolc'}`))
-        : (localStorage.getItem(`gts_cache_v3_billing_months_all_${currentUser?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_${syncKey}`));
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const cleaned = parsed.filter((m: any) => m.id !== 'JUNE-26' && m.month_id !== 'JUNE-26');
-          return filterScopedBillingMonths(cleaned);
-        }
-      }
-    } catch (e) {}
-    return [];
-  });
+  const [billingMonths, setBillingMonths] = useState<any[]>([]);
 
   React.useEffect(() => {
-    // Permanent purge of JUNE-26 from local storage caches
+    // Permanent purge of legacy billing months caches from local storage
     [`gts_cache_v3_billing_months_all_${currentUser?.lineCode || 'nolc'}`, `gts_cache_v3_billing_months_main_${currentUser?.lineCode || 'nolc'}`, `gts_cache_v3_billing_months_${activeDealerId || 'main'}_${currentUser?.lineCode || 'nolc'}`].forEach(k => {
       try {
-        const raw = localStorage.getItem(k);
-        if (raw && raw.includes('JUNE-26')) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            const cleaned = parsed.filter((m: any) => m.id !== 'JUNE-26' && m.month_id !== 'JUNE-26');
-            localStorage.setItem(k, JSON.stringify(cleaned));
-          }
-        }
+        localStorage.removeItem(k);
       } catch (e) {}
     });
   }, []);
   const billingMonthsRef = React.useRef<any[]>([]);
   const isBillingDataFresh = React.useRef(false);
+  const [isBillingMonthsLoading, setIsBillingMonthsLoading] = useState(true);
   React.useEffect(() => {
     billingMonthsRef.current = billingMonths;
   }, [billingMonths]);
@@ -945,11 +920,7 @@ export default function AdminPanel({
   const [currentMonthId, _setCurrentMonthId] = useState<string>(() => {
     try {
       const syncKey = `billing_months_${activeDealerId || 'main'}_${currentUser?.lineCode || 'nolc'}`;
-      let cached: any[] = globalTableCaches[syncKey];
-      if (!cached) {
-        const raw = localStorage.getItem(`gts_cache_v3_billing_months_all_${currentUser?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_${syncKey}`);
-        if (raw) cached = JSON.parse(raw);
-      }
+      const cached: any[] = globalTableCaches[syncKey];
       if (Array.isArray(cached) && cached.length > 0) {
         return cached[0].id || cached[0].month_id || '';
       }
@@ -1403,13 +1374,12 @@ export default function AdminPanel({
     };
 
     if (!isTargetTab) {
-      // Offline fallback / warm start: fetch once to ensure baseline lists are populated without persistent WebSocket connection
-      pocketbaseService.getClients(tenantId).then((data) => setMasterClients(applyDealerClientScope(data))).catch(console.error);
       return;
     }
 
     const unsubscribe = pocketbaseService.subscribeClients((data) => {
-      setMasterClients(applyDealerClientScope(data));
+      const scopedData = applyDealerClientScope(data);
+      setMasterClients(scopedData);
     }, tenantId);
     return () => unsubscribe();
   }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeTab]);
@@ -1482,26 +1452,12 @@ export default function AdminPanel({
   // Real-time sub for billing months (subscribes when billing section is open)
   useEffect(() => {
     if (activeTab !== 'billing') {
-      // Baseline warm start: fetch once so dropdowns or quick references work
-      const tenantId = pocketbaseService.getReadTenantId(currentUser);
-      pocketbaseService.getBillingMonths(activeDealerId).then(data => {
-        isBillingDataFresh.current = true;
-        const scopedData = filterScopedBillingMonths(data);
-        const sorted = [...scopedData].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-        setBillingMonths(sorted);
-        setCurrentMonthId(prev => {
-          if (sorted.length === 0) return '';
-          if (!prev || !sorted.some((m: any) => m.id === prev)) {
-            return sorted[0].id;
-          }
-          return prev;
-        });
-      }).catch(console.error);
       return;
     }
 
     const unsubscribe = pocketbaseService.subscribeBillingMonths((data) => {
       isBillingDataFresh.current = true;
+      setIsBillingMonthsLoading(false);
       const filtered = data.filter((m: any) => !deletingMonthIds.current.has(m.id));
       const scopedData = filterScopedBillingMonths(filtered);
 
@@ -4756,7 +4712,7 @@ export default function AdminPanel({
             <div className={cn("p-8", getCardStyle(branding.cardStyle))}>
                 <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3">
                   <UserPlus size={20} className="text-brand-accent" />
-                  Link Access
+                  {isSubDealerUser ? 'Create Subaccount' : 'Link Access'}
                 </h3>
                 {formError && (
                   <div className="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold">
@@ -4768,9 +4724,22 @@ export default function AdminPanel({
                     {formSuccess}
                   </div>
                 )}
-                <form onSubmit={handleCreateUser} className="space-y-6">
+                <form onSubmit={(e) => {
+                  handleCreateUser(e);
+                }} className="space-y-6">
                   <div className="space-y-1.5">
-                    <label className={labelClasses}>Employee Username</label>
+                    <label className={labelClasses}>Full Name</label>
+                    <input
+                      type="text"
+                      value={newFullName}
+                      onChange={(e) => setNewFullName(e.target.value)}
+                      placeholder="e.g. John Doe"
+                      className={cn(inputClasses, "normal-case")}
+                      required={isSubDealerUser}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={labelClasses}>{isSubDealerUser ? 'User ID' : 'Employee Username'}</label>
                     <input
                       type="text"
                       value={newUsername}
@@ -4780,16 +4749,20 @@ export default function AdminPanel({
                       required
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className={labelClasses}>Full Name</label>
-                    <input
-                      type="text"
-                      value={newFullName}
-                      onChange={(e) => setNewFullName(e.target.value)}
-                      placeholder="e.g. John Doe"
-                      className={cn(inputClasses, "normal-case")}
-                    />
-                  </div>
+
+                  {isSubDealerUser && (
+                    <div className="space-y-1.5">
+                      <label className={labelClasses}>Line Code (Locked)</label>
+                      <input
+                        type="text"
+                        value={currentUser.lineCode || ''}
+                        readOnly
+                        disabled
+                        className={cn(inputClasses, "normal-case opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-800")}
+                      />
+                    </div>
+                  )}
+
                   <div className="space-y-1.5">
                     <label className={labelClasses}>Access Password</label>
                     <input
@@ -4801,67 +4774,103 @@ export default function AdminPanel({
                       required
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className={labelClasses}>Clearance Level</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setNewUserRole('member')}
-                        className={cn(
-                          "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                          newUserRole === 'member' 
-                            ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] border-slate-900 dark:border-brand-accent" 
-                            : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                        )}
-                      >
-                        Field Agent
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewUserRole('liteadmin')}
-                        className={cn(
-                          "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                          newUserRole === 'liteadmin' 
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-[var(--neu-shadow-raised)] shadow-indigo-500/20" 
-                            : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                        )}
-                      >
-                        Lite Admin
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNewUserRole('admin')}
-                        className={cn(
-                          "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
-                          newUserRole === 'admin' 
-                            ? "bg-blue-600 text-white border-blue-600 shadow-[var(--neu-shadow-raised)] shadow-blue-500/20" 
-                            : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
-                        )}
-                      >
-                        Admin
-                      </button>
-                      {currentUser.role === 'super_admin' && (
+
+                  {isSubDealerUser && (
+                    <div className="space-y-1.5">
+                      <label className={labelClasses}>Clearance Level</label>
+                      <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
-                          onClick={() => setNewUserRole('super_admin')}
+                          onClick={() => setNewUserRole('member')}
                           className={cn(
-                            "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border col-span-2 sm:col-span-1",
-                            newUserRole === 'super_admin' 
-                              ? "bg-rose-600 text-white border-rose-600 shadow-[var(--neu-shadow-raised)] shadow-rose-500/20" 
+                            "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                            newUserRole === 'member'
+                              ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 border-slate-900 dark:border-brand-accent"
                               : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
                           )}
                         >
-                          Super Admin
+                          Member
                         </button>
-                      )}
+                        <button
+                          type="button"
+                          onClick={() => setNewUserRole('field_agent')}
+                          className={cn(
+                            "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                            newUserRole === 'field_agent'
+                              ? "bg-emerald-600 text-white border-emerald-600 shadow-[var(--neu-shadow-raised)] shadow-emerald-500/20"
+                              : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                          )}
+                        >
+                          Field Agent
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {!isSubDealerUser && (
+                    <div className="space-y-1.5">
+                      <label className={labelClasses}>Clearance Level</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewUserRole('member')}
+                          className={cn(
+                            "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                            newUserRole === 'member' 
+                              ? "bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] border-slate-900 dark:border-brand-accent" 
+                              : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                          )}
+                        >
+                          Field Agent
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewUserRole('liteadmin')}
+                          className={cn(
+                            "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                            newUserRole === 'liteadmin' 
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-[var(--neu-shadow-raised)] shadow-indigo-500/20" 
+                              : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                          )}
+                        >
+                          Lite Admin
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewUserRole('admin')}
+                          className={cn(
+                            "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                            newUserRole === 'admin' 
+                              ? "bg-blue-600 text-white border-blue-600 shadow-[var(--neu-shadow-raised)] shadow-blue-500/20" 
+                              : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                          )}
+                        >
+                          Admin
+                        </button>
+                        {currentUser.role === 'super_admin' && (
+                          <button
+                            type="button"
+                            onClick={() => setNewUserRole('super_admin')}
+                            className={cn(
+                              "py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border col-span-2 sm:col-span-1",
+                              newUserRole === 'super_admin' 
+                                ? "bg-rose-600 text-white border-rose-600 shadow-[var(--neu-shadow-raised)] shadow-rose-500/20" 
+                                : "bg-slate-50 dark:bg-slate-900 border-[var(--neu-border)] text-slate-500"
+                            )}
+                          >
+                            Super Admin
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     disabled={isCreating}
                     className="w-full py-4 rounded-lg bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] text-slate-800 dark:text-slate-100 active:shadow-[var(--neu-shadow-btn-active)] font-bold uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] hover:bg-black dark:hover:bg-blue-700 disabled:opacity-50 transition-all"
                   >
-                    {isCreating ? 'Processing Reg...' : 'Initialize Link Access Member'}
+                    {isCreating ? 'Processing Reg...' : (isSubDealerUser ? 'Create Subaccount' : 'Initialize Link Access Member')}
                   </button>
                 </form>
               </div>
@@ -4870,7 +4879,7 @@ export default function AdminPanel({
             <div className="lg:col-span-2">
               <div className="business-card overflow-hidden bg-[var(--neu-surface)]">
                 <div className="px-6 py-4 border-b border-[var(--neu-border)] bg-[var(--neu-surface)]">
-                   <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Link Access Directory</h4>
+                   <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{isSubDealerUser ? 'Subaccounts Directory' : 'Link Access Directory'}</h4>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
@@ -6939,7 +6948,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'billing' && <BillingTab {...stateProps} forceViewOnly={!canWriteBilling} />}
+        {activeTab === 'billing' && <BillingTab {...stateProps} isLoading={isBillingMonthsLoading} forceViewOnly={!canWriteBilling} />}
           </motion.div>
           </Suspense>
           </>

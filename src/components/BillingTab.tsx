@@ -501,7 +501,14 @@ export default function BillingTab(props: BillingTabProps) {
             </div>
             )}
 
-            {currentMonthId ? (
+            {isLoading ? (
+              <div className="p-10 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-[var(--neu-surface)] flex flex-col items-center justify-center gap-3 animate-pulse">
+                <div className="w-12 h-12 rounded-xl bg-slate-300/30 dark:bg-slate-700/30" />
+                <p className="text-slate-400 font-black uppercase text-xs tracking-wider">
+                  Loading billing data...
+                </p>
+              </div>
+            ) : currentMonthId ? (
               <>
                 {/* Advanced Bento-Style Metrics Grid */}
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">

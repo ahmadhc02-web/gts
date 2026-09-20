@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'prompt',
+        registerType: 'autoUpdate',
         includeAssets: ['vite.svg'],
         manifest: {
           name: 'GTS Operational Registry',

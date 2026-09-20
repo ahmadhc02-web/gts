@@ -11,6 +11,7 @@ import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { AppConfig, DEFAULT_STATUSES, DEFAULT_PRIORITIES } from '../constants';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
+import { getCleanProtocolText } from '../utils/protocolClean';
 import { getAvatarUrl } from '../utils/avatar';
 import ReviewTimeline from './ReviewTimeline';
 import ComplaintPrintPreviewModal from './ComplaintPrintPreviewModal';
@@ -160,8 +161,19 @@ export default function ComplaintList({
       setAnimateRemarksLeft(false);
       setAnimateReviewLeft(false);
       setShowLeftThankYou(false);
+      setIsEditingRemarks(false);
     }
   }, [selectedComplaint?.id]);
+
+  // Keep selectedComplaint in sync with complaints prop updates
+  React.useEffect(() => {
+    if (selectedComplaint) {
+      const fresh = complaints.find(c => c.id === selectedComplaint.id);
+      if (fresh && (fresh.isUpdating !== selectedComplaint.isUpdating || fresh.remarks !== selectedComplaint.remarks || fresh.protocols !== selectedComplaint.protocols || fresh.status !== selectedComplaint.status)) {
+        setSelectedComplaint(fresh);
+      }
+    }
+  }, [complaints]);
   const [sortConfig, setSortConfig] = React.useState<{
     key: keyof Complaint | 'registry' | 'urgency' | 'client' | 'tactical' | 'category' | 'profile';
     direction: 'asc' | 'desc';
@@ -1200,6 +1212,13 @@ export default function ComplaintList({
                     >
                       {/* CLIENT & CONTACT */}
                       <td className="px-6 py-4.5 relative">
+                        {/* Optimistic Updating Spinner */}
+                        {complaint.isUpdating && (
+                          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/50 dark:bg-slate-900/50 backdrop-blur-[2px] rounded-l-xl">
+                            <span className="w-4 h-4 border-2 border-brand-accent border-t-transparent rounded-full animate-spin shadow-[0_0_8px_rgba(var(--brand-accent),0.5)]"></span>
+                            <span className="mt-1 text-[8px] font-black tracking-widest uppercase text-brand-accent">Syncing...</span>
+                          </div>
+                        )}
                         {/* Interactive Status Indicator bar */}
                         <div className={cn(
                           "absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-md transition-all duration-300 group-hover:w-1.5",
@@ -1693,6 +1712,15 @@ export default function ComplaintList({
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="relative w-full max-w-6xl neu-card rounded-[32px] overflow-hidden border border-white/50 dark:border-white/5 origin-center my-auto scale-100 transition-all duration-300 shrink-0"
             >
+              {/* Optimistic Updating Overlay */}
+              {selectedComplaint.isUpdating && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/40 dark:bg-slate-900/40 backdrop-blur-sm rounded-[32px]">
+                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-3 border border-brand-accent/20">
+                    <span className="w-8 h-8 border-4 border-brand-accent border-t-transparent rounded-full animate-spin"></span>
+                    <span className="text-[10px] font-black tracking-widest uppercase text-brand-accent">Syncing with Server...</span>
+                  </div>
+                </div>
+              )}
               <div className="p-5 sm:p-7 md:p-9 space-y-5 sm:space-y-6 max-h-[96vh] md:max-h-[90vh] overflow-y-auto custom-scrollbar">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                   <div className="flex items-center gap-4 sm:gap-6">
@@ -1890,18 +1918,19 @@ export default function ComplaintList({
                             </span>
                           </div>
                           
-                          {isAdmin && !isEditingRemarks && (
+                          {(!isEditingRemarks) && (
                             <motion.button 
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
                               onClick={() => {
-                                  setEditedRemarks(selectedComplaint.remarks || '');
+                                  const initialText = getCleanProtocolText(selectedComplaint.remarks, selectedComplaint.protocols);
+                                  setEditedRemarks(initialText);
                                   setIsEditingRemarks(true);
                               }}
                               className="text-[8px] font-black uppercase tracking-wider text-emerald-500 hover:text-emerald-600 flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] cursor-pointer transition-all"
                             >
                               <Pencil size={9} />
-                              <span>{selectedComplaint.remarks ? 'Amend' : 'Formulate'}</span>
+                              <span>{(selectedComplaint.protocols?.length || selectedComplaint.remarks) ? 'Amend' : 'Formulate'}</span>
                             </motion.button>
                           )}
                         </div>
@@ -1917,7 +1946,7 @@ export default function ComplaintList({
                               <textarea
                                 value={editedRemarks}
                                 onChange={(e) => setEditedRemarks(e.target.value)}
-                                className="w-full p-3 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none h-24 resize-none text-slate-800 dark:text-slate-100"
+                                className="w-full p-3 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none h-24 resize-none text-slate-800 dark:text-slate-100 font-semibold"
                                 placeholder="Type structural logging protocol..."
                                 autoFocus
                               />
@@ -1932,10 +1961,53 @@ export default function ComplaintList({
                                 <button 
                                   type="button"
                                   onClick={async () => {
-                                    if (onUpdateRemarks) {
-                                      await onUpdateRemarks(selectedComplaint.id, editedRemarks);
-                                      setSelectedComplaint({ ...selectedComplaint, remarks: editedRemarks });
-                                      setIsEditingRemarks(false);
+                                    const rawTrimmed = editedRemarks.trim();
+                                    const trimmed = getCleanProtocolText(rawTrimmed);
+                                    if (!trimmed) {
+                                      toast.error("Please enter a valid resolution protocol.");
+                                      return;
+                                    }
+
+                                    const authorName = currentUser.fullName || currentUser.username || 'Staff';
+                                    const authorId = currentUser.uid;
+
+                                    const updatedProtocol: ComplaintReview = {
+                                      id: selectedComplaint.protocols?.[0]?.id || ('proto-' + Date.now()),
+                                      text: trimmed,
+                                      createdAt: Date.now(),
+                                      authorId,
+                                      authorName
+                                    };
+
+                                    const updatedProtocols = [updatedProtocol];
+                                    const payload = JSON.stringify(updatedProtocols);
+
+                                    // 1. Instantly update UI (Optimistic update)
+                                    setSelectedComplaint(prev => prev ? { 
+                                      ...prev, 
+                                      remarks: payload, 
+                                      protocols: updatedProtocols,
+                                      remarkAuthorName: authorName,
+                                      remarkAuthorId: authorId
+                                    } : null);
+                                    setIsEditingRemarks(false);
+
+                                    // 2. Perform DB update asynchronously
+                                    try {
+                                      if (onUpdateRemarks) {
+                                        onUpdateRemarks(selectedComplaint.id, payload).catch(err => {
+                                          console.error("Failed to commit protocol updates:", err);
+                                          toast.error("Failed to update protocol.");
+                                        });
+                                      } else if (onEdit) {
+                                        onEdit(selectedComplaint.id, { remarks: payload, protocols: updatedProtocols }).catch(err => {
+                                          console.error("Failed to commit protocol updates:", err);
+                                          toast.error("Failed to update protocol.");
+                                        });
+                                      }
+                                      // Note: parent onUpdateRemarks already handles the toast success message internally
+                                    } catch (err) {
+                                      console.error("Failed to trigger update:", err);
                                     }
                                   }}
                                   className="px-3 py-1 neu-btn hover:text-emerald-500 hover:border-emerald-500/20 rounded cursor-pointer transition-all"
@@ -1945,10 +2017,15 @@ export default function ComplaintList({
                               </div>
                             </motion.div>
                           ) : (selectedComplaint.protocols && selectedComplaint.protocols.length > 0) ? (
-                            <div className="p-3">
+                            <motion.div 
+                              key={`protocols-${selectedComplaint.id}-${selectedComplaint.protocols.length}-${selectedComplaint.protocols[0]?.createdAt}-${selectedComplaint.protocols[0]?.text}`}
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="p-3"
+                            >
                               <ReviewTimeline reviews={selectedComplaint.protocols} type="protocol" />
-                            </div>
-                          ) : selectedComplaint.remarks ? (
+                            </motion.div>
+                          ) : selectedComplaint.remarks && getCleanProtocolText(selectedComplaint.remarks) ? (
                             <motion.div 
                               key={`remarks-${selectedComplaint.id || 'cmp'}-${selectedComplaint.remarks}`}
                               initial={animateRemarksLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
@@ -1963,7 +2040,7 @@ export default function ComplaintList({
                                 </span>
                                 <span className="text-[8px] sm:text-[9.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed</span>
                               </div>
-                              <p className="italic">"{selectedComplaint.remarks}"</p>
+                              <p className="italic">"{getCleanProtocolText(selectedComplaint.remarks)}"</p>
                             </motion.div>
                           ) : (
                             <motion.div 

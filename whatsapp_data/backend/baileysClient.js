@@ -1,6 +1,8 @@
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 const pino = require('pino');
+const fs = require('fs');
+const path = require('path');
 
 let sock = null;
 let currentQr = null;
@@ -69,6 +71,12 @@ async function initBaileys() {
         if (isLoggedOut) {
           console.log('Logged out of WhatsApp. Waiting for manual scan. Clearing session auth...');
           reconnectDelay = 3000; // Reset backoff delay
+          const authDir = path.join(__dirname, 'auth_session');
+          if (fs.existsSync(authDir)) {
+            fs.rmSync(authDir, { recursive: true, force: true });
+            console.log('Cleared stale auth_session folder after force logout.');
+          }
+          currentQr = null;
           // Initialize fresh Baileys to show new QR code
           initBaileys();
         } else {
@@ -221,6 +229,15 @@ async function logoutBaileys() {
       await sock.logout();
     } catch (e) {
       console.error('Logout error', e);
+    } finally {
+      const authDir = path.join(__dirname, 'auth_session');
+      if (fs.existsSync(authDir)) {
+        fs.rmSync(authDir, { recursive: true, force: true });
+        console.log('Cleared stale auth_session folder after logout.');
+      }
+      currentQr = null;
+      isConnected = false;
+      userPhoneNumber = null;
     }
   }
 }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Flame, Users, Info, X, MapPin, Tag, Calendar, Clock, User } from 'lucide-react';
 import { Complaint, UserProfile } from '../types';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
+import { getCleanProtocolText } from '../utils/protocolClean';
 import { getAvatarUrl } from '../utils/avatar';
 
 interface HighFrequencyNodesProps {
@@ -326,9 +327,9 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                         </div>
                       );
                     })()}
-                    {selectedComplaint.remarks ? (
+                    {getCleanProtocolText(selectedComplaint.remarks, selectedComplaint.protocols) ? (
                       <p className="text-xs text-emerald-705 dark:text-emerald-400 font-semibold leading-relaxed italic min-h-[80px]">
-                        "{selectedComplaint.remarks}"
+                        "{getCleanProtocolText(selectedComplaint.remarks, selectedComplaint.protocols)}"
                       </p>
                     ) : (
                       <div className="flex flex-col items-center justify-center min-h-[80px] text-center p-2 border border-dashed border-amber-500/20 rounded-xl bg-amber-500/[0.02]">
