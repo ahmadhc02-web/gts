@@ -2384,14 +2384,23 @@ export default function AdminPanel({
         }
       }
 
-      await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId, true, undefined, updatedExcluded).catch(err => {
-         console.error("Failed to delete row in cloud:", err);
-      });
+      try {
+        await saveBillingMonthTracked(currentMonthId, updatedRows, currentUser.username || 'admin', activeDealerId, true, undefined, updatedExcluded);
 
-      if (isPermanent) {
-        toast.success("Recovery row permanently deleted from current month's sheet.");
-      } else {
-        toast.success("Recovery row removed and moved to Recycle Bin.");
+        if (isPermanent) {
+          toast.success("Recovery row permanently deleted from current month's sheet.");
+        } else {
+          toast.success("Recovery row removed and moved to Recycle Bin.");
+        }
+      } catch (saveErr) {
+        console.error("Failed to delete row in cloud:", saveErr);
+        // Revert the optimistic update since the server save failed —
+        // otherwise the row will silently reappear later on refresh, with
+        // no indication to the user that anything went wrong.
+        setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? activeDoc : m));
+        toast.error("Failed to delete row — the change could not be saved to the server. Please try again.", {
+          description: getCleanErrorMessage(saveErr)
+        });
       }
     } catch (err: any) {
       console.error(err);

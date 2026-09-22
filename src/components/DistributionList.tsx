@@ -150,7 +150,7 @@ const getCategoryIcon = (categoryName: string, color: string) => {
 export default function DistributionList({ complaints, chartType = 'area' }: DistributionListProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const [reportType, setReportType] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
+  const [reportType, setReportType] = useState<'weekly' | 'monthly' | 'yearly'>('yearly');
   const [viewBy, setViewBy] = useState<'area' | 'category'>('area');
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
@@ -299,7 +299,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                         </div>
                       </div>
   
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150}>
                         <PieChart margin={{ top: 0, right: 32, left: 32, bottom: 0 }}>
                           <defs>
                             {/* Neumorphic 3D Raised Extrusion Filter for Light Mode */}

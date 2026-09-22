@@ -556,6 +556,8 @@ function subscribeTable(
             query = query.eq('line_code', cleanBypass);
           } else if (cleanActive) {
             query = query.eq('line_code', cleanActive);
+          } else if (tableName === 'users' && (!dealerId || dealerId === 'all' || dealerId === 'main')) {
+            query = query.or('line_code.is.null,line_code.eq.,role.eq.dealer');
           }
         }
         if (dealerId && dealerId !== 'all') {
@@ -763,7 +765,8 @@ function subscribeTable(
                 } else if (activeLineCode) {
                   if (payload.new.line_code && payload.new.line_code !== activeLineCode) return;
                 } else {
-                  if (payload.new.line_code) return; // For non-dealers, only allow empty line_code
+                  const isDealerProfile = tableName === 'users' && payload.new.role === 'dealer';
+                  if (payload.new.line_code && !isDealerProfile) return; // For non-dealers, only allow empty line_code
                 }
               }
 
@@ -2077,8 +2080,15 @@ export const supabaseService = {
       const cleanCode = String(activeLineCode || '').trim();
       if (cleanCode) {
         query = query.eq('line_code', cleanCode);
-      } else if (dealerId && dealerId !== 'all') {
-        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+      } else if (dealerId === 'all') {
+        // 'all' explicitly requests all users across registry
+      } else if (dealerId && dealerId !== 'main') {
+        query = query.eq('dealer_id', dealerId);
+      } else {
+        // No line_code for this viewer — restrict to the shared "without
+        // line_code" room + authorized dealer accounts (role = 'dealer')
+        // so that the Admin Dealer Section and Dealer Registry can list them.
+        query = query.or('line_code.is.null,line_code.eq.,role.eq.dealer');
       }
       const { data, error } = await query;
       if (error || !data) return [];
@@ -2290,10 +2300,10 @@ export const supabaseService = {
 
       const merged = {
         ...baseConfig,
-        categories: (baseConfig.categories && baseConfig.categories.length > 0) ? baseConfig.categories : (dbCategories.length > 0 ? dbCategories : (isMain ? DEFAULT_CATEGORIES : [])),
-        statuses: ensurePermanentStatuses((baseConfig.statuses && baseConfig.statuses.length > 0) ? baseConfig.statuses : (dbStatuses.length > 0 ? dbStatuses : (isMain ? DEFAULT_STATUSES : []))),
-        priorities: (baseConfig.priorities && baseConfig.priorities.length > 0) ? baseConfig.priorities : (dbPriorities.length > 0 ? dbPriorities : (isMain ? DEFAULT_PRIORITIES : [])),
-        zones: (baseConfig.zones && baseConfig.zones.length > 0) ? baseConfig.zones : (dbZones.length > 0 ? dbZones : (isMain ? DEFAULT_ZONES : [])),
+        categories: dbCategories.length > 0 ? dbCategories : (isMain ? DEFAULT_CATEGORIES : []),
+        statuses: ensurePermanentStatuses(dbStatuses.length > 0 ? dbStatuses : (isMain ? DEFAULT_STATUSES : [])),
+        priorities: dbPriorities.length > 0 ? dbPriorities : (isMain ? DEFAULT_PRIORITIES : []),
+        zones: dbZones.length > 0 ? dbZones : (isMain ? DEFAULT_ZONES : []),
         billingSecurityKey: baseConfig.billingSecurityKey || '1239870'
       };
 
@@ -2400,8 +2410,14 @@ export const supabaseService = {
       const cleanCode = String(activeLineCode || '').trim();
       if (cleanCode) {
         query = query.eq('line_code', cleanCode);
-      } else if (dealerId && dealerId !== 'all') {
-        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+      } else {
+        // No line_code for this viewer — restrict to the shared "without
+        // line_code" room only; never show a dealer's properly line_code-
+        // scoped data just because dealerId wasn't provided.
+        query = query.or('line_code.is.null,line_code.eq.');
+        if (dealerId && dealerId !== 'all' && dealerId !== 'main') {
+          query = query.eq('dealer_id', dealerId);
+        }
       }
       const { data } = await query;
       if (!data) return [];
@@ -2915,8 +2931,14 @@ export const supabaseService = {
       const cleanCode = String(activeLineCode || '').trim();
       if (cleanCode) {
         query = query.eq('line_code', cleanCode);
-      } else if (dealerId && dealerId !== 'all') {
-        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+      } else {
+        // No line_code for this viewer — restrict to the shared "without
+        // line_code" room only; never show a dealer's properly line_code-
+        // scoped data just because dealerId wasn't provided.
+        query = query.or('line_code.is.null,line_code.eq.');
+        if (dealerId && dealerId !== 'all' && dealerId !== 'main') {
+          query = query.eq('dealer_id', dealerId);
+        }
       }
       const { data } = await query;
       if (!data) return [];
@@ -2937,8 +2959,14 @@ export const supabaseService = {
       const cleanCode = String(activeLineCode || '').trim();
       if (cleanCode) {
         query = query.eq('line_code', cleanCode);
-      } else if (dealerId && dealerId !== 'all') {
-        query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+      } else {
+        // No line_code for this viewer — restrict to the shared "without
+        // line_code" room only; never show a dealer's properly line_code-
+        // scoped data just because dealerId wasn't provided.
+        query = query.or('line_code.is.null,line_code.eq.');
+        if (dealerId && dealerId !== 'all' && dealerId !== 'main') {
+          query = query.eq('dealer_id', dealerId);
+        }
       }
       const { data } = await query;
       if (!data) return [];

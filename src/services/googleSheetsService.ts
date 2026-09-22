@@ -3,19 +3,9 @@ import { safeStringify } from '../lib/utils';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
 import { supabase } from '../lib/supabase';
 
-const getApiUrl = (endpoint: string): string => {
-  const host = window.location.hostname;
-  if (
-    host === 'localhost' || 
-    host === '127.0.0.1' || 
-    host.includes('.run.app') ||
-    host.includes('hf.space') ||
-    host.includes('huggingface.co')
-  ) {
-    return endpoint;
-  }
-  return `https://ais-pre-y57fbgpyjpmaocrhgtopol-853220806804.asia-southeast1.run.app${endpoint}`;
-};
+function getApiUrl(endpoint: string) {
+  return endpoint;
+}
 
 export interface GoogleTokens {
   access_token?: string;
@@ -296,7 +286,7 @@ export const googleSheetsService = {
         if (supabase) {
           const pollTimer = setInterval(async () => {
             try {
-              const { data } = await supabase.from('branding_config').select('*').eq('tenant_id', 'google_sheets').single();
+              const { data } = await supabase.from('branding_config').select('*').eq('config_type', 'google_sheets').maybeSingle();
               if (data && data.dashboard_subtext) {
                 const parsed = JSON.parse(data.dashboard_subtext);
                 if (parsed && parsed.tokens && parsed.updatedAt && parsed.updatedAt >= startTime - 15000) {

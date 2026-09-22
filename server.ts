@@ -716,9 +716,11 @@ async function startServer() {
 
       // 1. Fetch user from Supabase (users_data or login_profiles), then Firestore
       let foundUser: any = null;
+      const cleanLookup = username.trim();
+      const cleanLower = cleanLookup.toLowerCase();
 
       try {
-        const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users_data?username=eq.${encodeURIComponent(username.trim())}`, {
+        const resUser = await fetch(`${SUPABASE_URL}/rest/v1/users_data?or=(username.eq.${encodeURIComponent(cleanLookup)},email.eq.${encodeURIComponent(cleanLower)},uid.eq.${encodeURIComponent(cleanLookup)})`, {
           headers: {
             apikey: SUPABASE_ANON_KEY,
             Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
@@ -743,7 +745,7 @@ async function startServer() {
 
       if (!foundUser) {
         try {
-          const resUser = await fetch(`${SUPABASE_URL}/rest/v1/login_profiles?username=eq.${encodeURIComponent(username.trim())}`, {
+          const resUser = await fetch(`${SUPABASE_URL}/rest/v1/login_profiles?or=(username.eq.${encodeURIComponent(cleanLookup)},email.eq.${encodeURIComponent(cleanLower)},uid.eq.${encodeURIComponent(cleanLookup)})`, {
             headers: {
               apikey: SUPABASE_ANON_KEY,
               Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
@@ -777,8 +779,9 @@ async function startServer() {
             .map((d) => ({ ...(d.data() as any), id: d.id }))
             .find(
               (u: any) =>
-                String(u.username || "").toLowerCase() ===
-                username.trim().toLowerCase(),
+                String(u.username || "").toLowerCase() === cleanLower ||
+                String(u.email || "").toLowerCase() === cleanLower ||
+                String(u.uid || "") === cleanLookup
             );
         } catch (fbErr) {
           console.warn("Server: Firestore fallback search failed:", fbErr);
@@ -916,9 +919,40 @@ async function startServer() {
         } else {
           throw new Error("Gmail tokens not found. Please link your Google Account.");
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Gmail API sending failed:", err);
-        errorDetail = err.message || String(err);
+        errorDetail = err?.message || String(err);
+      }
+
+      if (emailStatus !== "sent_gmail_api") {
+        try {
+          const brevoRes = await fetch("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: {
+              "accept": "application/json",
+              "api-key": BREVO_API_KEY,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              sender: { name: "GTS ISP System", email: process.env.BREVO_SENDER_EMAIL || "ahmadhc02@gmail.com" },
+              to: [{ email: foundUser.email, name: foundUser.fullName || foundUser.username }],
+              subject: subject,
+              htmlContent: emailHtml,
+            }),
+          });
+          if (brevoRes.ok) {
+            emailStatus = "sent_brevo_api";
+            errorDetail = null;
+            console.log("Server: Password reset email sent via Brevo fallback.");
+          } else {
+            const brevoErrBody = await brevoRes.text();
+            console.error("Brevo API sending failed:", brevoErrBody);
+            errorDetail = errorDetail || `Brevo error: ${brevoErrBody}`;
+          }
+        } catch (brevoErr: any) {
+          console.error("Brevo API exception:", brevoErr);
+          errorDetail = errorDetail || brevoErr.message || String(brevoErr);
+        }
       }
 
       console.log("========================================");
@@ -929,7 +963,7 @@ async function startServer() {
       console.log(`Access Link: ${resetUrl}`);
       console.log("========================================");
 
-      if (emailStatus !== "sent_gmail_api") {
+      if (emailStatus !== "sent_gmail_api" && emailStatus !== "sent_brevo_api") {
         return res.status(400).json({
           error: `Verification sending failed: ${errorDetail || "Gmail connection error."}. Please try again.`
         });
@@ -1123,9 +1157,10 @@ async function startServer() {
         (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "") ||
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
 
+      const cleanUser = username.trim();
       try {
         const suPatch = await fetch(
-          `${SUPABASE_URL}/rest/v1/users_data?username=eq.${encodeURIComponent(username.trim())}`,
+          `${SUPABASE_URL}/rest/v1/users_data?or=(username.eq.${encodeURIComponent(cleanUser)},uid.eq.${encodeURIComponent(cleanUser)})`,
           {
             method: "PATCH",
             headers: {
@@ -1310,9 +1345,40 @@ async function startServer() {
         } else {
           throw new Error("Gmail tokens not found. Please link your Google Account.");
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Gmail API sending failed:", err);
-        errorDetail = err.message || String(err);
+        errorDetail = err?.message || String(err);
+      }
+
+      if (emailStatus !== "sent_gmail_api") {
+        try {
+          const brevoRes = await fetch("https://api.brevo.com/v3/smtp/email", {
+            method: "POST",
+            headers: {
+              "accept": "application/json",
+              "api-key": BREVO_API_KEY,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              sender: { name: "GTS ISP System", email: process.env.BREVO_SENDER_EMAIL || "ahmadhc02@gmail.com" },
+              to: [{ email: email, name: fullName || username || "User" }],
+              subject: subject,
+              htmlContent: emailHtml,
+            }),
+          });
+          if (brevoRes.ok) {
+            emailStatus = "sent_brevo_api";
+            errorDetail = null;
+            console.log("Server: Registration OTP email sent via Brevo fallback.");
+          } else {
+            const brevoErrBody = await brevoRes.text();
+            console.error("Brevo API sending failed:", brevoErrBody);
+            errorDetail = errorDetail || `Brevo error: ${brevoErrBody}`;
+          }
+        } catch (brevoErr: any) {
+          console.error("Brevo API exception:", brevoErr);
+          errorDetail = errorDetail || brevoErr.message || String(brevoErr);
+        }
       }
 
       console.log("========================================");
@@ -1321,7 +1387,7 @@ async function startServer() {
       console.log(`Generated OTP Reset Code: ${otpCode}`);
       console.log("========================================");
 
-      if (emailStatus !== "sent_gmail_api") {
+      if (emailStatus !== "sent_gmail_api" && emailStatus !== "sent_brevo_api") {
         return res.status(400).json({
           error: `Verification sending failed: ${errorDetail || "Gmail connection error."}. Please try again.`
         });

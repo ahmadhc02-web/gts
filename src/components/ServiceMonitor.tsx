@@ -976,7 +976,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                 </div>
                               ) : null}
 
-                              <ResponsiveContainer width="100%" height="100%">
+                              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150}>
                                 <AreaChart data={trendedHistory}>
                                   <defs>
                                     <linearGradient id="detail-grad-sky-active" x1="0" y1="0" x2="0" y2="1">
@@ -1358,7 +1358,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
                                         <span className="text-[7px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Init...</span>
                                       </div>
                                     ) : null}
-                                    <ResponsiveContainer width="100%" height="100%">
+                                    <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150}>
                                       <AreaChart data={data.history}>
                                         <defs>
                                           <linearGradient id={`grad-sky-${target.key}`} x1="0" y1="0" x2="0" y2="1">
