@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useTheme } from "../hooks/useTheme";
 import NetworkBackground from "./NetworkBackground";
 import type { UserProfile } from "../types";
+import { getAvatarUrl } from "../utils/avatar";
 
 interface LoginFormProps {
   onLogin: (username: string, pass: string, lineCode?: string) => Promise<void>;
@@ -296,14 +297,14 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
 
   const getUserAvatar = (u: UserProfile | null) => {
     if (!u) return null;
-    return (
+    const raw =
       u.profilePicture ||
       (u as any).avatarUrl ||
       (u as any).photo ||
       (u as any).image ||
       (u as any).picture ||
-      null
-    );
+      null;
+    return raw ? getAvatarUrl(raw) : null;
   };
 
   // 1. Search account by username or email

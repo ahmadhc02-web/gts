@@ -2121,22 +2121,6 @@ export const supabaseService = {
         .maybeSingle();
       if (uData) return fromDb('users', uData);
 
-      const { data: lpData } = await supabase
-        .from('login_profiles')
-        .select('*')
-        .or(`username.ilike.${clean},email.ilike.${clean},uid.eq.${clean}`)
-        .limit(1)
-        .maybeSingle();
-      if (lpData) return fromDb('users', lpData);
-
-      const { data: rawData } = await supabase
-        .from('users')
-        .select('*')
-        .or(`username.ilike.${clean},email.ilike.${clean},uid.eq.${clean}`)
-        .limit(1)
-        .maybeSingle();
-      if (rawData) return fromDb('users', rawData);
-
       return null;
     } catch (e) {
       return null;
