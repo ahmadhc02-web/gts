@@ -105,6 +105,9 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
   }, [appConfig, area]);
 
   const currentUserId = currentUser.uid;
+  const parentDealer = (dealersList || []).find((u: any) => u.uid === currentUser?.dealerId);
+  const effectiveUserLineCode = currentUser?.lineCode || parentDealer?.lineCode || '';
+  const effectiveUserLineId = currentUser?.lineId || parentDealer?.lineId || '';
 
   const playPopupSound = () => {
     try {
@@ -256,10 +259,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
 
       let finalLineCode: string | null = null;
       let finalLineId: string | null = null;
-      if (currentUser?.role === 'dealer' || Boolean(currentUser?.lineCode)) {
-        finalLineCode = currentUser?.lineCode || null;
-        finalLineId = currentUser?.lineId || null;
-      } else if (isAdmin) {
+      const parentDealer = (dealersList || []).find((u: any) => u.uid === currentUser?.dealerId);
+      const effectiveUserLineCode = currentUser?.lineCode || parentDealer?.lineCode || null;
+      const effectiveUserLineId = currentUser?.lineId || parentDealer?.lineId || null;
+
+      if (currentUser?.role === 'dealer' || Boolean(effectiveUserLineCode)) {
+        finalLineCode = effectiveUserLineCode;
+        finalLineId = effectiveUserLineId;
+      } else if (currentUser?.role === 'super_admin') {
         if (formLineCode && formLineCode !== '__without_line__') {
           finalLineCode = formLineCode;
           const matchingDealer = (dealersList || []).find((u: any) => u.lineCode === formLineCode || u.uid === formLineCode);
@@ -268,6 +275,10 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           finalLineCode = null;
           finalLineId = null;
         }
+      } else {
+        // Accounts without a line code: locked to Without Line!
+        finalLineCode = null;
+        finalLineId = null;
       }
 
       if (editingId) {
@@ -415,7 +426,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     const matchesArea = selectedArea === 'all' || c.area === selectedArea;
 
     let matchesLine = true;
-    const isSuperAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+    const isSuperAdmin = currentUser?.role === 'super_admin';
     const clientLine = (c.lineCode || c.line_code || '').trim();
 
     if (!isSuperAdmin) {
@@ -694,7 +705,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                 <label className={labelClasses}>Sub-Dealer Line</label>
                 <div className="relative">
                   <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  {isAdmin && currentUser.role !== 'dealer' && !currentUser.lineCode ? (
+                  {currentUser?.role === 'super_admin' ? (
                     <select
                       value={formLineCode}
                       onChange={(e) => setFormLineCode(e.target.value)}
@@ -716,8 +727,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     <input
                       type="text"
                       disabled
-                      value={currentUser.lineCode ? `Line: ${currentUser.lineCode}` : 'Assigned Line'}
-                      className={cn(inputClasses, "opacity-75 cursor-not-allowed bg-slate-100 dark:bg-slate-900")}
+                      value={effectiveUserLineCode ? `Line: ${effectiveUserLineCode}` : '🚫 UNASSIGNED / WITHOUT LINE (LOCKED)'}
+                      className={cn(inputClasses, "opacity-75 cursor-not-allowed bg-slate-100 dark:bg-slate-900 font-bold", !effectiveUserLineCode ? "text-rose-500 dark:text-rose-400" : "text-blue-600 dark:text-blue-400")}
                     />
                   )}
                 </div>
@@ -772,8 +783,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
             </div>
             
             <div className="flex flex-col sm:flex-row items-center gap-3">
-              {/* Line Filter for Directory Table */}
-              {(isAdmin || currentUser?.role === 'super_admin') ? (
+              {/* Line Filter for Directory Table - Only Super Admin */}
+              {currentUser?.role === 'super_admin' ? (
                 <div className="relative">
                   <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                   <select
@@ -790,12 +801,17 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     ))}
                   </select>
                 </div>
-              ) : currentUser?.lineCode ? (
+              ) : effectiveUserLineCode ? (
                 <div className="px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5 shadow-sm">
                   <Shield size={12} className="stroke-[2.5]" />
-                  <span>Line: {currentUser.lineCode}</span>
+                  <span>Line: {effectiveUserLineCode}</span>
                 </div>
-              ) : null}
+              ) : (
+                <div className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-1.5 shadow-sm" title="Locked to Without Line Records Only">
+                  <Shield size={12} className="stroke-[2.5]" />
+                  <span>🚫 UNASSIGNED / WITHOUT LINE</span>
+                </div>
+              )}
 
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />

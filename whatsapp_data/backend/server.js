@@ -1,9 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const ws = require('ws');
 const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, logoutBaileys, registerMessageLogCallback } = require('./baileysClient');
 const { createClient } = require('@supabase/supabase-js');
-
 
 const admin = require("firebase-admin");
 let firebaseApp = null;
@@ -14,13 +14,18 @@ try {
 } catch (e) {
   console.warn("[Firebase] Failed to initialize (firebase-service-account.json might be missing):", e.message);
 }
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Setup Supabase
+// Setup Supabase with Node.js 20 Realtime WebSocket Transport Fix
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, {
+  realtime: {
+    transport: ws,
+  },
+}) : null;
 
 // Register Logging Callback to Supabase
 if (supabase) {
@@ -67,7 +72,6 @@ app.post('/disconnect', async (req, res) => {
   await logoutBaileys();
   res.json({ success: true });
 });
-
 
 app.post('/send-push', async (req, res) => {
   try {

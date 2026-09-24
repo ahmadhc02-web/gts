@@ -609,12 +609,17 @@ function subscribeTable(
           const cleanActive = String(activeLineCode || '').trim();
           if (bypassLineCodeFilter === true) {
             // no filter
+          } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+            query = query.or('line_code.is.null,line_code.eq.');
           } else if (cleanBypass) {
             query = query.eq('line_code', cleanBypass);
           } else if (cleanActive) {
             query = query.eq('line_code', cleanActive);
           } else if (tableName === 'users' && (!dealerId || dealerId === 'all' || dealerId === 'main')) {
             query = query.or('line_code.is.null,line_code.eq.,role.eq.dealer');
+          } else {
+            // No active line code: strictly isolate to the without line room!
+            query = query.or('line_code.is.null,line_code.eq.');
           }
         }
         if (dealerId && dealerId !== 'all') {
@@ -1500,7 +1505,8 @@ export const supabaseService = {
           for (const r of rowRecords) {
             const mId = r.month_id || 'UNKNOWN';
             if (isExcludedFromRecovery(r.name, r.username)) continue;
-            if (activeLineCode && r.line_code && r.line_code !== activeLineCode) continue;
+            if (activeLineCode && r.line_code && r.line_code.trim().toLowerCase() !== activeLineCode.trim().toLowerCase()) continue;
+            if (!activeLineCode && (r.line_code || (r.dealer_id && r.dealer_id !== 'main'))) continue;
             if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
             rowsByMonth.get(mId)!.push({
               id: r.client_id || r.id,

@@ -949,7 +949,15 @@ export default function AdminPanel({
   const [billingSearchQuery, setBillingSearchQuery] = useState('');
   const [billingStatusFilter, setBillingStatusFilter] = useState<string>('all');
   const [billingAreaFilter, setBillingAreaFilter] = useState<string>('all');
-  const [billingLineFilter, setBillingLineFilter] = useState<string>('all');
+  const [billingLineFilter, setBillingLineFilter] = useState<string>(() => {
+    return currentUser?.role === 'super_admin' ? 'all' : (currentUser?.lineCode || '__without_line__');
+  });
+
+  useEffect(() => {
+    if (currentUser?.role !== 'super_admin' && billingLineFilter === 'all') {
+      setBillingLineFilter(currentUser?.lineCode || '__without_line__');
+    }
+  }, [currentUser?.role, currentUser?.lineCode, billingLineFilter]);
   const [billingSortField, setBillingSortField] = useState<string>('');
   const [billingSortDirection, setBillingSortDirection] = useState<'asc' | 'desc'>('asc');
   const [isAdvanceMode, setIsAdvanceMode] = useState(false);
@@ -1360,18 +1368,40 @@ export default function AdminPanel({
     const isTargetTab = ['clients', 'nodes', 'billing', 'mypc', 'dealers_data'].includes(activeTab || '');
 
     const applyDealerClientScope = (clientList: any[]) => {
-      if (currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main') || currentUser?.lineCode) {
-        const dealerLineCode = currentUser.lineCode?.trim().toLowerCase();
+      if (!Array.isArray(clientList)) return [];
+      const isSuperAdmin = currentUser?.role === 'super_admin';
+      if (isSuperAdmin) {
+        return clientList;
+      }
+
+      const parentDealer = users.find(u => u.uid === currentUser?.dealerId);
+      const effectiveLineCode = (currentUser?.lineCode || parentDealer?.lineCode || '').trim().toLowerCase();
+      const effectiveLineId = (currentUser?.lineId || parentDealer?.lineId ? String(currentUser?.lineId || parentDealer?.lineId).trim() : '');
+      const effectiveDealerId = currentUser?.role === 'dealer' ? currentUser?.uid : (currentUser?.dealerId || parentDealer?.uid || '');
+
+      const isLineUser = Boolean(effectiveLineCode || effectiveLineId || (effectiveDealerId && effectiveDealerId !== 'main'));
+
+      if (isLineUser) {
         return clientList.filter(c => {
-          if (c.dealerId === currentUser.uid || c.dealerId === currentUser.dealerId) return true;
-          if (dealerLineCode) {
-            if (c.lineCode && c.lineCode.toLowerCase().trim() === dealerLineCode) return true;
-            if (c.line_code && c.line_code.toLowerCase().trim() === dealerLineCode) return true;
-          }
+          const cLine = (c.lineCode || c.line_code || '').trim().toLowerCase();
+          const cLineId = (c.lineId || c.line_id ? String(c.lineId || c.line_id).trim() : '');
+          if (effectiveLineCode && cLine === effectiveLineCode) return true;
+          if (effectiveLineId && cLineId === effectiveLineId) return true;
+          if (effectiveDealerId && c.dealerId === effectiveDealerId) return true;
           return false;
         });
       }
-      return clientList;
+
+      // Accounts WITHOUT line code:
+      // STRICTLY isolate to "Without Line" room! NEVER show any dealer's line data!
+      return clientList.filter(c => {
+        const cLine = (c.lineCode || c.line_code || '').trim();
+        const cLineId = (c.lineId || c.line_id ? String(c.lineId || c.line_id).trim() : '');
+        const cDealerId = (c.dealerId || '').trim();
+        if (cLine || cLineId) return false;
+        if (cDealerId && cDealerId !== 'main') return false;
+        return true;
+      });
     };
 
     if (!isTargetTab) {
@@ -1383,13 +1413,44 @@ export default function AdminPanel({
       setMasterClients(scopedData);
     }, tenantId);
     return () => unsubscribe();
-  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeTab]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, currentUser?.lineId, users, activeTab]);
 
   useEffect(() => {
+    const applyScopeToClients = (list: any[]) => {
+      if (!Array.isArray(list)) return [];
+      if (currentUser?.role === 'super_admin') return list;
+      const parentDealer = users.find(u => u.uid === currentUser?.dealerId);
+      const effectiveLineCode = (currentUser?.lineCode || parentDealer?.lineCode || '').trim().toLowerCase();
+      const effectiveLineId = (currentUser?.lineId || parentDealer?.lineId ? String(currentUser?.lineId || parentDealer?.lineId).trim() : '');
+      const effectiveDealerId = currentUser?.role === 'dealer' ? currentUser?.uid : (currentUser?.dealerId || parentDealer?.uid || '');
+      const isLineUser = Boolean(effectiveLineCode || effectiveLineId || (effectiveDealerId && effectiveDealerId !== 'main'));
+
+      if (isLineUser) {
+        return list.filter(c => {
+          const cLine = (c.lineCode || c.line_code || '').trim().toLowerCase();
+          const cLineId = (c.lineId || c.line_id ? String(c.lineId || c.line_id).trim() : '');
+          if (effectiveLineCode && cLine === effectiveLineCode) return true;
+          if (effectiveLineId && cLineId === effectiveLineId) return true;
+          if (effectiveDealerId && c.dealerId === effectiveDealerId) return true;
+          return false;
+        });
+      }
+
+      // Without line room
+      return list.filter(c => {
+        const cLine = (c.lineCode || c.line_code || '').trim();
+        const cLineId = (c.lineId || c.line_id ? String(c.lineId || c.line_id).trim() : '');
+        const cDealerId = (c.dealerId || '').trim();
+        if (cLine || cLineId) return false;
+        if (cDealerId && cDealerId !== 'main') return false;
+        return true;
+      });
+    };
+
     const handleClientsUpdated = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail) {
-        setMasterClients(customEvent.detail);
+        setMasterClients(applyScopeToClients(customEvent.detail));
       }
     };
     const handleIncrementalUpdate = (e: Event) => {
@@ -1397,13 +1458,21 @@ export default function AdminPanel({
       if (!payload) return;
       if (payload.eventType === 'INSERT') {
         const newClient = fromDb('clients', payload.new);
-        setMasterClients(prev => {
-          if (prev.find(c => c.id === newClient.id)) return prev;
-          return [newClient, ...prev].sort((a, b) => b.createdAt - a.createdAt);
-        });
+        const scoped = applyScopeToClients([newClient]);
+        if (scoped.length > 0) {
+          setMasterClients(prev => {
+            if (prev.find(c => c.id === newClient.id)) return prev;
+            return [newClient, ...prev].sort((a, b) => b.createdAt - a.createdAt);
+          });
+        }
       } else if (payload.eventType === 'UPDATE') {
         const updatedClient = fromDb('clients', payload.new);
-        setMasterClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c).sort((a, b) => b.createdAt - a.createdAt));
+        const scoped = applyScopeToClients([updatedClient]);
+        if (scoped.length > 0) {
+          setMasterClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c).sort((a, b) => b.createdAt - a.createdAt));
+        } else {
+          setMasterClients(prev => prev.filter(c => c.id !== updatedClient.id));
+        }
       } else if (payload.eventType === 'DELETE') {
         setMasterClients(prev => prev.filter(c => c.id !== payload.old.id));
       }
@@ -1414,7 +1483,7 @@ export default function AdminPanel({
       window.removeEventListener('pocketbase-clients-updated', handleClientsUpdated);
       window.removeEventListener('pocketbase-clients-updated-incremental', handleIncrementalUpdate);
     };
-  }, []);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, currentUser?.lineId, users]);
 
   // Synchronise lock status across workspace modules in real-time
   useEffect(() => {
@@ -3325,31 +3394,60 @@ export default function AdminPanel({
       .filter((r: any) => !isExcludedFromRecovery(r));
     let allowedRows = rawRows;
     
-    const isSuperAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+    const isSuperAdmin = currentUser?.role === 'super_admin';
     const isDealerUser = currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode);
 
     if (isDealerUser && !isSuperAdmin) {
+      const parentDealer = users.find(u => u.uid === currentUser?.dealerId);
+      const effectiveLineCode = (currentUser?.lineCode || parentDealer?.lineCode || '').trim().toLowerCase();
+      const effectiveLineId = (currentUser?.lineId || parentDealer?.lineId ? String(currentUser?.lineId || parentDealer?.lineId).trim() : '');
+      const effectiveDealerId = currentUser?.role === 'dealer' ? currentUser?.uid : (currentUser?.dealerId || parentDealer?.uid || '');
+
       const allowedClientIds = new Set(masterClients.map(c => c.id).filter(Boolean));
       const allowedUsernames = new Set(masterClients.map(c => c.username?.toLowerCase().trim()).filter(Boolean));
-      const dealerLineCode = currentUser?.lineCode?.trim().toLowerCase();
-      const dealerLineId = currentUser?.lineId ? String(currentUser.lineId).trim() : '';
 
       allowedRows = rawRows.filter((r: any) => {
-        if (dealerLineId && (r.lineId === dealerLineId || r.line_id === dealerLineId)) return true;
-        if (dealerLineCode) {
-          const rowLc = (r.lineCode || r.line_code || '').toLowerCase().trim();
-          if (rowLc === dealerLineCode) return true;
-        }
+        const rowLc = (r.lineCode || r.line_code || '').toLowerCase().trim();
+        const rowLid = (r.lineId || r.line_id ? String(r.lineId || r.line_id).trim() : '');
+        const rowDealerId = (r.dealerId || r.dealer_id || '').trim();
+
+        if (effectiveLineId && (rowLid === effectiveLineId || r.lineId === effectiveLineId || r.line_id === effectiveLineId)) return true;
+        if (effectiveLineCode && rowLc === effectiveLineCode) return true;
+        if (effectiveDealerId && rowDealerId === effectiveDealerId) return true;
         if (r.clientId && allowedClientIds.has(r.clientId)) return true;
         if (r.username && allowedUsernames.has(r.username?.toLowerCase().trim())) return true;
         return false;
       });
     } else if (!isSuperAdmin) {
       // Non-superadmin with NO line: strictly isolate to "Without Line" records!
+      // They must NEVER see any client or row that belongs to ANY dealer's line!
+      const clientsWithAnyLine = new Set(
+        masterClients
+          .filter(c => Boolean((c.lineCode || c.line_code || '').trim()) || Boolean((c.lineId || c.line_id || '').trim()) || (c.dealerId && c.dealerId !== 'main'))
+          .map(c => c.id)
+          .filter(Boolean)
+      );
+      const usernamesWithAnyLine = new Set(
+        masterClients
+          .filter(c => Boolean((c.lineCode || c.line_code || '').trim()) || Boolean((c.lineId || c.line_id || '').trim()) || (c.dealerId && c.dealerId !== 'main'))
+          .map(c => c.username?.toLowerCase().trim())
+          .filter(Boolean)
+      );
+
       allowedRows = rawRows.filter((r: any) => {
         const rowLc = (r.lineCode || r.line_code || '').trim();
         const rowLid = (r.lineId || r.line_id || '').trim();
-        return !rowLc && !rowLid;
+        const rowDealerId = (r.dealerId || r.dealer_id || '').trim();
+
+        // If row has ANY line code, line id, or dealer id (other than 'main'), hide it!
+        if (rowLc || rowLid) return false;
+        if (rowDealerId && rowDealerId !== 'main') return false;
+
+        // If row corresponds to a client that belongs to any dealer line, hide it!
+        if (r.clientId && clientsWithAnyLine.has(r.clientId)) return false;
+        if (r.username && usernamesWithAnyLine.has(r.username.toLowerCase().trim())) return false;
+
+        return true;
       });
     } else if (isSuperAdmin && billingLineFilter && billingLineFilter !== 'all') {
       // Super Admin explicit line filter
