@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield, Tag, DollarSign, Calendar } from 'lucide-react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
@@ -129,25 +129,55 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     setCurrentPage(1);
   }, [searchQuery, selectedArea]);
 
+  const applyClientScoping = useCallback((list: Client[]) => {
+    if (!Array.isArray(list)) return [];
+    if (currentUser?.role === 'super_admin') return list;
+
+    if (effectiveUserLineCode || effectiveUserLineId || currentUser?.role === 'dealer') {
+      return list.filter(c => {
+        const cLine = (c.lineCode || c.line_code || '').trim().toLowerCase();
+        const cLineId = (c.lineId || c.line_id ? String(c.lineId || c.line_id).trim() : '');
+        const cDealerId = (c.dealerId || '').trim();
+        if (effectiveUserLineCode && cLine === effectiveUserLineCode.toLowerCase()) return true;
+        if (effectiveUserLineId && cLineId === effectiveUserLineId) return true;
+        if (currentUser?.uid && cDealerId === currentUser.uid) return true;
+        if (currentUser?.dealerId && cDealerId === currentUser.dealerId) return true;
+        return false;
+      });
+    }
+
+    // Account WITHOUT line code:
+    // Strictly isolate: DO NOT show ANY client belonging to ANY dealer or line!
+    return list.filter(c => {
+      const cLine = (c.lineCode || c.line_code || '').trim();
+      const cLineId = (c.lineId || c.line_id ? String(c.lineId || c.line_id).trim() : '');
+      const cDealerId = (c.dealerId || '').trim();
+      if (cLine || cLineId) return false;
+      if (cDealerId && cDealerId !== 'main') return false;
+      return true;
+    });
+  }, [currentUser, effectiveUserLineCode, effectiveUserLineId]);
+
   useEffect(() => {
     // Show scoped clients
     const tenantId = pocketbaseService.getReadTenantId(currentUser);
     const activeDealerId = currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main') ? (currentUser?.dealerId !== 'main' ? currentUser?.dealerId : currentUser?.uid) : 'all';
     const unsubscribe = pocketbaseService.subscribeClients((data) => {
-      setClients(data);
+      const scoped = applyClientScoping(data);
+      setClients(scoped);
       try {
-        localStorage.setItem(`gts_cache_v3_clients_${activeDealerId || 'all'}_${currentUser?.lineCode || 'nolc'}`, JSON.stringify(data));
+        localStorage.setItem(`gts_cache_v3_clients_${activeDealerId || 'all'}_${currentUser?.lineCode || 'nolc'}`, JSON.stringify(scoped));
       } catch (e) {}
       setIsLoading(false);
     }, tenantId);
     return () => unsubscribe();
-  }, [currentUser]);
+  }, [currentUser, applyClientScoping]);
 
   useEffect(() => {
     const handleClientsUpdated = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail) {
-        setClients(customEvent.detail);
+        setClients(applyClientScoping(customEvent.detail));
         setIsLoading(false);
       }
     };
@@ -156,13 +186,21 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       if (!payload) return;
       if (payload.eventType === 'INSERT') {
         const newClient = fromDb('clients', payload.new);
-        setClients(prev => {
-          if (prev.find(c => c.id === newClient.id)) return prev;
-          return [newClient, ...prev].sort((a, b) => b.createdAt - a.createdAt);
-        });
+        const scoped = applyClientScoping([newClient]);
+        if (scoped.length > 0) {
+          setClients(prev => {
+            if (prev.find(c => c.id === newClient.id)) return prev;
+            return [newClient, ...prev].sort((a, b) => b.createdAt - a.createdAt);
+          });
+        }
       } else if (payload.eventType === 'UPDATE') {
         const updatedClient = fromDb('clients', payload.new);
-        setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c).sort((a, b) => b.createdAt - a.createdAt));
+        const scoped = applyClientScoping([updatedClient]);
+        if (scoped.length > 0) {
+          setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c).sort((a, b) => b.createdAt - a.createdAt));
+        } else {
+          setClients(prev => prev.filter(c => c.id !== updatedClient.id));
+        }
       } else if (payload.eventType === 'DELETE') {
         setClients(prev => prev.filter(c => c.id !== payload.old.id));
       }
@@ -173,7 +211,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       window.removeEventListener('pocketbase-clients-updated', handleClientsUpdated);
       window.removeEventListener('pocketbase-clients-updated-incremental', handleIncrementalUpdate);
     };
-  }, []);
+  }, [applyClientScoping]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -430,9 +468,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     const clientLine = (c.lineCode || c.line_code || '').trim();
 
     if (!isSuperAdmin) {
-      const userLine = (currentUser?.lineCode || '').trim();
-      if (userLine) {
-        matchesLine = clientLine.toLowerCase() === userLine.toLowerCase();
+      if (effectiveUserLineCode) {
+        matchesLine = clientLine.toLowerCase() === effectiveUserLineCode.toLowerCase();
       } else {
         matchesLine = !clientLine;
       }
@@ -701,11 +738,11 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
               </div>
 
               {/* Sub-Dealer Line Assignment */}
-              <div className="space-y-1">
-                <label className={labelClasses}>Sub-Dealer Line</label>
-                <div className="relative">
-                  <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  {currentUser?.role === 'super_admin' ? (
+              {currentUser?.role === 'super_admin' ? (
+                <div className="space-y-1">
+                  <label className={labelClasses}>Sub-Dealer Line</label>
+                  <div className="relative">
+                    <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <select
                       value={formLineCode}
                       onChange={(e) => setFormLineCode(e.target.value)}
@@ -723,16 +760,22 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                         </option>
                       ))}
                     </select>
-                  ) : (
+                  </div>
+                </div>
+              ) : effectiveUserLineCode ? (
+                <div className="space-y-1">
+                  <label className={labelClasses}>Sub-Dealer Line</label>
+                  <div className="relative">
+                    <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input
                       type="text"
                       disabled
-                      value={effectiveUserLineCode ? `Line: ${effectiveUserLineCode}` : '🚫 UNASSIGNED / WITHOUT LINE (LOCKED)'}
-                      className={cn(inputClasses, "opacity-75 cursor-not-allowed bg-slate-100 dark:bg-slate-900 font-bold", !effectiveUserLineCode ? "text-rose-500 dark:text-rose-400" : "text-blue-600 dark:text-blue-400")}
+                      value={`Line: ${effectiveUserLineCode}`}
+                      className={cn(inputClasses, "opacity-75 cursor-not-allowed bg-slate-100 dark:bg-slate-900 font-bold text-blue-600 dark:text-blue-400")}
                     />
-                  )}
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               <div className="sm:col-span-2 md:col-span-3 lg:col-span-4 mt-2">
                 <button
@@ -766,7 +809,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   {isAdmin ? 'Global Administrator View' : 'Personnel View Port'} • Operational Matrix Active
                 </p>
                 <div className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700" />
-                <span className="text-[10px] font-black text-brand-accent uppercase">{clients.length} Registered</span>
+                <span className="text-[10px] font-black text-brand-accent uppercase">{filteredClients.length} Registered</span>
                 <div className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700" />
                 {isLocked ? (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider">
@@ -806,12 +849,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   <Shield size={12} className="stroke-[2.5]" />
                   <span>Line: {effectiveUserLineCode}</span>
                 </div>
-              ) : (
-                <div className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-1.5 shadow-sm" title="Locked to Without Line Records Only">
-                  <Shield size={12} className="stroke-[2.5]" />
-                  <span>🚫 UNASSIGNED / WITHOUT LINE</span>
-                </div>
-              )}
+              ) : null}
 
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />

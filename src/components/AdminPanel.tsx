@@ -678,53 +678,92 @@ export default function AdminPanel({
   // Robust helper to filter billing months for dealer accounts
   const filterScopedBillingMonths = useCallback((monthsList: any[]) => {
     if (!monthsList || !Array.isArray(monthsList)) return [];
-    const isDealerUser = currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode);
-    if (!isDealerUser) return monthsList;
+    const isSuperAdmin = currentUser?.role === 'super_admin';
+    if (isSuperAdmin) return monthsList;
 
-    const dealerLineCode = currentUser?.lineCode?.trim().toLowerCase();
-    const dealerUid = currentUser?.uid;
-    const targetDealerId = activeDealerId || dealerUid;
-    const allowedClientIds = new Set(masterClients.map(c => c.id).filter(Boolean));
-    const allowedUsernames = new Set(masterClients.map(c => c.username?.toLowerCase().trim()).filter(Boolean));
+    const parentDealer = users.find(u => u.uid === currentUser?.dealerId);
+    const effectiveLineCode = (currentUser?.lineCode || parentDealer?.lineCode || '').trim().toLowerCase();
+    const effectiveLineId = (currentUser?.lineId || parentDealer?.lineId ? String(currentUser?.lineId || parentDealer?.lineId).trim() : '');
+    const effectiveDealerId = currentUser?.role === 'dealer' ? currentUser?.uid : (currentUser?.dealerId || parentDealer?.uid || '');
 
-    return monthsList.map(m => {
-      const rawRows = (m.rows || []).filter((r: any) => !isExcludedFromRecovery(r));
-      const dealerRows = rawRows.filter((r: any) => {
-        if (r.clientId && allowedClientIds.has(r.clientId)) return true;
-        if (r.username && allowedUsernames.has(r.username?.toLowerCase().trim())) return true;
-        if (dealerLineCode) {
+    const isLineUser = Boolean(effectiveLineCode || effectiveLineId || (effectiveDealerId && effectiveDealerId !== 'main'));
+
+    if (isLineUser) {
+      const allowedClientIds = new Set(masterClients.map(c => c.id).filter(Boolean));
+      const allowedUsernames = new Set(masterClients.map(c => c.username?.toLowerCase().trim()).filter(Boolean));
+
+      return monthsList.map(m => {
+        const rawRows = (m.rows || []).filter((r: any) => !isExcludedFromRecovery(r));
+        const dealerRows = rawRows.filter((r: any) => {
           const rowLc = (r.lineCode || r.line_code || '').toLowerCase().trim();
-          if (rowLc && rowLc === dealerLineCode) return true;
-        }
-        return false;
-      });
-      return {
-        ...m,
-        rows: dealerRows
-      };
-    }).filter(m => {
-      const monthLineCode = (m.lineCode || m.line_code || '').toLowerCase().trim();
-      const monthDealerId = m.dealerId || m.dealer_id || '';
+          const rowLid = (r.lineId || r.line_id ? String(r.lineId || r.line_id).trim() : '');
+          const rowDealerId = (r.dealerId || r.dealer_id || '').trim();
 
-      // If dealer has lineCode configured:
-      if (dealerLineCode) {
-        if (monthLineCode) {
-          return monthLineCode === dealerLineCode;
-        }
-        // Month has no lineCode: only show if explicitly owned by this dealer
-        if (monthDealerId && (monthDealerId === targetDealerId || monthDealerId === dealerUid) && monthDealerId !== 'main') {
-          return true;
-        }
+          if (effectiveLineId && (rowLid === effectiveLineId || r.lineId === effectiveLineId || r.line_id === effectiveLineId)) return true;
+          if (effectiveLineCode && rowLc === effectiveLineCode) return true;
+          if (effectiveDealerId && rowDealerId === effectiveDealerId) return true;
+          if (r.clientId && allowedClientIds.has(r.clientId)) return true;
+          if (r.username && allowedUsernames.has(r.username?.toLowerCase().trim())) return true;
+          return false;
+        });
+        return {
+          ...m,
+          rows: dealerRows
+        };
+      }).filter(m => {
+        const monthLineCode = (m.lineCode || m.line_code || '').toLowerCase().trim();
+        const monthLineId = (m.lineId || m.line_id ? String(m.lineId || m.line_id).trim() : '');
+        const monthDealerId = (m.dealerId || m.dealer_id || '').trim();
+
+        if (effectiveLineCode && monthLineCode && monthLineCode === effectiveLineCode) return true;
+        if (effectiveLineId && monthLineId && monthLineId === effectiveLineId) return true;
+        if (effectiveDealerId && monthDealerId && (monthDealerId === effectiveDealerId || monthDealerId === currentUser?.uid) && monthDealerId !== 'main') return true;
         return m.rows && m.rows.length > 0;
-      }
+      });
+    }
 
-      // If dealer has no lineCode configured:
-      if (monthDealerId && (monthDealerId === targetDealerId || monthDealerId === dealerUid) && monthDealerId !== 'main') {
+    // Accounts WITHOUT line code:
+    // Strictly isolate: NEVER show any dealer's line data, months, or rows!
+    const clientsWithAnyLine = new Set(
+      masterClients
+        .filter(c => Boolean((c.lineCode || c.line_code || '').trim()) || Boolean((c.lineId || c.line_id || '').trim()) || (c.dealerId && c.dealerId !== 'main'))
+        .map(c => c.id)
+        .filter(Boolean)
+    );
+    const usernamesWithAnyLine = new Set(
+      masterClients
+        .filter(c => Boolean((c.lineCode || c.line_code || '').trim()) || Boolean((c.lineId || c.line_id || '').trim()) || (c.dealerId && c.dealerId !== 'main'))
+        .map(c => c.username?.toLowerCase().trim())
+        .filter(Boolean)
+    );
+
+    return monthsList
+      .filter(m => {
+        const monthLineCode = (m.lineCode || m.line_code || '').trim();
+        const monthDealerId = (m.dealerId || m.dealer_id || '').trim();
+        if (monthLineCode) return false;
+        if (monthDealerId && monthDealerId !== 'main') return false;
         return true;
-      }
-      return m.rows && m.rows.length > 0;
-    });
-  }, [currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, currentUser?.uid, activeDealerId, masterClients]);
+      })
+      .map(m => {
+        const rawRows = (m.rows || []).filter((r: any) => !isExcludedFromRecovery(r));
+        const withoutLineRows = rawRows.filter((r: any) => {
+          const rowLc = (r.lineCode || r.line_code || '').trim();
+          const rowLid = (r.lineId || r.line_id || '').trim();
+          const rowDealerId = (r.dealerId || r.dealer_id || '').trim();
+
+          if (rowLc || rowLid) return false;
+          if (rowDealerId && rowDealerId !== 'main') return false;
+          if (r.clientId && clientsWithAnyLine.has(r.clientId)) return false;
+          if (r.username && usernamesWithAnyLine.has(r.username.toLowerCase().trim())) return false;
+          return true;
+        });
+        return {
+          ...m,
+          rows: withoutLineRows
+        };
+      });
+  }, [currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, currentUser?.lineId, currentUser?.uid, activeDealerId, masterClients, users]);
 
   // Backup / Restore state
   const [isRestoreOverlayOpen, setIsRestoreOverlayOpen] = useState(false);

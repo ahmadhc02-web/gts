@@ -682,12 +682,7 @@ export default function BillingTab(props: BillingTabProps) {
                           <Shield size={12} className="stroke-[2.5]" />
                           <span>LINE: {currentUser?.lineCode || 'SUB-DEALER'}</span>
                         </div>
-                      ) : (
-                        <div className="px-3 py-2 text-xs bg-rose-500/10 border border-rose-500/30 rounded-xl font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 flex items-center gap-1.5 shadow-sm" title="Locked to Without Line Records Only">
-                          <Shield size={12} className="stroke-[2.5]" />
-                          <span>🚫 UNASSIGNED / WITHOUT LINE</span>
-                        </div>
-                      )}
+                      ) : null}
 
                       <button
                         onClick={resetBillingColumnWidths}
