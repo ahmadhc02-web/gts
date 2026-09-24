@@ -17,6 +17,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 let activeLineCode: string | undefined = undefined;
+let activeLineId: string | undefined = undefined;
 
 import { sendMessage, getTemplate, getStatus , sendPushNotification } from '../whatsapp_data/whatsappApi';
 
@@ -80,6 +81,9 @@ export const mappings: Record<string, Record<string, string>> = {
     lastActive: 'last_active',
     dealerId: 'dealer_id',
     lineCode: 'line_code',
+    line_code: 'line_code',
+    lineId: 'line_id',
+    line_id: 'line_id',
     createdBy: 'created_by',
     createdByName: 'created_by_name',
     companyName: 'company_name',
@@ -132,8 +136,51 @@ export const mappings: Record<string, Record<string, string>> = {
     createdAt: 'created_at',
     dealerId: 'dealer_id',
     lineCode: 'line_code',
+    line_code: 'line_code',
+    lineId: 'line_id',
+    line_id: 'line_id',
     lat: 'lat',
     lng: 'lng'
+  },
+  billing: {
+    id: 'id',
+    clientId: 'client_id',
+    monthId: 'month_id',
+    name: 'name',
+    username: 'username',
+    amount: 'amount',
+    baseAmount: 'base_amount',
+    cr: 'cr',
+    totalAmount: 'total_amount',
+    paymentStatus: 'payment_status',
+    paymentReceived: 'payment_received',
+    billingDay: 'billing_day',
+    comments: 'comments',
+    dealerId: 'dealer_id',
+    lineId: 'line_id',
+    line_id: 'line_id',
+    lineCode: 'line_code',
+    line_code: 'line_code',
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
+  },
+  invoices: {
+    id: 'id',
+    clientId: 'client_id',
+    invoiceNumber: 'invoice_number',
+    monthId: 'month_id',
+    clientName: 'client_name',
+    clientUsername: 'client_username',
+    amount: 'amount',
+    baseAmount: 'base_amount',
+    status: 'status',
+    dueDate: 'due_date',
+    dealerId: 'dealer_id',
+    lineId: 'line_id',
+    line_id: 'line_id',
+    lineCode: 'line_code',
+    line_code: 'line_code',
+    createdAt: 'created_at'
   },
   chat_groups: {
     id: 'id',
@@ -331,6 +378,9 @@ export function fromDb(table: string, obj: any): any {
     result.role = userRole;
     result.username = responseData?.username ? String(responseData.username).trim() : (result.username ? String(result.username).trim() : '');
     result.lineCode = responseData?.line_code ? String(responseData.line_code).trim() : (result.lineCode ? String(result.lineCode).trim() : '');
+    result.lineId = responseData?.line_id ? String(responseData.line_id).trim() : (result.lineId || null);
+    result.line_code = result.lineCode;
+    result.line_id = result.lineId;
     result.dealerId = responseData?.dealer_id ? String(responseData.dealer_id).trim() : (result.dealerId ? String(result.dealerId).trim() : '');
     result.companyName = responseData?.company_name ? String(responseData.company_name).trim() : (result.companyName ? String(result.companyName).trim() : '');
     result.status = result.status || 'active';
@@ -342,6 +392,13 @@ export function fromDb(table: string, obj: any): any {
         }
       } catch (e) {}
     }
+  }
+
+  if (table === 'clients') {
+    result.lineCode = obj?.line_code ? String(obj.line_code).trim() : (result.lineCode ? String(result.lineCode).trim() : null);
+    result.lineId = obj?.line_id ? String(obj.line_id).trim() : (result.lineId ? String(result.lineId).trim() : null);
+    result.line_code = result.lineCode;
+    result.line_id = result.lineId;
   }
 
   if (table === 'chat_messages') {
@@ -948,10 +1005,14 @@ async function fetchBrandingConfigType(configType: string): Promise<any> {
 }
 
 export const supabaseService = {
-  setActiveLineCode: (lineCode?: string) => {
+  setActiveLineCode: (lineCode?: string, lineId?: string) => {
     const cleanCode = typeof lineCode === 'string' ? lineCode.trim() : (lineCode ? String(lineCode).trim() : '');
     activeLineCode = cleanCode || undefined;
+    const cleanId = typeof lineId === 'string' ? lineId.trim() : (lineId ? String(lineId).trim() : '');
+    activeLineId = cleanId || undefined;
   },
+  getActiveLineCode: () => activeLineCode,
+  getActiveLineId: () => activeLineId,
   // Presence and Cursor Broadcast for Collaboration
   joinBillingPresence(
     monthId: string, 
@@ -1376,17 +1437,22 @@ export const supabaseService = {
 
       try {
         let query = supabase.from('billing_months').select('*');
-        if (dealerId && dealerId !== 'main') {
+        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
           query = query.eq('dealer_id', dealerId);
         }
         const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
         const cleanActive = String(activeLineCode || '').trim();
-        if (bypassLineCodeFilter === true) {
-          // no filter
+        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+          // Explicitly query all lines across network
+        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+          query = query.or('line_code.is.null,line_code.eq.');
         } else if (cleanBypass) {
           query = query.eq('line_code', cleanBypass);
         } else if (cleanActive) {
           query = query.eq('line_code', cleanActive);
+        } else {
+          // No line code set: strictly isolate to the "without line" room
+          query = query.or('line_code.is.null,line_code.eq.');
         }
 
         const { data: supMonths } = await query;
@@ -1410,17 +1476,22 @@ export const supabaseService = {
 
       try {
         let query = supabase.from('billing_rows').select('*');
-        if (dealerId && dealerId !== 'main') {
+        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
           query = query.eq('dealer_id', dealerId);
         }
         const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
         const cleanActive = String(activeLineCode || '').trim();
-        if (bypassLineCodeFilter === true) {
-          // no filter
+        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+          // Explicitly query all lines across network
+        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+          query = query.or('line_code.is.null,line_code.eq.');
         } else if (cleanBypass) {
           query = query.eq('line_code', cleanBypass);
         } else if (cleanActive) {
           query = query.eq('line_code', cleanActive);
+        } else {
+          // No line code set: strictly isolate to the "without line" room
+          query = query.or('line_code.is.null,line_code.eq.');
         }
 
         const { data: rowRecords } = await query;
@@ -1454,7 +1525,10 @@ export const supabaseService = {
               connectionDate: r.connection_date || '',
               devicePrice: r.device_price || '',
               abl: r.abl || '',
-              lineCode: r.line_code || ''
+              lineCode: r.line_code || '',
+              lineId: r.line_id || null,
+              line_code: r.line_code || '',
+              line_id: r.line_id || null
             });
           }
 
@@ -1859,6 +1933,7 @@ export const supabaseService = {
         month_id: monthId,
         dealer_id: dealerId,
         line_code: activeLineCode || '',
+        line_id: activeLineId || null,
         rows_data: { rows, excludedClientKeys: excludedClientKeys || [] },
         updated_by: updatedBy
       };
@@ -2001,7 +2076,8 @@ export const supabaseService = {
         device_price: sanitizeNum(r.devicePrice ?? r.device_price),
         abl: sanitizeNum(r.abl),
         panel_details: String(r.panelDetails || ''),
-        line_code: String(r.lineCode || r.line_code || activeLineCode || '')
+        line_code: String(r.lineCode || r.line_code || activeLineCode || ''),
+        line_id: r.lineId || r.line_id || activeLineId || null
       };
     };
 
@@ -2074,20 +2150,28 @@ export const supabaseService = {
   },
 
   // --- USERS ---
-  getUsers: async (dealerId?: string): Promise<UserProfile[]> => {
+  getUsers: async (dealerId?: string, lineCodeFilter?: string | null, lineIdFilter?: string | null): Promise<UserProfile[]> => {
     try {
       let query = supabase.from('users_data').select('*');
-      const cleanCode = String(activeLineCode || '').trim();
-      if (cleanCode) {
+      const cleanCode = lineCodeFilter !== undefined 
+        ? (lineCodeFilter ? String(lineCodeFilter).trim() : '')
+        : String(activeLineCode || '').trim();
+      const cleanId = lineIdFilter !== undefined
+        ? (lineIdFilter ? String(lineIdFilter).trim() : '')
+        : String(activeLineId || '').trim();
+
+      if (cleanId) {
+        query = query.eq('line_id', cleanId);
+      } else if (cleanCode) {
         query = query.eq('line_code', cleanCode);
-      } else if (dealerId === 'all') {
+      } else if (lineCodeFilter === 'all' || dealerId === 'all') {
         // 'all' explicitly requests all users across registry
+      } else if (lineCodeFilter === '__without_line__' || lineCodeFilter === null) {
+        query = query.or('line_id.is.null,line_code.is.null,line_code.eq.');
       } else if (dealerId && dealerId !== 'main') {
         query = query.eq('dealer_id', dealerId);
       } else {
-        // No line_code for this viewer — restrict to the shared "without
-        // line_code" room + authorized dealer accounts (role = 'dealer')
-        // so that the Admin Dealer Section and Dealer Registry can list them.
+        // No line_code for this viewer — restrict to without line_code + dealers
         query = query.or('line_code.is.null,line_code.eq.,role.eq.dealer');
       }
       const { data, error } = await query;
@@ -2096,6 +2180,10 @@ export const supabaseService = {
     } catch (e) {
       return [];
     }
+  },
+
+  getUsersData: async (dealerId?: string, lineCodeFilter?: string | null): Promise<UserProfile[]> => {
+    return supabaseService.getUsers(dealerId, lineCodeFilter);
   },
 
   getUser: async (uid: string): Promise<UserProfile | null> => {
@@ -2147,7 +2235,30 @@ export const supabaseService = {
     }
   },
 
-  createUser: async (uid: string, username: string, pass: string, role: UserProfile['role'], authorId?: string, authorName?: string, dealerId: string = 'main', lineCode?: string, companyName?: string, status: UserProfile['status'] = 'active', fullName?: string): Promise<UserProfile> => {
+  createUser: async (
+    uid: string,
+    username: string,
+    pass: string,
+    role: UserProfile['role'],
+    authorId?: string,
+    authorName?: string,
+    dealerId: string = 'main',
+    lineCode?: string,
+    companyName?: string,
+    status: UserProfile['status'] = 'active',
+    fullName?: string,
+    lineId?: string | null,
+    currentUser?: UserProfile
+  ): Promise<UserProfile> => {
+    let finalLineId: string | null = lineId || null;
+    let finalLineCode: string | null = lineCode || null;
+
+    const isSubDealerOrLineAdmin = currentUser && currentUser.role !== 'admin' && currentUser.role !== 'super_admin' && (Boolean(currentUser.lineCode) || Boolean(currentUser.lineId) || currentUser.role === 'dealer');
+    if (isSubDealerOrLineAdmin) {
+      finalLineId = currentUser.lineId || currentUser.line_id || null;
+      finalLineCode = currentUser.lineCode || currentUser.line_code || activeLineCode || null;
+    }
+
     const user: UserProfile = {
       uid,
       username,
@@ -2157,7 +2268,10 @@ export const supabaseService = {
       createdAt: Date.now(),
       lastActive: Date.now(),
       dealerId,
-      lineCode: lineCode || '',
+      lineId: finalLineId,
+      lineCode: finalLineCode || '',
+      line_id: finalLineId,
+      line_code: finalLineCode || '',
       createdBy: authorId || 'admin',
       createdByName: authorName || 'System Admin',
       companyName: companyName || '',
@@ -2937,18 +3051,28 @@ export const supabaseService = {
   },
 
   // --- CLIENTS ---
-  getClients: async (dealerId?: string): Promise<Client[]> => {
+  getClients: async (dealerId?: string, lineCodeFilter?: string | null, lineIdFilter?: string | null): Promise<Client[]> => {
     try {
       let query = supabase.from('clients').select('*');
-      const cleanCode = String(activeLineCode || '').trim();
-      if (cleanCode) {
+      const cleanCode = lineCodeFilter !== undefined
+        ? (lineCodeFilter ? String(lineCodeFilter).trim() : '')
+        : String(activeLineCode || '').trim();
+      const cleanId = lineIdFilter !== undefined
+        ? (lineIdFilter ? String(lineIdFilter).trim() : '')
+        : String(activeLineId || '').trim();
+
+      if (cleanId) {
+        query = query.eq('line_id', cleanId);
+      } else if (cleanCode) {
         query = query.eq('line_code', cleanCode);
+      } else if (lineCodeFilter === 'all' || dealerId === 'all') {
+        // all clients across registry
+      } else if (lineCodeFilter === '__without_line__' || lineCodeFilter === null) {
+        query = query.or('line_id.is.null,line_code.is.null,line_code.eq.');
       } else {
-        // No line_code for this viewer — restrict to the shared "without
-        // line_code" room only; never show a dealer's properly line_code-
-        // scoped data just because dealerId wasn't provided.
-        query = query.or('line_code.is.null,line_code.eq.');
-        if (dealerId && dealerId !== 'all' && dealerId !== 'main') {
+        // No line_code for this viewer — restrict to the shared "without line_code" room only
+        query = query.or('line_id.is.null,line_code.is.null,line_code.eq.');
+        if (dealerId && dealerId !== 'main') {
           query = query.eq('dealer_id', dealerId);
         }
       }
@@ -2960,20 +3084,58 @@ export const supabaseService = {
     }
   },
 
-  createClient: async (data: Omit<Client, 'id' | 'createdAt'>, authorName: string, dealerId: string = 'main'): Promise<Client> => {
+  createClient: async (data: Omit<Client, 'id' | 'createdAt'>, authorName: string, dealerId: string = 'main', currentUser?: UserProfile): Promise<Client> => {
+    const isLineAdmin = currentUser && currentUser.role !== 'admin' && currentUser.role !== 'super_admin' && (Boolean(currentUser.lineCode) || Boolean(currentUser.lineId) || currentUser.role === 'dealer');
+    
+    let finalLineId: string | null = null;
+    let finalLineCode: string | null = null;
+    
+    if (isLineAdmin) {
+      finalLineId = currentUser.lineId || currentUser.line_id || null;
+      finalLineCode = currentUser.lineCode || currentUser.line_code || activeLineCode || null;
+    } else {
+      finalLineId = data.lineId ?? data.line_id ?? activeLineId ?? null;
+      finalLineCode = data.lineCode ?? data.line_code ?? activeLineCode ?? null;
+      if (finalLineCode === '__without_line__') {
+        finalLineCode = null;
+        finalLineId = null;
+      }
+    }
+
     const client: Client = {
       id: `client_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       ...data,
-      lineCode: activeLineCode || '',
+      lineId: finalLineId,
+      lineCode: finalLineCode,
+      line_id: finalLineId,
+      line_code: finalLineCode,
       createdAt: Date.now(),
-      dealerId
+      dealerId: data.dealerId || dealerId
     };
     await upsertSupabase('clients', 'id', client.id, toDb('clients', client), true);
     return client;
   },
 
-  updateClient: async (id: string, data: Partial<Client>, clientName: string, authorName: string) => {
-    await upsertSupabase('clients', 'id', id, toDb('clients', data), true);
+  addClient: async (data: Omit<Client, 'id' | 'createdAt'>, authorName: string, dealerId: string = 'main', currentUser?: UserProfile): Promise<Client> => {
+    return supabaseService.createClient(data, authorName, dealerId, currentUser);
+  },
+
+  updateClient: async (id: string, data: Partial<Client>, clientName: string, authorName: string, currentUser?: UserProfile) => {
+    const payload = { ...data };
+    const isLineAdmin = currentUser && currentUser.role !== 'admin' && currentUser.role !== 'super_admin' && (Boolean(currentUser.lineCode) || Boolean(currentUser.lineId) || currentUser.role === 'dealer');
+    
+    if (isLineAdmin) {
+      payload.lineId = currentUser.lineId || currentUser.line_id || null;
+      payload.lineCode = currentUser.lineCode || currentUser.line_code || activeLineCode || null;
+      payload.line_id = payload.lineId;
+      payload.line_code = payload.lineCode;
+    } else if (payload.lineCode === '__without_line__') {
+      payload.lineCode = null;
+      payload.lineId = null;
+      payload.line_code = null;
+      payload.line_id = null;
+    }
+    await upsertSupabase('clients', 'id', id, toDb('clients', payload), true);
   },
 
   saveClientsBatch: async (clientsList: Client[], dealerId: string = 'main') => {

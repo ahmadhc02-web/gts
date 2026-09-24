@@ -73,7 +73,7 @@ const localOtpStore = new Map<string, MemoryOTP>();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Robust CORS Middleware supporting this project's domains
   app.use(
@@ -143,6 +143,16 @@ async function startServer() {
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
+
+  // --- Health Check Endpoint for Nginx / Upstream Load Balancers ---
+  app.get(["/health", "/api/health"], (req, res) => {
+    res.json({
+      status: "ok",
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+      port: PORT,
+    });
+  });
 
   // --- Secure Iframe Proxy Tunnel Bypass Endpoint ---
   app.get("/api/proxy-tunnel", async (req, res) => {
@@ -3275,32 +3285,56 @@ System instructions:
 
   // --- End Google Drive & Sheets Integration ---
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Vite middleware for development vs static files for production
+  // Production is triggered if:
+  // 1. NODE_ENV === 'production'
+  // 2. K_SERVICE (Google Cloud Run)
+  // 3. dist/index.html exists (after npm run build was executed)
+  // 4. Custom production PORT is specified
+  const distCandidates = [
+    path.join(process.cwd(), "dist"),
+    path.resolve(currentDirname, "dist"),
+    currentDirname,
+  ];
+  const foundDistPath = distCandidates.find((dir) =>
+    fs.existsSync(path.join(dir, "index.html"))
+  );
+
+  const hasBuiltDist = Boolean(foundDistPath);
+  const isProd =
+    process.env.NODE_ENV === "production" ||
+    Boolean(process.env.K_SERVICE) ||
+    hasBuiltDist ||
+    (Boolean(process.env.PORT) && process.env.PORT !== "3000");
+
+  if (!isProd) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        watch: {
+          usePolling: true,
+          interval: 1000,
+          ignored: ["**/whatsapp_data/backend/**", "**/dist/**", "**/.git/**"],
+        },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    // In production, the server might be bundled into /dist/ or run from the root
-    let distPath = path.join(process.cwd(), "dist");
-
-    // If we're running from inside dist/ already (bundled server.js),
-    // or if the dist folder isn't where we expect, try to find it relative to this file
-    if (!fs.existsSync(path.join(distPath, "index.html"))) {
-      distPath = currentDirname;
-      if (!fs.existsSync(path.join(distPath, "index.html"))) {
-        // Fallback or log error
-        console.warn(
-          "Could not find index.html in dist paths. Static serving might fail.",
-        );
-      }
-    }
+    const distPath = foundDistPath || path.join(process.cwd(), "dist");
 
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+    app.get("*", (req, res, next) => {
+      // Do not intercept backend /api routes
+      if (req.path.startsWith("/api/")) {
+        return next();
+      }
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(500).send("Production build artifacts not found. Please run 'npm run build' first.");
+      }
     });
   }
 

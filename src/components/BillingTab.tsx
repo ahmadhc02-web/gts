@@ -45,6 +45,8 @@ export default function BillingTab(props: BillingTabProps) {
     billingScrollContainerRef,
     billingSearchQuery,
     billingStatusFilter,
+    billingLineFilter = 'all',
+    setBillingLineFilter,
     branding,
     complaints,
     currentMainPage,
@@ -540,7 +542,7 @@ export default function BillingTab(props: BillingTabProps) {
                     },
                     {
                       label: "Subscribers Active",
-                      val: `${activeRows.length} Nodes`,
+                      val: `${activeRows.length} Customers`,
                       desc: `TDC: ${totalTDC} | DC: ${totalDC} | Unpaid: ${totalPending}`
                     }
                   ].map((card, i) => (
@@ -652,6 +654,40 @@ export default function BillingTab(props: BillingTabProps) {
                           <option key={`area-${areaName}-${idx}`} value={areaName}>{areaName}</option>
                         ))}
                       </select>
+
+                      {/* Multi-Tenancy Strict Line Filter */}
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'super_admin') ? (
+                        <select
+                          value={billingLineFilter}
+                          onChange={(e) => setBillingLineFilter && setBillingLineFilter(e.target.value)}
+                          className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-[var(--neu-border)] rounded-xl focus:border-blue-500 font-bold uppercase tracking-wider text-brand-accent dark:text-blue-400 shadow-[var(--neu-shadow-inset)]"
+                          title="Filter Recovery by Sub-Dealer Line Code"
+                        >
+                          <option value="all">🌐 ALL LINES / GLOBAL</option>
+                          <option value="__without_line__">🚫 UNASSIGNED / WITHOUT LINE</option>
+                          {Array.from(
+                            new Map(
+                              (users || [])
+                                .filter((u: any) => u.lineCode || u.role === 'dealer')
+                                .map((u: any) => [u.lineCode || u.uid, u])
+                            ).values()
+                          ).map((u: any, idx: number) => (
+                            <option key={`line-filter-${u.lineCode || u.uid}-${idx}`} value={u.lineCode || u.uid}>
+                              ⚡ LINE: {u.lineCode || 'DEALER'} ({u.fullName || u.companyName || u.username})
+                            </option>
+                          ))}
+                        </select>
+                      ) : isSubDealerUser ? (
+                        <div className="px-3 py-2 text-xs bg-blue-500/10 border border-blue-500/30 rounded-xl font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5 shadow-sm">
+                          <Shield size={12} className="stroke-[2.5]" />
+                          <span>LINE: {currentUser?.lineCode || 'SUB-DEALER'}</span>
+                        </div>
+                      ) : (
+                        <div className="px-3 py-2 text-xs bg-slate-500/10 border border-slate-500/20 rounded-xl font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                          <span>UNASSIGNED LINE VIEW</span>
+                        </div>
+                      )}
+
                       <button
                         onClick={resetBillingColumnWidths}
                         className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5"

@@ -56,7 +56,10 @@ export interface UserProfile {
   createdAt: number;
   lastActive?: number;
   dealerId?: string; // For dealers and users created by dealers
-  lineCode?: string; // Specific code for dealer identification
+  lineId?: string | null; // Multi-tenancy Line UUID
+  lineCode?: string | null; // Specific code for dealer identification
+  line_id?: string | null;
+  line_code?: string | null;
   createdBy?: string; // UID of creator
   createdByName?: string; // Name of creator
   companyName?: string; // Dealer company name
@@ -82,7 +85,10 @@ export interface Client {
   createdBy: string;
   createdAt: number;
   dealerId?: string; // Multi-tenancy support
-  lineCode?: string; // VLAN code inherited from dealer
+  lineId?: string | null; // Multi-tenancy Line UUID
+  lineCode?: string | null; // VLAN code inherited from dealer
+  line_id?: string | null;
+  line_code?: string | null;
   lat?: number;
   lng?: number;
 }
@@ -205,6 +211,48 @@ export interface LedgerSheet {
   footnoteLeft: string;
   footnoteRight: string;
   dealerId: string;
+  createdAt: number;
+}
+
+export interface BillingRecord {
+  id: string;
+  clientId: string;
+  monthId: string;
+  name: string;
+  username: string;
+  amount: number;
+  baseAmount?: number;
+  cr?: number;
+  totalAmount?: number;
+  paymentStatus: 'paid' | 'unpaid' | 'pending' | 'partial' | 'tdc' | 'dc' | 'extra';
+  paymentReceived?: number;
+  billingDay?: string;
+  comments?: string;
+  lineId?: string | null;
+  lineCode?: string | null;
+  line_id?: string | null;
+  line_code?: string | null;
+  dealerId?: string;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface Invoice {
+  id: string;
+  clientId: string;
+  invoiceNumber: string;
+  monthId: string;
+  clientName: string;
+  clientUsername: string;
+  amount: number;
+  baseAmount?: number;
+  status: 'paid' | 'unpaid' | 'cancelled' | 'pending';
+  lineId?: string | null;
+  lineCode?: string | null;
+  line_id?: string | null;
+  line_code?: string | null;
+  dealerId?: string;
+  dueDate?: string;
   createdAt: number;
 }
 

@@ -18,6 +18,13 @@ interface ClientManagementProps {
 }
 
 export default function ClientManagement({ appConfig, isAdmin, currentUser, currentUserName, isBillingUnlocked }: ClientManagementProps) {
+  const [dealersList, setDealersList] = useState<UserProfile[]>([]);
+  useEffect(() => {
+    pocketbaseService.getUsers('all').then(uList => {
+      setDealersList(uList.filter(u => u.role === 'dealer' || Boolean(u.lineCode)));
+    }).catch(() => {});
+  }, []);
+
   const [clients, setClients] = useState<Client[]>(() => {
     try {
       const activeDealerId = currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main') ? (currentUser?.dealerId !== 'main' ? currentUser?.dealerId : currentUser?.uid) : 'all';
@@ -40,6 +47,8 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArea, setSelectedArea] = useState<string>('all');
+  const [selectedLineFilter, setSelectedLineFilter] = useState<string>('all');
+  const [formLineCode, setFormLineCode] = useState<string>('__without_line__');
   
   // View/Detail state
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
@@ -177,6 +186,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     setBaseAmount('');
     setBillingDay('5');
     setArea(appConfig.zones[0] || '');
+    setFormLineCode('__without_line__');
   };
 
   const handleEdit = (client: Client) => {
@@ -193,6 +203,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     setBaseAmount(client.baseAmount ?? '');
     setBillingDay(client.billingDay || '5');
     setArea(client.area || '');
+    setFormLineCode(client.lineCode || client.line_code || '__without_line__');
     
     // Scroll to form if on mobile
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -243,6 +254,22 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     try {
       const currentUserId = currentUser.uid;
 
+      let finalLineCode: string | null = null;
+      let finalLineId: string | null = null;
+      if (currentUser?.role === 'dealer' || Boolean(currentUser?.lineCode)) {
+        finalLineCode = currentUser?.lineCode || null;
+        finalLineId = currentUser?.lineId || null;
+      } else if (isAdmin) {
+        if (formLineCode && formLineCode !== '__without_line__') {
+          finalLineCode = formLineCode;
+          const matchingDealer = (dealersList || []).find((u: any) => u.lineCode === formLineCode || u.uid === formLineCode);
+          finalLineId = matchingDealer?.lineId || matchingDealer?.uid || null;
+        } else {
+          finalLineCode = null;
+          finalLineId = null;
+        }
+      }
+
       if (editingId) {
         const originalClient = clients.find(c => c.id === editingId);
         const originalUsername = originalClient ? originalClient.username : trimmedUsername;
@@ -259,9 +286,13 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           area: area || '',
           rt: (rt || '').trim(),
           baseAmount: parseFloat(String(baseAmount)) || 0,
-          billingDay: String(billingDay || '5').trim()
+          billingDay: String(billingDay || '5').trim(),
+          lineCode: finalLineCode,
+          line_code: finalLineCode,
+          lineId: finalLineId,
+          line_id: finalLineId
         };
-        await pocketbaseService.updateClient(editingId, updatedData, trimmedName, currentUserName);
+        await pocketbaseService.updateClient(editingId, updatedData, trimmedName, currentUserName, currentUser);
         
         // Optimistic UI update
         const updatedClient = {
@@ -312,10 +343,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           baseAmount: parseFloat(String(baseAmount)) || 0,
           billingDay: String(billingDay || '5').trim(),
           createdBy: currentUserId,
-          dealerId: effectiveDealerId
+          dealerId: effectiveDealerId,
+          lineCode: finalLineCode,
+          line_code: finalLineCode,
+          lineId: finalLineId,
+          line_id: finalLineId
         };
 
-        const newClient = await pocketbaseService.createClient(newClientData, currentUserName, effectiveDealerId);
+        const newClient = await pocketbaseService.createClient(newClientData, currentUserName, effectiveDealerId, currentUser);
         
         // Optimistic state update
         setClients(prev => {
@@ -378,8 +413,27 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       (c.seriesNumber && c.seriesNumber.toLowerCase().includes(query));
       
     const matchesArea = selectedArea === 'all' || c.area === selectedArea;
+
+    let matchesLine = true;
+    const isSuperAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+    const clientLine = (c.lineCode || c.line_code || '').trim();
+
+    if (!isSuperAdmin) {
+      const userLine = (currentUser?.lineCode || '').trim();
+      if (userLine) {
+        matchesLine = clientLine.toLowerCase() === userLine.toLowerCase();
+      } else {
+        matchesLine = !clientLine;
+      }
+    } else if (selectedLineFilter && selectedLineFilter !== 'all') {
+      if (selectedLineFilter === '__without_line__') {
+        matchesLine = !clientLine;
+      } else {
+        matchesLine = clientLine.toLowerCase() === selectedLineFilter.toLowerCase();
+      }
+    }
     
-    return matchesSearch && matchesArea;
+    return matchesSearch && matchesArea && matchesLine;
   });
 
   // Pagination Logic
@@ -635,6 +689,40 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                 </div>
               </div>
 
+              {/* Sub-Dealer Line Assignment */}
+              <div className="space-y-1">
+                <label className={labelClasses}>Sub-Dealer Line</label>
+                <div className="relative">
+                  <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  {isAdmin && currentUser.role !== 'dealer' && !currentUser.lineCode ? (
+                    <select
+                      value={formLineCode}
+                      onChange={(e) => setFormLineCode(e.target.value)}
+                      className={cn(inputClasses, "appearance-none bg-no-repeat")}
+                      style={{ 
+                        backgroundPosition: 'right 1rem center', 
+                        backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
+                        backgroundSize: '1rem' 
+                      }}
+                    >
+                      <option value="__without_line__">🚫 Without Line (Unassigned)</option>
+                      {dealersList.map((d, i) => (
+                        <option key={`dealer-line-form-${i}`} value={d.lineCode || d.uid}>
+                          ⚡ {d.lineCode ? `Line: ${d.lineCode}` : 'Dealer'} ({d.fullName || d.companyName || d.username})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      disabled
+                      value={currentUser.lineCode ? `Line: ${currentUser.lineCode}` : 'Assigned Line'}
+                      className={cn(inputClasses, "opacity-75 cursor-not-allowed bg-slate-100 dark:bg-slate-900")}
+                    />
+                  )}
+                </div>
+              </div>
+
               <div className="sm:col-span-2 md:col-span-3 lg:col-span-4 mt-2">
                 <button
                   type="submit"
@@ -684,6 +772,31 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
             </div>
             
             <div className="flex flex-col sm:flex-row items-center gap-3">
+              {/* Line Filter for Directory Table */}
+              {(isAdmin || currentUser?.role === 'super_admin') ? (
+                <div className="relative">
+                  <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <select
+                    value={selectedLineFilter}
+                    onChange={(e) => setSelectedLineFilter(e.target.value)}
+                    className="pl-9 pr-8 py-2 rounded-xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] text-[11px] font-bold uppercase tracking-widest focus:outline-none appearance-none text-brand-accent dark:text-blue-400"
+                  >
+                    <option value="all">Global Lines</option>
+                    <option value="__without_line__">Without Line (Unassigned)</option>
+                    {dealersList.map((d, i) => (
+                      <option key={`dir-line-${i}`} value={d.lineCode || d.uid}>
+                        {d.lineCode ? `Line: ${d.lineCode}` : d.username} ({d.fullName || d.companyName || d.username})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : currentUser?.lineCode ? (
+                <div className="px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1.5 shadow-sm">
+                  <Shield size={12} className="stroke-[2.5]" />
+                  <span>Line: {currentUser.lineCode}</span>
+                </div>
+              ) : null}
+
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                 <select

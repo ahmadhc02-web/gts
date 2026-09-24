@@ -949,6 +949,7 @@ export default function AdminPanel({
   const [billingSearchQuery, setBillingSearchQuery] = useState('');
   const [billingStatusFilter, setBillingStatusFilter] = useState<string>('all');
   const [billingAreaFilter, setBillingAreaFilter] = useState<string>('all');
+  const [billingLineFilter, setBillingLineFilter] = useState<string>('all');
   const [billingSortField, setBillingSortField] = useState<string>('');
   const [billingSortDirection, setBillingSortDirection] = useState<'asc' | 'desc'>('asc');
   const [isAdvanceMode, setIsAdvanceMode] = useState(false);
@@ -1765,7 +1766,11 @@ export default function AdminPanel({
             paymentReceived: 0,
             paymentStatus: isTdcOrDc ? r.paymentStatus : 'unpaid',
             comments: '',
-            panelDetails: r.panelDetails || matchingClient?.panelDetails || ''
+            panelDetails: r.panelDetails || matchingClient?.panelDetails || '',
+            lineCode: r.lineCode || matchingClient?.lineCode || matchingClient?.line_code || currentUser?.lineCode || '',
+            line_code: r.line_code || matchingClient?.line_code || matchingClient?.lineCode || currentUser?.lineCode || '',
+            lineId: r.lineId || matchingClient?.lineId || matchingClient?.line_id || currentUser?.lineId || null,
+            line_id: r.line_id || matchingClient?.line_id || matchingClient?.lineId || currentUser?.lineId || null
           };
         });
         
@@ -1795,7 +1800,7 @@ export default function AdminPanel({
             name: c.name || 'Anonymous client',
             username: c.username || `client_${Date.now()}_${i}`,
             mobileNumber: c.mobileNumber || c.number || c.phone || '',
-          phone: c.mobileNumber || c.number || c.phone || '',
+            phone: c.mobileNumber || c.number || c.phone || '',
             area: c.area || '',
             rt: 'BILL',
             baseAmount: cleanBase,
@@ -1812,7 +1817,11 @@ export default function AdminPanel({
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            panelDetails: c.panelDetails || ''
+            panelDetails: c.panelDetails || '',
+            lineCode: c.lineCode || c.line_code || currentUser?.lineCode || '',
+            line_code: c.line_code || c.lineCode || currentUser?.lineCode || '',
+            lineId: c.lineId || c.line_id || currentUser?.lineId || null,
+            line_id: c.line_id || c.lineId || currentUser?.lineId || null
           };
         });
         rows = [...rows, ...newRows];
@@ -1853,7 +1862,11 @@ export default function AdminPanel({
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            panelDetails: c.panelDetails || ''
+            panelDetails: c.panelDetails || '',
+            lineCode: c.lineCode || c.line_code || currentUser?.lineCode || '',
+            line_code: c.line_code || c.lineCode || currentUser?.lineCode || '',
+            lineId: c.lineId || c.line_id || currentUser?.lineId || null,
+            line_id: c.line_id || c.lineId || currentUser?.lineId || null
           };
         });
       }
@@ -3312,19 +3325,48 @@ export default function AdminPanel({
       .filter((r: any) => !isExcludedFromRecovery(r));
     let allowedRows = rawRows;
     
-    if (currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main') || currentUser?.lineCode) {
+    const isSuperAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+    const isDealerUser = currentUser?.role === 'dealer' || (currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode);
+
+    if (isDealerUser && !isSuperAdmin) {
       const allowedClientIds = new Set(masterClients.map(c => c.id).filter(Boolean));
       const allowedUsernames = new Set(masterClients.map(c => c.username?.toLowerCase().trim()).filter(Boolean));
       const dealerLineCode = currentUser?.lineCode?.trim().toLowerCase();
+      const dealerLineId = currentUser?.lineId ? String(currentUser.lineId).trim() : '';
+
       allowedRows = rawRows.filter((r: any) => {
+        if (dealerLineId && (r.lineId === dealerLineId || r.line_id === dealerLineId)) return true;
+        if (dealerLineCode) {
+          const rowLc = (r.lineCode || r.line_code || '').toLowerCase().trim();
+          if (rowLc === dealerLineCode) return true;
+        }
         if (r.clientId && allowedClientIds.has(r.clientId)) return true;
         if (r.username && allowedUsernames.has(r.username?.toLowerCase().trim())) return true;
-        if (dealerLineCode) {
-          if (r.lineCode && r.lineCode.toLowerCase().trim() === dealerLineCode) return true;
-          if (r.line_code && r.line_code.toLowerCase().trim() === dealerLineCode) return true;
-        }
         return false;
       });
+    } else if (!isSuperAdmin) {
+      // Non-superadmin with NO line: strictly isolate to "Without Line" records!
+      allowedRows = rawRows.filter((r: any) => {
+        const rowLc = (r.lineCode || r.line_code || '').trim();
+        const rowLid = (r.lineId || r.line_id || '').trim();
+        return !rowLc && !rowLid;
+      });
+    } else if (isSuperAdmin && billingLineFilter && billingLineFilter !== 'all') {
+      // Super Admin explicit line filter
+      if (billingLineFilter === '__without_line__') {
+        allowedRows = rawRows.filter((r: any) => {
+          const rowLc = (r.lineCode || r.line_code || '').trim();
+          const rowLid = (r.lineId || r.line_id || '').trim();
+          return !rowLc && !rowLid;
+        });
+      } else {
+        const targetLc = billingLineFilter.toLowerCase().trim();
+        allowedRows = rawRows.filter((r: any) => {
+          const rowLc = (r.lineCode || r.line_code || '').toLowerCase().trim();
+          const rowLid = (r.lineId || r.line_id || '').trim();
+          return rowLc === targetLc || rowLid === billingLineFilter;
+        });
+      }
     }
     
     // Visually deduplicate
@@ -3347,7 +3389,7 @@ export default function AdminPanel({
     }
     
     return deduplicatedRows;
-  }, [activeMonthDoc, masterClients, currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
+  }, [activeMonthDoc, masterClients, currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, currentUser?.lineId, billingLineFilter]);
 
   const filteredRows = useMemo(() => {
     const query = billingSearchQuery.toLowerCase().trim();
@@ -3712,6 +3754,8 @@ export default function AdminPanel({
     billingScrollContainerRef,
     billingSearchQuery,
     billingStatusFilter,
+    billingLineFilter,
+    setBillingLineFilter,
     branding,
     complaints,
     currentMainPage,
