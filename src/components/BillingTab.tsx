@@ -3,7 +3,7 @@ import { getAvatarUrl } from '../utils/avatar';
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
+import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle, SlidersHorizontal } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import DealerDataViewer from './DealerDataViewer';
@@ -19,6 +19,12 @@ import MicVisualizer from './MicVisualizer';
 import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import RouteLoadingFallback from './RouteLoadingFallback';
+import BillingModSettingView from './BillingModSettingView';
+import { 
+  getBillingColumnVisibility, 
+  subscribeToBillingColumnVisibility, 
+  BillingColumnVisibilityMap 
+} from '../utils/billingColumnsConfig';
 
 
 interface BillingTabProps {
@@ -40,6 +46,7 @@ export default function BillingTab(props: BillingTabProps) {
     billingColWidths,
     billingKeyInput,
     billingMonths,
+    billingMonthsList,
     billingPage,
     billingRowToDelete,
     billingScrollContainerRef,
@@ -281,6 +288,30 @@ export default function BillingTab(props: BillingTabProps) {
   const canDeleteBillingRows = props.canDeleteBillingRows !== undefined 
     ? Boolean(props.canDeleteBillingRows) 
     : (currentUser?.role === 'super_admin' || isSubDealerUser);
+
+  const [columnVisibility, setColumnVisibility] = useState<BillingColumnVisibilityMap>(getBillingColumnVisibility);
+  const [isColumnSettingModalOpen, setIsColumnSettingModalOpen] = useState(false);
+
+  useEffect(() => {
+    setColumnVisibility(getBillingColumnVisibility());
+    const unsubscribe = subscribeToBillingColumnVisibility((newVis) => {
+      setColumnVisibility(newVis);
+    });
+    return unsubscribe;
+  }, []);
+
+  const leadingVisibleColSpan = useMemo(() => {
+    return ['sr', 'name', 'username', 'mobile', 'panelDetails', 'area', 'rt']
+      .filter(id => columnVisibility[id] !== false).length;
+  }, [columnVisibility]);
+
+  const trailingVisibleColSpan = useMemo(() => {
+    return [
+      'paymentStatus',
+      ...(isAdvanceMode ? ['comments', 'occupation', 'pkg', 'date', 'device', 'abl'] : []),
+      'act'
+    ].filter(id => columnVisibility[id] !== false).length;
+  }, [columnVisibility, isAdvanceMode]);
 
 
   return (
@@ -615,6 +646,18 @@ export default function BillingTab(props: BillingTabProps) {
                         <Zap size={12} className={cn(isAdvanceMode ? "text-amber-300 fill-amber-300 animate-bounce" : "text-blue-500 animate-pulse")} />
                         <span>{isAdvanceMode ? "★ Advance Details ON" : "⚡ Advance Details"}</span>
                       </motion.button>
+
+                      <motion.button
+                        layout
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setIsColumnSettingModalOpen(true)}
+                        className="ml-2 text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded-xl cursor-pointer transition-all duration-300 inline-flex items-center gap-1.5 shrink-0 border bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-blue-500 shadow-md shadow-blue-500/20"
+                        title="Configure recovery table columns (Show/Hide with live data updates)"
+                      >
+                        <SlidersHorizontal size={13} className="text-white animate-pulse" />
+                        <span>⚙ Billing Mod Setting / Config</span>
+                      </motion.button>
                     </h4>
 
                     {/* Filters block */}
@@ -708,294 +751,333 @@ export default function BillingTab(props: BillingTabProps) {
                         <thead>
                           <tr className="bg-[var(--neu-surface)] border-b border-slate-200 dark:border-white/10 font-extrabold uppercase text-[10px] tracking-wider text-slate-950 dark:text-slate-100 font-sans select-none whitespace-nowrap">
 
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.sr}px`, minWidth: `${billingColWidths.sr}px`, maxWidth: `${billingColWidths.sr}px` }}
-                              onClick={() => handleBillingSort('sr')}
-                            >
-                              <div className="flex items-center justify-center">
-                                Sr#{getBillingSortIcon('sr')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'sr')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.name}px`, minWidth: `${billingColWidths.name}px`, maxWidth: `${billingColWidths.name}px` }}
-                              onClick={() => handleBillingSort('name')}
-                            >
-                              <div className="flex items-center justify-start">
-                                FULL NAME{getBillingSortIcon('name')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'name')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.username}px`, minWidth: `${billingColWidths.username}px`, maxWidth: `${billingColWidths.username}px` }}
-                              onClick={() => handleBillingSort('username')}
-                            >
-                              <div className="flex items-center justify-start">
-                                USER ID (PPPoE){getBillingSortIcon('username')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'username')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.mobile}px`, minWidth: `${billingColWidths.mobile}px`, maxWidth: `${billingColWidths.mobile}px` }}
-                              onClick={() => handleBillingSort('mobileNumber')}
-                            >
-                              <div className="flex items-center justify-start">
-                                MOBILE #{getBillingSortIcon('mobileNumber')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'mobile')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.panelDetails}px`, minWidth: `${billingColWidths.panelDetails}px`, maxWidth: `${billingColWidths.panelDetails}px` }}
-                              onClick={() => handleBillingSort('panelDetails')}
-                            >
-                              <div className="flex items-center justify-start">
-                                PANEL DETAILS{getBillingSortIcon('panelDetails')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'panelDetails')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.area}px`, minWidth: `${billingColWidths.area}px`, maxWidth: `${billingColWidths.area}px` }}
-                              onClick={() => handleBillingSort('area')}
-                            >
-                              <div className="flex items-center justify-center">
-                                AREA{getBillingSortIcon('area')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'area')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.rt}px`, minWidth: `${billingColWidths.rt}px`, maxWidth: `${billingColWidths.rt}px` }}
-                              onClick={() => handleBillingSort('rt')}
-                            >
-                              <div className="flex items-center justify-center">
-                                RT{getBillingSortIcon('rt')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'rt')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.baseAmount}px`, minWidth: `${billingColWidths.baseAmount}px`, maxWidth: `${billingColWidths.baseAmount}px` }}
-                              onClick={() => handleBillingSort('baseAmount')}
-                            >
-                              <div className="flex items-center justify-end">
-                                B. AMOUNT{getBillingSortIcon('baseAmount')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'baseAmount')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.cr}px`, minWidth: `${billingColWidths.cr}px`, maxWidth: `${billingColWidths.cr}px` }}
-                              onClick={() => handleBillingSort('cr')}
-                            >
-                              <div className="flex items-center justify-end">
-                                CR. (ARREARS){getBillingSortIcon('cr')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'cr')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-slate-100/50 dark:bg-slate-900/50" 
-                              style={{ width: `${billingColWidths.totalAmount}px`, minWidth: `${billingColWidths.totalAmount}px`, maxWidth: `${billingColWidths.totalAmount}px` }}
-                              onClick={() => handleBillingSort('totalAmount')}
-                            >
-                              <div className="flex items-center justify-end">
-                                T. AMOUNT{getBillingSortIcon('totalAmount')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'totalAmount')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.billingDay}px`, minWidth: `${billingColWidths.billingDay}px`, maxWidth: `${billingColWidths.billingDay}px` }}
-                              onClick={() => handleBillingSort('billingDay')}
-                            >
-                              <div className="flex items-center justify-center">
-                                BD{getBillingSortIcon('billingDay')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'billingDay')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600" 
-                              style={{ width: `${billingColWidths.paymentReceived}px`, minWidth: `${billingColWidths.paymentReceived}px`, maxWidth: `${billingColWidths.paymentReceived}px` }}
-                              onClick={() => handleBillingSort('paymentReceived')}
-                            >
-                              <div className="flex items-center justify-end">
-                                RECOVERY{getBillingSortIcon('paymentReceived')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'paymentReceived')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.paymentStatus}px`, minWidth: `${billingColWidths.paymentStatus}px`, maxWidth: `${billingColWidths.paymentStatus}px` }}
-                              onClick={() => handleBillingSort('paymentStatus')}
-                            >
-                              <div className="flex items-center justify-center">
-                                STATUS{getBillingSortIcon('paymentStatus')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'paymentStatus')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
+                            {columnVisibility.sr !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.sr}px`, minWidth: `${billingColWidths.sr}px`, maxWidth: `${billingColWidths.sr}px` }}
+                                onClick={() => handleBillingSort('sr')}
+                              >
+                                <div className="flex items-center justify-center">
+                                  Sr#{getBillingSortIcon('sr')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'sr')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.name !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.name}px`, minWidth: `${billingColWidths.name}px`, maxWidth: `${billingColWidths.name}px` }}
+                                onClick={() => handleBillingSort('name')}
+                              >
+                                <div className="flex items-center justify-start">
+                                  FULL NAME{getBillingSortIcon('name')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'name')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.username !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.username}px`, minWidth: `${billingColWidths.username}px`, maxWidth: `${billingColWidths.username}px` }}
+                                onClick={() => handleBillingSort('username')}
+                              >
+                                <div className="flex items-center justify-start">
+                                  USER ID (PPPoE){getBillingSortIcon('username')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'username')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.mobile !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.mobile}px`, minWidth: `${billingColWidths.mobile}px`, maxWidth: `${billingColWidths.mobile}px` }}
+                                onClick={() => handleBillingSort('mobileNumber')}
+                              >
+                                <div className="flex items-center justify-start">
+                                  MOBILE #{getBillingSortIcon('mobileNumber')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'mobile')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.panelDetails !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.panelDetails}px`, minWidth: `${billingColWidths.panelDetails}px`, maxWidth: `${billingColWidths.panelDetails}px` }}
+                                onClick={() => handleBillingSort('panelDetails')}
+                              >
+                                <div className="flex items-center justify-start">
+                                  PANEL DETAILS{getBillingSortIcon('panelDetails')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'panelDetails')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.area !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.area}px`, minWidth: `${billingColWidths.area}px`, maxWidth: `${billingColWidths.area}px` }}
+                                onClick={() => handleBillingSort('area')}
+                              >
+                                <div className="flex items-center justify-center">
+                                  AREA{getBillingSortIcon('area')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'area')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.rt !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.rt}px`, minWidth: `${billingColWidths.rt}px`, maxWidth: `${billingColWidths.rt}px` }}
+                                onClick={() => handleBillingSort('rt')}
+                              >
+                                <div className="flex items-center justify-center">
+                                  RT{getBillingSortIcon('rt')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'rt')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.baseAmount !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.baseAmount}px`, minWidth: `${billingColWidths.baseAmount}px`, maxWidth: `${billingColWidths.baseAmount}px` }}
+                                onClick={() => handleBillingSort('baseAmount')}
+                              >
+                                <div className="flex items-center justify-end">
+                                  B. AMOUNT{getBillingSortIcon('baseAmount')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'baseAmount')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.cr !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.cr}px`, minWidth: `${billingColWidths.cr}px`, maxWidth: `${billingColWidths.cr}px` }}
+                                onClick={() => handleBillingSort('cr')}
+                              >
+                                <div className="flex items-center justify-end">
+                                  CR. (ARREARS){getBillingSortIcon('cr')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'cr')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.totalAmount !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-slate-100/50 dark:bg-slate-900/50" 
+                                style={{ width: `${billingColWidths.totalAmount}px`, minWidth: `${billingColWidths.totalAmount}px`, maxWidth: `${billingColWidths.totalAmount}px` }}
+                                onClick={() => handleBillingSort('totalAmount')}
+                              >
+                                <div className="flex items-center justify-end">
+                                  T. AMOUNT{getBillingSortIcon('totalAmount')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'totalAmount')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.billingDay !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.billingDay}px`, minWidth: `${billingColWidths.billingDay}px`, maxWidth: `${billingColWidths.billingDay}px` }}
+                                onClick={() => handleBillingSort('billingDay')}
+                              >
+                                <div className="flex items-center justify-center">
+                                  BD{getBillingSortIcon('billingDay')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'billingDay')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.paymentReceived !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600" 
+                                style={{ width: `${billingColWidths.paymentReceived}px`, minWidth: `${billingColWidths.paymentReceived}px`, maxWidth: `${billingColWidths.paymentReceived}px` }}
+                                onClick={() => handleBillingSort('paymentReceived')}
+                              >
+                                <div className="flex items-center justify-end">
+                                  RECOVERY{getBillingSortIcon('paymentReceived')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'paymentReceived')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
+                            {columnVisibility.paymentStatus !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                style={{ width: `${billingColWidths.paymentStatus}px`, minWidth: `${billingColWidths.paymentStatus}px`, maxWidth: `${billingColWidths.paymentStatus}px` }}
+                                onClick={() => handleBillingSort('paymentStatus')}
+                              >
+                                <div className="flex items-center justify-center">
+                                  STATUS{getBillingSortIcon('paymentStatus')}
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'paymentStatus')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
                             {isAdvanceMode && (
                               <>
-
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
-                              style={{ width: `${billingColWidths.comments}px`, minWidth: `${billingColWidths.comments}px`, maxWidth: `${billingColWidths.comments}px` }}
-                              onClick={() => handleBillingSort('comments')}
-                            >
-                              <div className="flex items-center justify-start">
-                                COMMENTS{getBillingSortIcon('comments')}
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'comments')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left  " 
-                              style={{ width: `${billingColWidths.occupation}px`, minWidth: `${billingColWidths.occupation}px`, maxWidth: `${billingColWidths.occupation}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-start">
-                                OCCUPATION
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'occupation')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left  " 
-                              style={{ width: `${billingColWidths.pkg}px`, minWidth: `${billingColWidths.pkg}px`, maxWidth: `${billingColWidths.pkg}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-start">
-                                PKG DETAILS
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'pkg')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center  " 
-                              style={{ width: `${billingColWidths.date}px`, minWidth: `${billingColWidths.date}px`, maxWidth: `${billingColWidths.date}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-center">
-                                DATE
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'date')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right  " 
-                              style={{ width: `${billingColWidths.device}px`, minWidth: `${billingColWidths.device}px`, maxWidth: `${billingColWidths.device}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-end">
-                                DEVICE
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'device')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right  " 
-                              style={{ width: `${billingColWidths.abl}px`, minWidth: `${billingColWidths.abl}px`, maxWidth: `${billingColWidths.abl}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-end">
-                                ABL
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'abl')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
+                                {columnVisibility.comments !== false && (
+                                  <th 
+                                    className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                    style={{ width: `${billingColWidths.comments}px`, minWidth: `${billingColWidths.comments}px`, maxWidth: `${billingColWidths.comments}px` }}
+                                    onClick={() => handleBillingSort('comments')}
+                                  >
+                                    <div className="flex items-center justify-start">
+                                      COMMENTS{getBillingSortIcon('comments')}
+                                    </div>
+                                    <div
+                                      onMouseDown={(e) => handleBillingColResizeStart(e, 'comments')}
+                                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </th>
+                                )}
+                                {columnVisibility.occupation !== false && (
+                                  <th 
+                                    className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left  " 
+                                    style={{ width: `${billingColWidths.occupation}px`, minWidth: `${billingColWidths.occupation}px`, maxWidth: `${billingColWidths.occupation}px` }}
+                                    
+                                  >
+                                    <div className="flex items-center justify-start">
+                                      OCCUPATION
+                                    </div>
+                                    <div
+                                      onMouseDown={(e) => handleBillingColResizeStart(e, 'occupation')}
+                                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </th>
+                                )}
+                                {columnVisibility.pkg !== false && (
+                                  <th 
+                                    className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left  " 
+                                    style={{ width: `${billingColWidths.pkg}px`, minWidth: `${billingColWidths.pkg}px`, maxWidth: `${billingColWidths.pkg}px` }}
+                                    
+                                  >
+                                    <div className="flex items-center justify-start">
+                                      PKG DETAILS
+                                    </div>
+                                    <div
+                                      onMouseDown={(e) => handleBillingColResizeStart(e, 'pkg')}
+                                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </th>
+                                )}
+                                {columnVisibility.date !== false && (
+                                  <th 
+                                    className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center  " 
+                                    style={{ width: `${billingColWidths.date}px`, minWidth: `${billingColWidths.date}px`, maxWidth: `${billingColWidths.date}px` }}
+                                    
+                                  >
+                                    <div className="flex items-center justify-center">
+                                      DATE
+                                    </div>
+                                    <div
+                                      onMouseDown={(e) => handleBillingColResizeStart(e, 'date')}
+                                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </th>
+                                )}
+                                {columnVisibility.device !== false && (
+                                  <th 
+                                    className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right  " 
+                                    style={{ width: `${billingColWidths.device}px`, minWidth: `${billingColWidths.device}px`, maxWidth: `${billingColWidths.device}px` }}
+                                    
+                                  >
+                                    <div className="flex items-center justify-end">
+                                      DEVICE
+                                    </div>
+                                    <div
+                                      onMouseDown={(e) => handleBillingColResizeStart(e, 'device')}
+                                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </th>
+                                )}
+                                {columnVisibility.abl !== false && (
+                                  <th 
+                                    className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right  " 
+                                    style={{ width: `${billingColWidths.abl}px`, minWidth: `${billingColWidths.abl}px`, maxWidth: `${billingColWidths.abl}px` }}
+                                    
+                                  >
+                                    <div className="flex items-center justify-end">
+                                      ABL
+                                    </div>
+                                    <div
+                                      onMouseDown={(e) => handleBillingColResizeStart(e, 'abl')}
+                                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </th>
+                                )}
                               </>
                             )}
 
-                            <th 
-                              className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center  " 
-                              style={{ width: `${billingColWidths.act}px`, minWidth: `${billingColWidths.act}px`, maxWidth: `${billingColWidths.act}px` }}
-                              
-                            >
-                              <div className="flex items-center justify-center">
-                                ACT
-                              </div>
-                              <div
-                                onMouseDown={(e) => handleBillingColResizeStart(e, 'act')}
-                                className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            </th>
+                            {columnVisibility.act !== false && (
+                              <th 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center  " 
+                                style={{ width: `${billingColWidths.act}px`, minWidth: `${billingColWidths.act}px`, maxWidth: `${billingColWidths.act}px` }}
+                                
+                              >
+                                <div className="flex items-center justify-center">
+                                  ACT
+                                </div>
+                                <div
+                                  onMouseDown={(e) => handleBillingColResizeStart(e, 'act')}
+                                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-600 transition-colors z-10"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </th>
+                            )}
                           </tr>
-</thead>
+                        </thead>
                         <tbody 
                           style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}
                           className={cn(
@@ -1031,309 +1113,348 @@ export default function BillingTab(props: BillingTabProps) {
                                 }}
                               >
                                 {/* Sr# */}
-                                <td className="py-1 px-1 border-r border-[var(--neu-border)] text-center select-none font-sans text-[11px] font-bold">
-                                  <div className="flex items-center justify-center gap-1">
-                                    <span>{localIdx + 1}</span>
-                                  </div>
-                                </td>
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black">
-                                  {renderCellProgress(globalRowIdx, 'name')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_name`}
-                                    type="text"
-                                    value={rowRef.name || ''}
-                                    disabled={!effectiveBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'name', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
-                                    className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                    placeholder="Enter full name"
-                                  />
-                                </td>
+                                {columnVisibility.sr !== false && (
+                                  <td className="py-1 px-1 border-r border-[var(--neu-border)] text-center select-none font-sans text-[11px] font-bold">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <span>{localIdx + 1}</span>
+                                    </div>
+                                  </td>
+                                )}
+                                {columnVisibility.name !== false && (
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black">
+                                    {renderCellProgress(globalRowIdx, 'name')}
+                                    <input
+                                      id={`rec_cell_${globalRowIdx}_name`}
+                                      type="text"
+                                      value={rowRef.name || ''}
+                                      disabled={!effectiveBillingUnlocked}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value)}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'name', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'name', e.target.value, true)}
+                                      className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                      placeholder="Enter full name"
+                                    />
+                                  </td>
+                                )}
 
                                 {/* User ID / Username */}
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black text-black dark:text-white">
-                                  {renderCellProgress(globalRowIdx, 'username')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_username`}
-                                    type="text"
-                                    value={rowRef.username || ''}
-                                    disabled={!effectiveBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
-                                    className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                  />
-                                </td>
+                                {columnVisibility.username !== false && (
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black text-black dark:text-white">
+                                    {renderCellProgress(globalRowIdx, 'username')}
+                                    <input
+                                      id={`rec_cell_${globalRowIdx}_username`}
+                                      type="text"
+                                      value={rowRef.username || ''}
+                                      disabled={!effectiveBillingUnlocked}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
+                                      className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    />
+                                  </td>
+                                )}
 
                                 {/* Mobile */}
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white ">
-                                  {renderCellProgress(globalRowIdx, 'mobileNumber')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_mobileNumber`}
-                                    type="text"
-                                    value={rowRef.mobileNumber || ''}
-                                    disabled={!effectiveBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'mobileNumber', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                    className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap overflow-visible hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                    placeholder="03XXXXXXXXX"
-                                  />
-                                </td>
+                                {columnVisibility.mobile !== false && (
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white ">
+                                    {renderCellProgress(globalRowIdx, 'mobileNumber')}
+                                    <input
+                                      id={`rec_cell_${globalRowIdx}_mobileNumber`}
+                                      type="text"
+                                      value={rowRef.mobileNumber || ''}
+                                      disabled={!effectiveBillingUnlocked}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'mobileNumber', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
+                                      className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap overflow-visible hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                      placeholder="03XXXXXXXXX"
+                                    />
+                                  </td>
+                                )}
 
                                 {/* Panel Details */}
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white ">
-                                  {renderCellProgress(globalRowIdx, 'panelDetails')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_panelDetails`}
-                                    type="text"
-                                    value={rowRef.panelDetails || ''}
-                                    disabled={!effectiveBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase())}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'panelDetails', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase(), true)}
-                                    className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                    placeholder="Panel Details"
-                                  />
-                                </td>
+                                {columnVisibility.panelDetails !== false && (
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white ">
+                                    {renderCellProgress(globalRowIdx, 'panelDetails')}
+                                    <input
+                                      id={`rec_cell_${globalRowIdx}_panelDetails`}
+                                      type="text"
+                                      value={rowRef.panelDetails || ''}
+                                      disabled={!effectiveBillingUnlocked}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase())}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'panelDetails', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'panelDetails', e.target.value.toUpperCase(), true)}
+                                      className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                      placeholder="Panel Details"
+                                    />
+                                  </td>
+                                )}
 
                                 {/* Area */}
-                                <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans">
-                                  {renderCellProgress(globalRowIdx, 'area')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_area`}
-                                    type="text"
-                                    value={rowRef.area || ''}
-                                    disabled={!effectiveBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'area', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value, true)}
-                                    className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                  />
-                                </td>
+                                {columnVisibility.area !== false && (
+                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans">
+                                    {renderCellProgress(globalRowIdx, 'area')}
+                                    <input
+                                      id={`rec_cell_${globalRowIdx}_area`}
+                                      type="text"
+                                      value={rowRef.area || ''}
+                                      disabled={!effectiveBillingUnlocked}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value)}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'area', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'area', e.target.value, true)}
+                                      className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black uppercase hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    />
+                                  </td>
+                                )}
 
                                 {/* RT */}
-                                <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans">
-                                  {renderCellProgress(globalRowIdx, 'rt')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_rt`}
-                                    type="text"
-                                    value={rowRef.rt || ''}
-                                    disabled={!effectiveBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'rt', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value, true)}
-                                    className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-blue-900 dark:disabled:text-blue-300 disabled:opacity-100"
-                                  />
-                                </td>
+                                {columnVisibility.rt !== false && (
+                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans">
+                                    {renderCellProgress(globalRowIdx, 'rt')}
+                                    <input
+                                      id={`rec_cell_${globalRowIdx}_rt`}
+                                      type="text"
+                                      value={rowRef.rt || ''}
+                                      disabled={!effectiveBillingUnlocked}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value)}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'rt', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'rt', e.target.value, true)}
+                                      className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 font-black uppercase tracking-wider text-blue-900 dark:text-blue-300 hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-blue-900 dark:disabled:text-blue-300 disabled:opacity-100"
+                                    />
+                                  </td>
+                                )}
 
                                 {/* Base Amount */}
-                                <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
-                                  {renderCellProgress(globalRowIdx, 'baseAmount')}
-                                  <div className="flex items-center justify-end font-black text-black">
-                                    <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
-                                    <input
-                                      id={`rec_cell_${globalRowIdx}_baseAmount`}
-                                      type="number"
-                                      value={isTdc || isDc ? 0 : (rowRef.baseAmount ?? '')}
-                                      disabled={!effectiveBillingUnlocked}
-                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'baseAmount', activeRows.length)}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
-                                      className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    />
-                                  </div>
-                                </td>
+                                {columnVisibility.baseAmount !== false && (
+                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
+                                    {renderCellProgress(globalRowIdx, 'baseAmount')}
+                                    <div className="flex items-center justify-end font-black text-black">
+                                      <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
+                                      <input
+                                        id={`rec_cell_${globalRowIdx}_baseAmount`}
+                                        type="number"
+                                        value={isTdc || isDc ? 0 : (rowRef.baseAmount ?? '')}
+                                        disabled={!effectiveBillingUnlocked}
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'baseAmount', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
+                                        className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                    </div>
+                                  </td>
+                                )}
 
                                 {/* Cr. Arrears */}
-                                <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
-                                  {renderCellProgress(globalRowIdx, 'cr')}
-                                  <div className="flex items-center justify-end">
-                                    <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
-                                    <input
-                                      id={`rec_cell_${globalRowIdx}_cr`}
-                                      type="number"
-                                      value={isDc ? 0 : (rowRef.cr ?? '')}
-                                      disabled={!effectiveBillingUnlocked}
-                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'cr', activeRows.length)}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
-                                      className={cn(
-                                        "w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                                        outstandingCr > 0 ? "text-rose-750 dark:text-rose-450 font-black disabled:text-rose-750 dark:disabled:text-rose-450 disabled:opacity-100" : "text-black dark:text-white font-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                      )}
-                                    />
-                                  </div>
-                                </td>
+                                {columnVisibility.cr !== false && (
+                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
+                                    {renderCellProgress(globalRowIdx, 'cr')}
+                                    <div className="flex items-center justify-end">
+                                      <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
+                                      <input
+                                        id={`rec_cell_${globalRowIdx}_cr`}
+                                        type="number"
+                                        value={isDc ? 0 : (rowRef.cr ?? '')}
+                                        disabled={!effectiveBillingUnlocked}
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'cr', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'cr', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
+                                        className={cn(
+                                          "w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                          outstandingCr > 0 ? "text-rose-750 dark:text-rose-450 font-black disabled:text-rose-750 dark:disabled:text-rose-450 disabled:opacity-100" : "text-black dark:text-white font-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        )}
+                                      />
+                                    </div>
+                                  </td>
+                                )}
 
                                 {/* Total Amount */}
-                                <td className="py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-[13.5px] font-sans">
-                                  PKR {isDc ? 0 : (isTdc ? (rowRef.cr || 0) : (rowRef.totalAmount || 0)).toLocaleString()}
-                                </td>
+                                {columnVisibility.totalAmount !== false && (
+                                  <td className="py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-[13.5px] font-sans">
+                                    PKR {isDc ? 0 : (isTdc ? (rowRef.cr || 0) : (rowRef.totalAmount || 0)).toLocaleString()}
+                                  </td>
+                                )}
 
                                 {/* BD (Billing Day) */}
-                                <td className="relative py-1 px-0 border-r border-[var(--neu-border)]/80 text-center select-all font-sans  ">
-                                  {renderCellProgress(globalRowIdx, 'billingDay')}
-                                  <input
-                                    id={`rec_cell_${globalRowIdx}_billingDay`}
-                                    type="text"
-                                    maxLength={2}
-                                    value={rowRef.billingDay || ''}
-                                    disabled={false}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2))}
-                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'billingDay', activeRows.length)}
-                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2), true)}
-                                    className="w-full min-w-0 flex-1 text-center bg-transparent px-0 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[12px] disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                  />
-                                </td>
+                                {columnVisibility.billingDay !== false && (
+                                  <td className="relative py-1 px-0 border-r border-[var(--neu-border)]/80 text-center select-all font-sans  ">
+                                    {renderCellProgress(globalRowIdx, 'billingDay')}
+                                    <input
+                                      id={`rec_cell_${globalRowIdx}_billingDay`}
+                                      type="text"
+                                      maxLength={2}
+                                      value={rowRef.billingDay || ''}
+                                      disabled={false}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2))}
+                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'billingDay', activeRows.length)}
+                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'billingDay', e.target.value.slice(0, 2), true)}
+                                      className="w-full min-w-0 flex-1 text-center bg-transparent px-0 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[12px] disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                    />
+                                  </td>
+                                )}
 
                                 {/* Monthly Paid Recovery */}
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)] bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
-                                  {renderCellProgress(globalRowIdx, 'paymentReceived')}
-                                  <div className="flex items-center justify-end">
-                                    <span className="text-emerald-900 dark:text-emerald-400 mr-0.5 font-black text-[11px]">PKR</span>
-                                    <input
-                                      id={`rec_cell_${globalRowIdx}_paymentReceived`}
-                                      type="number"
-                                      value={isDc ? 0 : (rowRef.paymentReceived ?? '')}
-                                      disabled={!effectiveBillingUnlocked}
-                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'paymentReceived', activeRows.length)}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
-                                      className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans font-black text-emerald-950 dark:text-emerald-100 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-emerald-950 dark:disabled:text-emerald-100 disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    />
-                                  </div>
-                                </td>
+                                {columnVisibility.paymentReceived !== false && (
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)] bg-emerald-500/5 dark:bg-emerald-500/15 text-right text-emerald-950 dark:text-emerald-100 font-sans">
+                                    {renderCellProgress(globalRowIdx, 'paymentReceived')}
+                                    <div className="flex items-center justify-end">
+                                      <span className="text-emerald-900 dark:text-emerald-400 mr-0.5 font-black text-[11px]">PKR</span>
+                                      <input
+                                        id={`rec_cell_${globalRowIdx}_paymentReceived`}
+                                        type="number"
+                                        value={isDc ? 0 : (rowRef.paymentReceived ?? '')}
+                                        disabled={!effectiveBillingUnlocked}
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'paymentReceived', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'paymentReceived', parseFloat(e.target.value) || 0, true)}
+                                        className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans font-black text-emerald-950 dark:text-emerald-100 hover:bg-white/20 dark:hover:bg-black/15 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-emerald-950 dark:disabled:text-emerald-100 disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                    </div>
+                                  </td>
+                                )}
 
                                 {/* Status */}
-                                <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-center font-sans">
-                                  {renderCellProgress(globalRowIdx, 'paymentStatus')}
-                                  <select
-                                    id={`rec_cell_${globalRowIdx}_paymentStatus`}
-                                    value={rowRef.paymentStatus}
-                                    disabled={!effectiveBillingUnlocked}
-                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
-                                    className={cn(
-                                      "px-2 py-0.5 text-[12px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full min-w-0 bg-[var(--neu-surface)] disabled:opacity-100  font-sans",
-                                      isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
-                                      isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30 font-black",
-                                      isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600 font-black",
-                                      isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black",
-                                      isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black",
-                                      isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black"
-                                    )}
-                                  >
-                                    <option value="unpaid">UNPAID</option>
-                                    <option value="paid">PAID</option>
-                                    <option value="partial">PARTIAL</option>
-                                    <option value="tdc">TDC</option>
-                                    <option value="dc">DC</option>
-                                    <option value="extra">EXTRA</option>
-                                  </select>
-                                </td>
+                                {columnVisibility.paymentStatus !== false && (
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-center font-sans">
+                                    {renderCellProgress(globalRowIdx, 'paymentStatus')}
+                                    <select
+                                      id={`rec_cell_${globalRowIdx}_paymentStatus`}
+                                      value={rowRef.paymentStatus}
+                                      disabled={!effectiveBillingUnlocked}
+                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'paymentStatus', e.target.value, true)}
+                                      className={cn(
+                                        "px-2 py-0.5 text-[12px] font-black uppercase text-center rounded-lg border focus:ring-1 focus:ring-blue-500/30 w-full min-w-0 bg-[var(--neu-surface)] disabled:opacity-100  font-sans",
+                                        isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
+                                        isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30 font-black",
+                                        isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600 font-black",
+                                        isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black",
+                                        isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black",
+                                        isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black"
+                                      )}
+                                    >
+                                      <option value="unpaid">UNPAID</option>
+                                      <option value="paid">PAID</option>
+                                      <option value="partial">PARTIAL</option>
+                                      <option value="tdc">TDC</option>
+                                      <option value="dc">DC</option>
+                                      <option value="extra">EXTRA</option>
+                                    </select>
+                                  </td>
+                                )}
                                 {/* Comments & other advance columns */}
                                 {isAdvanceMode && (
                                   <>
                                     {/* Comments */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans">
-                                      {renderCellProgress(globalRowIdx, 'comments')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_comments`}
-                                        type="text"
-                                        value={rowRef.comments || ''}
-                                        disabled={false}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'comments', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value, true)}
-                                        className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                      />
-                                    </td>
+                                    {columnVisibility.comments !== false && (
+                                      <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans">
+                                        {renderCellProgress(globalRowIdx, 'comments')}
+                                        <input
+                                          id={`rec_cell_${globalRowIdx}_comments`}
+                                          type="text"
+                                          value={rowRef.comments || ''}
+                                          disabled={false}
+                                          onClick={(e) => e.stopPropagation()}
+                                          onChange={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value)}
+                                          onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'comments', activeRows.length)}
+                                          onBlur={(e) => handleSaveRowField(globalRowIdx, 'comments', e.target.value, true)}
+                                          className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        />
+                                      </td>
+                                    )}
                                     {/* Occupation */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans">
-                                      {renderCellProgress(globalRowIdx, 'occ')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_occ`}
-                                        type="text"
-                                        value={rowRef.occ || rowRef.occupation || ''}
-                                        disabled={!effectiveBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'occ', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value, true)}
-                                        className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                      />
-                                    </td>
+                                    {columnVisibility.occupation !== false && (
+                                      <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans">
+                                        {renderCellProgress(globalRowIdx, 'occ')}
+                                        <input
+                                          id={`rec_cell_${globalRowIdx}_occ`}
+                                          type="text"
+                                          value={rowRef.occ || rowRef.occupation || ''}
+                                          disabled={!effectiveBillingUnlocked}
+                                          onChange={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value)}
+                                          onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'occ', activeRows.length)}
+                                          onBlur={(e) => handleSaveRowField(globalRowIdx, 'occ', e.target.value, true)}
+                                          className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        />
+                                      </td>
+                                    )}
                                     {/* PKG Details */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans">
-                                      {renderCellProgress(globalRowIdx, 'pkgDetails')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_pkgDetails`}
-                                        type="text"
-                                        value={rowRef.pkgDetails || ''}
-                                        disabled={!effectiveBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'pkgDetails', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value, true)}
-                                        className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                      />
-                                    </td>
+                                    {columnVisibility.pkg !== false && (
+                                      <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans">
+                                        {renderCellProgress(globalRowIdx, 'pkgDetails')}
+                                        <input
+                                          id={`rec_cell_${globalRowIdx}_pkgDetails`}
+                                          type="text"
+                                          value={rowRef.pkgDetails || ''}
+                                          disabled={!effectiveBillingUnlocked}
+                                          onChange={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value)}
+                                          onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'pkgDetails', activeRows.length)}
+                                          onBlur={(e) => handleSaveRowField(globalRowIdx, 'pkgDetails', e.target.value, true)}
+                                          className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        />
+                                      </td>
+                                    )}
                                     {/* Date */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-center">
-                                      {renderCellProgress(globalRowIdx, 'connectionDate')}
-                                      <input
-                                        id={`rec_cell_${globalRowIdx}_connectionDate`}
-                                        type="text"
-                                        value={rowRef.connectionDate || ''}
-                                        disabled={!effectiveBillingUnlocked}
-                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
-                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'connectionDate', activeRows.length)}
-                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value, true)}
-                                        className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                      />
-                                    </td>
+                                    {columnVisibility.date !== false && (
+                                      <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-center">
+                                        {renderCellProgress(globalRowIdx, 'connectionDate')}
+                                        <input
+                                          id={`rec_cell_${globalRowIdx}_connectionDate`}
+                                          type="text"
+                                          value={rowRef.connectionDate || ''}
+                                          disabled={!effectiveBillingUnlocked}
+                                          onChange={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value)}
+                                          onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'connectionDate', activeRows.length)}
+                                          onBlur={(e) => handleSaveRowField(globalRowIdx, 'connectionDate', e.target.value, true)}
+                                          className="w-full min-w-0 text-center bg-transparent px-1 py-0.5 border-none rounded text-[12.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                        />
+                                      </td>
+                                    )}
                                     {/* Device Price */}
-                                    <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-right">
-                                      {renderCellProgress(globalRowIdx, 'devicePrice')}
-                                      <div className="flex items-center justify-end">
-                                        <span className="text-slate-400 mr-0.5 font-black text-[11px]">PKR</span>
-                                        <input
-                                          id={`rec_cell_${globalRowIdx}_devicePrice`}
-                                          type="number"
-                                          value={rowRef.devicePrice ?? ''}
-                                          disabled={!effectiveBillingUnlocked}
-                                          onChange={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                          onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'devicePrice', activeRows.length)}
-                                          onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0, true)}
-                                          className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                        />
-                                      </div>
-                                    </td>
+                                    {columnVisibility.device !== false && (
+                                      <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-right">
+                                        {renderCellProgress(globalRowIdx, 'devicePrice')}
+                                        <div className="flex items-center justify-end">
+                                          <span className="text-slate-400 mr-0.5 font-black text-[11px]">PKR</span>
+                                          <input
+                                            id={`rec_cell_${globalRowIdx}_devicePrice`}
+                                            type="number"
+                                            value={rowRef.devicePrice ?? ''}
+                                            disabled={!effectiveBillingUnlocked}
+                                            onChange={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                            onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'devicePrice', activeRows.length)}
+                                            onBlur={(e) => handleSaveRowField(globalRowIdx, 'devicePrice', parseFloat(e.target.value) || 0, true)}
+                                            className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          />
+                                        </div>
+                                      </td>
+                                    )}
                                     {/* ABL */}
-                                    <td className="py-1 px-1.5 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-100/30 dark:bg-slate-900/30 text-right font-sans">
-                                      {renderCellProgress(globalRowIdx, 'abl')}
-                                      <div className="flex items-center justify-end">
-                                        <span className="text-slate-400 mr-0.5 font-black text-[11px]">PKR</span>
-                                        <input
-                                          id={`rec_cell_${globalRowIdx}_abl`}
-                                          type="number"
-                                          value={rowRef.abl ?? ''}
-                                          disabled={!effectiveBillingUnlocked}
-                                          onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                                          onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'abl', activeRows.length)}
-                                          onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
-                                          className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                        />
-                                      </div>
-                                    </td>
+                                    {columnVisibility.abl !== false && (
+                                      <td className="py-1 px-1.5 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-100/30 dark:bg-slate-900/30 text-right font-sans">
+                                        {renderCellProgress(globalRowIdx, 'abl')}
+                                        <div className="flex items-center justify-end">
+                                          <span className="text-slate-400 mr-0.5 font-black text-[11px]">PKR</span>
+                                          <input
+                                            id={`rec_cell_${globalRowIdx}_abl`}
+                                            type="number"
+                                            value={rowRef.abl ?? ''}
+                                            disabled={!effectiveBillingUnlocked}
+                                            onChange={(e) => handleSaveRowField(globalRowIdx, 'abl', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                                            onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'abl', activeRows.length)}
+                                            onBlur={(e) => handleSaveRowField(globalRowIdx, 'abl', parseFloat(e.target.value) || 0, true)}
+                                            className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] disabled:text-black dark:disabled:text-white disabled:opacity-100 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          />
+                                        </div>
+                                      </td>
+                                    )}
                                   </>
                                 )}
                                 {/* Action Column (Delete Row) */}
-                                <td 
-                                  className="py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-center font-sans"
-                                  style={{ width: `${billingColWidths.act}px`, minWidth: `${billingColWidths.act}px`, maxWidth: `${billingColWidths.act}px`, overflow: 'hidden' }}
-                                >
+                                {columnVisibility.act !== false && (
+                                  <td 
+                                    className="py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-center font-sans"
+                                    style={{ width: `${billingColWidths.act}px`, minWidth: `${billingColWidths.act}px`, maxWidth: `${billingColWidths.act}px`, overflow: 'hidden' }}
+                                  >
                                     <div className="flex items-center justify-center gap-1">
                                       <WhatsAppSendButton
                                         name={rowRef.name || ''}
@@ -1359,54 +1480,83 @@ export default function BillingTab(props: BillingTabProps) {
                                         </button>
                                       )}
                                     </div>
-                                </td>
+                                  </td>
+                                )}
                               </tr>
                             );
                           })}
                         </tbody>
                         <tfoot className="bg-[var(--neu-surface)] sticky bottom-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t-2 border-slate-300 dark:border-slate-700">
                           <tr>
-                            <td colSpan={7} className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest bg-slate-100 dark:bg-slate-900 shadow-inner">
-                              Current Page Totals
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
-                              PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-rose-500/10 text-rose-700 dark:text-rose-400">
-                              PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
-                              PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-3 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
-                              PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td colSpan={isAdvanceMode ? 8 : 2} className="py-4 px-4 border-slate-200/50 dark:border-white/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
-                              (Current Page)
-                            </td>
+                            {leadingVisibleColSpan > 0 && (
+                              <td colSpan={leadingVisibleColSpan} className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest bg-slate-100 dark:bg-slate-900 shadow-inner">
+                                Current Page Totals
+                              </td>
+                            )}
+                            {columnVisibility.baseAmount !== false && (
+                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                                PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
+                              </td>
+                            )}
+                            {columnVisibility.cr !== false && (
+                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-rose-500/10 text-rose-700 dark:text-rose-400">
+                                PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
+                              </td>
+                            )}
+                            {columnVisibility.totalAmount !== false && (
+                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                                PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
+                              </td>
+                            )}
+                            {columnVisibility.billingDay !== false && (
+                              <td className="py-4 px-3 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
+                            )}
+                            {columnVisibility.paymentReceived !== false && (
+                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
+                                PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
+                              </td>
+                            )}
+                            {trailingVisibleColSpan > 0 && (
+                              <td colSpan={trailingVisibleColSpan} className="py-4 px-4 border-slate-200/50 dark:border-white/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
+                                (Current Page)
+                              </td>
+                            )}
                           </tr>
                           {/* Grand Total Row */}
                           <tr className="border-t border-slate-300 dark:border-slate-700">
-                            <td colSpan={7} className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest bg-slate-100 dark:bg-slate-900 shadow-inner">
-                              Grand Total (All Pages)
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
-                              PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-rose-500/10 text-rose-700 dark:text-rose-400">
-                              PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
-                              PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td className="py-4 px-3 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
-                            <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
-                              PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
-                            </td>
-                            <td colSpan={isAdvanceMode ? 8 : 2} className="py-4 px-4 border-slate-200/50 dark:border-white/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
-                              (Cumulative total of {mainSortedRows.length} active rows)
-                            </td>
+                            {leadingVisibleColSpan > 0 && (
+                              <td colSpan={leadingVisibleColSpan} className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest bg-slate-100 dark:bg-slate-900 shadow-inner">
+                                Grand Total (All Pages)
+                              </td>
+                            )}
+                            {columnVisibility.baseAmount !== false && (
+                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                                PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
+                              </td>
+                            )}
+                            {columnVisibility.cr !== false && (
+                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-rose-500/10 text-rose-700 dark:text-rose-400">
+                                PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
+                              </td>
+                            )}
+                            {columnVisibility.totalAmount !== false && (
+                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                                PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
+                              </td>
+                            )}
+                            {columnVisibility.billingDay !== false && (
+                              <td className="py-4 px-3 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
+                            )}
+                            {columnVisibility.paymentReceived !== false && (
+                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
+                                PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
+                              </td>
+                            )}
+                            {trailingVisibleColSpan > 0 && (
+                              <td colSpan={trailingVisibleColSpan} className="py-4 px-4 border-slate-200/50 dark:border-white/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
+                                (Cumulative total of {mainSortedRows.length} active rows)
+                              </td>
+                            )}
                           </tr>
                         </tfoot>
                       </table>
@@ -2441,7 +2591,7 @@ export default function BillingTab(props: BillingTabProps) {
                     <Plus size={16} className="stroke-[3]" />
                     Deploy New Monthly Sheet
                   </button>
-                  {billingMonths && billingMonths.length > 0 && (
+                  {((billingMonthsList && billingMonthsList.length > 0) || (billingMonths && billingMonths.length > 0)) && (
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-black text-slate-400 uppercase">or Select Sheet:</span>
                       <select
@@ -2455,7 +2605,7 @@ export default function BillingTab(props: BillingTabProps) {
                         className="px-3 py-2 text-xs font-mono font-bold bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl text-slate-700 dark:text-slate-300 focus:outline-none focus:border-emerald-500"
                       >
                         <option value="">Choose Month...</option>
-                        {Array.from(new Set((billingMonths || []).map((m: any) => m?.id || m?.month_id).filter(Boolean))).map((monthId: any, mIdx: number) => (
+                        {Array.from(new Set(((billingMonthsList && billingMonthsList.length > 0 ? billingMonthsList : billingMonths) || []).map((m: any) => m?.id || m?.month_id).filter(Boolean))).map((monthId: any, mIdx: number) => (
                           <option key={`m-opt-unlocked-${monthId}-${mIdx}`} value={monthId}>{monthId}</option>
                         ))}
                       </select>
@@ -2476,7 +2626,7 @@ export default function BillingTab(props: BillingTabProps) {
                     Unlock write privileges using the Floating Security Shield to deploy a new sheet.
                   </p>
                 </div>
-                {billingMonths && billingMonths.length > 0 && (
+                {((billingMonthsList && billingMonthsList.length > 0) || (billingMonths && billingMonths.length > 0)) && (
                   <div className="mt-2 flex items-center gap-2">
                     <select
                       value={currentMonthId || ''}
@@ -2489,7 +2639,7 @@ export default function BillingTab(props: BillingTabProps) {
                       className="px-4 py-2 text-xs font-mono font-bold bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl text-slate-700 dark:text-slate-300 focus:outline-none focus:border-blue-500"
                     >
                       <option value="">Select Existing Month...</option>
-                      {Array.from(new Set((billingMonths || []).map((m: any) => m?.id || m?.month_id).filter(Boolean))).map((monthId: any, mIdx: number) => (
+                      {Array.from(new Set(((billingMonthsList && billingMonthsList.length > 0 ? billingMonthsList : billingMonths) || []).map((m: any) => m?.id || m?.month_id).filter(Boolean))).map((monthId: any, mIdx: number) => (
                         <option key={`m-opt-locked-${monthId}-${mIdx}`} value={monthId}>{monthId}</option>
                       ))}
                     </select>
@@ -2497,6 +2647,69 @@ export default function BillingTab(props: BillingTabProps) {
                 )}
               </div>
             )}
+
+            {/* Modal for Billing Mod Column Settings */}
+            <AnimatePresence>
+              {isColumnSettingModalOpen && (
+                <div className="fixed inset-0 z-[700] flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setIsColumnSettingModalOpen(false)}
+                    className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                    className="relative w-full max-w-5xl bg-[var(--neu-surface)] rounded-3xl shadow-2xl border border-[var(--neu-border)] p-4 sm:p-6 max-h-[90vh] overflow-y-auto text-left z-10"
+                  >
+                    <div className="flex items-center justify-between pb-4 mb-4 border-b border-[var(--neu-border)]">
+                      <div className="flex items-center gap-2">
+                        <span className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                          <SlidersHorizontal size={20} />
+                        </span>
+                        <div>
+                          <h3 className="text-base sm:text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                            Billing Mod Column Setting Console
+                          </h3>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            بلنگ موڈ ریکوری روز کالم کنٹرول
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsColumnSettingModalOpen(false);
+                            if (onNavigate) {
+                              onNavigate('mypc');
+                            }
+                            window.dispatchEvent(new CustomEvent('admin-nav', { detail: 'mypc' }));
+                            navigate('/mypc/billing-mod-setting');
+                          }}
+                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-blue-500 border border-[var(--neu-border)] cursor-pointer"
+                        >
+                          <Monitor size={12} />
+                          <span>Open in My PC Desktop</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsColumnSettingModalOpen(false)}
+                          className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 border border-[var(--neu-border)] cursor-pointer"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <BillingModSettingView onNavigateToBilling={() => setIsColumnSettingModalOpen(false)} />
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
             </div>
 
 

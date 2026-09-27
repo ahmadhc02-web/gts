@@ -69,6 +69,23 @@ const parseExcludedKeys = (em: any): string[] => {
   return [];
 };
 
+const parseRowsData = (val: any): any[] => {
+  if (Array.isArray(val)) return val;
+  if (val && typeof val === 'object' && !Array.isArray(val) && 'rows' in val) {
+    if (Array.isArray(val.rows)) return val.rows;
+  }
+  if (typeof val === 'string' && val.trim()) {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'rows' in parsed) {
+        if (Array.isArray(parsed.rows)) return parsed.rows;
+      }
+    } catch (e) {}
+  }
+  return [];
+};
+
 // Unified snake_case/camelCase mappings for GTS ISP schema tables
 export const mappings: Record<string, Record<string, string>> = {
   users: {
@@ -576,16 +593,19 @@ function subscribeTable(
   const syncKey = `${tableName}_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
 
   if (!globalTableCaches[syncKey]) {
-    try {
-      const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
-      const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`) || (isSpecificDealer ? null : localStorage.getItem(`gts_cache_v3_${tableName}_all_${activeLineCode || 'nolc'}`));
-      if (cachedData) {
-        const parsed = JSON.parse(cachedData);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          globalTableCaches[syncKey] = parsed;
+    // Skip stale localStorage pre-population for tables where momentarily stale status/data causes UI flicker (complaints & clients)
+    if (tableName !== 'complaints' && tableName !== 'clients') {
+      try {
+        const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
+        const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`) || (isSpecificDealer ? null : localStorage.getItem(`gts_cache_v3_${tableName}_all_${activeLineCode || 'nolc'}`));
+        if (cachedData) {
+          const parsed = JSON.parse(cachedData);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            globalTableCaches[syncKey] = parsed;
+          }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
   }
 
   const fetchInitial = async () => {
@@ -741,10 +761,21 @@ function subscribeTable(
     try {
       const targetTable = tableName === 'users' ? 'users_data' : tableName;
       const channelName = `rt_${tableName}_${dealerId || 'all'}_${Math.random().toString(36).substring(2, 7)}`;
+      const postgresChangesConfig: any = { event: '*', schema: 'public', table: targetTable };
+
+      if (tableName === 'billing_months') {
+        if (activeLineCode) {
+          postgresChangesConfig.filter = `line_code=eq.${activeLineCode}`;
+        } else if (dealerId && dealerId !== 'all' && dealerId !== 'main') {
+          postgresChangesConfig.filter = `dealer_id=eq.${dealerId}`;
+        }
+      }
+
       const channel = supabase
         .channel(channelName)
-        .on('postgres_changes', { event: '*', schema: 'public', table: targetTable }, (payload: any) => {
+        .on('postgres_changes', postgresChangesConfig, (payload: any) => {
           console.log('[REALTIME] Change event received for table', targetTable, ':', payload);
+          let billingMonthResolved = false;
           
           if (payload && payload.eventType === 'DELETE' && payload.old) {
             try {
@@ -760,6 +791,7 @@ function subscribeTable(
                     const dbIdMatch = item.dbId !== undefined && payload.old.id !== undefined && String(item.dbId) === String(payload.old.id);
                     return itemMonthId !== targetMonthId && itemMonthId !== String(targetMonthId) && !dbIdMatch;
                   });
+                  billingMonthResolved = true;
                 } else if (tableName === 'ledger_folders') {
                   const targetFolderId = payload.old.folder_id || payload.old.id;
                   cache = cache.filter((item: any) => {
@@ -845,6 +877,9 @@ function subscribeTable(
                   } else {
                     cache = [mappedRow, ...cache];
                   }
+                  if (tableName === 'billing_months') {
+                    billingMonthResolved = true;
+                  }
                   globalTableCaches[syncKey] = cache;
                   try {
                     localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
@@ -859,6 +894,13 @@ function subscribeTable(
                 }
               }
             } catch (e) {}
+          }
+
+          if (tableName === 'billing_months') {
+            if (!billingMonthResolved) {
+              fetchInitial();
+            }
+            return;
           }
 
           // Debounce safety fetchInitial to avoid constant heavy queries on rapid-fire updates
@@ -901,6 +943,51 @@ function subscribeTable(
               const originalLength = cache.length;
               cache = cache.filter((item: any) => item.id !== id);
               if (cache.length !== originalLength) {
+                globalTableCaches[syncKey] = cache;
+                try {
+                  localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
+                } catch (e) {}
+                const subscribers = globalTableSubscribers[syncKey];
+                if (subscribers) {
+                  subscribers.forEach((cb) => {
+                    try { cb(cache); } catch (err) {}
+                  });
+                }
+              }
+            }
+          })
+          .on('broadcast', { event: 'mark_all_read' }, (payload: any) => {
+            console.log('[GLOBAL BROADCAST] Received mark_all_read event:', payload);
+            const targetDealerId = payload.payload?.dealerId;
+            if (!targetDealerId || targetDealerId === 'main' || targetDealerId === dealerId) {
+              let cache = globalTableCaches[syncKey] || [];
+              cache = cache.map((item: any) => ({ ...item, isRead: true }));
+              globalTableCaches[syncKey] = cache;
+              try {
+                localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
+              } catch (e) {}
+              const subscribers = globalTableSubscribers[syncKey];
+              if (subscribers) {
+                subscribers.forEach((cb) => {
+                  try { cb(cache); } catch (err) {}
+                });
+              }
+            }
+          })
+          .on('broadcast', { event: 'mark_read' }, (payload: any) => {
+            console.log('[GLOBAL BROADCAST] Received mark_read event:', payload);
+            const { id } = payload.payload || {};
+            if (id) {
+              let cache = globalTableCaches[syncKey] || [];
+              let updated = false;
+              cache = cache.map((item: any) => {
+                if (item.id === id) {
+                  updated = true;
+                  return { ...item, isRead: true };
+                }
+                return item;
+              });
+              if (updated) {
                 globalTableCaches[syncKey] = cache;
                 try {
                   localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
@@ -1419,37 +1506,47 @@ export const supabaseService = {
   },
 
   // --- BILLING CONFIG & RECOVERY SHEETS ---
-  async getBillingMonths(dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) {
-    const parseRowsData = (val: any): any[] => {
-      if (Array.isArray(val)) return val;
-      if (val && typeof val === 'object' && !Array.isArray(val) && 'rows' in val) {
-        if (Array.isArray(val.rows)) return val.rows;
-      }
-      if (typeof val === 'string' && val.trim()) {
-        try {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) return parsed;
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'rows' in parsed) {
-            if (Array.isArray(parsed.rows)) return parsed.rows;
-          }
-        } catch (e) {}
-      }
-      return [];
-    };
+  async getBillingMonths(dealerId: string = 'main', bypassLineCodeFilter: boolean | string | number = false, monthsBack: number = 1) {
+    let effectiveMonthsBack = monthsBack;
+    let effectiveBypass = bypassLineCodeFilter;
+    if (typeof bypassLineCodeFilter === 'number') {
+      effectiveMonthsBack = bypassLineCodeFilter;
+      effectiveBypass = false;
+    }
 
     try {
       const monthMap = new Map<string, any>();
+
+      // Generate date cutoff and candidate month IDs for the last monthsBack months
+      const cutoffDate = new Date();
+      cutoffDate.setDate(1);
+      cutoffDate.setHours(0, 0, 0, 0);
+      cutoffDate.setMonth(cutoffDate.getMonth() - Math.max(0, effectiveMonthsBack - 1));
+      const cutoffIso = cutoffDate.toISOString();
+
+      const candidateMonthIds: string[] = [];
+      const fullMonths = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+      const shortMonths = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+      for (let i = -1; i <= effectiveMonthsBack; i++) {
+        const d = new Date();
+        d.setDate(1);
+        d.setMonth(d.getMonth() - i);
+        const m = d.getMonth();
+        const yr = String(d.getFullYear()).slice(-2);
+        const fullYr = String(d.getFullYear());
+        candidateMonthIds.push(`${fullMonths[m]}-${yr}`, `${shortMonths[m]}-${yr}`, `${fullMonths[m]}-${fullYr}`, `${shortMonths[m]}-${fullYr}`);
+      }
 
       try {
         let query = supabase.from('billing_months').select('*');
         if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
           query = query.eq('dealer_id', dealerId);
         }
-        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+        const cleanBypass = typeof effectiveBypass === 'string' ? String(effectiveBypass || '').trim() : '';
         const cleanActive = String(activeLineCode || '').trim();
-        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+        if (effectiveBypass === true || effectiveBypass === 'all') {
           // Explicitly query all lines across network
-        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+        } else if (cleanBypass === '__without_line__' || effectiveBypass === null) {
           query = query.or('line_code.is.null,line_code.eq.');
         } else if (cleanBypass) {
           query = query.eq('line_code', cleanBypass);
@@ -1459,6 +1556,9 @@ export const supabaseService = {
           // No line code set: strictly isolate to the "without line" room
           query = query.or('line_code.is.null,line_code.eq.');
         }
+
+        // Limit billing_months query to the last monthsBack window
+        query = query.or(`created.gte.${cutoffIso},month_id.in.(${candidateMonthIds.join(',')})`);
 
         const { data: supMonths } = await query;
         if (supMonths) {
@@ -1484,11 +1584,11 @@ export const supabaseService = {
         if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
           query = query.eq('dealer_id', dealerId);
         }
-        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+        const cleanBypass = typeof effectiveBypass === 'string' ? String(effectiveBypass || '').trim() : '';
         const cleanActive = String(activeLineCode || '').trim();
-        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+        if (effectiveBypass === true || effectiveBypass === 'all') {
           // Explicitly query all lines across network
-        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+        } else if (cleanBypass === '__without_line__' || effectiveBypass === null) {
           query = query.or('line_code.is.null,line_code.eq.');
         } else if (cleanBypass) {
           query = query.eq('line_code', cleanBypass);
@@ -1498,6 +1598,10 @@ export const supabaseService = {
           // No line code set: strictly isolate to the "without line" room
           query = query.or('line_code.is.null,line_code.eq.');
         }
+
+        // Limit billing_rows query to the last monthsBack window
+        const targetMonthIds = Array.from(new Set([...candidateMonthIds, ...Array.from(monthMap.keys())]));
+        query = query.or(`created.gte.${cutoffIso},month_id.in.(${targetMonthIds.join(',')})`);
 
         const { data: rowRecords } = await query;
         if (rowRecords && rowRecords.length > 0) {
@@ -1595,6 +1699,206 @@ export const supabaseService = {
     } catch (e) {
       console.error("Failed to get billing months:", e);
       return [];
+    }
+  },
+
+  getBillingMonthsList: async (dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false): Promise<{id: string, dealerId: string, lineCode: string, createdAt: number, rows?: undefined}[]> => {
+    try {
+      let query = supabase.from('billing_months').select('month_id, dealer_id, line_code, created');
+      if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+        query = query.eq('dealer_id', dealerId);
+      }
+      const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+      const cleanActive = String(activeLineCode || '').trim();
+      if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+        // Explicitly query all lines across network
+      } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+        query = query.or('line_code.is.null,line_code.eq.');
+      } else if (cleanBypass) {
+        query = query.eq('line_code', cleanBypass);
+      } else if (cleanActive) {
+        query = query.eq('line_code', cleanActive);
+      } else {
+        // No line code set: strictly isolate to the "without line" room
+        query = query.or('line_code.is.null,line_code.eq.');
+      }
+
+      const { data: supMonths } = await query;
+      if (supMonths) {
+        const monthMap = new Map<string, { id: string; dealerId: string; lineCode: string; createdAt: number; rows: undefined }>();
+        for (const em of supMonths) {
+          const mId = em.month_id;
+          if (!mId) continue;
+          const cTime = em.created ? new Date(em.created).getTime() : Date.now();
+          if (!monthMap.has(mId) || cTime > (monthMap.get(mId)!.createdAt || 0)) {
+            monthMap.set(mId, {
+              id: mId,
+              dealerId: em.dealer_id || dealerId,
+              lineCode: em.line_code || '',
+              createdAt: cTime,
+              rows: undefined
+            });
+          }
+        }
+        return Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
+      }
+      return [];
+    } catch (e) {
+      console.error("Failed to get billing months list:", e);
+      return [];
+    }
+  },
+
+  getBillingMonthsHistory: async (monthId: string, dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
+    try {
+      const monthMap = new Map<string, any>();
+
+      try {
+        let query = supabase.from('billing_months').select('*').eq('month_id', monthId);
+        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+          query = query.eq('dealer_id', dealerId);
+        }
+        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+        const cleanActive = String(activeLineCode || '').trim();
+        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+          // Explicitly query all lines across network
+        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+          query = query.or('line_code.is.null,line_code.eq.');
+        } else if (cleanBypass) {
+          query = query.eq('line_code', cleanBypass);
+        } else if (cleanActive) {
+          query = query.eq('line_code', cleanActive);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
+        }
+
+        const { data: supMonths } = await query;
+        if (supMonths) {
+          for (const em of supMonths) {
+            const rowsFromData = parseRowsData(em.rows_data ?? em.rows);
+            monthMap.set(em.month_id, {
+              id: em.month_id,
+              dbId: em.id,
+              dealerId: em.dealer_id || dealerId,
+              lineCode: em.line_code || '',
+              rows: rowsFromData,
+              excludedClientKeys: parseExcludedKeys(em),
+              hasAuthoritativeRowsData: rowsFromData.length > 0,
+              updatedAt: em.updated ? new Date(em.updated).getTime() : Date.now(),
+              createdAt: em.created ? new Date(em.created).getTime() : Date.now()
+            });
+          }
+        }
+      } catch (err) {}
+
+      try {
+        let query = supabase.from('billing_rows').select('*').eq('month_id', monthId);
+        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+          query = query.eq('dealer_id', dealerId);
+        }
+        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+        const cleanActive = String(activeLineCode || '').trim();
+        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+          // Explicitly query all lines across network
+        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+          query = query.or('line_code.is.null,line_code.eq.');
+        } else if (cleanBypass) {
+          query = query.eq('line_code', cleanBypass);
+        } else if (cleanActive) {
+          query = query.eq('line_code', cleanActive);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
+        }
+
+        const { data: rowRecords } = await query;
+        if (rowRecords && rowRecords.length > 0) {
+          const rowsByMonth = new Map<string, any[]>();
+          for (const r of rowRecords) {
+            const mId = r.month_id || 'UNKNOWN';
+            if (isExcludedFromRecovery(r.name, r.username)) continue;
+            if (activeLineCode && r.line_code && r.line_code.trim().toLowerCase() !== activeLineCode.trim().toLowerCase()) continue;
+            if (!activeLineCode && (r.line_code || (r.dealer_id && r.dealer_id !== 'main'))) continue;
+            if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
+            rowsByMonth.get(mId)!.push({
+              id: r.client_id || r.id,
+              clientId: r.client_id || r.id,
+              name: r.name || '',
+              username: r.username || '',
+              mobileNumber: r.mobile_number || '',
+              area: r.area || '',
+              rt: r.rt || '',
+              baseAmount: Number(r.base_amount ?? r.amount ?? 0),
+              cr: Number(r.cr ?? 0),
+              totalAmount: Number(r.total_amount ?? 0),
+              billingDay: r.billing_day || '5',
+              paymentReceived: Number(r.payment_received ?? 0),
+              paymentStatus: r.payment_status || 'unpaid',
+              comments: r.comments || '',
+              occ: r.occ || '',
+              panelDetails: r.panel_details || '',
+              pkgDetails: r.pkg_details || '',
+              sag: r.sag || '',
+              lai: r.lai || '',
+              connectionDate: r.connection_date || '',
+              devicePrice: r.device_price || '',
+              abl: r.abl || '',
+              lineCode: r.line_code || '',
+              lineId: r.line_id || null,
+              line_code: r.line_code || '',
+              line_id: r.line_id || null
+            });
+          }
+
+          for (const [mId, rowList] of rowsByMonth.entries()) {
+            if (!monthMap.has(mId)) {
+              if (dealerId && dealerId !== 'main' && (!rowList || rowList.length === 0)) continue;
+              monthMap.set(mId, {
+                id: mId,
+                dealerId: dealerId || 'main',
+                lineCode: activeLineCode || '',
+                rows: rowList,
+                hasAuthoritativeRowsData: false,
+                updatedAt: Date.now(),
+                createdAt: Date.now()
+              });
+            } else {
+              const existingMonth = monthMap.get(mId)!;
+              if (!existingMonth.rows || existingMonth.rows.length === 0) {
+                existingMonth.rows = rowList;
+              } else if (!existingMonth.hasAuthoritativeRowsData) {
+                const rowByClientId = new Map<string, any>();
+                const rowByUsername = new Map<string, any>();
+                for (const r of rowList) {
+                  if (r.clientId) rowByClientId.set(String(r.clientId).toLowerCase(), r);
+                  if (r.username) rowByUsername.set(String(r.username).toLowerCase(), r);
+                }
+                existingMonth.rows = existingMonth.rows.map((r: any) => {
+                  const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
+                                (r.username && rowByUsername.get(String(r.username).toLowerCase()));
+                  if (dbRow) {
+                    return {
+                      ...r,
+                      ...dbRow,
+                      comments: (dbRow.comments && dbRow.comments.trim() !== '') ? dbRow.comments : (r.comments || ''),
+                      baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
+                      cr: dbRow.cr ?? r.cr ?? 0,
+                      totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
+                      paymentReceived: dbRow.paymentReceived ?? r.paymentReceived ?? 0,
+                      paymentStatus: dbRow.paymentStatus ?? r.paymentStatus ?? 'unpaid'
+                    };
+                  }
+                  return r;
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {}
+
+      return monthMap.get(monthId) || null;
+    } catch (e) {
+      console.error("Failed to get billing month history:", e);
+      return null;
     }
   },
 
@@ -2468,6 +2772,29 @@ export const supabaseService = {
       }
       await query;
 
+      // Immediately update this client's own local cache and notify subscribers
+      try {
+        const syncKey = `notifications_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+        const targetKeys = new Set<string>([syncKey]);
+        Object.keys(globalTableSubscribers).forEach((k) => {
+          if (k.startsWith('notifications_')) targetKeys.add(k);
+        });
+        targetKeys.forEach((k) => {
+          globalTableCaches[k] = [];
+          try {
+            localStorage.setItem(`gts_cache_v3_${k}`, JSON.stringify([]));
+          } catch (e) {}
+          const subscribers = globalTableSubscribers[k];
+          if (subscribers) {
+            subscribers.forEach((cb) => {
+              try { cb([]); } catch (err) {}
+            });
+          }
+        });
+      } catch (cacheErr) {
+        console.warn("Local cache clear error:", cacheErr);
+      }
+
       // Broadcast the clear event to the global channel to update all active clients in real-time
       const globalChannel = supabase.channel('gts_notifications_global_broadcast');
       globalChannel.subscribe(async (status) => {
@@ -2485,9 +2812,37 @@ export const supabaseService = {
     }
   },
 
-  deleteNotification: async (id: string) => {
+  deleteNotification: async (id: string, dealerId?: string) => {
     try {
       await supabase.from('notifications').delete().eq('id', id);
+
+      // Immediately update this client's own local cache and notify subscribers
+      try {
+        const syncKey = `notifications_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+        const targetKeys = new Set<string>([syncKey]);
+        Object.keys(globalTableSubscribers).forEach((k) => {
+          if (k.startsWith('notifications_')) targetKeys.add(k);
+        });
+        targetKeys.forEach((k) => {
+          let cache = globalTableCaches[k] || [];
+          const originalLength = cache.length;
+          cache = cache.filter((item: any) => item.id !== id);
+          if (cache.length !== originalLength) {
+            globalTableCaches[k] = cache;
+            try {
+              localStorage.setItem(`gts_cache_v3_${k}`, JSON.stringify(cache));
+            } catch (e) {}
+            const subscribers = globalTableSubscribers[k];
+            if (subscribers) {
+              subscribers.forEach((cb) => {
+                try { cb(cache); } catch (err) {}
+              });
+            }
+          }
+        });
+      } catch (cacheErr) {
+        console.warn("Local cache delete error:", cacheErr);
+      }
 
       // Broadcast the delete event to the global channel to update all active clients in real-time
       const globalChannel = supabase.channel('gts_notifications_global_broadcast');
@@ -2501,7 +2856,118 @@ export const supabaseService = {
           supabase.removeChannel(globalChannel);
         }
       });
-    } catch (e) {}
+    } catch (e) {
+      console.warn("Failed to delete notification:", e);
+    }
+  },
+
+  markAllNotificationsRead: async (dealerId?: string) => {
+    try {
+      let query = supabase.from('notifications').update({ is_read: true });
+      if (activeLineCode) {
+        query = query.eq('line_code', activeLineCode);
+      } else if (dealerId && dealerId !== 'main') {
+        query = query.eq('dealer_id', dealerId);
+      } else {
+        query = query.neq('id', '');
+      }
+      await query;
+
+      // Immediately update this client's own local cache and notify subscribers
+      try {
+        const syncKey = `notifications_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+        const targetKeys = new Set<string>([syncKey]);
+        Object.keys(globalTableSubscribers).forEach((k) => {
+          if (k.startsWith('notifications_')) targetKeys.add(k);
+        });
+        targetKeys.forEach((k) => {
+          let cache = globalTableCaches[k] || [];
+          cache = cache.map((item: any) => ({ ...item, isRead: true }));
+          globalTableCaches[k] = cache;
+          try {
+            localStorage.setItem(`gts_cache_v3_${k}`, JSON.stringify(cache));
+          } catch (e) {}
+          const subscribers = globalTableSubscribers[k];
+          if (subscribers) {
+            subscribers.forEach((cb) => {
+              try { cb(cache); } catch (err) {}
+            });
+          }
+        });
+      } catch (cacheErr) {
+        console.warn("Local cache mark all read error:", cacheErr);
+      }
+
+      // Broadcast mark_all_read event to other clients
+      const globalChannel = supabase.channel('gts_notifications_global_broadcast');
+      globalChannel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await globalChannel.send({
+            type: 'broadcast',
+            event: 'mark_all_read',
+            payload: { dealerId, lineCode: activeLineCode }
+          });
+          supabase.removeChannel(globalChannel);
+        }
+      });
+    } catch (e) {
+      console.warn("Failed to mark all notifications read:", e);
+    }
+  },
+
+  markNotificationRead: async (id: string, dealerId?: string) => {
+    try {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+
+      // Immediately update this client's own local cache and notify subscribers
+      try {
+        const syncKey = `notifications_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+        const targetKeys = new Set<string>([syncKey]);
+        Object.keys(globalTableSubscribers).forEach((k) => {
+          if (k.startsWith('notifications_')) targetKeys.add(k);
+        });
+        targetKeys.forEach((k) => {
+          let cache = globalTableCaches[k] || [];
+          let updated = false;
+          cache = cache.map((item: any) => {
+            if (item.id === id) {
+              updated = true;
+              return { ...item, isRead: true };
+            }
+            return item;
+          });
+          if (updated) {
+            globalTableCaches[k] = cache;
+            try {
+              localStorage.setItem(`gts_cache_v3_${k}`, JSON.stringify(cache));
+            } catch (e) {}
+            const subscribers = globalTableSubscribers[k];
+            if (subscribers) {
+              subscribers.forEach((cb) => {
+                try { cb(cache); } catch (err) {}
+              });
+            }
+          }
+        });
+      } catch (cacheErr) {
+        console.warn("Local cache mark read error:", cacheErr);
+      }
+
+      // Broadcast mark_read event to other clients
+      const globalChannel = supabase.channel('gts_notifications_global_broadcast');
+      globalChannel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await globalChannel.send({
+            type: 'broadcast',
+            event: 'mark_read',
+            payload: { id }
+          });
+          supabase.removeChannel(globalChannel);
+        }
+      });
+    } catch (e) {
+      console.warn("Failed to mark notification read:", e);
+    }
   },
 
   subscribeNotifications: (callback: (notifications: AppNotification[]) => void, dealerId?: string) => {
@@ -4347,7 +4813,7 @@ export const supabaseService = {
 
   migrateAllRowsToBillingMonths: async (dealerId: string = 'main') => {
     try {
-      await supabaseService.getBillingMonths(dealerId);
+      await supabaseService.getBillingMonths(dealerId, false, 999);
       return {
         failedCount: 0,
         message: 'Successfully scanned and verified all billing months in Supabase.'
@@ -4363,3 +4829,15 @@ export const supabaseService = {
 
 export const pocketbaseService = supabaseService;
 export const dbService = supabaseService;
+export const getBillingMonthsHistory = (monthId: string, dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
+  return supabaseService.getBillingMonthsHistory(monthId, dealerId, bypassLineCodeFilter);
+};
+export const getBillingMonthsList = (dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
+  return supabaseService.getBillingMonthsList(dealerId, bypassLineCodeFilter);
+};
+export const markAllNotificationsRead = (dealerId?: string) => {
+  return supabaseService.markAllNotificationsRead(dealerId);
+};
+export const markNotificationRead = (id: string, dealerId?: string) => {
+  return supabaseService.markNotificationRead(id, dealerId);
+};

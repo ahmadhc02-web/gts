@@ -3,7 +3,7 @@ import { getAvatarUrl } from '../utils/avatar';
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
+import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle, SlidersHorizontal, Sparkles, ChevronRight } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -18,6 +18,7 @@ import MicVisualizer from './MicVisualizer';
 import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import RouteLoadingFallback from './RouteLoadingFallback';
+import BillingModSettingView from './BillingModSettingView';
 
 
 const ClientManagement = lazy(() => import('./ClientManagement'));
@@ -45,6 +46,7 @@ const MYPC_FILE_TO_SLUG: Record<string, string> = {
   'print_receipt_view': 'print',
   'complaints_view': 'complaints',
   'whatsapp_integration': 'whatsapp-integration',
+  'billing_mod_setting': 'billing-mod-setting',
 };
 
 
@@ -300,52 +302,355 @@ export default function MyPCTab(props: MyPCTabProps) {
   const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin';
   const canAccessLoginProfiles = currentUser?.role === 'super_admin' || isSubDealerUser;
 
+  const [mypcSearchQuery, setMypcSearchQuery] = useState('');
+  const [mypcActiveCategory, setMypcActiveCategory] = useState<'all' | 'billing' | 'operations' | 'system'>('all');
+
+  useEffect(() => {
+    const handleReset = () => {
+      setMypcOpenedFile(null);
+      navigate('/mypc');
+    };
+    window.addEventListener('mypc-reset-desktop', handleReset);
+    return () => window.removeEventListener('mypc-reset-desktop', handleReset);
+  }, [navigate, setMypcOpenedFile]);
+
+  const mypcTilesList = [
+    { 
+      id: 'billing_mod_setting', 
+      icon: SlidersHorizontal, 
+      title: 'Billing Mod Setting & Config', 
+      urdu: 'بلنگ موڈ کالم سیٹنگز (ON/OFF)',
+      desc: 'Customize Recovery Rows Columns • Show/Hide with Live Background Updates',
+      category: 'billing',
+      isFeatured: true,
+      badge: '★ BILLING CONFIG'
+    },
+    { 
+      id: 'nodes_view', 
+      icon: Flame, 
+      title: 'Active Complainers', 
+      urdu: 'ایکٹو کمپلینرز',
+      desc: 'Monitor dynamic hotspots',
+      category: 'operations'
+    },
+    { 
+      id: 'submit_view', 
+      icon: PlusSquare, 
+      title: branding?.tabNames?.submit || 'Complain Reg', 
+      urdu: 'رجسٹریشن',
+      desc: 'File fresh customer logs',
+      category: 'operations'
+    },
+    { 
+      id: 'map_view', 
+      icon: MapPinned, 
+      title: 'Network Map', 
+      urdu: 'نیٹ ورک میپ',
+      desc: 'Diagnostic geographic connection grid',
+      category: 'operations'
+    },
+    { 
+      id: 'user_details', 
+      icon: Users, 
+      title: 'Users Management', 
+      urdu: 'صارفین کا انتظام',
+      desc: 'Manage logins & clearance level',
+      category: 'operations'
+    },
+    { 
+      id: 'top10_complainers', 
+      icon: BarChart2, 
+      title: 'Top 10 Complainer', 
+      urdu: 'ٹاپ 10 کمپلینرز',
+      desc: 'High frequency support identifiers',
+      category: 'operations'
+    },
+    ...(canAccessLoginProfiles ? [{ 
+      id: 'login_profiles', 
+      icon: ShieldCheck, 
+      title: isSubDealerUser ? 'Subaccounts' : 'Login Profiles', 
+      urdu: 'سب اکاؤنٹس / پروفائلز',
+      desc: isSubDealerUser ? 'Manage Dealer Subaccounts' : 'Active Credentials & Roles Overview',
+      category: 'system'
+    }] : []),
+    ...(currentUser?.role === 'super_admin' ? [{ 
+      id: 'dealers_view', 
+      icon: ShieldAlert, 
+      title: 'Dealer Section', 
+      urdu: 'ڈیلر سیکشن',
+      desc: 'Authorized Dealers Registry Setup',
+      category: 'system'
+    }] : []),
+    { 
+      id: 'system_config', 
+      icon: Settings, 
+      title: 'Workflow Config', 
+      urdu: 'ورک فلو کنفگریشن',
+      desc: 'Edit Categories & Active Zones',
+      category: 'system'
+    },
+    { 
+      id: 'settings_info', 
+      icon: Shield, 
+      title: 'Security', 
+      urdu: 'سیکیورٹی و ساؤنڈ',
+      desc: 'Audio Matrix & Voice Protocols',
+      category: 'system'
+    },
+    { 
+      id: 'integrations', 
+      icon: CloudUpload, 
+      title: 'Google Sheet Link', 
+      urdu: 'گوگل شیٹ سنک',
+      desc: 'One-Time Enterprise Sync',
+      category: 'system'
+    },
+    { 
+      id: 'branding_panel', 
+      icon: Palette, 
+      title: 'CUSTOMIZATION', 
+      urdu: 'تھیم و ڈیزائن',
+      desc: 'Design aesthetics & app layouts',
+      category: 'system'
+    },
+    { 
+      id: 'print_receipt_view', 
+      icon: Printer, 
+      title: 'Print', 
+      urdu: 'رسید پرنٹ',
+      desc: 'Receipt designer & template editor',
+      category: 'operations'
+    },
+    { 
+      id: 'whatsapp_integration', 
+      icon: MessageCircle, 
+      title: 'WhatsApp', 
+      urdu: 'واٹس ایپ انضمام',
+      desc: 'Connect & manage automated messaging',
+      category: 'operations'
+    }
+  ];
+
+  const filteredMypcTiles = mypcTilesList.filter(item => {
+    const matchesCategory = mypcActiveCategory === 'all' || item.category === mypcActiveCategory;
+    const q = mypcSearchQuery.toLowerCase().trim();
+    if (!q) return matchesCategory;
+    const matchesSearch = 
+      item.title.toLowerCase().includes(q) || 
+      item.desc.toLowerCase().includes(q) ||
+      (item.urdu && item.urdu.toLowerCase().includes(q)) ||
+      (item.id.toLowerCase().includes(q)) ||
+      (q.includes('billing') && item.id === 'billing_mod_setting') ||
+      (q.includes('config') && (item.id === 'billing_mod_setting' || item.id === 'system_config')) ||
+      (q.includes('setting') && (item.id === 'billing_mod_setting' || item.id === 'system_config' || item.id === 'settings_info'));
+    return matchesCategory && matchesSearch;
+  });
+
   return (
 
           <div id="mypc-virtual-desktop" className="max-w-[115rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
             {/* Virtual PC Views */}
             {!mypcOpenedFile && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 max-w-7xl mx-auto pt-2 pb-8">
-                {[
-                  { id: 'nodes_view', icon: Flame, title: 'Active Complainers', desc: 'Monitor dynamic hotspots' },
-                  { id: 'submit_view', icon: PlusSquare, title: branding?.tabNames?.submit || 'Complain Reg', desc: 'File fresh customer logs' },
-                  { id: 'map_view', icon: MapPinned, title: 'Network Map', desc: 'Diagnostic geographic connection grid' },
-                  { id: 'user_details', icon: Users, title: 'Users Management', desc: 'Manage logins & clearance level' },
-                  { id: 'top10_complainers', icon: BarChart2, title: 'Top 10 Complainer', desc: 'High frequency support identifiers' },
-                  ...(canAccessLoginProfiles ? [{ id: 'login_profiles', icon: ShieldCheck, title: isSubDealerUser ? 'Subaccounts' : 'Login Profiles', desc: isSubDealerUser ? 'Manage Dealer Subaccounts' : 'Active Credentials & Roles Overview' }] : []),
-                  ...(currentUser?.role === 'super_admin' ? [{ id: 'dealers_view', icon: ShieldAlert, title: 'Dealer Section', desc: 'Authorized Dealers Registry Setup' }] : []),
-                  { id: 'system_config', icon: Settings, title: 'Workflow Config', desc: 'Edit Categories & Active Zones' },
-                  { id: 'settings_info', icon: Shield, title: 'Security', desc: 'Audio Matrix & Voice Protocols' },
-                  { id: 'integrations', icon: CloudUpload, title: 'Google Sheet Link', desc: 'One-Time Enterprise Sync' },
-                  { id: 'branding_panel', icon: Palette, title: 'CUSTOMIZATION', desc: 'Design aesthetics & app layouts' },
-                  { id: 'print_receipt_view', icon: Printer, title: 'Print', desc: 'Receipt designer & template editor' },
-                  { id: 'whatsapp_integration', icon: MessageCircle, title: 'WhatsApp', desc: 'Connect & manage automated messaging' }
-                ].map((item) => (
-                  <motion.div
-                    key={item.id}
-                    whileHover={{ y: -4, scale: 1.01 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      const slug = MYPC_FILE_TO_SLUG[item.id];
-                      if (slug) {
-                        navigate(`/mypc/${slug}`);
-                      } else {
+              <div className="max-w-7xl mx-auto space-y-6 pt-2 pb-12">
+                {/* Header Title & System Badge */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--neu-border)] pb-4 text-left">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                        <Monitor size={22} />
+                      </span>
+                      <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                        MY PC WORKSTATION • ورچوئل ڈیسک ٹاپ
+                      </h2>
+                    </div>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">
+                      System Console • Applications, System Configurations & Billing Module Settings
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                      Active Hub • v2.4
+                    </span>
+                  </div>
+                </div>
+
+                {/* FEATURED HERO CARD: Billing Mod Setting & Config */}
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  whileHover={{ scale: 1.005 }}
+                  className="relative overflow-hidden rounded-[2.2rem] bg-gradient-to-br from-blue-600 via-indigo-600 to-sky-700 text-white p-6 sm:p-8 shadow-xl shadow-blue-500/15 border border-white/20 text-left"
+                >
+                  <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+                  
+                  <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                    <div className="space-y-3 max-w-3xl">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/20 backdrop-blur-md text-white border border-white/20 flex items-center gap-1.5">
+                          <Sparkles size={12} className="text-amber-300 animate-pulse" />
+                          FEATURED CONFIG • بلنگ موڈ سیٹنگز
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-400 text-slate-950 font-sans shadow-sm">
+                          20 COLUMNS CONTROL (ON / OFF)
+                        </span>
+                      </div>
+
+                      <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight flex items-center gap-2.5">
+                        <SlidersHorizontal size={24} className="text-sky-200" />
+                        <span>Billing Mod Setting & Config (بلنگ موڈ کالم سیٹنگز)</span>
+                      </h3>
+
+                      <p className="text-xs sm:text-sm text-sky-100 font-medium leading-relaxed">
+                        بلنگ موڈ کی ریکوری روز کے اوپر تمام 20 کالمز (B. Amount, CR, Recovery, Status, Panel Details وغیرہ) کے نام اور ON/OFF بٹن۔ جو کالم آف کریں گے وہ سکرین پر چھپ جائے گا، اور آن کرتے ہی اس کا تازہ ترین اپڈیٹڈ ڈیٹا فوراً شو ہوگا۔ آف رہنے پر بھی بیک گراؤنڈ میں تمام ڈیٹا اپ ڈیٹ ہوتا رہے گا۔
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+                      <motion.button
+                        whileHover={{ scale: 1.04 }}
+                        whileTap={{ scale: 0.96 }}
+                        onClick={() => {
+                          setMypcOpenedFile('billing_mod_setting');
+                          navigate('/mypc/billing-mod-setting');
+                        }}
+                        className="px-6 py-4 rounded-2xl bg-white text-blue-700 hover:bg-sky-50 font-black uppercase tracking-widest text-xs shadow-lg transition-all flex items-center justify-center gap-2.5 cursor-pointer border-none"
+                      >
+                        <SlidersHorizontal size={16} className="text-blue-600" />
+                        <span>Open Billing Mod Settings ➔</span>
+                      </motion.button>
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Search Bar & Category Filters */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)]">
+                  {/* Category tabs */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {[
+                      { id: 'all', label: `All Tools (${mypcTilesList.length})` },
+                      { id: 'billing', label: '💳 Billing & Recovery' },
+                      { id: 'operations', label: '⚡ Operations' },
+                      { id: 'system', label: '⚙️ Settings & System' }
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setMypcActiveCategory(tab.id as any)}
+                        className={cn(
+                          "px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border",
+                          mypcActiveCategory === tab.id
+                            ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
+                            : "bg-transparent text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800"
+                        )}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Search input */}
+                  <div className="relative min-w-[240px] sm:w-72">
+                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={mypcSearchQuery}
+                      onChange={(e) => setMypcSearchQuery(e.target.value)}
+                      placeholder="Search tools, billing, config..."
+                      className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)] focus:border-blue-500 text-slate-800 dark:text-slate-200 outline-none transition-colors"
+                    />
+                    {mypcSearchQuery && (
+                      <button
+                        onClick={() => setMypcSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Grid of Applications */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 pt-2">
+                  {filteredMypcTiles.map((item) => (
+                    <motion.div
+                      key={item.id}
+                      whileHover={{ y: -4, scale: 1.015 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => {
                         setMypcOpenedFile(item.id as any);
-                      }
-                    }}
-                    className="group cursor-pointer p-5 sm:p-6 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] rounded-[2rem] hover:shadow-[var(--neu-shadow-inset)] flex flex-col items-center sm:items-start text-center sm:text-left space-y-4 transition-all duration-300 relative overflow-hidden active:scale-95"
-                  >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all duration-300 -mr-12 -mt-12 pointer-events-none" />
-                    
-                    <div className="w-12 h-12 rounded-2xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] text-slate-600 dark:text-slate-400 flex items-center justify-center group-hover:text-blue-500 transition-all duration-300 z-10">
-                      <item.icon size={22} strokeWidth={2} />
-                    </div>
-                    <div className="z-10 w-full flex flex-col items-center sm:items-start">
-                      <h4 className="text-[11px] sm:text-[13px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100 group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors leading-tight mb-2">{item.title}</h4>
-                      <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 line-clamp-2 leading-relaxed group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">{item.desc}</p>
-                    </div>
-                  </motion.div>
-                ))}
+                        const slug = MYPC_FILE_TO_SLUG[item.id];
+                        if (slug) {
+                          navigate(`/mypc/${slug}`);
+                        }
+                      }}
+                      className={cn(
+                        "group cursor-pointer p-5 sm:p-6 bg-[var(--neu-surface)] rounded-[2rem] flex flex-col items-start text-left space-y-4 transition-all duration-300 relative overflow-hidden active:scale-95 border",
+                        item.isFeatured 
+                          ? "border-blue-500/60 shadow-[0_0_24px_rgba(59,130,246,0.18)] dark:shadow-[0_0_24px_rgba(59,130,246,0.25)] ring-2 ring-blue-500/20" 
+                          : "border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] hover:shadow-[var(--neu-shadow-inset)]"
+                      )}
+                    >
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all duration-300 -mr-12 -mt-12 pointer-events-none" />
+                      
+                      <div className="w-full flex items-center justify-between z-10">
+                        <div className={cn(
+                          "w-12 h-12 rounded-2xl border flex items-center justify-center transition-all duration-300",
+                          item.isFeatured
+                            ? "bg-blue-500 text-white border-blue-400 shadow-md shadow-blue-500/30"
+                            : "bg-[var(--neu-surface)] border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] text-slate-600 dark:text-slate-400 group-hover:text-blue-500"
+                        )}>
+                          <item.icon size={22} strokeWidth={2} />
+                        </div>
+
+                        {item.badge ? (
+                          <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-500 text-white shadow-sm">
+                            {item.badge}
+                          </span>
+                        ) : item.urdu ? (
+                          <span className="text-[11px] font-urdu font-bold text-slate-400 group-hover:text-blue-500 transition-colors">
+                            {item.urdu}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="z-10 w-full flex flex-col items-start">
+                        <h4 className={cn(
+                          "text-xs sm:text-sm font-black uppercase tracking-wider leading-tight mb-1 transition-colors flex items-center gap-1.5",
+                          item.isFeatured 
+                            ? "text-blue-600 dark:text-blue-400" 
+                            : "text-slate-800 dark:text-slate-100 group-hover:text-blue-500 dark:group-hover:text-blue-400"
+                        )}>
+                          <span>{item.title}</span>
+                          <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all" />
+                        </h4>
+                        {item.urdu && item.badge && (
+                          <p className="text-[10px] font-bold text-blue-500 dark:text-blue-400 mb-1">{item.urdu}</p>
+                        )}
+                        <p className="text-[10px] sm:text-[11px] font-medium text-slate-400 dark:text-slate-500 line-clamp-2 leading-relaxed group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">
+                          {item.desc}
+                        </p>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                {filteredMypcTiles.length === 0 && (
+                  <div className="p-12 text-center rounded-3xl bg-[var(--neu-surface)] border border-[var(--neu-border)] space-y-3">
+                    <p className="text-sm font-black uppercase tracking-widest text-slate-500">
+                      No tools found matching &quot;{mypcSearchQuery}&quot;
+                    </p>
+                    <button
+                      onClick={() => {
+                        setMypcSearchQuery('');
+                        setMypcActiveCategory('all');
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white cursor-pointer"
+                    >
+                      Reset Filters
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             {mypcOpenedFile && (
@@ -353,15 +658,19 @@ export default function MyPCTab(props: MyPCTabProps) {
                 <div className="flex items-center justify-between bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] px-5 py-4 rounded-2xl border border-[var(--neu-border)]">
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => navigate('/mypc')}
+                      onClick={() => {
+                        setMypcOpenedFile(null);
+                        navigate('/mypc');
+                      }}
                       className="px-4 py-2 text-[9px] font-black uppercase tracking-widest bg-[var(--neu-surface)] text-slate-600 dark:text-slate-300 hover:text-blue-500 rounded-xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] active:scale-95 cursor-pointer transition-all flex items-center gap-2"
                     >
-                      <span>◀</span> Close Application
+                      <span>◀</span> Return to My PC Desktop
                     </button>
                     <div>
                       <span className="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
                         Running Frame: {
+                          mypcOpenedFile === 'billing_mod_setting' ? 'Billing Mode Recovery Columns Visibility Console' :
                           mypcOpenedFile === 'whatsapp_integration' ? 'WhatsApp Business Integration Console' :
                           mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
                           mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
@@ -851,6 +1160,35 @@ export default function MyPCTab(props: MyPCTabProps) {
                   {/* Subview 4: System Configurations */}
                   {mypcOpenedFile === 'system_config' && (
                     <div className="max-w-7xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
+                      {/* Shortcut to Billing Mod Column Settings */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
+                            <SlidersHorizontal size={20} />
+                          </div>
+                          <div>
+                            <h4 className="text-xs sm:text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                              <span>Billing Mod Column Settings & Config</span>
+                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold font-urdu">(بلنگ موڈ کالم سیٹنگز)</span>
+                            </h4>
+                            <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                              بلنگ ریکوری روز کے اوپر تمام 20 کالمز کو اپنی ضرورت کے مطابق ON یا HIDE کریں
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMypcOpenedFile('billing_mod_setting');
+                            navigate('/mypc/billing-mod-setting');
+                          }}
+                          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[10px] shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                        >
+                          <SlidersHorizontal size={13} />
+                          <span>Open Column Settings ➔</span>
+                        </button>
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                         {/* Category Management */}
                         <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
@@ -2016,6 +2354,17 @@ export default function MyPCTab(props: MyPCTabProps) {
                         <WhatsAppMessageTemplateBox />
                       </div>
                     </div>
+                  )}
+
+                  {/* Subview 16: Billing Mod Setting billing_mod_setting */}
+                  {mypcOpenedFile === 'billing_mod_setting' && (
+                    <BillingModSettingView onNavigateToBilling={() => {
+                      if (onNavigate) {
+                        onNavigate('billing');
+                      } else {
+                        navigate('/billing');
+                      }
+                    }} />
                   )}
                 </div>
               </div>

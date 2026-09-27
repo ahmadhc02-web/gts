@@ -69,6 +69,7 @@ const MYPC_SLUG_TO_FILE: Record<string, string> = {
   'print': 'print_receipt_view',
   'complaints': 'complaints_view',
   'whatsapp-integration': 'whatsapp_integration',
+  'billing-mod-setting': 'billing_mod_setting',
 };
 
 const MYPC_FILE_TO_SLUG: Record<string, string> = {
@@ -87,6 +88,7 @@ const MYPC_FILE_TO_SLUG: Record<string, string> = {
   'print_receipt_view': 'print',
   'complaints_view': 'complaints',
   'whatsapp_integration': 'whatsapp-integration',
+  'billing_mod_setting': 'billing-mod-setting',
 };
 
 interface AdminPanelProps {
@@ -190,7 +192,7 @@ export default function AdminPanel({
     setIsSyncingPB(true);
     try {
       toast.loading("Syncing Billing Months...", { id: "pb-sync" });
-      const bMonths = await pocketbaseService.getBillingMonths(activeDealerId);
+      const bMonths = await pocketbaseService.getBillingMonths(activeDealerId, false, 999);
       for (const m of bMonths) {
         if (m.rows) {
           await saveBillingMonthTracked(m.id, m.rows, currentUser?.username || 'admin', activeDealerId || 'main').catch(()=>{});
@@ -773,6 +775,7 @@ export default function AdminPanel({
   const [restoreSuccess, setRestoreSuccess] = useState(false);
 
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
+  const [billingMonthsList, setBillingMonthsList] = useState<{ id: string }[]>([]);
 
   React.useEffect(() => {
     // Permanent purge of legacy billing months caches from local storage
@@ -973,6 +976,46 @@ export default function AdminPanel({
       currentMonthIdRef.current = next;
       return next;
     });
+  };
+
+  const [isSwitchingMonth, setIsSwitchingMonth] = useState<boolean>(false);
+
+  const handleSelectMonth = async (selectedMonthId: string) => {
+    if (!selectedMonthId) {
+      setCurrentMonthId('');
+      return;
+    }
+
+    const currentMonths = billingMonthsRef.current.length > 0 ? billingMonthsRef.current : billingMonths;
+    const existingMonth = currentMonths.find((m: any) => (m?.id || m?.month_id) === selectedMonthId);
+
+    if (existingMonth && Array.isArray(existingMonth.rows)) {
+      setCurrentMonthId(selectedMonthId);
+      return;
+    }
+
+    setIsSwitchingMonth(true);
+    try {
+      const historicalMonth = await pocketbaseService.getBillingMonthsHistory(selectedMonthId, activeDealerId || 'main');
+      if (historicalMonth) {
+        setBillingMonths(prev => {
+          const idx = prev.findIndex((m: any) => (m?.id || m?.month_id) === selectedMonthId);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = historicalMonth;
+            return updated;
+          } else {
+            return [...prev, historicalMonth];
+          }
+        });
+      }
+      setCurrentMonthId(selectedMonthId);
+    } catch (err) {
+      console.error("Failed to load historical billing month:", err);
+      toast.error(`Failed to load sheet for ${selectedMonthId}`);
+    } finally {
+      setIsSwitchingMonth(false);
+    }
   };
   const [isConfiguringNewMonth, setIsConfiguringNewMonth] = useState(false);
   const [isDeleteSheetModalOpen, setIsDeleteSheetModalOpen] = useState(false);
@@ -1222,7 +1265,7 @@ export default function AdminPanel({
 
   const [isEditingMypc, setIsEditingMypc] = useState(false);
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
-  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'whatsapp_integration' | null>(null);
+  const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'whatsapp_integration' | 'billing_mod_setting' | null>(null);
 
   // Sync /mypc sub-routes with opened file state
   useEffect(() => {
@@ -1558,6 +1601,18 @@ export default function AdminPanel({
     }
   }, [activeTab, location.pathname]);
 
+  // Fetch lightweight billing months list once when billing tab is active
+  useEffect(() => {
+    if (activeTab !== 'billing') return;
+    pocketbaseService.getBillingMonthsList(activeDealerId || 'main').then(list => {
+      if (list && Array.isArray(list)) {
+        setBillingMonthsList(list.map((m: any) => ({ id: m.id })));
+      }
+    }).catch(err => {
+      console.error("Failed to load billing months list:", err);
+    });
+  }, [activeTab, activeDealerId]);
+
   // Real-time sub for billing months (subscribes when billing section is open)
   useEffect(() => {
     if (activeTab !== 'billing') {
@@ -1576,38 +1631,50 @@ export default function AdminPanel({
       });
       
       setBillingMonths(prev => {
-        const nextList = sorted.map(incomingMonth => {
+        const nextMap = new Map<string, any>();
+        // Preserve any previously loaded months (e.g. on-demand loaded historical months)
+        prev.forEach(m => {
+          if (m?.id && !deletingMonthIds.current.has(m.id)) {
+            nextMap.set(m.id, m);
+          }
+        });
+
+        sorted.forEach(incomingMonth => {
           const key = `${incomingMonth.id}_${activeDealerId || 'main'}`;
           const isSaveInProgress = savingMonthIds.current.has(incomingMonth.id) ||
             (pocketbaseService._syncingMonths && pocketbaseService._syncingMonths.has(key)) ||
             (pocketbaseService._saveBillingMonthLatestRows && pocketbaseService._saveBillingMonthLatestRows[key]);
 
-          const currentLocalMonth = prev.find(lm => lm.id === incomingMonth.id);
+          const currentLocalMonth = nextMap.get(incomingMonth.id);
 
           if (isSaveInProgress) {
             if (currentLocalMonth) {
               console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save or pending edit in progress)`);
-              return {
+              nextMap.set(incomingMonth.id, {
                 ...incomingMonth,
                 rows: currentLocalMonth.rows,
                 updatedAt: currentLocalMonth.updatedAt
-              };
+              });
+              return;
             }
           }
 
           if (currentLocalMonth && currentLocalMonth.updatedAt && incomingMonth.updatedAt) {
             if (currentLocalMonth.updatedAt > incomingMonth.updatedAt) {
               console.log(`[BillingSync] Preserving newer local rows for ${incomingMonth.id} (${currentLocalMonth.updatedAt} > ${incomingMonth.updatedAt})`);
-              return {
+              nextMap.set(incomingMonth.id, {
                 ...incomingMonth,
                 rows: currentLocalMonth.rows,
                 updatedAt: currentLocalMonth.updatedAt
-              };
+              });
+              return;
             }
           }
 
-          return incomingMonth;
+          nextMap.set(incomingMonth.id, incomingMonth);
         });
+
+        const nextList = Array.from(nextMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         if (JSON.stringify(prev) === JSON.stringify(nextList)) {
           return prev;
         }
@@ -1616,7 +1683,7 @@ export default function AdminPanel({
 
       setCurrentMonthId(prev => {
         if (sorted.length === 0) return '';
-        if (!prev || !sorted.some((m: any) => m.id === prev)) {
+        if (!prev) {
           return sorted[0].id;
         }
         return prev;
@@ -2757,9 +2824,20 @@ export default function AdminPanel({
   const [googleTokens, setGoogleTokens] = useState(googleSheetsService.getTokens());
   
   useEffect(() => {
+    const handleReset = () => {
+      setMypcOpenedFile(null);
+    };
+    window.addEventListener('mypc-reset-desktop', handleReset);
+    return () => window.removeEventListener('mypc-reset-desktop', handleReset);
+  }, []);
+
+  useEffect(() => {
     const handleAdminNav = (e: any) => {
       if (e.detail) {
         setActiveTab(e.detail);
+        if (e.detail === 'mypc') {
+          setMypcOpenedFile(null);
+        }
         // If switching to complaints, reset filters to 'all'
         if (e.detail === 'complaints') {
           setForcedStatus('all');
@@ -3657,7 +3735,7 @@ export default function AdminPanel({
 
   const handleGetBackup = async () => {
     try {
-      const allMonths = await pocketbaseService.getBillingMonths(activeDealerId || 'main');
+      const allMonths = await pocketbaseService.getBillingMonths(activeDealerId || 'main', false, 999);
       const backupData = {
         exportedAt: new Date().toISOString(),
         dealerId: activeDealerId || 'main',
@@ -3735,7 +3813,7 @@ export default function AdminPanel({
 
         setRestoreStatus("Verifying saved data...");
         // Final verification
-        const verifiedMonths = await pocketbaseService.getBillingMonths(activeDealerId || 'main');
+        const verifiedMonths = await pocketbaseService.getBillingMonths(activeDealerId || 'main', false, 999);
         
         for (let i = 0; i < totalMonths; i++) {
           const expectedMonth = monthsToRestore[i];
@@ -3810,17 +3888,30 @@ export default function AdminPanel({
     document.body.removeChild(link);
   };
 
+  const mergedBillingMonthsList = useMemo(() => {
+    const map = new Map<string, { id: string }>();
+    (billingMonthsList || []).forEach(m => {
+      const id = m?.id;
+      if (id) map.set(id, { id });
+    });
+    (billingMonths || []).forEach(m => {
+      const id = m?.id || m?.month_id;
+      if (id) map.set(id, { id });
+    });
+    return Array.from(map.values());
+  }, [billingMonthsList, billingMonths]);
+
   // Broadcast billing states for header integration in Layout
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('gts-billing-state-changed', {
       detail: { 
-        billingMonths, 
+        billingMonths: mergedBillingMonthsList, 
         currentMonthId, 
         isBillingUnlocked,
         hasActiveRows: activeRows.length > 0
       }
     }));
-  }, [billingMonths, currentMonthId, isBillingUnlocked, activeRows]);
+  }, [mergedBillingMonthsList, currentMonthId, isBillingUnlocked, activeRows]);
 
   // Listen to actions emitted from Layout's custom header
   useEffect(() => {
@@ -3854,8 +3945,8 @@ export default function AdminPanel({
     const handleMonthSelected = (e: Event) => {
       const customEvent = e as CustomEvent;
       const newMonthId = customEvent.detail;
-      if (newMonthId === currentMonthId) return;
-      setCurrentMonthId(newMonthId);
+      if (newMonthId === currentMonthIdRef.current) return;
+      handleSelectMonth(newMonthId);
     };
 
     window.addEventListener('gts-billing-action', handleBillingAction);
@@ -3886,6 +3977,7 @@ export default function AdminPanel({
     billingColWidths,
     billingKeyInput,
     billingMonths,
+    billingMonthsList: mergedBillingMonthsList,
     billingPage,
     billingRowToDelete,
     billingScrollContainerRef,
@@ -3897,7 +3989,7 @@ export default function AdminPanel({
     complaints,
     currentMainPage,
     currentMonthId,
-    setCurrentMonthId,
+    setCurrentMonthId: handleSelectMonth,
     currentUser,
     dcRowsList,
     dragActive,
@@ -7138,7 +7230,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'billing' && <BillingTab {...stateProps} isLoading={isBillingMonthsLoading} forceViewOnly={!canWriteBilling} />}
+        {activeTab === 'billing' && <BillingTab {...stateProps} isLoading={isBillingMonthsLoading || isSwitchingMonth} forceViewOnly={!canWriteBilling} />}
           </motion.div>
           </Suspense>
           </>

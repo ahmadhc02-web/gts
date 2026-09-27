@@ -487,6 +487,19 @@ export default function Layout({
     }
   };
 
+  const handleMarkAllRead = async () => {
+    try {
+      const tenantId = user ? pocketbaseService.getReadTenantId(user) : undefined;
+      await pocketbaseService.markAllNotificationsRead(tenantId);
+    } catch (error) {
+      console.error('Failed to mark all notifications read:', error);
+    }
+  };
+
+  const unreadNotificationsCount = useMemo(() => {
+    return (notifications || []).filter(n => !n.isRead).length;
+  }, [notifications]);
+
   const [expandedCats, setExpandedCats] = useState<string[]>(['ops', 'analytics', 'system']);
 
   const isSubDealerUser = user ? ((user.role === 'dealer' || Boolean(user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && user.role !== 'admin') : false;
@@ -571,7 +584,13 @@ export default function Layout({
   const handleSidebarNav = (id: string) => {
     if (id === 'map') {
       setIsMapOpen(true);
+    } else if (id === 'monitor' || id === 'latency') {
+      setActiveTab('latency');
     } else {
+      if (id === 'mypc') {
+        window.dispatchEvent(new CustomEvent('mypc-reset-desktop'));
+      }
+      setActiveTab(id);
       window.dispatchEvent(new CustomEvent('admin-nav', { detail: id }));
     }
     setIsSidebarOpen(false);
@@ -633,10 +652,10 @@ export default function Layout({
 
               let permitted;
               if (user.role === 'member' || user.role === 'field_agent') {
-                const order = ['complaints', 'submit', 'nodes', 'billing', 'map', 'settings'];
+                const order = ['complaints', 'submit', 'nodes', 'billing', 'mypc', 'map', 'settings'];
                 permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
               } else if (user.role === 'liteadmin') {
-                const order = ['complaints', 'submit', 'nodes', 'clients', 'billing', 'map', 'settings'];
+                const order = ['complaints', 'submit', 'nodes', 'clients', 'billing', 'mypc', 'map', 'settings'];
                 permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
               } else {
                 permitted = items.filter(item => {
@@ -651,7 +670,7 @@ export default function Layout({
               return visible.map((item, idx) => {
                 const isItemActive = (() => {
                   if (item.id === 'chat') return isChatOpen;
-                  if (item.id === 'monitor') return isMonitorOpen;
+                  if (item.id === 'monitor') return activeTab === 'latency' || activeTab === 'monitor' || isMonitorOpen;
                   if (item.id === 'map') return isMapOpen && !isSidebarOpen;
                   return activeTab === item.id || 
                          (item.id === 'complaints' && activeTab === 'ops') ||
@@ -662,7 +681,7 @@ export default function Layout({
                   if (item.id === 'chat') {
                     setIsChatOpen(true);
                   } else if (item.id === 'monitor') {
-                    setIsMonitorOpen(true);
+                    handleSidebarNav('latency');
                   } else if (item.id === 'map') {
                     setIsMapOpen(true);
                   } else if (item.id === 'billing') {
@@ -1135,29 +1154,50 @@ export default function Layout({
               }}
               className="fixed bottom-20 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden flex flex-col"
             >
-              <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-brand-accent/10 flex items-center justify-center">
                     <History size={16} className="text-brand-accent" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 leading-none">Operation History</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 leading-none">Operation History</h3>
+                      {unreadNotificationsCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20 text-[9px] font-black font-mono">
+                          {unreadNotificationsCount} unread
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Live Intelligence Feed</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   {notifications.length > 0 && (
-                    <button 
-                      onClick={handleClearAll}
-                      className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-emerald-500 transition-all group"
-                      title="Mark all as read / Clear Feed"
-                    >
-                      <CheckCircle2 size={18} className="group-hover:scale-110 transition-transform" />
-                    </button>
+                    <>
+                      {unreadNotificationsCount > 0 && (
+                        <button 
+                          onClick={handleMarkAllRead}
+                          className="h-8 px-2.5 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/40 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200/60 dark:border-white/5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95"
+                          title="Mark all notifications as read"
+                        >
+                          <CheckCircle2 size={13} className="text-emerald-500" />
+                          <span className="hidden xs:inline">Mark All Read</span>
+                        </button>
+                      )}
+                      <button 
+                        onClick={handleClearAll}
+                        className="h-8 px-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-600 dark:text-slate-300 hover:text-rose-500 dark:hover:text-rose-400 border border-slate-200/60 dark:border-white/5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95"
+                        title="Delete all notifications"
+                      >
+                        <Trash2 size={13} className="text-rose-500" />
+                        <span className="hidden xs:inline">Delete All</span>
+                      </button>
+                    </>
                   )}
                   <button 
                     onClick={() => setIsNotificationsOpen(false)}
-                    className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                    className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors ml-1"
+                    title="Close"
                   >
                     <ChevronRight size={18} />
                   </button>
@@ -1181,67 +1221,109 @@ export default function Layout({
                     <p className="text-xs font-black uppercase tracking-widest text-slate-400">Empty Log Cache</p>
                   </div>
                 ) : (
-                  notifications.map((notif, idx) => (
-                    <motion.div
-                      key={`${notif.id}-${idx}`}
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.05 }}
-                      onClick={() => {
-                        setSelectedNotif(notif);
-                        setIsNotificationsOpen(false);
-                      }}
-                      className={`p-3.5 rounded-xl border border-slate-100 dark:border-white/10 bg-slate-50/30 dark:bg-slate-900/20 hover:bg-white dark:hover:bg-slate-900 transition-all duration-300 group cursor-pointer border-l-4 ${
-                        notif.type === 'complaint_created' ? 'border-l-emerald-500' :
-                        notif.type === 'complaint_updated' ? 'border-l-blue-500' :
-                        notif.type === 'complaint_deleted' ? 'border-l-rose-500' :
-                        notif.type === 'user_created' ? 'border-l-brand-accent' :
-                        notif.type === 'config_updated' ? 'border-l-amber-500' :
-                        'border-l-slate-400'
-                      } shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] dark:hover:shadow-none hover:-translate-y-0.5`}
-                    >
-                      <div className="flex gap-4 items-start">
-                        <div className="mt-1">
-                          {getNotifIcon(notif.type)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-relaxed mb-2">
-                            {notif.message}
-                          </p>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              {(() => {
-                                const authorUser = users.find(u => u.username === notif.authorName || u.fullName === notif.authorName);
-                                if (authorUser && authorUser.profilePicture) {
+                  notifications.map((notif, idx) => {
+                    const isRead = Boolean(notif.isRead);
+                    return (
+                      <motion.div
+                        key={`${notif.id}-${idx}`}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.05 }}
+                        onClick={() => {
+                          if (!notif.isRead) {
+                            const tenantId = user ? pocketbaseService.getReadTenantId(user) : undefined;
+                            pocketbaseService.markNotificationRead(notif.id, tenantId).catch(console.error);
+                          }
+                          setSelectedNotif(notif);
+                          setIsNotificationsOpen(false);
+                        }}
+                        className={`p-3.5 rounded-xl border border-slate-100 dark:border-white/10 transition-all duration-200 group cursor-pointer relative ${
+                          isRead
+                            ? 'bg-slate-50/20 dark:bg-slate-900/10 opacity-70 hover:opacity-100 border-l-2 border-l-slate-300 dark:border-l-slate-700'
+                            : `bg-slate-50/60 dark:bg-slate-900/40 hover:bg-white dark:hover:bg-slate-900 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] dark:hover:shadow-none hover:-translate-y-0.5 border-l-4 ${
+                                notif.type === 'complaint_created' ? 'border-l-emerald-500' :
+                                notif.type === 'complaint_updated' ? 'border-l-blue-500' :
+                                notif.type === 'complaint_deleted' ? 'border-l-rose-500' :
+                                notif.type === 'user_created' ? 'border-l-brand-accent' :
+                                notif.type === 'config_updated' ? 'border-l-amber-500' :
+                                'border-l-slate-400'
+                              }`
+                        }`}
+                      >
+                        <div className="flex gap-3.5 items-start">
+                          <div className="mt-1 shrink-0">
+                            {getNotifIcon(notif.type)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <p className={`text-xs leading-relaxed ${
+                                isRead ? 'font-medium text-slate-600 dark:text-slate-400' : 'font-bold text-slate-800 dark:text-slate-200'
+                              }`}>
+                                {notif.message}
+                              </p>
+                              {/* Action buttons: Mark Read & Delete */}
+                              <div className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                {!isRead && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const tenantId = user ? pocketbaseService.getReadTenantId(user) : undefined;
+                                      pocketbaseService.markNotificationRead(notif.id, tenantId).catch(console.error);
+                                    }}
+                                    className="p-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-400 hover:text-emerald-500 transition-colors"
+                                    title="Mark as read"
+                                  >
+                                    <Check size={13} strokeWidth={2.5} />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const tenantId = user ? pocketbaseService.getReadTenantId(user) : undefined;
+                                    pocketbaseService.deleteNotification(notif.id, tenantId).catch(console.error);
+                                  }}
+                                  className="p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500 transition-colors"
+                                  title="Delete notification"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                {(() => {
+                                  const authorUser = users.find(u => u.username === notif.authorName || u.fullName === notif.authorName);
+                                  if (authorUser && authorUser.profilePicture) {
+                                    return (
+                                      <img 
+                                        src={getAvatarUrl(authorUser.profilePicture)} 
+                                        alt={notif.authorName} 
+                                        className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+                                      />
+                                    );
+                                  }
                                   return (
                                     <img 
-                                      src={getAvatarUrl(authorUser.profilePicture)} 
-                                      alt={notif.authorName} 
-                                      className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+                                      src={getAvatarUrl('default:male')} 
+                                      alt={notif.authorName}
+                                      className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 opacity-80"
                                     />
                                   );
-                                }
-                                return (
-                                  <img 
-                                    src={getAvatarUrl('default:male')} 
-                                    alt={notif.authorName}
-                                    className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 opacity-80"
-                                  />
-                                );
-                              })()}
-                              <span className="text-[10px] font-black uppercase tracking-tighter text-brand-accent">
-                                {notif.authorName}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400">
-                              <Clock size={10} />
-                              {formatTimestamp(notif.createdAt)}
+                                })()}
+                                <span className="text-[10px] font-black uppercase tracking-tighter text-brand-accent">
+                                  {notif.authorName}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400">
+                                <Clock size={10} />
+                                {formatTimestamp(notif.createdAt)}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  ))
+                      </motion.div>
+                    );
+                  })
                 )}
               </div>
 
@@ -1607,6 +1689,10 @@ export default function Layout({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
+            <div className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shadow-sm select-none">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+              <span>Updated V2 • Billing Mod Config</span>
+            </div>
             {user && (
               <div className="flex items-center gap-2 h-9">
                 {/* Alerts/Bell notification indicator */}
@@ -1625,7 +1711,7 @@ export default function Layout({
                   ) : (
                     <Bell size={15} className={!alertAuthorized ? "opacity-60" : ""} />
                   )}
-                  {notifications.length > 0 && (
+                  {unreadNotificationsCount > 0 && (
                     <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
@@ -2230,8 +2316,13 @@ export default function Layout({
 
         {/* Service Real-time Monitor */}
         <ServiceMonitor 
-          isOpen={isMonitorOpen} 
-          onClose={() => setIsMonitorOpen(false)} 
+          isOpen={activeTab === 'latency' || activeTab === 'monitor' || isMonitorOpen} 
+          onClose={() => {
+            setIsMonitorOpen(false);
+            if (activeTab === 'latency' || activeTab === 'monitor') {
+              setActiveTab('complaints');
+            }
+          }} 
           user={user}
         />
       </Suspense>

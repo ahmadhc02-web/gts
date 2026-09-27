@@ -939,7 +939,7 @@ export default function App() {
     if (!pbAuthReady) return;
     
     // Only subscribe to live complaints when needed to save resources
-    const shouldSubscribeComplaints = ['dashboard', 'complaints', 'monitor', 'recycle_bin'].includes(activeTab || 'dashboard');
+    const shouldSubscribeComplaints = ['dashboard', 'complaints', 'monitor', 'latency', 'recycle_bin'].includes(activeTab || 'dashboard');
     if (!shouldSubscribeComplaints) return;
     
     const tenantId = pocketbaseService.getReadTenantId(user);

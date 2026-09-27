@@ -15,7 +15,7 @@ export function getTabFromPathname(pathname: string, search?: string): string {
         if (tabParam === 'submit' || tabParam === 'servicerequest') return 'submit';
         if (tabParam === 'config') return 'config';
         if (tabParam === 'map') return 'map';
-        if (tabParam === 'monitor') return 'monitor';
+        if (tabParam === 'monitor' || tabParam === 'latency') return 'latency';
         if (tabParam === 'mypc') return 'mypc';
         if (tabParam === 'branding') return 'branding';
         if (tabParam === 'integrations') return 'integrations';
@@ -38,7 +38,7 @@ export function getTabFromPathname(pathname: string, search?: string): string {
   if (pathname === '/servicerequest' || pathname === '/submit') return 'submit';
   if (pathname === '/config') return 'config';
   if (pathname === '/map') return 'map';
-  if (pathname === '/monitor') return 'monitor';
+  if (pathname === '/latency' || pathname === '/monitor') return 'latency';
   if (pathname === '/mypc' || pathname.startsWith('/mypc/')) return 'mypc';
   if (pathname === '/branding') return 'branding';
   if (pathname === '/integrations') return 'integrations';
@@ -62,7 +62,8 @@ export function getPathnameFromTab(tabId: string): string {
     case 'submit': return '/servicerequest';
     case 'config': return '/config';
     case 'map': return '/map';
-    case 'monitor': return '/monitor';
+    case 'latency':
+    case 'monitor': return '/latency';
     case 'mypc': return '/mypc';
     case 'branding': return '/branding';
     case 'integrations': return '/integrations';

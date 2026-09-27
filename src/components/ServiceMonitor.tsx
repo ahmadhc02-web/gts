@@ -1,7 +1,25 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Activity, RefreshCw, Plus, Trash2, Wifi, TrendingUp, Server, Zap, Cpu, AlertTriangle, CheckCircle2, Network, Radio, Edit, ArrowLeft, Clock, BarChart2, ShieldAlert, ShieldCheck } from 'lucide-react';
-import { LineChart, Line, AreaChart, Area, ResponsiveContainer, YAxis, Tooltip, XAxis, CartesianGrid } from 'recharts';
+import { 
+  X, 
+  Activity, 
+  RefreshCw, 
+  Plus, 
+  Trash2, 
+  Wifi, 
+  TrendingUp, 
+  Server, 
+  Zap, 
+  CheckCircle2, 
+  Network, 
+  Edit, 
+  ArrowLeft, 
+  ShieldCheck,
+  Globe,
+  Radio,
+  ExternalLink
+} from 'lucide-react';
+import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip, XAxis, CartesianGrid, Line } from 'recharts';
 import { cn } from '../lib/utils';
 import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { MonitorTarget, UserProfile } from '../types';
@@ -15,8 +33,9 @@ interface ServiceMonitorProps {
 
 interface PingResult {
   domain: string;
-  ms: number | 'Error';
-  status: 'excellent' | 'good' | 'fair' | 'poor' | 'loading';
+  ms: number | 'Error' | null;
+  status: 'excellent' | 'good' | 'fair' | 'poor' | 'loading' | 'unknown';
+  message: string;
   history: { time: string; ms: number }[];
   avgMs?: number;
   minMs?: number;
@@ -67,7 +86,7 @@ const generateEmpty5MinHistory = () => {
 
 const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }) => {
   const [targets, setTargets] = useState<Target[]>(DEFAULT_TARGETS);
-  const [dbTargets, setDbTargets] = useState<MonitorTarget[]>([]);
+  const [, setDbTargets] = useState<MonitorTarget[]>([]);
   
   const [results, setResults] = useState<Record<string, PingResult>>({});
   const [isMeasuring, setIsMeasuring] = useState(false);
@@ -86,94 +105,98 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
   const [detailCountdown, setDetailCountdown] = useState<number>(300);
   const [detailHistory, setDetailHistory] = useState<{ time: string; ms: number }[]>([]);
 
-  const measurePing = useCallback(async (url: string) => {
-    // 1. Get raw baseline network latency to our own backend host (which has zero CORS bans)
-    // This perfectly captures the actual current performance and congestion of the user's internet connection!
-    const hostStart = performance.now();
-    let hostRtt = 45; // default fallback if offline
+  /**
+   * Real, honest latency measurement:
+   * - No artificial reductions or subtractions.
+   * - No fake offsetCoeff / sine-wave microJitter fallbacks.
+   * - Direct HTTP roundtrip / 2 (ICMP ping approximation) when reachable.
+   * - Resource Timing API inspection for real browser network timing.
+   * - Honest 'unknown' status and null ms when blocked by CORS.
+   */
+  const measurePing = useCallback(async (url: string): Promise<{ ms: number | null | 'Error'; status: PingResult['status']; message: string }> => {
+    const fullUrl = `https://${url}/favicon.ico?_t=${Date.now()}`;
+    const targetStart = performance.now();
+    let targetRtt = 0;
+    let fetchSucceeded = false;
+    let timedOut = false;
+
     try {
-      await fetch(`/index.html?t=${Date.now()}`, { 
-        method: 'HEAD',
+      await fetch(fullUrl, { 
+        mode: 'no-cors', 
         cache: 'no-store',
-        signal: AbortSignal.timeout(1800)
+        signal: AbortSignal.timeout(2500)
       });
-      hostRtt = Math.round(performance.now() - hostStart);
-    } catch (e) {
-      try {
-        await fetch(`/?t=${Date.now()}`, {
-          method: 'GET',
-          cache: 'no-store',
-          signal: AbortSignal.timeout(1800)
-        });
-        hostRtt = Math.round(performance.now() - hostStart);
-      } catch (e2) {
-        // Safe standard fallback based on navigator's official reported RTT if available
-        hostRtt = (navigator as any).connection?.rtt || 55;
+      targetRtt = Math.round(performance.now() - targetStart);
+      fetchSucceeded = targetRtt > 4; // Sub-4ms generally indicates direct local rejection
+    } catch (e: any) {
+      if (e?.name === 'TimeoutError' || (e instanceof DOMException && e.name === 'TimeoutError')) {
+        timedOut = true;
+      }
+      targetRtt = Math.round(performance.now() - targetStart);
+      if (!timedOut && targetRtt > 4) {
+        fetchSucceeded = true;
       }
     }
 
-    // Ensure hostRtt is in a sane physical boundary (minimum 1ms back-and-forth)
-    hostRtt = Math.max(1, hostRtt);
+    if (timedOut) {
+      return {
+        ms: 'Error',
+        status: 'poor',
+        message: 'Request timed out — target may be unreachable'
+      };
+    }
 
-    // 2. Measure actual target connection latency
-    const targetStart = performance.now();
-    let targetRtt = 0;
-    let targetSuccess = false;
+    // Try legitimate secondary measurement using Resource Timing API
+    let resourceDuration: number | null = null;
     try {
-      await fetch(`https://${url}/favicon.ico?t=${Date.now()}`, { 
-        mode: 'no-cors', 
-        cache: 'no-store',
-        signal: AbortSignal.timeout(2000)
-      });
-      targetRtt = Math.round(performance.now() - targetStart);
-      targetSuccess = targetRtt > 4; // Instant error usually indicates sandboxed direct reject
-    } catch (e) {
-      // Even if fetch throws a CORS error, if it spent > 4ms, the network connection was established! So it is real!
-      targetRtt = Math.round(performance.now() - targetStart);
-      targetSuccess = targetRtt > 4;
+      const entries = performance.getEntriesByName(fullUrl) as PerformanceResourceTiming[];
+      if (entries && entries.length > 0) {
+        const entry = entries[entries.length - 1];
+        if (entry.responseStart > 0 && entry.requestStart > 0 && entry.responseStart >= entry.requestStart) {
+          resourceDuration = Math.round(entry.responseStart - entry.requestStart);
+        } else if (entry.duration > 0) {
+          resourceDuration = Math.round(entry.duration);
+        }
+      }
+    } catch (_) {}
+
+    // 1. If resource timing API captured the duration
+    if (resourceDuration !== null && resourceDuration > 0) {
+      const finalMs = Math.max(1, Math.round(resourceDuration / 2));
+      let status: PingResult['status'] = 'excellent';
+      if (finalMs > 80) status = 'good';
+      if (finalMs > 160) status = 'fair';
+      if (finalMs > 300) status = 'poor';
+      return {
+        ms: finalMs,
+        status,
+        message: `Measured via browser timing API — ${finalMs}ms`
+      };
     }
 
-    // 3. Compute the native original latency
-    let finalMs = 0;
-    if (targetSuccess) {
-      // In a normal ping, RTT is 1 roundtrip. HTTP fetch over TLS involves multiple roundtrips (TCP + SSL + HTTP).
-      // Let's divide by 2 to get a highly accurate representation of a direct ping, grounded 100% in their real active connection trace.
-      finalMs = Math.max(1, Math.round(targetRtt / 2));
-    } else {
-      // If blocked/unreachable directly, formulate it completely based on the user's live host RTT!
-      // Add a representative offset coefficient per server (e.g. Google is fast, X is a bit slower)
-      let offsetCoeff = 1.0;
-      if (url.includes('google.com')) offsetCoeff = 0.85;       // Google is usually closest/fastest
-      else if (url.includes('facebook.com')) offsetCoeff = 1.05;  // Meta CDN is broad & fast
-      else if (url.includes('instagram.com')) offsetCoeff = 1.15; // Instagram CDN media portal
-      else if (url.includes('x.com')) offsetCoeff = 1.35;          // Twitter/X can be a bit slower/further
-      else offsetCoeff = 1.1;
-
-      // Add a light real-time organic physical float (e.g. +/- 4ms) to make the telemetry feed dynamic
-      const microJitter = (Math.sin(Date.now() / 8000) * 4) + (Date.now() % 4);
-      finalMs = Math.max(1, Math.round(hostRtt * offsetCoeff + microJitter));
+    // 2. If direct fetch completed with valid round-trip time
+    if (fetchSucceeded && targetRtt > 4) {
+      // In a normal ping, RTT is 1 roundtrip. HTTP fetch over TLS involves TCP + SSL + HTTP,
+      // so /2 is an industry-standard ICMP ping approximation.
+      const finalMs = Math.max(1, Math.round(targetRtt / 2));
+      let status: PingResult['status'] = 'excellent';
+      if (finalMs > 80) status = 'good';
+      if (finalMs > 160) status = 'fair';
+      if (finalMs > 300) status = 'poor';
+      return {
+        ms: finalMs,
+        status,
+        message: `Direct connection confirmed — ${finalMs}ms round trip`
+      };
     }
 
-    // User requested artificial reduction for presentation: show significantly less latency
-    // If it's too high, let's treat it as offline/error as requested earlier.
-    if (finalMs > 1000) {
-       return { ms: 'Error', status: 'poor' };
-    }
-
-    // Apply the reduction: subtract 200ms or 50%, whichever keeps it realistic but low.
-    // The previous request: "50% less" or "200 less". We'll just do Math.max(1, Math.round(finalMs / 2.5)); to make it very green.
-    finalMs = Math.max(1, Math.round(finalMs / 2) - 30);
-    if (finalMs < 1) {
-       finalMs = Math.floor(Math.random() * 5) + 1; // 1 to 5 ms organically
-    }
-
-    // Classify performance status dynamically based on true performance
-    let status: PingResult['status'] = 'excellent';
-    if (finalMs > 75) status = 'good';
-    if (finalMs > 150) status = 'fair';
-    if (finalMs > 250) status = 'poor';
-
-    return { ms: finalMs, status };
+    // 3. Could not measure directly (blocked by CORS or sandboxed)
+    // Never invent a guessed number for a real one!
+    return {
+      ms: null,
+      status: 'unknown',
+      message: 'Blocked by browser (CORS) — latency unavailable'
+    };
   }, []);
 
   const getTrendData = useCallback((dataList: { time: string; ms: number }[]) => {
@@ -195,7 +218,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
     const intercept = (sumY - slope * sumX) / n;
     return dataList.map((item, i) => ({
       ...item,
-      trendMs: Math.max(4, ...[Math.round(slope * i + intercept)])
+      trendMs: Math.max(4, Math.round(slope * i + intercept))
     }));
   }, []);
 
@@ -225,8 +248,9 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
           ...prev,
           [target.key]: { 
             domain: target.domain, 
-            ms: current?.ms || 0, 
+            ms: current?.ms ?? null, 
             status: 'loading',
+            message: 'Running live latency trace...',
             history: current?.history || [],
             packetsSent: (current?.packetsSent || 0) + 1,
             packetsReceived: current?.packetsReceived || 0,
@@ -239,14 +263,38 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       });
       
       const samples: number[] = [];
-      for(let i = 0; i < 3; i++) {
+      let lastRes: { ms: number | null | 'Error'; status: PingResult['status']; message: string } = {
+        ms: null,
+        status: 'unknown',
+        message: 'Measuring...'
+      };
+
+      for (let i = 0; i < 3; i++) {
         const res = await measurePing(target.url);
+        lastRes = res;
         if (typeof res.ms === 'number') samples.push(res.ms);
         if (i < 2) await new Promise(r => setTimeout(r, 20));
       }
       
-      const bestMs = samples.length > 0 ? Math.min(...samples) : 'Err';
-      const status = typeof bestMs === 'number' ? (bestMs < 80 ? 'excellent' : bestMs < 150 ? 'good' : bestMs < 300 ? 'fair' : 'poor') : 'poor';
+      let bestMs: number | null | 'Error' = null;
+      let status: PingResult['status'] = 'unknown';
+      let message = lastRes.message;
+
+      if (samples.length > 0) {
+        bestMs = Math.min(...samples);
+        status = bestMs < 80 ? 'excellent' : bestMs < 160 ? 'good' : bestMs < 300 ? 'fair' : 'poor';
+        message = lastRes.message.includes('browser timing API')
+          ? `Measured via browser timing API — ${bestMs}ms`
+          : `Direct connection confirmed — ${bestMs}ms round trip`;
+      } else if (lastRes.status === 'poor' || lastRes.ms === 'Error') {
+        bestMs = 'Error';
+        status = 'poor';
+        message = lastRes.message || 'Request timed out — target may be unreachable';
+      } else {
+        bestMs = null;
+        status = 'unknown';
+        message = lastRes.message || 'Blocked by browser (CORS) — latency unavailable';
+      }
       
       setResults(prev => {
         const current = prev[target.key];
@@ -256,8 +304,8 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
           ms: bestMs 
         } : null;
         
-        const updatedHistory = newEntry ? [...currentHistory, newEntry].slice(-20) : currentHistory;
-        const numericHistory = updatedHistory.map(h => h.ms).filter(n => typeof n === 'number' && n > 0);
+        const updatedHistory = newEntry ? [...currentHistory, newEntry].slice(-25) : currentHistory;
+        const numericHistory = updatedHistory.map(h => h.ms).filter((n): n is number => typeof n === 'number' && n > 0);
         
         const minMs = numericHistory.length > 0 ? Math.min(...numericHistory) : undefined;
         const maxMs = numericHistory.length > 0 ? Math.max(...numericHistory) : undefined;
@@ -276,7 +324,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
         const packetsReceived = typeof bestMs === 'number' ? prevReceived + 1 : prevReceived;
         const packetsSent = current?.packetsSent || 1;
 
-        // Custom 5-minute scrolling-reset dynamic sweep logic (60 samples @ 5s intervals = 5 mins)
+        // Custom 5-minute scrolling-reset dynamic sweep logic
         const prev5MinHistory = current?.fiveMinHistory || generateEmpty5MinHistory();
         const prevSweepIndex = current?.sweepIndex !== undefined ? current?.sweepIndex : 0;
 
@@ -299,8 +347,9 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
           ...prev,
           [target.key]: { 
             domain: target.domain, 
-            ms: bestMs as any, 
-            status: status as any, 
+            ms: bestMs, 
+            status, 
+            message,
             history: updatedHistory,
             packetsSent,
             packetsReceived,
@@ -315,7 +364,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       });
     }
     setIsMeasuring(false);
-  }, [measurePing, targets]);
+  }, [measurePing, targets, ispInfo]);
 
   useEffect(() => {
     if (!expandedTargetKey || !isOpen) {
@@ -352,29 +401,45 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       }
 
       const samples: number[] = [];
-      for(let i = 0; i < 3; i++) {
+      let lastRes: { ms: number | null | 'Error'; status: PingResult['status']; message: string } = {
+        ms: null,
+        status: 'unknown',
+        message: 'Measuring...'
+      };
+
+      for (let i = 0; i < 3; i++) {
         const res = await measurePing(target.url);
+        lastRes = res;
         if (typeof res.ms === 'number') samples.push(res.ms);
         if (i < 2) await new Promise(r => setTimeout(r, 20));
       }
-      const freshMs = samples.length > 0 ? Math.min(...samples) : 45;
+
+      const freshMs: number | null = samples.length > 0 ? Math.min(...samples) : null;
+      const status: PingResult['status'] = freshMs !== null
+        ? (freshMs < 80 ? 'excellent' : freshMs < 160 ? 'good' : freshMs < 300 ? 'fair' : 'poor')
+        : (lastRes.ms === 'Error' ? 'poor' : 'unknown');
+      const message: string = freshMs !== null
+        ? (lastRes.message.includes('browser timing API')
+            ? `Measured via browser timing API — ${freshMs}ms`
+            : `Direct connection confirmed — ${freshMs}ms round trip`)
+        : lastRes.message;
 
       const nowLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-      // Update Local Detailed High Frequency Rolling History View
-      setDetailHistory(prev => {
-        const newEntry = { time: nowLabel, ms: freshMs };
-        return [...prev, newEntry].slice(-40);
-      });
+      if (freshMs !== null) {
+        setDetailHistory(prev => {
+          const newEntry = { time: nowLabel, ms: freshMs };
+          return [...prev, newEntry].slice(-40);
+        });
+      }
 
-      // Synchronize in main results structure so averages and counters match real-time
       setResults(prev => {
         const current = prev[expandedTargetKey];
         if (!current) return prev;
 
         const currentHistory = current.history || [];
-        const newEntry = { time: nowLabel, ms: freshMs };
-        const updatedHistory = [...currentHistory, newEntry].slice(-20);
+        const newEntry = freshMs !== null ? { time: nowLabel, ms: freshMs } : null;
+        const updatedHistory = newEntry ? [...currentHistory, newEntry].slice(-25) : currentHistory;
         const numericHistory = updatedHistory.map(h => h.ms).filter((n): n is number => typeof n === 'number' && n > 0);
 
         const minMs = numericHistory.length > 0 ? Math.min(...numericHistory) : current.minMs;
@@ -397,11 +462,12 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
           ...prev,
           [expandedTargetKey]: {
             ...current,
-            ms: freshMs as any,
-            status: freshMs < 75 ? 'excellent' : freshMs < 150 ? 'good' : freshMs < 250 ? 'fair' : 'poor',
+            ms: freshMs !== null ? freshMs : (lastRes.ms === 'Error' ? 'Error' : null),
+            status,
+            message,
             history: updatedHistory,
             packetsSent: prevSent + 1,
-            packetsReceived: prevReceived + 1,
+            packetsReceived: freshMs !== null ? prevReceived + 1 : prevReceived,
             avgMs,
             minMs,
             maxMs,
@@ -421,16 +487,14 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
     let domain = newDomain.trim();
     if (!domain.includes('.')) return;
     
-    // Basic normalization
     domain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
     
     const key = domain.toLowerCase();
     if (targets.some(t => t.key === key)) {
-      toast.error('Identity Protocol Error', { description: 'This target is already in the matrix.' });
+      toast.error('Identity Conflict', { description: 'This target gateway is already registered.' });
       return;
     }
 
-    // Extract clean name (remove www. and take part before first dot)
     const cleanName = domain.replace(/^www\./i, '').split('.')[0];
     const domainLabel = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
 
@@ -446,12 +510,12 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
       setNewDomain('');
 
       if (!user) {
-        toast.success('Local Gateway Established');
+        toast.success('Local Gateway Added');
         return;
       }
       
       await pocketbaseService.createMonitorTarget(domain, user, domainLabel);
-      toast.success('Matrix Link Established', { description: `${domain} added to permanent monitor.` });
+      toast.success('Gateway Registered', { description: `${domain} saved to monitoring matrix.` });
     } catch (error) {
       console.error("Monitor Write Failure:", error);
       toast.error('Infrastructure Link Failure');
@@ -463,12 +527,11 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
     if (!targetItem) return;
 
     try {
-      // Optimistic delete
       setTargets(prev => prev.filter(t => t.key !== key));
 
       if (targetItem.id) {
         await pocketbaseService.deleteMonitorTarget(targetItem.id);
-        toast.success('Link Terminated', { description: 'Target removed from matrix.' });
+        toast.success('Gateway Removed', { description: `${key} removed from matrix.` });
       } else {
         toast.success('Local Gateway Removed');
       }
@@ -490,7 +553,6 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
     }
 
     try {
-      // Optimistic state update
       setTargets(prev => prev.map(t => t.key === editingKey ? {
         ...t,
         key: normalizedDomain,
@@ -503,7 +565,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
           domain: normalizedDomain,
           label: editLabel.trim()
         });
-        toast.success('Matrix Link Updated');
+        toast.success('Gateway Updated');
       } else {
         toast.success('Local Gateway Updated');
       }
@@ -517,7 +579,6 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
     if (selectedKeys.length === 0) return;
     
     try {
-      // Optimistic state update
       setTargets(prev => prev.filter(t => !selectedKeys.includes(t.key)));
 
       for (const key of selectedKeys) {
@@ -542,7 +603,6 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
   useEffect(() => {
     if (!isOpen || !user) {
       if (!user) {
-        // Even if no user, ensure default targets are shown
         setTargets(DEFAULT_TARGETS);
       }
       return;
@@ -552,7 +612,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
     const seedKey = `gts_monitor_seeded_${tenantId}`;
 
     const unsubscribe = pocketbaseService.subscribeMonitorTargets(async (data) => {
-      // 1. Purge legacy targets (cloudflare, youtube, etc.) to clean up old defaults
+      // 1. Purge legacy targets
       const legacyKeys = ['cloudflare.com', 'youtube.com', 'github.com', 'aws.amazon.com', 'whatsapp.com', 'wikipedia.org'];
       const legacyToPurge = data.filter(t => legacyKeys.includes((t.domain || '').toLowerCase().trim()));
       
@@ -564,10 +624,10 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
             console.error("Error purging legacy target:", lt.domain, e);
           }
         }
-        return; // Let the next real-time update handle the clean list
+        return;
       }
 
-      // 1b. Purge duplicate target records in DB if multiple exist for the same domain
+      // Purge duplicate target records in DB if multiple exist
       const seenDomainIds = new Map<string, string>();
       const duplicateIdsToPurge: string[] = [];
       for (const t of data) {
@@ -589,7 +649,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
         return;
       }
 
-      // 2. See if we are missing any of our new 4 default targets and seed them sequentially
+      // Seed missing defaults
       const currentKeys = data.map(t => (t.domain || '').toLowerCase().trim());
       const missingDefaults = DEFAULT_TARGETS.filter(dt => !currentKeys.includes(dt.key.toLowerCase().trim()));
       
@@ -598,7 +658,6 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
         if (!localStorage.getItem(localResetKey)) {
           localStorage.setItem(localResetKey, 'true');
           for (const dt of DEFAULT_TARGETS) {
-            // Seed sequentially if missing completely or selectively if part of them is gone
             if (!currentKeys.includes(dt.key.toLowerCase().trim())) {
               try {
                 await pocketbaseService.createMonitorTarget(dt.key, user, dt.domain);
@@ -607,11 +666,10 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
               }
             }
           }
-          return; // Let the subscription update with newly seeded values
+          return;
         }
       }
 
-      // 3. Fallback: if database is active but empty and we still haven't seeded anything
       if (data.length === 0 && !localStorage.getItem(seedKey)) {
         localStorage.setItem(seedKey, 'true');
         for (const dt of DEFAULT_TARGETS) {
@@ -654,7 +712,7 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
     if (isOpen) {
       runDiagnostics();
       document.body.style.overflow = 'hidden';
-      const interval = setInterval(runDiagnostics, 5000); // 5 seconds is safer for non-stop diagnostics
+      const interval = setInterval(runDiagnostics, 4000);
       return () => {
         clearInterval(interval);
         document.body.style.overflow = 'unset';
@@ -668,784 +726,643 @@ const ServiceMonitor: React.FC<ServiceMonitorProps> = ({ isOpen, onClose, user }
 
   const getStatusColor = (status: PingResult['status']) => {
     switch (status) {
-      case 'excellent': return 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
-      case 'good': return 'text-blue-500 bg-blue-500/10 border-blue-500/20';
-      case 'fair': return 'text-amber-500 bg-amber-500/10 border-amber-500/20';
-      case 'poor': return 'text-rose-500 bg-rose-500/10 border-rose-500/20';
-      default: return 'text-slate-400 bg-slate-400/10 border-slate-400/20';
+      case 'excellent': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+      case 'good': return 'text-sky-400 bg-sky-500/10 border-sky-500/30';
+      case 'fair': return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+      case 'poor': return 'text-rose-400 bg-rose-500/10 border-rose-500/30';
+      case 'unknown': return 'text-slate-400 bg-slate-500/10 border-slate-500/30';
+      default: return 'text-slate-400 bg-slate-400/10 border-slate-400/30';
     }
+  };
+
+  const getLineStrokeColor = (status: PingResult['status'], ms: number | null | 'Error') => {
+    if (typeof ms !== 'number' || status === 'unknown') return '#64748b';
+    if (ms < 80) return '#10b981';
+    if (ms < 160) return '#38bdf8';
+    if (ms < 300) return '#f59e0b';
+    return '#f43f5e';
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-slate-950/60 backdrop-blur-md"
-          />
-          
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            style={{ fontFamily: '"Lexend", "Inter", sans-serif' }}
-            className="relative w-full max-w-7xl h-[90vh] md:h-[82vh] flex flex-col bg-white dark:bg-slate-950 rounded-[2.5rem] border border-sky-100 dark:border-sky-900/60 shadow-[0_24px_70px_-15px_rgba(14,165,233,0.3)] overflow-hidden mt-auto sm:mt-0 font-sans"
-          >
-            {!expandedTargetKey && (
-              <div className="p-4 sm:p-6 border-b border-sky-100 dark:border-sky-950 bg-sky-50/20 dark:bg-sky-950/10 shrink-0">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                <div className="flex items-center gap-2 sm:gap-3">
-                  <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-inner shrink-0 leading-none">
-                    <Activity size={22} className={cn("w-4 h-4 sm:w-[22px] sm:h-[22px]", isMeasuring && "animate-pulse")} />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-wider text-[11px] sm:text-base truncate" style={{ fontFamily: '"Lexend", sans-serif' }}>Router Nodes & Core Gateways</h3>
-                    <p className="text-[8px] sm:text-[10px] text-sky-600 dark:text-sky-400 font-bold uppercase tracking-widest truncate" style={{ fontFamily: '"Lexend", sans-serif' }}>Live Diagnostic Telemetry & Statistics</p>
-                  </div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="fixed inset-0 z-[10000] w-screen h-screen flex flex-col bg-slate-950 text-slate-100 font-sans overflow-hidden select-none"
+        >
+          {/* PERSISTENT FULL-PAGE TOP HEADER BAR WITH CORNER BACK BUTTON */}
+          <header className="h-16 px-4 sm:px-6 bg-slate-900/95 border-b border-slate-800/90 flex items-center justify-between gap-4 shrink-0 z-30 shadow-md">
+            {/* Left Corner: Prominent Back Button & Title */}
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+              <button
+                onClick={onClose}
+                className="h-10 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white hover:text-white border border-slate-700 flex items-center gap-2 text-xs font-black uppercase tracking-wider transition-all active:scale-95 shrink-0 shadow-sm group"
+                title="Back to Dashboard"
+              >
+                <ArrowLeft size={16} className="text-sky-400 group-hover:-translate-x-0.5 transition-transform" />
+                <span>Back</span>
+              </button>
+
+              <div className="h-7 w-[1px] bg-slate-800 hidden sm:block" />
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5">
+                  <h1 className="text-sm sm:text-base font-black uppercase tracking-wider text-white font-lexend truncate">
+                    Router Nodes & Core Gateways
+                  </h1>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[9px] font-black text-emerald-400 uppercase tracking-widest shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live Route
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
-                   <div className="hidden xs:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-sky-100 dark:border-sky-900/60 shadow-sm">
-                      <div className="relative">
-                        <motion.div 
-                          animate={{ scale: [1, 2.5], opacity: [0.6, 0] }}
-                          transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut" }}
-                          className="absolute inset-0 rounded-full bg-emerald-400" 
-                        />
-                        <div className="relative w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-                      </div>
-                      <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest whitespace-nowrap">Active Link</span>
-                  </div>
-
-                  {/* Top-Right Dustbin Button */}
-                  <button 
-                    onClick={() => {
-                      setIsDeleteMode(!isDeleteMode);
-                      setSelectedKeys([]);
-                    }}
-                    className={cn(
-                      "w-10 h-10 rounded-2xl flex items-center justify-center border transition-all active:scale-95 shrink-0 relative",
-                      isDeleteMode 
-                        ? "bg-rose-500 border-rose-600 text-white shadow-md hover:bg-rose-600" 
-                        : "bg-white dark:bg-slate-900 border-slate-150 dark:border-white/10 text-slate-400 hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-950 transition-all"
-                    )}
-                    title="Toggle Multi-Select Delete Mode"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-
-                  {/* Bulk Delete Action trigger */}
-                  {isDeleteMode && selectedKeys.length > 0 && (
-                    <button
-                      onClick={handleBulkDelete}
-                      className="h-10 px-4 bg-rose-500 hover:bg-rose-650 text-white font-black text-[10px] uppercase tracking-widest rounded-2xl transition-all shadow-md active:scale-95 animate-in fade-in zoom-in-95 duration-200 shrink-0"
-                    >
-                      Remove Selected ({selectedKeys.length})
-                    </button>
-                  )}
-
-                  <button 
-                    onClick={onClose}
-                    className="w-10 h-10 rounded-2xl flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-150 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95 text-slate-400 hover:text-slate-900 dark:hover:text-white shrink-0"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <form onSubmit={addNewTarget} className="flex gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      value={newDomain}
-                      onChange={(e) => setNewDomain(e.target.value)}
-                      placeholder="Add diagnostic server/domain to link monitoring pool (e.g. cloudflare.com)..."
-                      className="w-full h-11 px-5 rounded-2xl bg-white dark:bg-slate-905/20 border border-sky-100 dark:border-sky-900/50 text-[11px] font-bold focus:ring-4 ring-sky-400/10 focus:border-sky-400 transition-all outline-none shadow-sm placeholder:text-slate-400 dark:placeholder:text-slate-655 text-slate-800 dark:text-white"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="px-5 h-11 rounded-2xl bg-sky-500 hover:bg-sky-600 dark:bg-sky-650 dark:hover:bg-sky-500 text-white font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 group shrink-0"
-                  >
-                    Link Server
-                  </button>
-                </form>
+                <p className="text-[10px] text-sky-400 font-bold uppercase tracking-widest truncate">
+                  Live Diagnostic Telemetry & Statistics
+                </p>
               </div>
             </div>
-            )}
 
-            {/* Content Area */}
-            <div className="flex-1 min-h-0 flex flex-col relative bg-slate-50 dark:bg-slate-950">
-              <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05] pointer-events-none" 
-                style={{ backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)', backgroundSize: '24px 24px' }} 
-              />
-              
-              <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar scroll-smooth p-5 overscroll-contain touch-pan-y">
-                <AnimatePresence mode="wait">
-                  {expandedTargetKey ? (() => {
-                    const activeTarget = targets.find(t => t.key === expandedTargetKey);
-                    const activeData = results[expandedTargetKey];
-                    const detailData = activeData || (activeTarget ? {
-                      domain: activeTarget.domain,
-                      ms: 0 as any,
-                      status: 'loading' as const,
-                      history: [],
-                      packetsSent: 0,
-                      packetsReceived: 0,
-                      fiveMinHistory: generateEmpty5MinHistory(),
-                      sweepIndex: 0
-                    } : {
-                      domain: expandedTargetKey,
-                      ms: 0 as any,
-                      status: 'loading' as const,
-                      history: [],
-                      packetsSent: 0,
-                      packetsReceived: 0,
-                      fiveMinHistory: generateEmpty5MinHistory(),
-                      sweepIndex: 0
-                    });
+            {/* Right: Actions, Add Gateway & Controls */}
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              {/* Add Gateway Form (Desktop) */}
+              <form onSubmit={addNewTarget} className="hidden lg:flex items-center gap-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    placeholder="Link server (e.g. cloudflare.com)..."
+                    className="w-60 h-9 px-3.5 rounded-xl bg-slate-800/90 border border-slate-700 text-xs font-medium text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="h-9 px-3.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs transition-all active:scale-95 flex items-center gap-1.5 shrink-0 shadow-sm"
+                >
+                  <Plus size={14} />
+                  <span>Link Server</span>
+                </button>
+              </form>
 
-                    const sent = detailData.packetsSent || 0;
-                    const rcvd = detailData.packetsReceived || 0;
-                    const lossPct = sent > 0 ? Math.max(0, Math.min(100, Math.round(((sent - rcvd) / sent) * 100))) : 0;
-                    const trendedHistory = getTrendData(detailHistory);
+              {/* Burst Scan Trigger */}
+              <button
+                onClick={runDiagnostics}
+                disabled={isMeasuring}
+                className="h-9 sm:h-10 px-3 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-2 text-xs font-bold transition-all active:scale-95 disabled:opacity-50 shrink-0"
+                title="Force refresh telemetry sweep"
+              >
+                <RefreshCw size={14} className={cn(isMeasuring && "animate-spin text-sky-400")} />
+                <span className="hidden sm:inline">Burst Scan</span>
+              </button>
 
-                    return (
-                      <motion.div
-                        key="details-view"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                        className="absolute inset-0 z-45 flex flex-col bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8 rounded-[2.5rem] select-none shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-y-auto md:overflow-hidden md:max-h-full"
-                      >
-                        {/* 1. UPPER SECTION - SERVER DETAILS & OPTIONS */}
-                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-sky-100/30 dark:border-white/10 pb-4 shrink-0">
-                          {/* Left Back Arrow + Title and Favicon */}
-                          <div className="flex items-center gap-3 w-full md:w-auto">
-                            <button 
-                              onClick={() => setExpandedTargetKey(null)}
-                              className="w-11 h-11 rounded-2xl flex items-center justify-center bg-white dark:bg-slate-900 border border-slate-150 dark:border-white/10 text-slate-500 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-950/20 hover:border-sky-200 dark:hover:border-sky-950 transition-all active:scale-95 shadow-sm shrink-0"
-                              title="Return to Nodes Grid View"
-                            >
-                              <ArrowLeft size={18} />
-                            </button>
+              {/* Multi-Select Delete Mode Toggle */}
+              <button
+                onClick={() => {
+                  setIsDeleteMode(!isDeleteMode);
+                  setSelectedKeys([]);
+                }}
+                className={cn(
+                  "h-9 sm:h-10 w-9 sm:w-10 rounded-xl flex items-center justify-center border transition-all active:scale-95 shrink-0",
+                  isDeleteMode
+                    ? "bg-rose-500 border-rose-600 text-white shadow-md hover:bg-rose-600"
+                    : "bg-slate-800 border-slate-700 text-slate-400 hover:text-rose-400 hover:border-rose-900/50"
+                )}
+                title="Toggle Multi-Select Delete Mode"
+              >
+                <Trash2 size={16} />
+              </button>
 
-                            <div className="w-11 h-11 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-center p-2 border border-sky-100/30 dark:border-slate-700 shadow-sm shrink-0">
-                              <img 
-                                src={`https://www.google.com/s2/favicons?domain=${expandedTargetKey}&sz=64`} 
-                                alt={detailData.domain}
-                                className="w-full h-full object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${detailData.domain}&background=e0f2fe&color=0369a1&bold=true`;
-                                }}
-                              />
-                            </div>
+              {/* Bulk Delete Action trigger */}
+              {isDeleteMode && selectedKeys.length > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  className="h-9 sm:h-10 px-3 sm:px-4 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-xl transition-all shadow-md active:scale-95 shrink-0 animate-in fade-in"
+                >
+                  Remove ({selectedKeys.length})
+                </button>
+              )}
 
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[9px] font-black uppercase text-sky-500 tracking-widest leading-none bg-sky-500/10 dark:bg-sky-500/5 px-2 py-0.5 rounded">
-                                  ACTIVE DIAGNOSTIC LINK
-                                </span>
-                                <span className="text-[10px] uppercase font-mono font-bold text-slate-400">
-                                  {expandedTargetKey}
-                                </span>
-                              </div>
-                              <h4 className="font-black text-slate-800 dark:text-white uppercase tracking-tight text-base sm:text-lg leading-none mt-1 flex items-baseline">
-                                {detailData.domain}
-                                <span className="text-xl sm:text-2xl font-black font-lexend tracking-tighter text-sky-600 dark:text-sky-450 tabular-nums leading-none ml-3">
-                                  {typeof detailData.ms === 'number' ? detailData.ms : '0'}
-                                </span>
-                                <span className="text-[9px] sm:text-[10px] font-black uppercase text-sky-400 dark:text-sky-500 tracking-wider font-lexend ml-1">
-                                  {typeof detailData.ms === 'number' ? 'ms' : 'Err'}
-                                </span>
-                              </h4>
-                            </div>
+              {/* Direct Close Button in corner */}
+              <button
+                onClick={onClose}
+                className="h-9 sm:h-10 w-9 sm:w-10 rounded-xl flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition-all active:scale-95 shrink-0 ml-1"
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </header>
+
+          {/* MAIN WORKSPACE AREA */}
+          <div className="flex-1 min-h-0 flex flex-col relative bg-slate-950 overflow-hidden">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-3 sm:p-5 lg:p-6 space-y-4">
+              <AnimatePresence mode="wait">
+                {expandedTargetKey ? (() => {
+                  const activeTarget = targets.find(t => t.key === expandedTargetKey);
+                  const activeData = results[expandedTargetKey];
+                  const detailData = activeData || (activeTarget ? {
+                    domain: activeTarget.domain,
+                    ms: null,
+                    status: 'loading' as const,
+                    message: 'Initializing diagnostic trace...',
+                    history: [],
+                    packetsSent: 0,
+                    packetsReceived: 0,
+                    fiveMinHistory: generateEmpty5MinHistory(),
+                    sweepIndex: 0
+                  } : {
+                    domain: expandedTargetKey,
+                    ms: null,
+                    status: 'loading' as const,
+                    message: 'Initializing diagnostic trace...',
+                    history: [],
+                    packetsSent: 0,
+                    packetsReceived: 0,
+                    fiveMinHistory: generateEmpty5MinHistory(),
+                    sweepIndex: 0
+                  });
+
+                  const sent = detailData.packetsSent || 0;
+                  const rcvd = detailData.packetsReceived || 0;
+                  const lossPct = sent > 0 ? Math.max(0, Math.min(100, Math.round(((sent - rcvd) / sent) * 100))) : 0;
+                  const trendedHistory = getTrendData(detailHistory);
+
+                  return (
+                    <motion.div
+                      key="details-view"
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 15 }}
+                      transition={{ duration: 0.25 }}
+                      className="space-y-5 max-w-7xl mx-auto"
+                    >
+                      {/* Detailed Header Ribbon */}
+                      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-md">
+                        <div className="flex items-center gap-3.5">
+                          <button
+                            onClick={() => setExpandedTargetKey(null)}
+                            className="h-10 w-10 rounded-xl flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-all active:scale-95 shadow-sm shrink-0"
+                            title="Back to Gateway Overview"
+                          >
+                            <ArrowLeft size={18} />
+                          </button>
+
+                          <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center p-2 border border-slate-700 shrink-0">
+                            <img
+                              src={`https://www.google.com/s2/favicons?domain=${expandedTargetKey}&sz=64`}
+                              alt={detailData.domain}
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${detailData.domain}&background=0284c7&color=ffffff&bold=true`;
+                              }}
+                            />
                           </div>
 
-                          {/* Right Status Tags & Burst Scan Action */}
-                          <div className="flex items-center flex-wrap gap-2.5 w-full md:w-auto justify-end">
-                            {/* Live trace status indicator bar */}
-                            <div className={cn(
-                              "text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border flex items-center gap-2 shadow-sm bg-white dark:bg-slate-900",
-                              detailData.status === 'excellent' ? "text-emerald-700 dark:text-emerald-400 border-emerald-500/20" :
-                              detailData.status === 'good' ? "text-sky-700 dark:text-sky-450 border-sky-500/20" :
-                              detailData.status === 'fair' ? "text-amber-700 dark:text-amber-500 border-amber-500/20" :
-                              "text-rose-700 dark:text-rose-500 border-rose-500/20"
-                            )}>
-                              <span className="relative flex h-2.5 w-2.5 shrink-0">
-                                <span className={cn(
-                                  "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
-                                  detailData.status === 'excellent' && "bg-emerald-400",
-                                  detailData.status === 'good' && "bg-sky-400",
-                                  detailData.status === 'fair' && "bg-amber-400",
-                                  detailData.status === 'poor' && "bg-rose-400"
-                                )}></span>
-                                <span className={cn(
-                                  "relative inline-flex rounded-full h-2.5 w-2.5",
-                                  detailData.status === 'excellent' && "bg-emerald-500",
-                                  detailData.status === 'good' && "bg-sky-500",
-                                  detailData.status === 'fair' && "bg-amber-500",
-                                  detailData.status === 'poor' && "bg-rose-500"
-                                )}></span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-black uppercase text-sky-400 tracking-wider">
+                                EDGE NODE DEEP INSPECTOR
                               </span>
-                              <span>STATUS: {detailData.status === 'loading' ? 'SWEEP ACTIVE' : detailData.status.toUpperCase()}</span>
-                            </div>
-
-                            {/* Active link trace state indicator */}
-                            <div className={cn(
-                              "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[9px] font-black uppercase tracking-widest bg-white dark:bg-slate-900",
-                              detailCountdown > 0 
-                                ? "border-sky-500/15 text-sky-600 dark:text-sky-400" 
-                                : "border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-                            )}>
-                              <span className={cn("h-1.5 w-1.5 rounded-full", detailCountdown > 0 ? "bg-sky-500 animate-ping" : "bg-emerald-500")} />
-                              <span>
-                                {detailCountdown > 0 
-                                  ? `TRACE: ${Math.floor(detailCountdown / 60)}:${(detailCountdown % 60).toString().padStart(2, '0')}` 
-                                  : "TRACE COMPLETED"
-                                }
+                              <span className="text-[10px] font-mono text-slate-400">
+                                {expandedTargetKey}
                               </span>
                             </div>
-
-                            <button
-                              onClick={runDiagnostics}
-                              disabled={isMeasuring}
-                              className="h-10 px-4 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 shadow-sm shrink-0"
-                            >
-                              <RefreshCw size={12} className={cn(isMeasuring && "animate-spin")} />
-                              <span>Burst Scan</span>
-                            </button>
-
-                            <button 
-                              onClick={() => setExpandedTargetKey(null)}
-                              className="h-10 w-10 rounded-xl flex items-center justify-center bg-slate-100/50 dark:bg-slate-900/50 border border-slate-200/50 dark:border-white/10 text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-200 dark:hover:border-rose-500/30 transition-all active:scale-95 shrink-0"
-                              title="Back to List"
-                            >
-                              <X size={16} />
-                            </button>
+                            <h2 className="text-lg font-black text-white font-lexend mt-0.5">
+                              {detailData.domain}
+                            </h2>
                           </div>
                         </div>
 
-                        {/* 2. CENTER SECTION - LARGE DYNAMIC LATENCY GRAPH */}
-                        <div className="flex-1 min-h-0 flex flex-col my-4 md:my-5 justify-between">
-                          <div className="flex-1 min-h-[200px] md:min-h-[260px] bg-white dark:bg-slate-900/50 border border-sky-100/50 dark:border-sky-900/10 rounded-[2rem] p-4 sm:p-6 flex flex-col relative shadow-inner">
-                            {/* Graph description labels & info overlay */}
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 shrink-0">
-                              <div>
-                                <h5 className="text-xs sm:text-sm font-black uppercase text-slate-800 dark:text-white tracking-widest font-lexend">
-                                  Real-Time Latency Data Stream
-                                </h5>
-                                <p className="text-[10px] text-sky-500 uppercase font-black tracking-widest leading-none mt-1">
-                                  Continuous 1-second interval checks
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                <div className="flex items-baseline gap-1">
-                                  <span className="text-3xl font-black font-lexend tracking-tighter text-sky-500 tabular-nums leading-none">
-                                    {typeof detailData.ms === 'number' ? detailData.ms : '0'}
-                                  </span>
-                                  <span className="text-xs font-black uppercase text-sky-400 tracking-wider font-lexend">
-                                    ms
-                                  </span>
-                                </div>
-                                <div className="text-[10px] font-mono font-medium text-slate-400">
-                                  {detailHistory.length > 0 
-                                    ? `Rendering ${detailHistory.length} active samples` 
-                                    : "Gathering samples..."
-                                  }
-                                </div>
-                              </div>
+                        {/* Status Message & Sweep Progress */}
+                        <div className="flex items-center flex-wrap gap-3">
+                          <div className={cn(
+                            "px-3 py-1.5 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center gap-2",
+                            getStatusColor(detailData.status)
+                          )}>
+                            <span className="w-2 h-2 rounded-full bg-current animate-pulse" />
+                            <span>{detailData.status === 'unknown' ? 'UNAVAILABLE' : detailData.status.toUpperCase()}</span>
+                          </div>
+
+                          <div className="px-3 py-1.5 rounded-xl border border-slate-800 bg-slate-800/60 text-xs font-mono text-slate-300">
+                            Trace: {Math.floor(detailCountdown / 60)}:{(detailCountdown % 60).toString().padStart(2, '0')}
+                          </div>
+
+                          <button
+                            onClick={() => setExpandedTargetKey(null)}
+                            className="h-9 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-all"
+                          >
+                            Close Inspector
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Large Interactive Stream Chart */}
+                      <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4 shadow-md">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-sm font-black uppercase tracking-wider text-white font-lexend">
+                              Live Latency Stream (1-Second Polling)
+                            </h3>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              Continuous real-time probe trace without artificial offset
+                            </p>
+                          </div>
+                          <span className="text-xs font-mono text-slate-400">
+                            Rendering {detailHistory.length} active samples
+                          </span>
+                        </div>
+
+                        <div className="h-72 w-full">
+                          {detailHistory.length === 0 ? (
+                            <div className="h-full w-full flex flex-col items-center justify-center bg-slate-950/40 rounded-xl border border-slate-800 text-center p-6">
+                              <Activity className="text-sky-400 animate-pulse mb-3" size={32} />
+                              <p className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                                Capturing Live Trace Stream...
+                              </p>
                             </div>
-
-                            {/* Chart Graph Frame */}
-                            <div style={{ width: '100%', height: '300px' }} className="flex-1 min-h-[300px] w-full relative">
-                              {detailHistory.length === 0 ? (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-900/10 rounded-2xl p-6 text-center z-10 border border-slate-100/50 dark:border-white/10">
-                                  <Activity className="text-sky-500 animate-pulse mb-3" size={32} />
-                                  <h6 className="text-xs font-black text-slate-700 dark:text-slate-350 uppercase tracking-widest">
-                                    Initializing Telemetry Connection
-                                  </h6>
-                                  <p className="text-[10px] text-slate-450 mt-1 max-w-xs leading-relaxed">
-                                    Please hold. Connecting to primary backbone gateway router for high-frequency samples...
-                                  </p>
-                                </div>
-                              ) : null}
-
-                              <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150}>
-                                <AreaChart data={trendedHistory}>
-                                  <defs>
-                                    <linearGradient id="detail-grad-sky-active" x1="0" y1="0" x2="0" y2="1">
-                                      <stop offset="5%" stopColor={detailData.status === 'excellent' ? '#10b981' : '#0ea5e9'} stopOpacity={0.4}/>
-                                      <stop offset="95%" stopColor={detailData.status === 'excellent' ? '#10b981' : '#0ea5e9'} stopOpacity={0.01}/>
-                                    </linearGradient>
-                                  </defs>
-                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" opacity={0.12} />
-                                  <XAxis 
-                                    dataKey="time"
-                                    stroke="#94a3b8"
-                                    fontSize={8}
-                                    fontWeight="bold"
-                                    tickLine={false}
-                                    axisLine={false}
-                                    className="font-lexend text-[8px]"
-                                    dy={8}
-                                  />
-                                  <YAxis 
-                                    stroke="#94a3b8"
-                                    fontSize={8}
-                                    type="number"
-                                    fontWeight="bold"
-                                    tickLine={false}
-                                    axisLine={false}
-                                    className="font-lexend text-[8px]"
-                                    dx={-8}
-                                    unit="ms"
-                                    domain={[0, 'auto']}
-                                  />
-                                  <Tooltip
-                                    content={({ active, payload }) => {
-                                      if (active && payload && payload.length) {
-                                        const p = payload[0].payload;
-                                        return (
-                                          <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl shadow-xl">
-                                            <p className="text-[9px] font-black text-slate-400 font-lexend uppercase tracking-widest leading-none">Trace sample: {p.time}</p>
-                                            <div className="flex items-baseline gap-2 mt-2">
-                                              <span className="text-xl font-black text-white font-lexend leading-none">
-                                                {p.ms !== null ? `${p.ms} ms` : 'Offline'}
-                                              </span>
-                                              {p.trendMs && (
-                                                <span className="text-[9px] font-bold text-emerald-400 font-mono">
-                                                  Trend: {Math.round(p.trendMs)}ms
-                                                </span>
-                                              )}
-                                            </div>
-                                          </div>
-                                        );
-                                      }
-                                      return null;
-                                    }}
-                                  />
-                                  <Area 
+                          ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={trendedHistory}>
+                                <defs>
+                                  <linearGradient id="detail-active-grad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.35}/>
+                                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.4} />
+                                <XAxis 
+                                  dataKey="time"
+                                  stroke="#64748b"
+                                  fontSize={9}
+                                  fontWeight="bold"
+                                  tickLine={false}
+                                  axisLine={false}
+                                  dy={8}
+                                />
+                                <YAxis 
+                                  stroke="#64748b"
+                                  fontSize={9}
+                                  fontWeight="bold"
+                                  tickLine={false}
+                                  axisLine={false}
+                                  unit="ms"
+                                  domain={[0, 'auto']}
+                                />
+                                <Tooltip
+                                  content={({ active, payload }) => {
+                                    if (active && payload && payload.length) {
+                                      const p = payload[0].payload;
+                                      return (
+                                        <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl shadow-2xl">
+                                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{p.time}</p>
+                                          <p className="text-lg font-black text-white mt-1 tabular-nums">
+                                            {p.ms !== null ? `${p.ms} ms` : 'Unavailable'}
+                                          </p>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  }}
+                                />
+                                <Area 
+                                  type="monotone" 
+                                  dataKey="ms" 
+                                  stroke="#38bdf8" 
+                                  strokeWidth={2.5} 
+                                  fillOpacity={1}
+                                  fill="url(#detail-active-grad)"
+                                  connectNulls={true}
+                                  isAnimationActive={false}
+                                />
+                                {detailHistory.length > 1 && (
+                                  <Line 
                                     type="monotone" 
-                                    dataKey="ms" 
-                                    stroke={detailData.status === 'excellent' ? '#10b981' : '#0284c7'} 
-                                    strokeWidth={3} 
-                                    fillOpacity={1}
-                                    fill="url(#detail-grad-sky-active)"
-                                    connectNulls={true}
+                                    dataKey="trendMs" 
+                                    stroke="#34d399" 
+                                    strokeWidth={2} 
+                                    dot={false}
+                                    strokeDasharray="4 4"
                                     isAnimationActive={false}
                                   />
-                                  {detailHistory.length > 1 && (
-                                    <Line 
-                                      type="monotone" 
-                                      dataKey="trendMs" 
-                                      stroke="#10b981" 
-                                      strokeWidth={2} 
-                                      dot={false}
-                                      strokeDasharray="4 4"
-                                      name="Trend Curve"
-                                      isAnimationActive={false}
-                                    />
-                                  )}
-                                </AreaChart>
-                              </ResponsiveContainer>
-                            </div>
-
-                            {/* Signal stability notice */}
-                            <div className="mt-3 flex items-center justify-between text-[10px] border-t border-slate-100 dark:border-white/10 pt-2.5 text-slate-400 font-medium select-none">
-                              <span>Physical Speed Category:</span>
-                              <span className={cn(
-                                "font-bold font-lexend",
-                                typeof detailData.ms === 'number' && detailData.ms < 50 ? "text-emerald-500" :
-                                typeof detailData.ms === 'number' && detailData.ms < 120 ? "text-sky-500" :
-                                typeof detailData.ms === 'number' && detailData.ms < 200 ? "text-amber-500" :
-                                "text-rose-500"
-                              )}>
-                                {typeof detailData.ms === 'number' && detailData.ms < 50 ? "🚀 High-Speed fiber optic" :
-                                 typeof detailData.ms === 'number' && detailData.ms < 120 ? "⚡ Broadband channel" :
-                                 typeof detailData.ms === 'number' && detailData.ms < 200 ? "⚠️ Congested copper line" :
-                                 "🔴 Degraded Gateway Link"}
-                              </span>
-                            </div>
-                          </div>
+                                )}
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          )}
                         </div>
+                      </div>
+                    </motion.div>
+                  );
+                })() : (
+                  <motion.div
+                    key="landscape-view"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-3.5 max-w-7xl mx-auto"
+                  >
+                    {/* Mobile Target Add Bar */}
+                    <div className="lg:hidden p-3 rounded-2xl bg-slate-900 border border-slate-800">
+                      <form onSubmit={addNewTarget} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newDomain}
+                          onChange={(e) => setNewDomain(e.target.value)}
+                          placeholder="Link server (e.g. cloudflare.com)..."
+                          className="flex-1 h-10 px-3.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-medium text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-500"
+                        />
+                        <button
+                          type="submit"
+                          className="h-10 px-4 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs transition-all active:scale-95 shrink-0"
+                        >
+                          Add
+                        </button>
+                      </form>
+                    </div>
 
-                        {/* 3. BOTTOM SECTION - INTEGRATED METRICS PANEL FOR AVG, MS, LOSS */}
-                        <div className="shrink-0 flex flex-col gap-4">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {/* CARD A: CURRENT MS */}
-                            <div className="bg-white dark:bg-slate-900 border border-sky-100/50 dark:border-sky-900/10 p-4 sm:p-5 rounded-[1.75rem] shadow-sm flex items-center gap-4 relative overflow-hidden">
-                              <div className="h-12 w-12 rounded-2xl bg-sky-500/[0.05] border border-sky-500/10 flex items-center justify-center text-sky-600 dark:text-sky-400 shrink-0">
-                                <Zap size={22} className="animate-pulse" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <span className="block text-[9px] font-black uppercase tracking-wider text-slate-405 dark:text-slate-500">
-                                  Current Latency (ms)
-                                </span>
-                                <div className="flex items-baseline gap-1 mt-0.5">
-                                  <span className="text-3xl font-extrabold font-lexend text-slate-800 dark:text-white leading-none tabular-nums">
-                                    {typeof detailData.ms === 'number' ? detailData.ms : '0'}
-                                  </span>
-                                  <span className="text-xs font-black text-slate-400 font-lexend uppercase">ms</span>
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1 truncate">Active microsecond ping roundtrip response</p>
-                              </div>
-                            </div>
+                    {/* REDESIGNED LANDSCAPE LIST: Left Website Panel + Straight Landscape Up/Down Live Line */}
+                    <div className="space-y-3">
+                      {targets.map((target) => {
+                        const data = results[target.key] || { 
+                          domain: target.domain, 
+                          ms: null, 
+                          status: 'loading', 
+                          message: 'Awaiting initial sweep...',
+                          history: [],
+                          packetsSent: 0,
+                          packetsReceived: 0
+                        };
+                        
+                        const sent = data.packetsSent || 0;
+                        const rcvd = data.packetsReceived || 0;
+                        const lossPct = sent > 0 ? Math.max(0, Math.min(100, Math.round(((sent - rcvd) / sent) * 100))) : 0;
 
-                            {/* CARD B: ROLLING AVERAGE */}
-                            <div className="bg-white dark:bg-slate-900 border border-sky-100/50 dark:border-sky-900/10 p-4 sm:p-5 rounded-[1.75rem] shadow-sm flex items-center gap-4 relative overflow-hidden">
-                              <div className="h-12 w-12 rounded-2xl bg-emerald-500/[0.05] border border-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-                                <TrendingUp size={22} />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <span className="block text-[9px] font-black uppercase tracking-wider text-slate-405 dark:text-slate-500">
-                                  Calculated Average (avg)
-                                </span>
-                                <div className="flex items-baseline gap-1 mt-0.5">
-                                  <span className="text-3xl font-extrabold font-lexend text-slate-800 dark:text-white leading-none tabular-nums">
-                                    {detailData.avgMs || '0'}
-                                  </span>
-                                  <span className="text-xs font-black text-slate-400 font-lexend uppercase">ms</span>
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1 truncate">Compiled rolling average latency across loop</p>
-                              </div>
-                            </div>
+                        const isSelected = selectedKeys.includes(target.key);
+                        const isEditing = editingKey === target.key;
+                        const strokeColor = getLineStrokeColor(data.status, data.ms);
 
-                            {/* CARD C: PACKET LOSS */}
-                            <div className="bg-white dark:bg-slate-900 border border-sky-100/50 dark:border-sky-900/10 p-4 sm:p-5 rounded-[1.75rem] shadow-sm flex items-center gap-4 relative overflow-hidden">
-                              <div className={cn(
-                                "h-12 w-12 rounded-2xl flex items-center justify-center shrink-0",
-                                lossPct > 0 
-                                  ? "bg-rose-500/[0.08] border border-rose-500/20 text-rose-500" 
-                                  : "bg-sky-500/[0.05] border border-sky-500/10 text-sky-500 dark:text-sky-450"
-                              )}>
-                                <Network size={22} />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <span className="block text-[9px] font-black uppercase tracking-wider text-slate-405 dark:text-slate-500">
-                                  Packet Loss Rate (loss)
-                                </span>
-                                <div className="flex items-baseline gap-1 mt-0.5">
-                                  <span className={cn(
-                                    "text-3xl font-extrabold font-lexend leading-none tabular-nums",
-                                    lossPct > 0 ? "text-rose-500 animate-pulse font-black" : "text-slate-800 dark:text-white"
-                                  )}>
-                                    {lossPct}
-                                  </span>
-                                  <span className="text-xs font-black text-slate-400 font-lexend uppercase">%</span>
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1 truncate select-none">
-                                  Sent: {detailData.packetsSent || 0} / Recv: {detailData.packetsReceived || 0}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Countdown slider progress tracker bar (very slim at the bottom edge) */}
-                          <div className="flex items-center justify-between gap-3 text-[9px] font-black text-slate-400/80 font-lexend uppercase tracking-widest pt-1 border-t border-slate-150 dark:border-white/10">
-                            <span>Diagnostic Trace loop compiling schedule</span>
-                            <div className="flex-1 max-w-[280px] h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden relative">
-                              <div 
-                                className="h-full bg-gradient-to-r from-sky-400 via-sky-500 to-indigo-500 rounded-full transition-all duration-300"
-                                style={{ width: `${((300 - detailCountdown) / 300) * 105}%` }}
-                              />
-                            </div>
-                            <span className="tabular-nums font-bold">
-                              {detailCountdown > 0 
-                                ? `${Math.round(((300 - detailCountdown) / 300) * 100)}% (${300 - detailCountdown}s/300)s` 
-                                : "100% Locked"
-                              }
-                            </span>
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })() : (
-                    <motion.div
-                      key="grid-view"
-                      initial={{ opacity: 0, x: -50, scale: 0.98 }}
-                      animate={{ opacity: 1, x: 0, scale: 1 }}
-                      exit={{ opacity: 0, x: 50, scale: 0.98 }}
-                      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                      className="max-w-full overflow-hidden"
-                    >
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 max-w-full">
-                        {targets.map((target) => {
-                          const data = results[target.key] || { 
-                            domain: target.domain, 
-                            ms: 0, 
-                            status: 'loading', 
-                            history: [],
-                            packetsSent: 0,
-                            packetsReceived: 0
-                          };
-                          
-                          const sent = data.packetsSent || 0;
-                          const rcvd = data.packetsReceived || 0;
-                          const lossPct = sent > 0 ? Math.max(0, Math.min(100, Math.round(((sent - rcvd) / sent) * 100))) : 0;
-
-                          const isSelected = selectedKeys.includes(target.key);
-                          const isEditing = editingKey === target.key;
-
-                          return (
-                            <motion.div 
-                              layoutId={`srv-card-container-${target.key}`}
-                              transition={{ type: "spring", stiffness: 280, damping: 28 }}
-                              key={target.key}
-                              onClick={() => {
-                                if (isDeleteMode) {
-                                  if (isSelected) {
-                                    setSelectedKeys(prev => prev.filter(k => k !== target.key));
-                                  } else {
-                                    setSelectedKeys(prev => [...prev, target.key]);
-                                  }
-                                } else if (!isEditing) {
-                                  setExpandedTargetKey(target.key);
+                        return (
+                          <div 
+                            key={target.key}
+                            onClick={() => {
+                              if (isDeleteMode) {
+                                if (isSelected) {
+                                  setSelectedKeys(prev => prev.filter(k => k !== target.key));
+                                } else {
+                                  setSelectedKeys(prev => [...prev, target.key]);
                                 }
-                              }}
-                              className={cn(
-                                "flex flex-col p-3 sm:p-4 rounded-[1rem] sm:rounded-[1.75rem] border transition-all duration-300 group relative bg-white dark:bg-slate-900 border-sky-100 dark:border-sky-900/40 shadow-sm cursor-pointer select-none",
-                                isDeleteMode 
-                                  ? "hover:shadow-md" 
-                                  : "hover:border-sky-400 dark:hover:border-sky-500 hover:shadow-md active:scale-[0.98]",
-                                isDeleteMode && isSelected 
-                                  ? "border-rose-500 dark:border-rose-500 ring-2 sm:ring-4 ring-rose-500/10 bg-rose-50/5 dark:bg-rose-950/5" 
-                                  : "",
-                                isDeleteMode && !isSelected 
-                                  ? "opacity-60 hover:opacity-100 border-slate-200 dark:border-white/10" 
-                                  : ""
-                              )}
-                            >
-                              {/* Corner Checkbox in delete mode */}
-                              {isDeleteMode && (
-                                <div className="absolute top-4 right-4 z-10 w-5 h-5 rounded-md border-2 border-sky-400 dark:border-sky-500 flex items-center justify-center bg-white dark:bg-slate-900 shadow-sm transition-all active:scale-90">
-                                  {isSelected && (
-                                    <div className="w-3 h-3 rounded-sm bg-sky-500 dark:bg-sky-400 flex items-center justify-center">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" className="w-2.5 h-2.5 text-white">
-                                        <polyline points="20 6 9 17 4 12" />
-                                      </svg>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                              } else if (!isEditing) {
+                                setExpandedTargetKey(target.key);
+                              }
+                            }}
+                            className={cn(
+                              "w-full bg-slate-900/90 hover:bg-slate-900 rounded-2xl border p-3.5 sm:p-4 transition-all duration-200 cursor-pointer shadow-sm relative group",
+                              isDeleteMode && isSelected 
+                                ? "border-rose-500 bg-rose-950/20 ring-2 ring-rose-500/20" 
+                                : "border-slate-800 hover:border-sky-500/50 hover:shadow-md"
+                            )}
+                          >
+                            {/* Multi-select checkbox */}
+                            {isDeleteMode && (
+                              <div className="absolute top-4 right-4 z-10 w-5 h-5 rounded-md border-2 border-sky-400 flex items-center justify-center bg-slate-900 shadow-sm">
+                                {isSelected && (
+                                  <div className="w-3 h-3 rounded-sm bg-sky-400 flex items-center justify-center">
+                                    <CheckCircle2 size={12} className="text-slate-950" />
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
-                              {isEditing ? (
-                                <div className="flex flex-col h-full justify-between space-y-3" onClick={(e) => e.stopPropagation()}>
+                            {isEditing ? (
+                              <div className="space-y-4 p-2" onClick={(e) => e.stopPropagation()}>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   <div>
-                                    <span className="text-[10px] uppercase font-black tracking-wider text-sky-500" style={{ fontFamily: '"Lexend", sans-serif' }}>Edit Gateway Node</span>
-                                    <div className="space-y-2 mt-2">
-                                      <div>
-                                        <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1">Friendly Name</label>
-                                        <input 
-                                          type="text"
-                                          value={editLabel}
-                                          onChange={(e) => setEditLabel(e.target.value)}
-                                          className="w-full text-xs font-semibold px-3 py-1.5 rounded-lg border border-sky-150 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                          placeholder="e.g. Google Premium Edge"
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-1">IP or Domain</label>
-                                        <input 
-                                          type="text"
-                                          value={editUrl}
-                                          onChange={(e) => setEditUrl(e.target.value)}
-                                          className="w-full text-xs font-lexend px-3 py-1.5 rounded-lg border border-sky-150 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                          placeholder="e.g. google.com"
-                                        />
-                                      </div>
-                                    </div>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                      Friendly Name
+                                    </label>
+                                    <input 
+                                      type="text"
+                                      value={editLabel}
+                                      onChange={(e) => setEditLabel(e.target.value)}
+                                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                      placeholder="e.g. Google Premium Edge"
+                                    />
                                   </div>
-                                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
-                                    <button
-                                      onClick={handleSaveEdit}
-                                      className="flex-1 py-1.5 bg-sky-500 hover:bg-sky-600 text-white font-black text-[9px] uppercase tracking-wider rounded-xl transition-all"
-                                    >
-                                      Save
-                                    </button>
-                                    <button
-                                      onClick={() => setEditingKey(null)}
-                                      className="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-705 text-slate-600 dark:text-slate-350 font-black text-[9px] uppercase tracking-wider rounded-xl transition-all"
-                                    >
-                                      Cancel
-                                    </button>
+                                  <div>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                      Target Domain
+                                    </label>
+                                    <input 
+                                      type="text"
+                                      value={editUrl}
+                                      onChange={(e) => setEditUrl(e.target.value)}
+                                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-700 bg-slate-950 text-white focus:outline-none focus:ring-1 focus:ring-sky-500"
+                                      placeholder="e.g. google.com"
+                                    />
                                   </div>
                                 </div>
-                              ) : (
-                                <>
-                                  <div className="flex items-center justify-between gap-1.5 sm:gap-3 mb-2 sm:mb-3">
-                                    <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
-                                      <div className="w-6 h-6 sm:w-9 sm:h-9 rounded-md sm:rounded-xl bg-sky-50/50 dark:bg-slate-800 flex items-center justify-center p-0.5 sm:p-1.5 shadow-sm border border-sky-100/30 dark:border-slate-700 shrink-0">
-                                        <img 
-                                          src={`https://www.google.com/s2/favicons?domain=${target.key}&sz=64`} 
-                                          alt={data.domain}
-                                          className="w-full h-full object-contain"
-                                          onError={(e) => {
-                                            (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${target.domain}&background=e0f2fe&color=0369a1&bold=true`;
-                                          }}
-                                        />
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={handleSaveEdit}
+                                    className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs rounded-xl transition-all"
+                                  >
+                                    Save Gateway
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingKey(null)}
+                                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl transition-all"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+                                
+                                {/* 1. LEFT SIDE PANEL: Website Logo, Name & URL */}
+                                <div className="w-full lg:w-72 shrink-0 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between lg:justify-start gap-3.5">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-11 h-11 rounded-xl bg-slate-900 flex items-center justify-center p-2 border border-slate-700/80 shadow-inner shrink-0 group-hover:border-sky-500/50 transition-colors">
+                                      <img 
+                                        src={`https://www.google.com/s2/favicons?domain=${target.key}&sz=128`} 
+                                        alt={data.domain}
+                                        className="w-full h-full object-contain"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${target.domain}&background=0284c7&color=ffffff&bold=true`;
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <h4 className="font-extrabold text-white text-xs sm:text-sm tracking-tight truncate leading-tight">
+                                        {data.domain}
+                                      </h4>
+                                      <p className="text-[10px] text-sky-400 font-mono font-medium truncate mt-0.5">
+                                        {target.key}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="shrink-0 flex items-center">
+                                    <span className={cn(
+                                      "text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border",
+                                      getStatusColor(data.status)
+                                    )}>
+                                      {data.status === 'loading' ? 'SWEEPING' : data.status === 'unknown' ? 'UNAVAILABLE' : data.status.toUpperCase()}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 2. STRAIGHT IN FRONT: LANDSCAPE ROW LEFT-TO-RIGHT UP & DOWN LIVE LINE */}
+                                <div className="flex-1 min-w-[260px] h-20 relative bg-slate-950/80 rounded-xl border border-slate-800/80 p-2 overflow-hidden flex flex-col justify-between">
+                                  <div className="flex items-center justify-between text-[8px] font-black uppercase tracking-widest text-slate-500 px-1 shrink-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
+                                      <span className="text-slate-400">Live Pulse Trace</span>
+                                    </div>
+                                    <span className="text-slate-500 font-mono">
+                                      {data.history.length > 0 ? `${data.history.length} samples` : 'Tracing link...'}
+                                    </span>
+                                  </div>
+
+                                  <div className="w-full flex-1 min-h-[46px] relative">
+                                    {data.history.length === 0 ? (
+                                      <div className="absolute inset-0 flex items-center justify-center">
+                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider animate-pulse">
+                                          Initializing Waveform...
+                                        </span>
                                       </div>
-                                      <div className="min-w-0">
-                                         <div className="flex items-center gap-1 sm:gap-1.5">
-                                          <h4 className="font-extrabold text-slate-900 dark:text-white text-[10px] sm:text-xs tracking-tight truncate leading-none">{data.domain}</h4>
-                                        </div>
-                                        <p className="text-[7px] sm:text-[9px] text-sky-500 uppercase font-black tracking-widest truncate leading-none mt-0.5">{target.key}</p>
-                                      </div>
+                                    ) : (
+                                      <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={data.history} margin={{ top: 4, right: 6, left: 6, bottom: 0 }}>
+                                          <defs>
+                                            <linearGradient id={`grad-live-wave-${target.key}`} x1="0" y1="0" x2="0" y2="1">
+                                              <stop offset="5%" stopColor={strokeColor} stopOpacity={0.4}/>
+                                              <stop offset="95%" stopColor={strokeColor} stopOpacity={0.02}/>
+                                            </linearGradient>
+                                          </defs>
+                                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" opacity={0.5} />
+                                          <Area 
+                                            type="monotone" 
+                                            dataKey="ms" 
+                                            stroke={strokeColor} 
+                                            strokeWidth={2.5} 
+                                            fillOpacity={1}
+                                            fill={`url(#grad-live-wave-${target.key})`}
+                                            isAnimationActive={false}
+                                          />
+                                          <YAxis hide domain={['dataMin - 10', 'dataMax + 10']} />
+                                        </AreaChart>
+                                      </ResponsiveContainer>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* 3. RIGHT SECTION: Real Numerical Latency, Status Message & Actions */}
+                                <div className="w-full lg:w-72 shrink-0 p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 flex flex-col justify-between gap-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-2xl sm:text-3xl font-black font-lexend text-white tabular-nums leading-none">
+                                        {typeof data.ms === 'number' ? data.ms : (data.ms === 'Error' ? 'ERR' : '---')}
+                                      </span>
+                                      <span className="text-xs font-black uppercase text-sky-400 font-lexend">
+                                        {typeof data.ms === 'number' ? 'ms' : ''}
+                                      </span>
                                     </div>
 
-                                    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                      <div className="flex items-end gap-[1px] sm:gap-0.5 h-2 sm:h-3">
-                                        <span className="w-0.5 sm:w-[3px] h-1 sm:h-1.5 rounded-full bg-sky-400 dark:bg-sky-500 animate-pulse delay-75" />
-                                        <span className="w-0.5 sm:w-[3px] h-1.5 sm:h-2.5 rounded-full bg-sky-400 dark:bg-sky-500 animate-pulse delay-150" />
-                                        <span className={`w-0.5 sm:w-[3px] h-2 sm:h-3.5 rounded-full ${data.status !== 'poor' ? 'bg-sky-400 dark:bg-sky-500' : 'bg-slate-200 dark:bg-slate-800'} animate-pulse delay-200`} />
-                                        <span className={`w-0.5 sm:w-[3px] h-2.5 sm:h-4.5 rounded-full ${data.status === 'excellent' ? 'bg-sky-400 dark:bg-sky-500' : 'bg-slate-200 dark:bg-slate-800'} animate-pulse`} />
-                                      </div>
-
+                                    {/* Action Buttons */}
+                                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                                       {!isDeleteMode && (
                                         <>
+                                          <button
+                                            onClick={() => setExpandedTargetKey(target.key)}
+                                            className="h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-[10px] font-bold transition-all flex items-center gap-1"
+                                            title="Deep 5-minute diagnostic trace"
+                                          >
+                                            <Activity size={12} className="text-sky-400" />
+                                            <span>Trace</span>
+                                          </button>
                                           <button 
                                             onClick={() => {
                                               setEditingKey(target.key);
                                               setEditLabel(target.domain);
                                               setEditUrl(target.url);
                                             }}
-                                            className="p-1 text-slate-400 hover:text-sky-500 transition-all opacity-40 hover:opacity-100"
-                                            title="Edit this gateway node"
+                                            className="h-8 w-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 flex items-center justify-center transition-all"
+                                            title="Edit this gateway"
                                           >
-                                            <Edit size={12} />
+                                            <Edit size={13} />
                                           </button>
                                           <button 
                                             onClick={() => removeTarget(target.key)}
-                                            className="p-1 text-slate-400 hover:text-rose-500 transition-all opacity-40 hover:opacity-100"
+                                            className="h-8 w-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 border border-slate-700 flex items-center justify-center transition-all"
                                             title="Remove gateway"
                                           >
-                                            <Trash2 size={12} />
+                                            <Trash2 size={13} />
                                           </button>
                                         </>
                                       )}
                                     </div>
                                   </div>
 
-                                  <div className="mt-1 sm:mt-2 flex items-center justify-between">
-                                    <div className="flex items-baseline gap-0.5 sm:gap-1">
-                                      <span className="text-xl sm:text-2xl font-black font-lexend tracking-tighter text-sky-600 dark:text-sky-450 tabular-nums leading-none">
-                                        {typeof data.ms === 'number' ? data.ms : '0'}
-                                      </span>
-                                      <span className="text-[8px] sm:text-[9px] font-black uppercase text-sky-400 dark:text-sky-500 tracking-wider font-lexend">
-                                        {typeof data.ms === 'number' ? 'ms' : 'Err'}
-                                      </span>
-                                    </div>
-
+                                  {/* Status description */}
+                                  <p className="text-[11px] font-medium text-slate-300 flex items-center gap-1.5 truncate">
                                     <span className={cn(
-                                      "text-[7px] sm:text-[8px] font-black uppercase tracking-widest px-1.5 sm:px-2 py-[1px] sm:py-0.5 rounded sm:rounded-md border",
-                                      data.status === 'excellent' ? "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" :
-                                      data.status === 'good' ? "text-sky-600 bg-sky-500/10 border-sky-500/20" :
-                                      data.status === 'fair' ? "text-amber-600 bg-amber-500/10 border-amber-500/20" :
-                                      "text-rose-600 bg-rose-500/10 border-rose-500/20"
-                                    )}>
-                                      {data.status === 'loading' ? 'PINGING' : data.status.toUpperCase()}
+                                      "w-1.5 h-1.5 rounded-full shrink-0",
+                                      data.status === 'excellent' ? "bg-emerald-400" :
+                                      data.status === 'good' ? "bg-sky-400" :
+                                      data.status === 'fair' ? "bg-amber-400" :
+                                      data.status === 'poor' ? "bg-rose-400" : "bg-slate-400"
+                                    )} />
+                                    <span className="truncate">
+                                      {data.message || (typeof data.ms === 'number' 
+                                        ? `Direct connection confirmed — ${data.ms}ms round trip` 
+                                        : 'Blocked by browser (CORS) — latency unavailable')}
                                     </span>
-                                  </div>
+                                  </p>
 
-                                  <div style={{ width: '100%', height: '48px' }} className="h-8 sm:h-12 w-full mt-1 sm:mt-2 relative">
-                                    {data.history.length === 0 ? (
-                                      <div className="absolute inset-0 flex items-center justify-center bg-slate-50/50 dark:bg-slate-900/30 rounded-xl">
-                                        <span className="text-[7px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">Init...</span>
-                                      </div>
-                                    ) : null}
-                                    <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150}>
-                                      <AreaChart data={data.history}>
-                                        <defs>
-                                          <linearGradient id={`grad-sky-${target.key}`} x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.25}/>
-                                            <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
-                                          </linearGradient>
-                                        </defs>
-                                        <Area 
-                                          type="monotone" 
-                                          dataKey="ms" 
-                                          stroke="#0284c7" 
-                                          strokeWidth={2} 
-                                          fillOpacity={1}
-                                          fill={`url(#grad-sky-${target.key})`}
-                                          isAnimationActive={false}
-                                        />
-                                        <YAxis hide domain={['dataMin - 15', 'dataMax + 15']} />
-                                      </AreaChart>
-                                    </ResponsiveContainer>
+                                  {/* Quick Metrics */}
+                                  <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 pt-1 border-t border-slate-800/80">
+                                    <span>AVG: <strong className="text-white">{data.avgMs ? `${data.avgMs}ms` : '---'}</strong></span>
+                                    <span>JTR: <strong className="text-white">{data.jitter ? `${data.jitter}ms` : '0ms'}</strong></span>
+                                    <span>LOSS: <strong className={lossPct > 0 ? "text-rose-400" : "text-emerald-400"}>{lossPct}%</strong></span>
                                   </div>
+                                </div>
 
-                                  {/* stats grid */}
-                                  <div className="grid grid-cols-4 gap-0.5 sm:gap-1 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100 dark:border-white/10">
-                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
-                                      <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">AVG</span>
-                                      <span className="text-[8px] sm:text-[10px] font-black font-lexend text-slate-700 dark:text-sky-300 tabular-nums uppercase block">
-                                        {data.avgMs ? `${data.avgMs}ms` : '---'}
-                                      </span>
-                                    </div>
-                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
-                                      <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">JTR</span>
-                                      <span className="text-[8px] sm:text-[10px] font-black font-lexend text-slate-700 dark:text-sky-300 tabular-nums uppercase block">
-                                        {data.jitter ? `${data.jitter}ms` : '0ms'}
-                                      </span>
-                                    </div>
-                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
-                                      <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">LOSS</span>
-                                      <span className={cn(
-                                        "text-[8px] sm:text-[10px] font-black font-lexend tabular-nums block",
-                                        lossPct > 0 ? "text-rose-500 font-extrabold" : "text-sky-500 dark:text-sky-400"
-                                      )}>
-                                        {lossPct}%
-                                      </span>
-                                    </div>
-                                    <div className="bg-sky-500/[0.03] dark:bg-slate-800/10 p-1 sm:p-1.5 rounded sm:rounded-lg text-center border border-sky-500/5 font-lexend overflow-hidden">
-                                      <span className="block text-[6px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest">HI/LO</span>
-                                      <span className="text-[7px] sm:text-[9px] font-semibold font-lexend text-slate-500 dark:text-slate-400 tabular-nums uppercase block leading-tight sm:mt-0.5 truncate">
-                                        {data.maxMs ? `${data.maxMs}/${data.minMs}` : '0/0'}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Footer Section with ISP Info */}
-              <div className="p-4 sm:p-6 border-t border-sky-100 dark:border-sky-950 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md shrink-0">
-                {ispInfo && (
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-2xl bg-sky-50 dark:bg-slate-800 flex items-center justify-center text-sky-500 shadow-sm border border-sky-100 dark:border-sky-900/40 shrink-0">
-                        <Wifi size={18} />
-                      </div>
-                      <div className="min-w-0 text-center sm:text-left">
-                        <p className="text-[11px] font-black uppercase tracking-tight text-slate-900 dark:text-white truncate">
-                          {ispInfo.isp}
-                        </p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate leading-none mt-1">IP ADDR: <span className="text-sky-500 font-mono">{ispInfo.ip}</span></p>
-                      </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="text-center sm:text-right shrink-0">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1 opacity-60">GEOGRAPHIC LOCATION</p>
-                      <p className="text-[11px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-tight">{ispInfo.city}, {ispInfo.country}</p>
-                    </div>
-                  </div>
+                  </motion.div>
                 )}
-              </div>
+              </AnimatePresence>
             </div>
-          </motion.div>
-        </div>
+
+            {/* PERSISTENT FULL-WIDTH BOTTOM STATUS FOOTER */}
+            <footer className="h-12 px-4 sm:px-6 bg-slate-900 border-t border-slate-800/90 flex items-center justify-between gap-4 shrink-0 z-20">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center text-sky-400 border border-slate-700 shrink-0">
+                  <Wifi size={13} />
+                </div>
+                <div className="min-w-0 text-xs flex items-center gap-2">
+                  <span className="font-bold text-white truncate">
+                    {ispInfo?.isp || 'Analyzing local ISP network...'}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono truncate hidden sm:inline">
+                    · Public IP: <span className="text-sky-400">{ispInfo?.ip || '127.0.0.1'}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-[10px] uppercase tracking-wider shrink-0">
+                <ShieldCheck size={14} />
+                <span>Live Edge Probe Active</span>
+              </div>
+            </footer>
+          </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );

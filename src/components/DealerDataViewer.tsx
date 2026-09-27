@@ -73,7 +73,8 @@ export default function DealerDataViewer({ users, appConfig, branding, currentUs
         // Let's use the explicit bypassLineCodeFilter we just added!
         const bMonths = await supabaseService.getBillingMonths(
           selectedDealerId, 
-          lineCode || true // true means empty/no line code filtering, but wait, 'true' means bypass filter entirely. If we want empty, we should pass false.
+          lineCode || true,
+          999
         );
         // Wait, supabaseService.getBillingMonths(dealerId, bypassFilter)
         // If bypassFilter === true, no filter.
