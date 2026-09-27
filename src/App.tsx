@@ -195,6 +195,7 @@ export default function App() {
     }
   }, [location.pathname, navigate]);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [isComplaintsInitialLoaded, setIsComplaintsInitialLoaded] = useState(false);
   const processedComplaints = useMemo(() => {
     return processScheduledComplaints(complaints);
   }, [complaints]);
@@ -946,6 +947,7 @@ export default function App() {
     
     const unsubscribe = pocketbaseService.subscribeComplaints((data) => {
       setComplaints(data);
+      setIsComplaintsInitialLoaded(true);
     }, tenantId);
 
     return () => unsubscribe();
@@ -2526,6 +2528,7 @@ export default function App() {
                     onUpdateConfig={handleUpdateConfig}
                     onUpdateUserStatus={handleUpdateUserStatus}
                     isLoading={isLoading}
+                    isComplaintsInitialLoaded={isComplaintsInitialLoaded}
                     alertAuthorized={alertAuthorized}
                     onAuthorizeAlerts={handleAuthorizeAlerts}
                     onSoundTest={handleSoundTest}
@@ -2554,6 +2557,7 @@ export default function App() {
                     onUpdateUser={handleUpdateUser}
                     appConfig={appConfig}
                     isLoading={isLoading}
+                    isComplaintsInitialLoaded={isComplaintsInitialLoaded}
                     alertAuthorized={alertAuthorized}
                     onAuthorizeAlerts={handleAuthorizeAlerts}
                     onSoundTest={handleSoundTest}

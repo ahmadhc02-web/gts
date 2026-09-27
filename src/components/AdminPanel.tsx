@@ -119,6 +119,7 @@ interface AdminPanelProps {
   appConfig: AppConfig;
   onUpdateConfig: (newConfig: AppConfig) => void;
   isLoading?: boolean;
+  isComplaintsInitialLoaded?: boolean;
   alertAuthorized: boolean;
   onAuthorizeAlerts: () => Promise<void>;
   onSoundTest: () => void;
@@ -154,6 +155,7 @@ export default function AdminPanel({
   appConfig,
   onUpdateConfig,
   isLoading,
+  isComplaintsInitialLoaded = true,
   alertAuthorized,
   onAuthorizeAlerts,
   onSoundTest,
@@ -4770,7 +4772,16 @@ export default function AdminPanel({
       </AnimatePresence>
       <div className="space-y-12">
       {activeTab === 'complaints' ? (
-        renderHomeSections()
+        !isComplaintsInitialLoaded && complaints.length === 0 ? (
+          <div className="py-24 flex flex-col items-center justify-center space-y-4">
+            <FiberLoading text="Synchronizing Live Operations..." size="md" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 animate-pulse">
+              Connecting to Network Telemetry & Live Register
+            </span>
+          </div>
+        ) : (
+          renderHomeSections()
+        )
       ) : (
         <>
           <Suspense fallback={<RouteLoadingFallback />}>

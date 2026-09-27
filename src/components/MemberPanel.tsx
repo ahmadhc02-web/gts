@@ -12,11 +12,13 @@ import { cn } from '../lib/utils';
 import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
 import { getCardStyle } from '../lib/styleUtils';
+import FiberLoading from './FiberLoading';
 
 interface MemberPanelProps {
   complaints: Complaint[];
   currentUser: UserProfile;
   appConfig: AppConfig;
+  isComplaintsInitialLoaded?: boolean;
   onRegisterComplaint: (data: {
     customerName: string;
     customerUsername: string;
@@ -55,6 +57,7 @@ export default function MemberPanel({
   complaints,
   currentUser,
   appConfig,
+  isComplaintsInitialLoaded = true,
   onRegisterComplaint,
   onUpdateComplaintStatus,
   onUpdateRemarks,
@@ -191,8 +194,17 @@ export default function MemberPanel({
 
   return (
     <div className="space-y-12">
-      {/* Member Statistics Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-6">
+      {!isComplaintsInitialLoaded && complaints.length === 0 ? (
+        <div className="py-24 flex flex-col items-center justify-center space-y-4">
+          <FiberLoading text="Synchronizing Live Operations..." size="md" />
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 animate-pulse">
+            Connecting to Network Telemetry & Live Register
+          </span>
+        </div>
+      ) : (
+        <>
+          {/* Member Statistics Summary */}
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-6">
         {stats.map((stat, idx) => {
           const isTileActive = (
             forcedStatus === stat.filter.status &&
@@ -603,6 +615,8 @@ export default function MemberPanel({
           </div>
         )}
       </motion.div>
+      </>
+      )}
     </div>
   );
 }

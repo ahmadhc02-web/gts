@@ -646,18 +646,6 @@ export default function BillingTab(props: BillingTabProps) {
                         <Zap size={12} className={cn(isAdvanceMode ? "text-amber-300 fill-amber-300 animate-bounce" : "text-blue-500 animate-pulse")} />
                         <span>{isAdvanceMode ? "★ Advance Details ON" : "⚡ Advance Details"}</span>
                       </motion.button>
-
-                      <motion.button
-                        layout
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setIsColumnSettingModalOpen(true)}
-                        className="ml-2 text-[10px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded-xl cursor-pointer transition-all duration-300 inline-flex items-center gap-1.5 shrink-0 border bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-blue-500 shadow-md shadow-blue-500/20"
-                        title="Configure recovery table columns (Show/Hide with live data updates)"
-                      >
-                        <SlidersHorizontal size={13} className="text-white animate-pulse" />
-                        <span>⚙ Billing Mod Setting / Config</span>
-                      </motion.button>
                     </h4>
 
                     {/* Filters block */}
