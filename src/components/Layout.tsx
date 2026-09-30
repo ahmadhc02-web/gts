@@ -1689,10 +1689,6 @@ export default function Layout({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
-            <div className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shadow-sm select-none">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-              <span>Updated V2 • Billing Mod Config</span>
-            </div>
             {user && (
               <div className="flex items-center gap-2 h-9">
                 {/* Alerts/Bell notification indicator */}

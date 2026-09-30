@@ -316,20 +316,9 @@ export default function MyPCTab(props: MyPCTabProps) {
 
   const mypcTilesList = [
     { 
-      id: 'billing_mod_setting', 
-      icon: SlidersHorizontal, 
-      title: 'Billing Mod Setting & Config', 
-      urdu: 'بلنگ موڈ کالم سیٹنگز (ON/OFF)',
-      desc: 'Customize Recovery Rows Columns • Show/Hide with Live Background Updates',
-      category: 'billing',
-      isFeatured: true,
-      badge: '★ BILLING CONFIG'
-    },
-    { 
       id: 'nodes_view', 
       icon: Flame, 
       title: 'Active Complainers', 
-      urdu: 'ایکٹو کمپلینرز',
       desc: 'Monitor dynamic hotspots',
       category: 'operations'
     },
@@ -337,7 +326,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'submit_view', 
       icon: PlusSquare, 
       title: branding?.tabNames?.submit || 'Complain Reg', 
-      urdu: 'رجسٹریشن',
       desc: 'File fresh customer logs',
       category: 'operations'
     },
@@ -345,7 +333,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'map_view', 
       icon: MapPinned, 
       title: 'Network Map', 
-      urdu: 'نیٹ ورک میپ',
       desc: 'Diagnostic geographic connection grid',
       category: 'operations'
     },
@@ -353,7 +340,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'user_details', 
       icon: Users, 
       title: 'Users Management', 
-      urdu: 'صارفین کا انتظام',
       desc: 'Manage logins & clearance level',
       category: 'operations'
     },
@@ -361,7 +347,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'top10_complainers', 
       icon: BarChart2, 
       title: 'Top 10 Complainer', 
-      urdu: 'ٹاپ 10 کمپلینرز',
       desc: 'High frequency support identifiers',
       category: 'operations'
     },
@@ -369,7 +354,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'login_profiles', 
       icon: ShieldCheck, 
       title: isSubDealerUser ? 'Subaccounts' : 'Login Profiles', 
-      urdu: 'سب اکاؤنٹس / پروفائلز',
       desc: isSubDealerUser ? 'Manage Dealer Subaccounts' : 'Active Credentials & Roles Overview',
       category: 'system'
     }] : []),
@@ -377,7 +361,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'dealers_view', 
       icon: ShieldAlert, 
       title: 'Dealer Section', 
-      urdu: 'ڈیلر سیکشن',
       desc: 'Authorized Dealers Registry Setup',
       category: 'system'
     }] : []),
@@ -385,7 +368,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'system_config', 
       icon: Settings, 
       title: 'Workflow Config', 
-      urdu: 'ورک فلو کنفگریشن',
       desc: 'Edit Categories & Active Zones',
       category: 'system'
     },
@@ -393,7 +375,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'settings_info', 
       icon: Shield, 
       title: 'Security', 
-      urdu: 'سیکیورٹی و ساؤنڈ',
       desc: 'Audio Matrix & Voice Protocols',
       category: 'system'
     },
@@ -401,7 +382,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'integrations', 
       icon: CloudUpload, 
       title: 'Google Sheet Link', 
-      urdu: 'گوگل شیٹ سنک',
       desc: 'One-Time Enterprise Sync',
       category: 'system'
     },
@@ -409,7 +389,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'branding_panel', 
       icon: Palette, 
       title: 'CUSTOMIZATION', 
-      urdu: 'تھیم و ڈیزائن',
       desc: 'Design aesthetics & app layouts',
       category: 'system'
     },
@@ -417,7 +396,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'print_receipt_view', 
       icon: Printer, 
       title: 'Print', 
-      urdu: 'رسید پرنٹ',
       desc: 'Receipt designer & template editor',
       category: 'operations'
     },
@@ -425,7 +403,6 @@ export default function MyPCTab(props: MyPCTabProps) {
       id: 'whatsapp_integration', 
       icon: MessageCircle, 
       title: 'WhatsApp', 
-      urdu: 'واٹس ایپ انضمام',
       desc: 'Connect & manage automated messaging',
       category: 'operations'
     }
@@ -438,11 +415,9 @@ export default function MyPCTab(props: MyPCTabProps) {
     const matchesSearch = 
       item.title.toLowerCase().includes(q) || 
       item.desc.toLowerCase().includes(q) ||
-      (item.urdu && item.urdu.toLowerCase().includes(q)) ||
-      (item.id.toLowerCase().includes(q)) ||
-      (q.includes('billing') && item.id === 'billing_mod_setting') ||
-      (q.includes('config') && (item.id === 'billing_mod_setting' || item.id === 'system_config')) ||
-      (q.includes('setting') && (item.id === 'billing_mod_setting' || item.id === 'system_config' || item.id === 'settings_info'));
+      item.id.toLowerCase().includes(q) ||
+      (q.includes('config') && item.id === 'system_config') ||
+      (q.includes('setting') && (item.id === 'system_config' || item.id === 'settings_info'));
     return matchesCategory && matchesSearch;
   });
 
@@ -460,11 +435,11 @@ export default function MyPCTab(props: MyPCTabProps) {
                         <Monitor size={22} />
                       </span>
                       <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                        MY PC WORKSTATION • ورچوئل ڈیسک ٹاپ
+                        MY PC WORKSTATION
                       </h2>
                     </div>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">
-                      System Console • Applications, System Configurations & Billing Module Settings
+                      System Console • Applications & System Configurations
                     </p>
                   </div>
                   
@@ -476,61 +451,12 @@ export default function MyPCTab(props: MyPCTabProps) {
                   </div>
                 </div>
 
-                {/* FEATURED HERO CARD: Billing Mod Setting & Config */}
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  whileHover={{ scale: 1.005 }}
-                  className="relative overflow-hidden rounded-[2.2rem] bg-gradient-to-br from-blue-600 via-indigo-600 to-sky-700 text-white p-6 sm:p-8 shadow-xl shadow-blue-500/15 border border-white/20 text-left"
-                >
-                  <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
-                  
-                  <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                    <div className="space-y-3 max-w-3xl">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/20 backdrop-blur-md text-white border border-white/20 flex items-center gap-1.5">
-                          <Sparkles size={12} className="text-amber-300 animate-pulse" />
-                          FEATURED CONFIG • بلنگ موڈ سیٹنگز
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-400 text-slate-950 font-sans shadow-sm">
-                          20 COLUMNS CONTROL (ON / OFF)
-                        </span>
-                      </div>
-
-                      <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight flex items-center gap-2.5">
-                        <SlidersHorizontal size={24} className="text-sky-200" />
-                        <span>Billing Mod Setting & Config (بلنگ موڈ کالم سیٹنگز)</span>
-                      </h3>
-
-                      <p className="text-xs sm:text-sm text-sky-100 font-medium leading-relaxed">
-                        بلنگ موڈ کی ریکوری روز کے اوپر تمام 20 کالمز (B. Amount, CR, Recovery, Status, Panel Details وغیرہ) کے نام اور ON/OFF بٹن۔ جو کالم آف کریں گے وہ سکرین پر چھپ جائے گا، اور آن کرتے ہی اس کا تازہ ترین اپڈیٹڈ ڈیٹا فوراً شو ہوگا۔ آف رہنے پر بھی بیک گراؤنڈ میں تمام ڈیٹا اپ ڈیٹ ہوتا رہے گا۔
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-                      <motion.button
-                        whileHover={{ scale: 1.04 }}
-                        whileTap={{ scale: 0.96 }}
-                        onClick={() => {
-                          setMypcOpenedFile('billing_mod_setting');
-                          navigate('/mypc/billing-mod-setting');
-                        }}
-                        className="px-6 py-4 rounded-2xl bg-white text-blue-700 hover:bg-sky-50 font-black uppercase tracking-widest text-xs shadow-lg transition-all flex items-center justify-center gap-2.5 cursor-pointer border-none"
-                      >
-                        <SlidersHorizontal size={16} className="text-blue-600" />
-                        <span>Open Billing Mod Settings ➔</span>
-                      </motion.button>
-                    </div>
-                  </div>
-                </motion.div>
-
                 {/* Search Bar & Category Filters */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)]">
                   {/* Category tabs */}
                   <div className="flex items-center gap-2 flex-wrap">
                     {[
                       { id: 'all', label: `All Tools (${mypcTilesList.length})` },
-                      { id: 'billing', label: '💳 Billing & Recovery' },
                       { id: 'operations', label: '⚡ Operations' },
                       { id: 'system', label: '⚙️ Settings & System' }
                     ].map(tab => (
@@ -603,15 +529,11 @@ export default function MyPCTab(props: MyPCTabProps) {
                           <item.icon size={22} strokeWidth={2} />
                         </div>
 
-                        {item.badge ? (
+                        {item.badge && (
                           <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-500 text-white shadow-sm">
                             {item.badge}
                           </span>
-                        ) : item.urdu ? (
-                          <span className="text-[11px] font-urdu font-bold text-slate-400 group-hover:text-blue-500 transition-colors">
-                            {item.urdu}
-                          </span>
-                        ) : null}
+                        )}
                       </div>
 
                       <div className="z-10 w-full flex flex-col items-start">
@@ -624,9 +546,6 @@ export default function MyPCTab(props: MyPCTabProps) {
                           <span>{item.title}</span>
                           <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all" />
                         </h4>
-                        {item.urdu && item.badge && (
-                          <p className="text-[10px] font-bold text-blue-500 dark:text-blue-400 mb-1">{item.urdu}</p>
-                        )}
                         <p className="text-[10px] sm:text-[11px] font-medium text-slate-400 dark:text-slate-500 line-clamp-2 leading-relaxed group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">
                           {item.desc}
                         </p>
@@ -1160,35 +1079,6 @@ export default function MyPCTab(props: MyPCTabProps) {
                   {/* Subview 4: System Configurations */}
                   {mypcOpenedFile === 'system_config' && (
                     <div className="max-w-7xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
-                      {/* Shortcut to Billing Mod Column Settings */}
-                      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-transparent border border-blue-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
-                            <SlidersHorizontal size={20} />
-                          </div>
-                          <div>
-                            <h4 className="text-xs sm:text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                              <span>Billing Mod Column Settings & Config</span>
-                              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold font-urdu">(بلنگ موڈ کالم سیٹنگز)</span>
-                            </h4>
-                            <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                              بلنگ ریکوری روز کے اوپر تمام 20 کالمز کو اپنی ضرورت کے مطابق ON یا HIDE کریں
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMypcOpenedFile('billing_mod_setting');
-                            navigate('/mypc/billing-mod-setting');
-                          }}
-                          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[10px] shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                        >
-                          <SlidersHorizontal size={13} />
-                          <span>Open Column Settings ➔</span>
-                        </button>
-                      </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                         {/* Category Management */}
                         <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
