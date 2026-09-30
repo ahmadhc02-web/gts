@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, MessageCircle, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload, DatabaseBackup } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, MessageCircle, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, Workflow, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload, DatabaseBackup } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { WhatsAppConnectPanel } from '../whatsapp_data';
@@ -531,7 +531,7 @@ export default function Layout({
       label: 'Configurations',
       items: [
         { id: 'dealers', label: 'Dealer Section', icon: ShieldAlert, roles: ['super_admin'] },
-        { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Settings },
+        { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Workflow },
       ]
     },
     {
@@ -586,6 +586,11 @@ export default function Layout({
       setIsMapOpen(true);
     } else if (id === 'monitor' || id === 'latency') {
       setActiveTab('latency');
+    } else if (id === 'config') {
+      setActiveTab('mypc');
+      window.dispatchEvent(new CustomEvent('admin-nav', { detail: 'mypc' }));
+      window.dispatchEvent(new CustomEvent('mypc-select-file', { detail: 'system_config' }));
+      navigate('/mypc/workflow-config');
     } else {
       if (id === 'mypc') {
         window.dispatchEvent(new CustomEvent('mypc-reset-desktop'));
@@ -599,7 +604,7 @@ export default function Layout({
   return (
     <PakistaniFlagBackground className="transition-colors duration-500">
       {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
-      {user && (
+      {user && activeTab !== 'mypc' && activeTab !== 'config' && activeTab !== 'latency' && (
         <div className={cn(
           "group/rail left-0 bottom-0 w-[68px] hover:w-[240px] transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] neu-flat border-r border-slate-200/50 dark:border-white/5 flex-col items-stretch pb-5 select-none overflow-hidden",
           isSidebarOpen ? "flex z-[160] top-0" : "hidden lg:flex z-[51] top-0",
@@ -639,9 +644,9 @@ export default function Layout({
                 { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
                 { id: 'nodes', label: 'Active Complainers', icon: Flame },
                 { id: 'clients', label: branding?.tabNames?.clients || 'Users Management', icon: Contact },
-                { id: 'mypc', label: 'MY PC', icon: Monitor },
+                { id: 'mypc', label: 'Settings', icon: Settings },
                 { id: 'billing', label: 'Billing Mod', icon: CreditCard },
-                { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Settings },
+                { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Workflow },
                 { id: 'map', label: 'Network Map', icon: MapIcon },
                 { id: 'monitor', label: 'Service Monitor', icon: Activity },
                 { id: 'settings', label: 'Security', icon: Shield },
@@ -914,15 +919,15 @@ export default function Layout({
         </div>
 
         <div className="p-4 mt-auto space-y-3 shrink-0 border-t border-slate-100 dark:border-white/10 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
-          {/* MY PC Sidebar Button */}
+          {/* Settings Sidebar Button */}
           <motion.button
             onClick={() => handleSidebarNav('mypc')}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className="w-full flex items-center justify-center gap-2.5 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:opacity-95 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-teal-500/10 cursor-pointer group shrink-0"
           >
-            <Monitor size={15} className="group-hover:rotate-6 transition-transform text-teal-100" />
-            <span>MY PC</span>
+            <Settings size={15} className="group-hover:rotate-45 transition-transform text-teal-100" />
+            <span>Settings</span>
           </motion.button>
 
           {/* Billing Side Button */}

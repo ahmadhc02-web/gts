@@ -6,7 +6,7 @@ import {
   Layers, Sliders, Settings2, Shield, User as UserIcon, Bell, MessageSquare, Type,
   Contact, ClipboardList, MapPin, Key, Phone, Package, MapPinned, ShieldAlert, Activity, FileSpreadsheet,
   TrendingUp, Users, CheckCircle2, Clock, ExternalLink, RotateCcw, Undo2, Redo2,
-  Flame, BarChart3, PlusSquare, Map as MapIcon, Settings, CloudUpload, CreditCard, Trash2
+  Flame, BarChart3, PlusSquare, Map as MapIcon, Settings, Workflow, CloudUpload, CreditCard, Trash2
 } from 'lucide-react';
 import { BrandingConfig, UserProfile, Notification } from '../types';
 import { cn } from '../lib/utils';
@@ -1059,7 +1059,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
                     { id: 'top10', label: 'Top 10 Complainer Analytics', category: 'Analytics & Users', icon: TrendingUp },
                     { id: 'users', label: 'Operational Login Profiles', category: 'Analytics & Users', icon: Users },
                     { id: 'dealers', label: 'Partner / Dealer Directory', category: 'Configurations', icon: ShieldAlert },
-                    { id: 'config', label: 'Workflow Config Settings', category: 'Configurations', icon: Settings },
+                    { id: 'config', label: 'Workflow Config Settings', category: 'Configurations', icon: Workflow },
                     { id: 'settings', label: 'Security & Access Protocol', category: 'System Settings', icon: Shield },
                     { id: 'integrations', label: 'Google Sheets Integration', category: 'System Settings', icon: CloudUpload },
                     { id: 'branding', label: 'Design Customization Desk', category: 'System Settings', icon: Palette },

@@ -5834,6 +5834,10 @@ export default function AdminPanel({
         )}
 
         {activeTab === 'config' && (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'dealer') && (
+          <MyPCTab {...stateProps} initialOpenedFile="system_config" />
+        )}
+
+        {false && activeTab === 'config' && (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'dealer') && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
               {/* Category Management */}

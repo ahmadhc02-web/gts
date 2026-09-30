@@ -3187,6 +3187,8 @@ export const supabaseService = {
                   await sendMessage(compNumber, msg);
                 }
               }
+            } else {
+              console.warn('WhatsApp completed-message skipped: complaint status "' + status + '" does not match configured completed value "' + completedValue + '"');
             }
           } catch (e) {
             console.warn('Failed to send WhatsApp completed notification', e);

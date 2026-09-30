@@ -3,7 +3,7 @@ import { getAvatarUrl } from '../utils/avatar';
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle, SlidersHorizontal, Sparkles, ChevronRight } from 'lucide-react';
+import { Phone, UserPlus, Settings, Workflow, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, ArrowLeft, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle, SlidersHorizontal, Sparkles, ChevronRight } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import ComplaintForm from './ComplaintForm';
@@ -316,303 +316,196 @@ export default function MyPCTab(props: MyPCTabProps) {
 
   const mypcTilesList = [
     { 
-      id: 'nodes_view', 
-      icon: Flame, 
-      title: 'Active Complainers', 
-      desc: 'Monitor dynamic hotspots',
-      category: 'operations'
-    },
-    { 
-      id: 'submit_view', 
-      icon: PlusSquare, 
-      title: branding?.tabNames?.submit || 'Complain Reg', 
-      desc: 'File fresh customer logs',
-      category: 'operations'
-    },
-    { 
-      id: 'map_view', 
-      icon: MapPinned, 
-      title: 'Network Map', 
-      desc: 'Diagnostic geographic connection grid',
-      category: 'operations'
+      id: 'system_config', 
+      icon: Workflow, 
+      title: 'Workflow Config', 
+      desc: 'Edit Categories, Active Zones, and System Parameters'
     },
     { 
       id: 'user_details', 
       icon: Users, 
       title: 'Users Management', 
-      desc: 'Manage logins & clearance level',
-      category: 'operations'
-    },
-    { 
-      id: 'top10_complainers', 
-      icon: BarChart2, 
-      title: 'Top 10 Complainer', 
-      desc: 'High frequency support identifiers',
-      category: 'operations'
+      desc: 'Manage logins and clearance levels'
     },
     ...(canAccessLoginProfiles ? [{ 
       id: 'login_profiles', 
       icon: ShieldCheck, 
       title: isSubDealerUser ? 'Subaccounts' : 'Login Profiles', 
-      desc: isSubDealerUser ? 'Manage Dealer Subaccounts' : 'Active Credentials & Roles Overview',
-      category: 'system'
+      desc: isSubDealerUser ? 'Manage Dealer Subaccounts' : 'Active Credentials and Roles Overview'
     }] : []),
     ...(currentUser?.role === 'super_admin' ? [{ 
       id: 'dealers_view', 
       icon: ShieldAlert, 
       title: 'Dealer Section', 
-      desc: 'Authorized Dealers Registry Setup',
-      category: 'system'
+      desc: 'Authorized Dealers Registry Setup'
     }] : []),
-    { 
-      id: 'system_config', 
-      icon: Settings, 
-      title: 'Workflow Config', 
-      desc: 'Edit Categories & Active Zones',
-      category: 'system'
-    },
     { 
       id: 'settings_info', 
       icon: Shield, 
       title: 'Security', 
-      desc: 'Audio Matrix & Voice Protocols',
-      category: 'system'
-    },
-    { 
-      id: 'integrations', 
-      icon: CloudUpload, 
-      title: 'Google Sheet Link', 
-      desc: 'One-Time Enterprise Sync',
-      category: 'system'
+      desc: 'Audio Matrix, Voice Protocols, and Security Keys'
     },
     { 
       id: 'branding_panel', 
       icon: Palette, 
-      title: 'CUSTOMIZATION', 
-      desc: 'Design aesthetics & app layouts',
-      category: 'system'
-    },
-    { 
-      id: 'print_receipt_view', 
-      icon: Printer, 
-      title: 'Print', 
-      desc: 'Receipt designer & template editor',
-      category: 'operations'
+      title: 'Customization', 
+      desc: 'Design aesthetics, cards, and app layouts'
     },
     { 
       id: 'whatsapp_integration', 
       icon: MessageCircle, 
       title: 'WhatsApp', 
-      desc: 'Connect & manage automated messaging',
-      category: 'operations'
+      desc: 'Connect and manage automated WhatsApp messaging'
+    },
+    { 
+      id: 'integrations', 
+      icon: CloudUpload, 
+      title: 'Google Sheet Link', 
+      desc: 'One-Time Enterprise Sheets Synchronization'
+    },
+    { 
+      id: 'print_receipt_view', 
+      icon: Printer, 
+      title: 'Print', 
+      desc: 'Receipt designer and invoice print templates'
+    },
+    { 
+      id: 'nodes_view', 
+      icon: Flame, 
+      title: 'Active Complainers', 
+      desc: 'Monitor dynamic hotspots and active nodes'
+    },
+    { 
+      id: 'submit_view', 
+      icon: PlusSquare, 
+      title: branding?.tabNames?.submit || 'Complain Reg', 
+      desc: 'File fresh customer operational complaints'
+    },
+    { 
+      id: 'map_view', 
+      icon: MapPinned, 
+      title: 'Network Map', 
+      desc: 'Diagnostic geographic connection grid'
+    },
+    { 
+      id: 'top10_complainers', 
+      icon: BarChart2, 
+      title: 'Top 10 Complainer', 
+      desc: 'High frequency support identifiers'
     }
   ];
 
-  const filteredMypcTiles = mypcTilesList.filter(item => {
-    const matchesCategory = mypcActiveCategory === 'all' || item.category === mypcActiveCategory;
-    const q = mypcSearchQuery.toLowerCase().trim();
-    if (!q) return matchesCategory;
-    const matchesSearch = 
-      item.title.toLowerCase().includes(q) || 
-      item.desc.toLowerCase().includes(q) ||
-      item.id.toLowerCase().includes(q) ||
-      (q.includes('config') && item.id === 'system_config') ||
-      (q.includes('setting') && (item.id === 'system_config' || item.id === 'settings_info'));
-    return matchesCategory && matchesSearch;
-  });
+  const activeFile = mypcOpenedFile || 'system_config';
+  const activeItem = mypcTilesList.find(i => i.id === activeFile) || mypcTilesList[0];
+
+  const handleBack = () => {
+    if (onNavigate) {
+      onNavigate('complaints');
+    }
+    window.dispatchEvent(new CustomEvent('admin-nav', { detail: 'complaints' }));
+    navigate('/complaints');
+  };
+
+  const handleSelectTab = (id: string) => {
+    setMypcOpenedFile(id as any);
+    const slug = MYPC_FILE_TO_SLUG[id];
+    if (slug) {
+      navigate(`/mypc/${slug}`);
+    } else {
+      navigate('/mypc');
+    }
+  };
 
   return (
+    <div id="settings-console" className="fixed inset-0 z-[120] bg-slate-50/95 dark:bg-slate-950 text-slate-900 dark:text-white flex flex-col overflow-hidden">
+      {/* Top Header Bar with Corner Back Button */}
+      <header className="shrink-0 h-16 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-4 z-20 shadow-xs">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          {/* Corner Back Button */}
+          <button
+            type="button"
+            onClick={handleBack}
+            className="h-9 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-2 text-xs font-bold transition-all active:scale-95 shrink-0 shadow-xs cursor-pointer group"
+            title="Back to Dashboard"
+          >
+            <ArrowLeft size={16} className="text-slate-600 dark:text-slate-300 group-hover:-translate-x-0.5 transition-transform" />
+            <span>Back</span>
+          </button>
 
-          <div id="mypc-virtual-desktop" className="max-w-[115rem] mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
-            {/* Virtual PC Views */}
-            {!mypcOpenedFile && (
-              <div className="max-w-7xl mx-auto space-y-6 pt-2 pb-12">
-                {/* Header Title & System Badge */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[var(--neu-border)] pb-4 text-left">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                        <Monitor size={22} />
-                      </span>
-                      <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                        MY PC WORKSTATION
-                      </h2>
-                    </div>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">
-                      System Console • Applications & System Configurations
-                    </p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                      Active Hub • v2.4
-                    </span>
-                  </div>
-                </div>
+          <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
 
-                {/* Search Bar & Category Filters */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)]">
-                  {/* Category tabs */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {[
-                      { id: 'all', label: `All Tools (${mypcTilesList.length})` },
-                      { id: 'operations', label: '⚡ Operations' },
-                      { id: 'system', label: '⚙️ Settings & System' }
-                    ].map(tab => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setMypcActiveCategory(tab.id as any)}
-                        className={cn(
-                          "px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border",
-                          mypcActiveCategory === tab.id
-                            ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
-                            : "bg-transparent text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800"
-                        )}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
+          <div className="min-w-0 text-left">
+            <div className="flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white truncate">
+                Settings
+              </h1>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                System Console
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate hidden sm:block">
+              Manage your system settings, operations, and application configurations
+            </p>
+          </div>
+        </div>
 
-                  {/* Search input */}
-                  <div className="relative min-w-[240px] sm:w-72">
-                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={mypcSearchQuery}
-                      onChange={(e) => setMypcSearchQuery(e.target.value)}
-                      placeholder="Search tools, billing, config..."
-                      className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)] focus:border-blue-500 text-slate-800 dark:text-slate-200 outline-none transition-colors"
-                    />
-                    {mypcSearchQuery && (
-                      <button
-                        onClick={() => setMypcSearchQuery('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                </div>
+        {/* Right Corner indicator */}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 hidden md:inline">
+            Active:
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-slate-700 truncate max-w-[160px] sm:max-w-none">
+            {activeItem?.title}
+          </span>
+        </div>
+      </header>
 
-                {/* Grid of Applications */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 pt-2">
-                  {filteredMypcTiles.map((item) => (
-                    <motion.div
-                      key={item.id}
-                      whileHover={{ y: -4, scale: 1.015 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => {
-                        setMypcOpenedFile(item.id as any);
-                        const slug = MYPC_FILE_TO_SLUG[item.id];
-                        if (slug) {
-                          navigate(`/mypc/${slug}`);
-                        }
-                      }}
-                      className={cn(
-                        "group cursor-pointer p-5 sm:p-6 bg-[var(--neu-surface)] rounded-[2rem] flex flex-col items-start text-left space-y-4 transition-all duration-300 relative overflow-hidden active:scale-95 border",
-                        item.isFeatured 
-                          ? "border-blue-500/60 shadow-[0_0_24px_rgba(59,130,246,0.18)] dark:shadow-[0_0_24px_rgba(59,130,246,0.25)] ring-2 ring-blue-500/20" 
-                          : "border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] hover:shadow-[var(--neu-shadow-inset)]"
-                      )}
-                    >
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-all duration-300 -mr-12 -mt-12 pointer-events-none" />
-                      
-                      <div className="w-full flex items-center justify-between z-10">
-                        <div className={cn(
-                          "w-12 h-12 rounded-2xl border flex items-center justify-center transition-all duration-300",
-                          item.isFeatured
-                            ? "bg-blue-500 text-white border-blue-400 shadow-md shadow-blue-500/30"
-                            : "bg-[var(--neu-surface)] border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] text-slate-600 dark:text-slate-400 group-hover:text-blue-500"
-                        )}>
-                          <item.icon size={22} strokeWidth={2} />
-                        </div>
+      {/* Two Column Layout Filling Full Viewport Height */}
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden text-left">
+        {/* Left Sidebar List */}
+        <aside className="w-full lg:w-72 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 p-3 sm:p-4 overflow-y-auto">
+          <nav className="flex flex-row lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-1 lg:pb-0 no-scrollbar">
+            {mypcTilesList.map((item) => {
+              const isActive = activeFile === item.id;
+              const IconComponent = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectTab(item.id)}
+                  className={cn(
+                    "flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 lg:w-full cursor-pointer select-none",
+                    isActive
+                      ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold shadow-xs"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-900/60"
+                  )}
+                >
+                  <IconComponent size={16} className={cn("shrink-0", isActive ? "text-slate-900 dark:text-white" : "text-slate-400 dark:text-slate-500")} />
+                  <span className="truncate">{item.title}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
 
-                        {item.badge && (
-                          <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-500 text-white shadow-sm">
-                            {item.badge}
-                          </span>
-                        )}
-                      </div>
+        {/* Right Content Area */}
+        <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-white dark:bg-slate-950">
+          <div className="max-w-6xl mx-auto space-y-6">
+            {/* Active Section Header */}
+            <div className="space-y-1 pb-4 border-b border-slate-200 dark:border-slate-800">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>{activeItem?.title}</span>
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+                {activeItem?.desc}
+              </p>
+            </div>
 
-                      <div className="z-10 w-full flex flex-col items-start">
-                        <h4 className={cn(
-                          "text-xs sm:text-sm font-black uppercase tracking-wider leading-tight mb-1 transition-colors flex items-center gap-1.5",
-                          item.isFeatured 
-                            ? "text-blue-600 dark:text-blue-400" 
-                            : "text-slate-800 dark:text-slate-100 group-hover:text-blue-500 dark:group-hover:text-blue-400"
-                        )}>
-                          <span>{item.title}</span>
-                          <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all" />
-                        </h4>
-                        <p className="text-[10px] sm:text-[11px] font-medium text-slate-400 dark:text-slate-500 line-clamp-2 leading-relaxed group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">
-                          {item.desc}
-                        </p>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                {filteredMypcTiles.length === 0 && (
-                  <div className="p-12 text-center rounded-3xl bg-[var(--neu-surface)] border border-[var(--neu-border)] space-y-3">
-                    <p className="text-sm font-black uppercase tracking-widest text-slate-500">
-                      No tools found matching &quot;{mypcSearchQuery}&quot;
-                    </p>
-                    <button
-                      onClick={() => {
-                        setMypcSearchQuery('');
-                        setMypcActiveCategory('all');
-                      }}
-                      className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white cursor-pointer"
-                    >
-                      Reset Filters
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-            {mypcOpenedFile && (
-              <div className="space-y-6 animate-fade-in text-left">
-                <div className="flex items-center justify-between bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] px-5 py-4 rounded-2xl border border-[var(--neu-border)]">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        setMypcOpenedFile(null);
-                        navigate('/mypc');
-                      }}
-                      className="px-4 py-2 text-[9px] font-black uppercase tracking-widest bg-[var(--neu-surface)] text-slate-600 dark:text-slate-300 hover:text-blue-500 rounded-xl border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] active:scale-95 cursor-pointer transition-all flex items-center gap-2"
-                    >
-                      <span>◀</span> Return to My PC Desktop
-                    </button>
-                    <div>
-                      <span className="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
-                        Running Frame: {
-                          mypcOpenedFile === 'billing_mod_setting' ? 'Billing Mode Recovery Columns Visibility Console' :
-                          mypcOpenedFile === 'whatsapp_integration' ? 'WhatsApp Business Integration Console' :
-                          mypcOpenedFile === 'user_details' ? 'Access List & Clearance Permissions Manager' :
-                          mypcOpenedFile === 'print_receipt_view' ? 'Receipt Management & PDF Generator Console' :
-                          mypcOpenedFile === 'top10_complainers' ? 'Hot-Frequency Support Request Registry' :
-                          mypcOpenedFile === 'login_profiles' ? (isSubDealerUser ? 'Subaccount Creation & Management' : 'Active System Roles & Authentication Overview') :
-                          mypcOpenedFile === 'system_config' ? 'Real-Time Tenant Parameters configuration' :
-                          mypcOpenedFile === 'dealers_view' ? 'Authorized Dealers Setup Protocol' :
-                          mypcOpenedFile === 'branding_panel' ? 'Theme Style & System Signage Configuration' :
-                          mypcOpenedFile === 'settings_info' ? 'System Audio-Voice Matrix & Security' :
-                          mypcOpenedFile === 'complaints_view' ? 'Real-Time Operational Support Request Console' :
-                          mypcOpenedFile === 'nodes_view' ? 'Diagnostic Active Complainers & Hotspot Index' :
-                          mypcOpenedFile === 'submit_view' ? 'Operational Support Request Registration Console' :
-                          mypcOpenedFile === 'map_view' ? 'Diagnostic Geographic Connection Map View' :
-                          'Cloud Sheets Sync Nodes Proxy'
-                        }
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-1 min-h-[420px]">
-                  {/* Subview 1: Client Infrastructure Directory */}
-                  {mypcOpenedFile === 'user_details' && (
+            {/* Subviews Container */}
+            <div className="min-h-[450px]">
+              {/* Subview 1: Client Infrastructure Directory */}
+              {activeFile === 'user_details' && (
                     <div className="max-w-7xl mx-auto space-y-6 text-left">
                         <div className="animate-fade-in bg-[var(--neu-surface)] p-6 rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)]">
                           <ClientManagement 
@@ -627,14 +520,14 @@ export default function MyPCTab(props: MyPCTabProps) {
                   )}
 
                   {/* Subview 2: Top 10 Complainers */}
-                  {mypcOpenedFile === 'top10_complainers' && (
+                  {activeFile === 'top10_complainers' && (
                     <div className="max-w-4xl mx-auto">
                       <HighFrequencyNodes complaints={complaints} users={users} />
                     </div>
                   )}
 
                   {/* Subview 3: Login Profiles */}
-                  {mypcOpenedFile === 'login_profiles' && (
+                  {activeFile === 'login_profiles' && (
                     canAccessLoginProfiles ? (
                     <div className="max-w-7xl mx-auto space-y-6 text-left">
                       {/* Active Session & Core Profile */}
@@ -1077,7 +970,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                 )}
 
                   {/* Subview 4: System Configurations */}
-                  {mypcOpenedFile === 'system_config' && (
+                  {activeFile === 'system_config' && (
                     <div className="max-w-7xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                         {/* Category Management */}
@@ -1363,14 +1256,14 @@ export default function MyPCTab(props: MyPCTabProps) {
                   )}
 
                   {/* Subview 5: Branding Customizer */}
-                  {mypcOpenedFile === 'branding_panel' && (
+                  {activeFile === 'branding_panel' && (
                     <div className="max-w-7xl mx-auto w-full px-4">
                       <EditorPanel branding={branding} onUpdate={onUpdateBranding} />
                     </div>
                   )}
 
                   {/* Subview 6: Integrations Sync */}
-                  {mypcOpenedFile === 'integrations' && (
+                  {activeFile === 'integrations' && (
                     <div className="max-w-4xl mx-auto space-y-6 text-left animate-in fade-in duration-300">
                       <div className={cn("p-8 sm:p-12", getCardStyle(branding.cardStyle))}>
                         {window.self !== window.top && !googleTokens && (
@@ -1746,7 +1639,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                 )}
 
                   {/* Subview 7: Security & Audio Matrix settings_info */}
-                  {mypcOpenedFile === 'settings_info' && (
+                  {activeFile === 'settings_info' && (
                     <div className="max-w-2xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
                       <div className="business-card p-10 bg-[var(--neu-surface)] rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)]">
                         <div className="flex items-center gap-5 mb-10">
@@ -1860,7 +1753,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                   )}
 
                   {/* Subview 8: Dealer Section dealers_view */}
-                  {mypcOpenedFile === 'dealers_view' && (
+                  {activeFile === 'dealers_view' && (
                     currentUser.role === 'super_admin' ? (
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left animate-in fade-in duration-300">
                         {/* Dealer Setup Form */}
@@ -2156,21 +2049,21 @@ export default function MyPCTab(props: MyPCTabProps) {
                   )}
 
                   {/* Subview 9: Complaints View complaints_view */}
-                  {mypcOpenedFile === 'complaints_view' && (
+                  {activeFile === 'complaints_view' && (
                     <div className="max-w-7xl mx-auto space-y-6 text-left animate-in fade-in duration-300">
                       {renderHomeSections()}
                     </div>
                   )}
 
                   {/* Subview 10: Active Complainers nodes_view */}
-                  {mypcOpenedFile === 'nodes_view' && (
+                  {activeFile === 'nodes_view' && (
                     <div className="max-w-4xl mx-auto text-left animate-in fade-in duration-300">
                       <HighFrequencyNodes complaints={complaints} users={users} />
                     </div>
                   )}
 
                   {/* Subview 12: Complain Reg submit_view */}
-                  {mypcOpenedFile === 'submit_view' && (
+                  {activeFile === 'submit_view' && (
                     <div className="max-w-4xl mx-auto text-left animate-in fade-in duration-300">
                       <div className="text-center space-y-2 mb-10">
                         <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50">Field Operations</h2>
@@ -2207,16 +2100,16 @@ export default function MyPCTab(props: MyPCTabProps) {
                   )}
 
                   {/* Subview 13: Network Map map_view */}
-                  {mypcOpenedFile === 'map_view' && (
+                  {activeFile === 'map_view' && (
                     <MapViewer
-                      isOpen={mypcOpenedFile === 'map_view'}
+                      isOpen={activeFile === 'map_view'}
                       onClose={() => navigate('/mypc')}
                       user={currentUser}
                     />
                   )}
 
                   {/* Subview 14: Receipt print_receipt_view */}
-                  {mypcOpenedFile === 'print_receipt_view' && (
+                  {activeFile === 'print_receipt_view' && (
                     <ReceiptManager
                       currentUser={currentUser}
                       branding={branding}
@@ -2224,7 +2117,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                   )}
 
                   {/* Subview 15: WhatsApp Integration whatsapp_integration */}
-                  {mypcOpenedFile === 'whatsapp_integration' && (
+                  {activeFile === 'whatsapp_integration' && (
                     <div className="max-w-5xl mx-auto space-y-6 text-left animate-in fade-in duration-300">
                       {/* Safety / Anti-Ban Warning Header Card */}
                       <div className="p-4 sm:p-5 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-500/10 text-slate-800 dark:text-amber-200">
@@ -2241,13 +2134,13 @@ export default function MyPCTab(props: MyPCTabProps) {
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                         <WhatsAppConnectPanel onClose={() => setMypcOpenedFile(null)} />
-                        <WhatsAppMessageTemplateBox />
+                        <WhatsAppMessageTemplateBox statuses={appConfig?.statuses} />
                       </div>
                     </div>
                   )}
 
                   {/* Subview 16: Billing Mod Setting billing_mod_setting */}
-                  {mypcOpenedFile === 'billing_mod_setting' && (
+                  {activeFile === 'billing_mod_setting' && (
                     <BillingModSettingView onNavigateToBilling={() => {
                       if (onNavigate) {
                         onNavigate('billing');
@@ -2258,10 +2151,9 @@ export default function MyPCTab(props: MyPCTabProps) {
                   )}
                 </div>
               </div>
-            )}
+            </main>
           </div>
-
-
+        </div>
   );
 }
 

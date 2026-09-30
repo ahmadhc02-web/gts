@@ -14,6 +14,50 @@
     <meta name="description" content="ISP Service Management Dashboard with real-time network latency monitoring, ISP diagnostics, and customer complaint tracking." />
     <meta property="og:title" content="Green Tech Services ISP Management" />
     <meta property="og:description" content="ISP Service Management Dashboard with real-time network latency monitoring, ISP diagnostics, and customer complaint tracking." />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <script>
+      (function() {
+        // Enforce cache bypass and block service worker registration in development
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+          try {
+            navigator.serviceWorker.register = function() {
+              return Promise.reject(new Error('Service Worker registration disabled in development environment.'));
+            };
+          } catch (e) {}
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            if (regs && regs.length > 0) {
+              var p = [];
+              for (var i = 0; i < regs.length; i++) {
+                p.push(regs[i].unregister());
+              }
+              if (typeof window !== 'undefined' && 'caches' in window) {
+                caches.keys().then(function(keys) {
+                  var p2 = keys.map(function(k) { return caches.delete(k); });
+                  Promise.all(p.concat(p2)).then(function() {
+                    console.log('Old SW purged, reloading page...');
+                    window.location.reload();
+                  });
+                });
+              } else {
+                Promise.all(p).then(function() {
+                  window.location.reload();
+                });
+              }
+            } else if (typeof window !== 'undefined' && 'caches' in window) {
+              caches.keys().then(function(keys) {
+                if (keys && keys.length > 0) {
+                  Promise.all(keys.map(function(k) { return caches.delete(k); })).then(function() {
+                    window.location.reload();
+                  });
+                }
+              });
+            }
+          }).catch(function() {});
+        }
+      })();
+    </script>
     <script>
       (function() {
         try {

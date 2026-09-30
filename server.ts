@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -74,6 +75,7 @@ const localOtpStore = new Map<string, MemoryOTP>();
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+  const httpServer = http.createServer(app);
 
   // Robust CORS Middleware supporting this project's domains
   app.use(
@@ -3285,12 +3287,32 @@ System instructions:
 
   // --- End Google Drive & Sheets Integration ---
 
+  // --- Cache Buster / Service Worker Nuker ---
+  // If the browser checks for sw.js or service-worker.js, serve a script that unregisters itself and wipes CacheStorage
+  app.get(["/sw.js", "/service-worker.js"], (req, res) => {
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.send(`
+      self.addEventListener('install', () => {
+        self.skipWaiting();
+      });
+      self.addEventListener('activate', (event) => {
+        event.waitUntil(
+          caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+            .then(() => self.registration.unregister())
+            .then(() => self.clients.matchAll({ includeUncontrolled: true, type: 'window' }))
+            .then((clients) => {
+              clients.forEach((client) => client.navigate(client.url));
+            })
+        );
+      });
+      self.addEventListener('fetch', () => {});
+    `);
+  });
+
   // Vite middleware for development vs static files for production
-  // Production is triggered if:
-  // 1. NODE_ENV === 'production'
-  // 2. K_SERVICE (Google Cloud Run)
-  // 3. dist/index.html exists (after npm run build was executed)
-  // 4. Custom production PORT is specified
   const distCandidates = [
     path.join(process.cwd(), "dist"),
     path.resolve(currentDirname, "dist"),
@@ -3300,30 +3322,47 @@ System instructions:
     fs.existsSync(path.join(dir, "index.html"))
   );
 
-  const hasBuiltDist = Boolean(foundDistPath);
   const isProd =
-    process.env.NODE_ENV === "production" ||
-    Boolean(process.env.K_SERVICE) ||
-    hasBuiltDist ||
-    (Boolean(process.env.PORT) && process.env.PORT !== "3000");
+    process.env.NODE_ENV === "production" &&
+    !process.env.K_SERVICE?.startsWith("ais-dev-");
 
   if (!isProd) {
     const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        watch: {
-          usePolling: true,
-          interval: 1000,
-          ignored: ["**/whatsapp_data/backend/**", "**/dist/**", "**/.git/**"],
-        },
-      },
+      server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
+    app.use("*", async (req, res, next) => {
+      if (req.path.startsWith("/api/")) {
+        return next();
+      }
+      const url = req.originalUrl;
+      try {
+        let template = fs.readFileSync(path.resolve(process.cwd(), "index.html"), "utf-8");
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({
+          "Content-Type": "text/html",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0"
+        }).end(template);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
     const distPath = foundDistPath || path.join(process.cwd(), "dist");
 
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+        }
+      }
+    }));
     app.get("*", (req, res, next) => {
       // Do not intercept backend /api routes
       if (req.path.startsWith("/api/")) {
@@ -3331,6 +3370,9 @@ System instructions:
       }
       const indexPath = path.join(distPath, "index.html");
       if (fs.existsSync(indexPath)) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
         res.sendFile(indexPath);
       } else {
         res.status(500).send("Production build artifacts not found. Please run 'npm run build' first.");
@@ -3338,9 +3380,9 @@ System instructions:
     });
   }
 
-  const server = app.listen(PORT, "0.0.0.0", () => {
+  const server = httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`Server mode: ${process.env.NODE_ENV === "production" ? "Production (Static)" : "Development (Vite)"}`);
+    console.log(`Server mode: ${isProd ? "Production (Static)" : "Development (Vite with HMR)"}`);
   });
 
   server.on("error", (err: any) => {

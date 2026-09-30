@@ -1,15 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import { Save, CheckCircle, MessageSquare } from 'lucide-react';
+import { Save, CheckCircle, MessageSquare, AlertTriangle } from 'lucide-react';
 import { getTemplate, saveTemplate } from './whatsappApi';
+import { supabaseService } from '../lib/supabaseService';
 import { toast } from 'sonner';
 
-export default function WhatsAppMessageTemplateBox() {
+interface WhatsAppMessageTemplateBoxProps {
+  statuses?: string[];
+}
+
+export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: WhatsAppMessageTemplateBoxProps = {}) {
   const [template, setTemplate] = useState('');
   const [complaintRegisteredTemplate, setComplaintRegisteredTemplate] = useState('');
   const [complaintCompletedTemplate, setComplaintCompletedTemplate] = useState('');
   const [completedStatusValue, setCompletedStatusValue] = useState('');
+  const [configuredStatuses, setConfiguredStatuses] = useState<string[]>(propsStatuses || []);
+  const [isStatusesLoading, setIsStatusesLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    if (propsStatuses && propsStatuses.length > 0) {
+      setConfiguredStatuses(propsStatuses);
+      setIsStatusesLoading(false);
+      return;
+    }
+
+    supabaseService.getStatuses()
+      .then(statuses => {
+        if (statuses && statuses.length > 0) {
+          setConfiguredStatuses(statuses);
+        }
+      })
+      .catch(err => {
+        console.warn('Failed to load statuses in WhatsAppMessageTemplateBox', err);
+      })
+      .finally(() => {
+        setIsStatusesLoading(false);
+      });
+  }, [propsStatuses]);
 
   useEffect(() => {
     getTemplate()
@@ -43,6 +71,12 @@ export default function WhatsAppMessageTemplateBox() {
       setIsSaving(false);
     }
   };
+
+  const matchedStatus = configuredStatuses.find(
+    s => s.toLowerCase() === (completedStatusValue || '').trim().toLowerCase()
+  );
+  const isValueInStatuses = Boolean(matchedStatus);
+  const selectValue = matchedStatus ? matchedStatus : completedStatusValue;
 
   return (
     <div className="relative w-full bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 overflow-hidden flex flex-col text-left">
@@ -105,13 +139,34 @@ export default function WhatsAppMessageTemplateBox() {
           
           <div className="flex flex-col gap-2 pb-2">
             <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Status value that means 'Completed':</label>
-            <input
-              type="text"
-              value={completedStatusValue}
+            <select
+              value={selectValue}
               onChange={(e) => setCompletedStatusValue(e.target.value)}
-              placeholder="e.g., Resolved (must match Complaint Status settings)"
-              className="w-full bg-slate-50/50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/30 outline-none transition-all"
-            />
+              className="w-full bg-slate-50/50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-emerald-500/30 outline-none transition-all cursor-pointer"
+            >
+              {!completedStatusValue && (
+                <option value="" disabled>
+                  -- Select a Completed Status --
+                </option>
+              )}
+              {completedStatusValue && !isValueInStatuses && (
+                <option value={completedStatusValue}>
+                  {completedStatusValue} (Current - Unmatched)
+                </option>
+              )}
+              {configuredStatuses.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
+            </select>
+
+            {!isStatusesLoading && completedStatusValue && !isValueInStatuses && (
+              <div className="flex items-center gap-2 mt-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
+                <AlertTriangle size={14} className="shrink-0 text-amber-500" />
+                <span>This value doesn't match any current status option</span>
+              </div>
+            )}
           </div>
 
           <textarea

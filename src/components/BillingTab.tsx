@@ -2680,8 +2680,8 @@ export default function BillingTab(props: BillingTabProps) {
                           }}
                           className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-blue-500 border border-[var(--neu-border)] cursor-pointer"
                         >
-                          <Monitor size={12} />
-                          <span>Open in My PC Desktop</span>
+                          <Settings size={12} />
+                          <span>Open in Settings</span>
                         </button>
                         <button
                           type="button"

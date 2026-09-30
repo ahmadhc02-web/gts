@@ -1,6 +1,5 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import { toast } from 'sonner';
 import { getActiveTheme, applyThemeToDOM } from './hooks/useTheme.ts';
 import App from './App.tsx';
@@ -85,78 +84,28 @@ if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined')
 }
 
 
-// Force clear stale service worker cache once to bypass previous OAuth popup interception issue
+// Ensure complete service worker bypass and cache purge in development mode
 if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-  const isSwFixed = safeLocalStorage.getItem('gts_sw_v2_fixed');
-  if (!isSwFixed) {
-    navigator.serviceWorker.getRegistrations().then(registrations => {
-      if (registrations.length > 0) {
-        for (const registration of registrations) {
-          registration.unregister();
-        }
-        safeLocalStorage.setItem('gts_sw_v2_fixed', 'true');
-        console.log("Stale Service Worker successfully unregistered for API bypass.");
-        window.location.reload();
-      } else {
-        safeLocalStorage.setItem('gts_sw_v2_fixed', 'true');
+  try {
+    navigator.serviceWorker.register = () => {
+      return Promise.reject(new Error('Service Worker registration disabled in development mode.'));
+    };
+  } catch (e) {}
+
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  }).catch(() => {});
+
+  if ('caches' in window) {
+    caches.keys().then(keys => {
+      for (const key of keys) {
+        caches.delete(key);
       }
-    }).catch(err => {
-      console.error("Service worker unregistration error:", err);
-    });
+    }).catch(() => {});
   }
 }
-
-// Force clear stale service worker and caches to ensure latest bundle is used
-if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-  const isSwV5Migrated = safeLocalStorage.getItem('gts_sw_v5_autoupdate_done');
-  if (!isSwV5Migrated) {
-    navigator.serviceWorker.getRegistrations().then(registrations => {
-      if (registrations.length > 0) {
-        const unregisterPromises = registrations.map(registration => registration.unregister());
-        Promise.all(unregisterPromises).then(() => {
-          if ('caches' in window) {
-            caches.keys().then(keys => {
-              Promise.all(keys.map(key => caches.delete(key))).then(() => {
-                safeLocalStorage.setItem('gts_sw_v5_autoupdate_done', 'true');
-                console.log("Stale Service Worker and caches purged for v5 update.");
-                window.location.reload();
-              });
-            });
-          } else {
-            safeLocalStorage.setItem('gts_sw_v5_autoupdate_done', 'true');
-            if (typeof window !== 'undefined') {
-              (window as Window).location.reload();
-            }
-          }
-        });
-      } else {
-        if ('caches' in window) {
-          caches.keys().then(keys => {
-            Promise.all(keys.map(key => caches.delete(key))).then(() => {
-              safeLocalStorage.setItem('gts_sw_v5_autoupdate_done', 'true');
-            });
-          });
-        } else {
-          safeLocalStorage.setItem('gts_sw_v5_autoupdate_done', 'true');
-        }
-      }
-    }).catch(err => {
-      console.error("Service worker v5 migration error:", err);
-    });
-  }
-}
-
-// Register Service Worker with automatic background updates
-const updateSW = registerSW({
-  immediate: true,
-  onNeedRefresh() {
-    console.log('New version detected - updating service worker...');
-    updateSW(true);
-  },
-  onOfflineReady() {
-    console.log('Application ready for offline use.');
-  },
-});
 
 let shouldRender = true;
 if (typeof window !== 'undefined') {
