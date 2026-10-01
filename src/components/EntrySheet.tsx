@@ -25,6 +25,7 @@ interface EntrySheetProps {
   isBillingUnlocked?: boolean;
   appConfig?: any;
   billingMonths?: any[];
+  billingMonthsList?: { id: string }[];
   initialShowUserLedger?: boolean;
   setBillingMonths?: React.Dispatch<React.SetStateAction<any[]>>;
   savingMonthIds?: React.MutableRefObject<Set<string>>;
@@ -135,6 +136,7 @@ export default function EntrySheet({
   isBillingUnlocked,
   appConfig,
   billingMonths = [],
+  billingMonthsList = [],
   initialShowUserLedger = false,
   setBillingMonths,
   savingMonthIds
@@ -212,6 +214,46 @@ export default function EntrySheet({
       setEditConnectedMonthId('');
     }
   }, [settingsFolderId, folderMonthMap]);
+
+  // Load lightweight list of all billing months if not passed down
+  const [internalMonthsList, setInternalMonthsList] = useState<{ id: string }[]>([]);
+  useEffect(() => {
+    if (!isOpen) return;
+    if (billingMonthsList && billingMonthsList.length > 0) return;
+    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined) || 'main';
+    pocketbaseService.getBillingMonthsList(scopeId).then(list => {
+      if (list && Array.isArray(list)) {
+        setInternalMonthsList(list.map((m: any) => ({ id: m.id })));
+      }
+    }).catch(() => {});
+  }, [isOpen, activeDealerId, currentUser?.role, currentUser?.uid, billingMonthsList]);
+
+  const effectiveMonthsList = useMemo(() => {
+    if (billingMonthsList && billingMonthsList.length > 0) return billingMonthsList;
+    if (internalMonthsList.length > 0) return internalMonthsList;
+    return billingMonths;
+  }, [billingMonthsList, internalMonthsList, billingMonths]);
+
+  // Lazy-load sheets for the opened folder on demand if needed
+  useEffect(() => {
+    if (!isOpen || !openedFolderId) return;
+    const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
+    pocketbaseService.getLedgerSheetsForFolder(openedFolderId, tenantId).then(folderSheets => {
+      if (Array.isArray(folderSheets) && folderSheets.length > 0) {
+        setLedgerHistory(prev => {
+          const prevMap = new Map(prev.map(s => [s.id, s]));
+          let hasNew = false;
+          folderSheets.forEach(s => {
+            if (!prevMap.has(s.id)) {
+              prevMap.set(s.id, s);
+              hasNew = true;
+            }
+          });
+          return hasNew ? Array.from(prevMap.values()) : prev;
+        });
+      }
+    }).catch(console.warn);
+  }, [isOpen, openedFolderId, currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
 
   // Scoped folders loading on user change
   useEffect(() => {
@@ -2293,6 +2335,17 @@ export default function EntrySheet({
         if (foundSheet) {
           loadSheetIntoEditor(foundSheet);
           lastLoadedSheetIdRef.current = urlSheetId;
+        } else {
+          pocketbaseService.getLedgerSheetDirect(urlSheetId).then(sheet => {
+            if (sheet) {
+              setLedgerHistory(prev => {
+                if (prev.some(s => s.id === sheet.id)) return prev;
+                return [sheet, ...prev];
+              });
+              loadSheetIntoEditor(sheet);
+              lastLoadedSheetIdRef.current = urlSheetId;
+            }
+          }).catch(console.warn);
         }
       }
     } else {
@@ -3450,8 +3503,9 @@ export default function EntrySheet({
                               {(() => {
                                 const connId = folderMonthMap[folder.id] || folder.connectedMonthId;
                                 if (connId) {
-                                  const monthExists = billingMonths.some(m => m.id === connId);
-                                  if (!monthExists) {
+                                  const hasListLoaded = (billingMonthsList && billingMonthsList.length > 0) || internalMonthsList.length > 0 || billingMonths.length > 0;
+                                  const monthExists = effectiveMonthsList.some(m => m.id === connId) || billingMonths.some(m => m.id === connId);
+                                  if (hasListLoaded && !monthExists) {
                                     return (
                                       <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-50/80 dark:bg-rose-950/40 px-2 py-0.5 rounded-full select-none mb-1 border border-rose-100 dark:border-rose-900/30">
                                         <AlertTriangle size={10} />
@@ -6488,10 +6542,12 @@ export default function EntrySheet({
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">-- Not Connected --</option>
-                    {billingMonths.map((m, mIdx) => {
-                      const totalTarget = m.rows?.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0) || 0;
+                    {(effectiveMonthsList && effectiveMonthsList.length > 0 ? effectiveMonthsList : billingMonths).map((m, mIdx) => {
+                      const totalTarget = (m as any).rows?.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0) || 0;
                       return (
-                        <option key={`m-${m.id}-${mIdx}`} value={m.id}>{m.id} (Target: {totalTarget.toLocaleString()})</option>
+                        <option key={`m-${m.id}-${mIdx}`} value={m.id}>
+                          {m.id}{totalTarget > 0 ? ` (Target: ${totalTarget.toLocaleString()})` : ''}
+                        </option>
                       );
                     })}
                   </select>

@@ -1603,9 +1603,9 @@ export default function AdminPanel({
     }
   }, [activeTab, location.pathname]);
 
-  // Fetch lightweight billing months list once when billing tab is active
+  // Fetch lightweight billing months list once when billing tab or entry sheet is active
   useEffect(() => {
-    if (activeTab !== 'billing') return;
+    if (activeTab !== 'billing' && !isEntrySheetRouteOpen) return;
     pocketbaseService.getBillingMonthsList(activeDealerId || 'main').then(list => {
       if (list && Array.isArray(list)) {
         setBillingMonthsList(list.map((m: any) => ({ id: m.id })));
@@ -1613,7 +1613,7 @@ export default function AdminPanel({
     }).catch(err => {
       console.error("Failed to load billing months list:", err);
     });
-  }, [activeTab, activeDealerId]);
+  }, [activeTab, activeDealerId, isEntrySheetRouteOpen]);
 
   // Real-time sub for billing months (subscribes when billing section is open)
   useEffect(() => {
@@ -7262,6 +7262,7 @@ export default function AdminPanel({
             isBillingUnlocked={isBillingUnlocked}
             appConfig={appConfig}
             billingMonths={billingMonths}
+            billingMonthsList={billingMonthsList}
             initialShowUserLedger={entrySheetOpenWithUserLedger}
             setBillingMonths={setBillingMonths}
             savingMonthIds={savingMonthIds}

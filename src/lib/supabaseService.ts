@@ -619,6 +619,12 @@ function subscribeTable(
         } catch (fetchErr) {
           error = fetchErr;
         }
+      } else if (tableName === 'ledger_sheets') {
+        try {
+          mapped = await supabaseService.getLedgerSheets(dealerId);
+        } catch (fetchErr) {
+          error = fetchErr;
+        }
       } else {
         const targetTable = tableName === 'users' ? 'users_data' : tableName;
         let query = supabase.from(targetTable).select('*');
@@ -4392,6 +4398,17 @@ export const supabaseService = {
               duration: 10000
             });
             break; // Stop loop since the table doesn't exist
+          } else if (upsertErr.message.includes('Could not find') && upsertErr.message.includes('column')) {
+            console.warn("The 'ledger_folders' table is missing a 'created_at' column — folders were created but won't sort by creation time correctly until this column is added in Supabase (ALTER TABLE ledger_folders ADD COLUMN created_at timestamptz DEFAULT now();).");
+            toast.warning("Table Column Missing: created_at", {
+              description: "The 'ledger_folders' table is missing a 'created_at' column — folders were created but won't sort by creation time correctly until this column is added in Supabase (ALTER TABLE ledger_folders ADD COLUMN created_at timestamptz DEFAULT now();).",
+              duration: 8000
+            });
+            const { created_at, ...dbRowWithoutCreatedAt } = dbRow;
+            const { error: retryErr } = await supabase.from('ledger_folders').upsert(dbRowWithoutCreatedAt);
+            if (retryErr) {
+              await upsertSupabase('ledger_folders', 'id', String(f.id), dbRowWithoutCreatedAt);
+            }
           } else {
             // Try standard fallback
             await upsertSupabase('ledger_folders', 'id', String(f.id), dbRow);
@@ -4451,7 +4468,7 @@ export const supabaseService = {
     }
   },
 
-  getLedgerSheets: async (tenantId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
+  getLedgerSheets: async (tenantId: string = 'main', bypassLineCodeFilter: boolean | string = false, monthsBack: number = 2) => {
     try {
       let query = supabase.from('ledger_sheets').select('*');
       const cleanCode = String(activeLineCode || '').trim();
@@ -4467,10 +4484,46 @@ export const supabaseService = {
         query = tenantId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', tenantId);
       }
 
+      if (monthsBack && monthsBack > 0) {
+        const cutoffDate = new Date();
+        cutoffDate.setDate(1);
+        cutoffDate.setHours(0, 0, 0, 0);
+        cutoffDate.setMonth(cutoffDate.getMonth() - Math.max(0, monthsBack - 1));
+        const cutoffIso = cutoffDate.toISOString();
+        query = query.gte('created', cutoffIso);
+      }
+
       const { data } = await query;
       return (data || []).map(r => fromDb('ledger_sheets', r));
     } catch (e) {
       return [];
+    }
+  },
+
+  getLedgerSheetsForFolder: async (folderId: string, tenantId: string = 'main') => {
+    try {
+      if (!folderId) return [];
+      let query = supabase.from('ledger_sheets').select('*').eq('folder_id', folderId);
+      if (tenantId && tenantId !== 'all') {
+        query = tenantId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', tenantId);
+      }
+      const { data } = await query;
+      return (data || []).map(r => fromDb('ledger_sheets', r));
+    } catch (e) {
+      return [];
+    }
+  },
+
+  getLedgerSheetDirect: async (sheetId: string) => {
+    try {
+      if (!sheetId) return null;
+      const { data } = await supabase.from('ledger_sheets').select('*').eq('id', sheetId).maybeSingle();
+      if (data) {
+        return fromDb('ledger_sheets', data);
+      }
+      return null;
+    } catch (e) {
+      return null;
     }
   },
 
@@ -4842,4 +4895,10 @@ export const markAllNotificationsRead = (dealerId?: string) => {
 };
 export const markNotificationRead = (id: string, dealerId?: string) => {
   return supabaseService.markNotificationRead(id, dealerId);
+};
+export const getLedgerSheetsForFolder = (folderId: string, tenantId: string = 'main') => {
+  return supabaseService.getLedgerSheetsForFolder(folderId, tenantId);
+};
+export const getLedgerSheetDirect = (sheetId: string) => {
+  return supabaseService.getLedgerSheetDirect(sheetId);
 };
