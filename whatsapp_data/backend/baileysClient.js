@@ -64,7 +64,10 @@ async function initBaileys() {
     sock = makeWASocket({
       auth: state,
       printQRInTerminal: false,
-      logger: pino({ level: 'silent' }), // Reduce logs
+      logger: pino({ level: 'silent' }),
+      defaultQueryTimeoutMs: 60000,   // was using Baileys' default, now explicit 60s
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,     // native WS ping every 25s, complements our own presence-ping keep-alive
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -178,7 +181,7 @@ async function sendMessage(phoneNumber, message) {
 }
 
 const MAX_SEND_ATTEMPTS = 3;
-const SEND_TIMEOUT_MS = 30000; // 30s per attempt
+const SEND_TIMEOUT_MS = 65000;
 const RECONNECT_WAIT_TIMEOUT_MS = 45000; // max time to wait for reconnect
 
 function waitForReconnect(timeoutMs) {
