@@ -19,7 +19,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 let activeLineCode: string | undefined = undefined;
 let activeLineId: string | undefined = undefined;
 
-import { sendMessage, getTemplate, getStatus , sendPushNotification, createReminderLeadServer } from '../whatsapp_data/whatsappApi';
+import { sendMessage, getTemplate, getStatus , sendPushNotification } from '../whatsapp_data/whatsappApi';
 
 const isExcludedFromRecovery = (name?: string, username?: string) => {
   const check = (str?: string) => {
@@ -4955,22 +4955,8 @@ export const supabaseService = {
         .single();
 
       if (leadErr) {
-        console.warn("Direct Supabase insert failed (RLS or policy error), attempting server bypass:", leadErr.message);
-        try {
-          return await createReminderLeadServer({
-            name: data.name,
-            dealerId: data.dealerId,
-            lineCode: data.lineCode || activeLineCode,
-            monthId: data.monthId,
-            dueDateStart: data.dueDateStart,
-            dueDateEnd: data.dueDateEnd,
-            waitSeconds: data.waitSeconds,
-            items: data.items
-          });
-        } catch (serverErr: any) {
-          console.error("Server bypass lead creation failed:", serverErr);
-          throw leadErr;
-        }
+        console.error("Failed to insert reminder_lead:", leadErr);
+        throw leadErr;
       }
 
       const leadId = leadRow.id;

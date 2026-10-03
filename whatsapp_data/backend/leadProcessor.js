@@ -106,14 +106,13 @@ async function processReminderLead(leadId) {
         await sendMessage(phone, messageText);
 
         currentSuccessCount++;
-        const nowIso = new Date().toISOString();
         await supabase
           .from('reminder_lead_items')
           .update({
             status: 'sent',
-            sent_at: nowIso,
+            sent_at: new Date().toISOString(),
             error_message: null,
-            updated_at: nowIso
+            updated_at: new Date().toISOString()
           })
           .eq('id', item.id);
 
@@ -121,74 +120,9 @@ async function processReminderLead(leadId) {
           .from('reminder_leads')
           .update({
             success_count: currentSuccessCount,
-            updated_at: nowIso
+            updated_at: new Date().toISOString()
           })
           .eq('id', leadId);
-
-        // Update billing_rows and billing_months to permanently reflect reminder sent
-        if (item.client_id) {
-          try {
-            // 1. Update billing_rows table
-            let query = supabase.from('billing_rows').select('id, reminder_sent_count');
-            if (lead.month_id) {
-              query = query.eq('month_id', lead.month_id);
-            }
-            query = query.or(`client_id.eq.${item.client_id},client_username.eq.${item.client_id}`);
-            const { data: bRows } = await query;
-
-            if (bRows && bRows.length > 0) {
-              for (const br of bRows) {
-                await supabase
-                  .from('billing_rows')
-                  .update({
-                    reminder_sent_count: (Number(br.reminder_sent_count || 0)) + 1,
-                    reminder_sent_at: nowIso,
-                    updated_at: nowIso
-                  })
-                  .eq('id', br.id);
-              }
-            }
-
-            // 2. Update billing_months JSON rows if month_id is specified
-            if (lead.month_id) {
-              const { data: bMonth } = await supabase
-                .from('billing_months')
-                .select('id, rows')
-                .eq('id', lead.month_id)
-                .single();
-
-              if (bMonth && Array.isArray(bMonth.rows)) {
-                let changed = false;
-                const cleanPhone = (item.mobile_number || '').replace(/\D/g, '');
-                const updatedRows = bMonth.rows.map(r => {
-                  const rPhone = (r.mobileNumber || r.phone || '').replace(/\D/g, '');
-                  const isMatch = (item.client_id && (r.clientId === item.client_id || r.id === item.client_id || r.username === item.client_id)) ||
-                                  (cleanPhone && rPhone && (cleanPhone.endsWith(rPhone.slice(-7)) || rPhone.endsWith(cleanPhone.slice(-7))));
-                  if (isMatch) {
-                    changed = true;
-                    return {
-                      ...r,
-                      reminderSentCount: (Number(r.reminderSentCount || 0)) + 1,
-                      reminderSentAt: nowIso
-                    };
-                  }
-                  return r;
-                });
-                if (changed) {
-                  await supabase
-                    .from('billing_months')
-                    .update({
-                      rows: updatedRows,
-                      updated_at: nowIso
-                    })
-                    .eq('id', lead.month_id);
-                }
-              }
-            }
-          } catch (recErr) {
-            console.warn('[Lead Processor] Warning updating client reminder row count:', recErr.message);
-          }
-        }
 
       } catch (err) {
         console.error(`[Lead Processor] Failed item ${item.id} (${phone}) on lead ${leadId}:`, err.message);
