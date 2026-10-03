@@ -3394,9 +3394,13 @@ System instructions:
     fs.existsSync(path.join(dir, "index.html"))
   );
 
+  const isDevEnv =
+    process.env.NODE_ENV === "development" ||
+    Boolean(process.env.K_SERVICE?.startsWith("ais-dev-"));
+
   const isProd =
-    process.env.NODE_ENV === "production" &&
-    !process.env.K_SERVICE?.startsWith("ais-dev-");
+    (process.env.NODE_ENV === "production" || Boolean(foundDistPath)) &&
+    !isDevEnv;
 
   if (!isProd) {
     const vite = await createViteServer({
