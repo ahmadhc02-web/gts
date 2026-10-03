@@ -151,13 +151,8 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
                 Active as <span className="text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 rounded-md">+{status.phoneNumber}</span>
               </p>
               
-              {/* Active Queue Statistics and Safety Capping Indicator */}
+              {/* Active Queue Statistics Indicator */}
               <div className="flex flex-col items-center gap-2 mt-3">
-                {status.rateLimitReached && (
-                  <div className="text-rose-600 dark:text-rose-400 font-black text-[9px] uppercase tracking-widest bg-rose-50 dark:bg-rose-500/10 px-2.5 py-1.5 rounded-lg border border-rose-100 dark:border-rose-500/20 flex items-center gap-1.5 animate-pulse">
-                    <span className="shrink-0">⚠️</span> Hourly Cap Hit (50 Max)
-                  </div>
-                )}
                 {status.queuedCount && status.queuedCount > 0 ? (
                   <div className="text-indigo-600 dark:text-indigo-400 font-black text-[9px] uppercase tracking-widest bg-indigo-50 dark:bg-indigo-500/10 px-2.5 py-1.5 rounded-lg border border-indigo-100 dark:border-indigo-500/20 flex items-center gap-1.5">
                     <span className="shrink-0">⏳</span> {status.queuedCount} Messages Queued

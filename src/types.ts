@@ -256,3 +256,38 @@ export interface Invoice {
   createdAt: number;
 }
 
+export interface ReminderLead {
+  id: string;
+  name: string;
+  dealerId: string;
+  lineCode?: string;
+  monthId: string;
+  dueDateStart: string;
+  dueDateEnd: string;
+  waitSeconds: number;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ReminderLeadItem {
+  id: string;
+  leadId: string;
+  clientId: string;
+  name: string;
+  mobileNumber: string;
+  message?: string | null;
+  status: 'pending' | 'sent' | 'failed';
+  sortOrder: number;
+  sentAt?: string | null;
+  errorMessage?: string | null;
+  waitSecondsAfter?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget, ComplaintReview } from '../types';
+import { Complaint, UserProfile, ComplaintStatus, ChatMessage, Client, Notification as AppNotification, ChatGroup, BrandingConfig, MonitorTarget, ComplaintReview, ReminderLead, ReminderLeadItem } from '../types';
 import { toast } from 'sonner';
 import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES, ensurePermanentStatuses } from '../constants';
 import { globalLoading } from '../contexts/LoadingContext';
@@ -178,6 +178,8 @@ export const mappings: Record<string, Record<string, string>> = {
     line_id: 'line_id',
     lineCode: 'line_code',
     line_code: 'line_code',
+    reminderSentAt: 'reminder_sent_at',
+    reminderSentCount: 'reminder_sent_count',
     createdAt: 'created_at',
     updatedAt: 'updated_at'
   },
@@ -295,6 +297,39 @@ export const mappings: Record<string, Record<string, string>> = {
     hideBot: 'hide_bot',
     chatWelcomeMsg: 'chat_welcome_msg',
     dashboardSubtext: 'dashboard_subtext'
+  },
+  reminder_leads: {
+    id: 'id',
+    name: 'name',
+    dealerId: 'dealer_id',
+    lineCode: 'line_code',
+    monthId: 'month_id',
+    dueDateStart: 'due_date_start',
+    dueDateEnd: 'due_date_end',
+    waitSeconds: 'wait_seconds',
+    status: 'status',
+    totalCount: 'total_count',
+    successCount: 'success_count',
+    failedCount: 'failed_count',
+    startedAt: 'started_at',
+    completedAt: 'completed_at',
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
+  },
+  reminder_lead_items: {
+    id: 'id',
+    leadId: 'lead_id',
+    clientId: 'client_id',
+    name: 'name',
+    mobileNumber: 'mobile_number',
+    message: 'message',
+    status: 'status',
+    sortOrder: 'sort_order',
+    sentAt: 'sent_at',
+    errorMessage: 'error_message',
+    waitSecondsAfter: 'wait_seconds_after',
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
   }
 };
 
@@ -655,6 +690,8 @@ function subscribeTable(
             if (tableName === 'ledger_folders') {
               query = dealerId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null') : query.eq('tenant_id', dealerId);
             } else if (tableName === 'ledger_sheets') {
+              query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+            } else if (tableName === 'reminder_leads') {
               query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
             } else if (!['branding_config'].includes(tableName)) {
               query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
@@ -1643,6 +1680,8 @@ export const supabaseService = {
               abl: r.abl || '',
               lineCode: r.line_code || '',
               lineId: r.line_id || null,
+              reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
+              reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
               line_code: r.line_code || '',
               line_id: r.line_id || null
             });
@@ -1850,6 +1889,8 @@ export const supabaseService = {
               abl: r.abl || '',
               lineCode: r.line_code || '',
               lineId: r.line_id || null,
+              reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
+              reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
               line_code: r.line_code || '',
               line_id: r.line_id || null
             });
@@ -4879,6 +4920,266 @@ export const supabaseService = {
         message: e?.message || 'Migration scan completed with warnings.'
       };
     }
+  },
+
+  // --- REMINDER LEADS & CAMPAIGNS ---
+  createReminderLead: async (data: {
+    name: string;
+    dealerId: string;
+    lineCode?: string;
+    monthId: string;
+    dueDateStart: string;
+    dueDateEnd: string;
+    waitSeconds: number;
+    items: { clientId: string; name: string; mobileNumber: string; message?: string }[];
+  }): Promise<string> => {
+    try {
+      const leadPayload = {
+        name: data.name,
+        dealer_id: data.dealerId || 'main',
+        line_code: data.lineCode || activeLineCode || null,
+        month_id: data.monthId,
+        due_date_start: data.dueDateStart,
+        due_date_end: data.dueDateEnd,
+        wait_seconds: data.waitSeconds || 30,
+        status: 'pending',
+        total_count: data.items.length,
+        success_count: 0,
+        failed_count: 0
+      };
+
+      const { data: leadRow, error: leadErr } = await supabase
+        .from('reminder_leads')
+        .insert(leadPayload)
+        .select('id')
+        .single();
+
+      if (leadErr) {
+        console.error("Failed to insert reminder_lead:", leadErr);
+        throw leadErr;
+      }
+
+      const leadId = leadRow.id;
+
+      if (data.items && data.items.length > 0) {
+        const itemRows = data.items.map((item, idx) => ({
+          lead_id: leadId,
+          client_id: String(item.clientId || ''),
+          name: String(item.name || ''),
+          mobile_number: String(item.mobileNumber || ''),
+          message: item.message || null,
+          status: 'pending',
+          sort_order: idx
+        }));
+
+        const { error: itemsErr } = await supabase
+          .from('reminder_lead_items')
+          .insert(itemRows);
+
+        if (itemsErr) {
+          console.error("Failed to insert reminder_lead_items:", itemsErr);
+          throw itemsErr;
+        }
+      }
+
+      return leadId;
+    } catch (e: any) {
+      console.error("createReminderLead error:", e);
+      throw e;
+    }
+  },
+
+  subscribeReminderLeads: (callback: (leads: ReminderLead[]) => void, dealerId?: string) => {
+    return subscribeTable('reminder_leads', (data) => {
+      const sorted = (data || []).sort((a: any, b: any) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.created ? new Date(a.created).getTime() : 0);
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.created ? new Date(b.created).getTime() : 0);
+        return timeB - timeA;
+      });
+      callback(sorted);
+    }, r => fromDb('reminder_leads', r), dealerId);
+  },
+
+  getReminderLeadItems: async (leadId: string): Promise<ReminderLeadItem[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('reminder_lead_items')
+        .select('*')
+        .eq('lead_id', leadId)
+        .order('sort_order', { ascending: true });
+
+      if (error) {
+        console.error("getReminderLeadItems error:", error);
+        return [];
+      }
+
+      return (data || []).map(r => fromDb('reminder_lead_items', r));
+    } catch (e) {
+      console.error("getReminderLeadItems exception:", e);
+      return [];
+    }
+  },
+
+  subscribeReminderLeadItems: (leadId: string, callback: (items: ReminderLeadItem[]) => void) => {
+    // Initial fetch
+    supabaseService.getReminderLeadItems(leadId).then(items => {
+      callback(items);
+    }).catch(console.warn);
+
+    const channelName = `lead_items_${leadId}_${Math.random().toString(36).substring(2, 7)}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'reminder_lead_items',
+          filter: `lead_id=eq.${leadId}`
+        },
+        async () => {
+          const fresh = await supabaseService.getReminderLeadItems(leadId);
+          callback(fresh);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch (e) {}
+    };
+  },
+
+  updateReminderLeadItem: async (itemId: string, patch: {
+    status?: string;
+    sentAt?: string;
+    errorMessage?: string;
+    waitSecondsAfter?: number;
+  }) => {
+    try {
+      const updateData: any = {};
+      if (patch.status !== undefined) updateData.status = patch.status;
+      if (patch.sentAt !== undefined) updateData.sent_at = patch.sentAt;
+      if (patch.errorMessage !== undefined) updateData.error_message = patch.errorMessage;
+      if (patch.waitSecondsAfter !== undefined) updateData.wait_seconds_after = patch.waitSecondsAfter;
+      updateData.updated_at = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('reminder_lead_items')
+        .update(updateData)
+        .eq('id', itemId);
+
+      if (error) {
+        console.error("updateReminderLeadItem error:", error);
+      }
+    } catch (e) {
+      console.error("updateReminderLeadItem exception:", e);
+    }
+  },
+
+  updateReminderLead: async (leadId: string, patch: {
+    status?: string;
+    successCount?: number;
+    failedCount?: number;
+    startedAt?: string;
+    completedAt?: string;
+  }) => {
+    try {
+      const updateData: any = {};
+      if (patch.status !== undefined) updateData.status = patch.status;
+      if (patch.successCount !== undefined) updateData.success_count = patch.successCount;
+      if (patch.failedCount !== undefined) updateData.failed_count = patch.failedCount;
+      if (patch.startedAt !== undefined) updateData.started_at = patch.startedAt;
+      if (patch.completedAt !== undefined) updateData.completed_at = patch.completedAt;
+      updateData.updated_at = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('reminder_leads')
+        .update(updateData)
+        .eq('id', leadId);
+
+      if (error) {
+        console.error("updateReminderLead error:", error);
+      }
+    } catch (e) {
+      console.error("updateReminderLead exception:", e);
+    }
+  },
+
+  recordClientReminderSent: async (clientId: string, monthId?: string) => {
+    try {
+      const nowIso = new Date().toISOString();
+      Object.keys(globalTableCaches).forEach(key => {
+        if (key.startsWith('billing_months')) {
+          const months = globalTableCaches[key];
+          if (Array.isArray(months)) {
+            months.forEach((m: any) => {
+              if (Array.isArray(m.rows)) {
+                m.rows.forEach((r: any) => {
+                  if (r.clientId === clientId || r.id === clientId || r.username === clientId) {
+                    r.reminderSentCount = (Number(r.reminderSentCount || 0)) + 1;
+                    r.reminderSentAt = nowIso;
+                  }
+                });
+              }
+            });
+          }
+        }
+      });
+      if (supabase) {
+        try {
+          let query = supabase.from('billing_rows').select('id, reminder_sent_count');
+          if (monthId) query = query.eq('month_id', monthId);
+          query = query.or(`client_id.eq.${clientId},client_username.eq.${clientId}`);
+          const { data: rows } = await query;
+
+          if (rows && rows.length > 0) {
+            for (const r of rows) {
+              await supabase
+                .from('billing_rows')
+                .update({
+                  reminder_sent_count: (Number(r.reminder_sent_count || 0)) + 1,
+                  reminder_sent_at: nowIso,
+                  updated_at: nowIso
+                })
+                .eq('id', r.id);
+            }
+          }
+
+          if (monthId) {
+            const { data: bMonth } = await supabase
+              .from('billing_months')
+              .select('id, rows')
+              .eq('id', monthId)
+              .single();
+
+            if (bMonth && Array.isArray(bMonth.rows)) {
+              let changed = false;
+              const updatedRows = bMonth.rows.map((r: any) => {
+                if (r.clientId === clientId || r.id === clientId || r.username === clientId) {
+                  changed = true;
+                  return {
+                    ...r,
+                    reminderSentCount: (Number(r.reminderSentCount || 0)) + 1,
+                    reminderSentAt: nowIso
+                  };
+                }
+                return r;
+              });
+              if (changed) {
+                await supabase
+                  .from('billing_months')
+                  .update({ rows: updatedRows, updated_at: nowIso })
+                  .eq('id', monthId);
+              }
+            }
+          }
+        } catch (dbErr) {}
+      }
+    } catch (e) {
+      console.warn("recordClientReminderSent error:", e);
+    }
   }
 };
 
@@ -4901,4 +5202,25 @@ export const getLedgerSheetsForFolder = (folderId: string, tenantId: string = 'm
 };
 export const getLedgerSheetDirect = (sheetId: string) => {
   return supabaseService.getLedgerSheetDirect(sheetId);
+};
+export const createReminderLead = (data: any) => {
+  return supabaseService.createReminderLead(data);
+};
+export const subscribeReminderLeads = (callback: (leads: ReminderLead[]) => void, dealerId?: string) => {
+  return supabaseService.subscribeReminderLeads(callback, dealerId);
+};
+export const getReminderLeadItems = (leadId: string) => {
+  return supabaseService.getReminderLeadItems(leadId);
+};
+export const subscribeReminderLeadItems = (leadId: string, callback: (items: ReminderLeadItem[]) => void) => {
+  return supabaseService.subscribeReminderLeadItems(leadId, callback);
+};
+export const updateReminderLeadItem = (itemId: string, patch: any) => {
+  return supabaseService.updateReminderLeadItem(itemId, patch);
+};
+export const updateReminderLead = (leadId: string, patch: any) => {
+  return supabaseService.updateReminderLead(leadId, patch);
+};
+export const recordClientReminderSent = (clientId: string, monthId?: string) => {
+  return supabaseService.recordClientReminderSent(clientId, monthId);
 };

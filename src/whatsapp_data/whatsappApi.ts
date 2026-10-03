@@ -94,6 +94,20 @@ export async function sendMessage(phone: string, message: string) {
   }
 }
 
+export async function startReminderLead(leadId: string) {
+  try {
+    const res = await fetch(`${API_URL}/start-lead`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId }),
+    });
+    if (!res.ok) throw new Error('Failed to start lead on server');
+    return await res.json();
+  } catch (err: any) {
+    throw new Error(err.message || 'Failed to start lead on server');
+  }
+}
+
 export async function sendPushNotification(tokens: string[], title: string, body: string, data?: any) {
   try {
     const res = await fetch(`${API_URL}/send-push`, {

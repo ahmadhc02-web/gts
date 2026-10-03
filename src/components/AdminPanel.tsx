@@ -22,6 +22,11 @@ import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import RouteLoadingFallback from './RouteLoadingFallback';
 import { getAvatarUrl } from '../utils/avatar';
+import { 
+  getBillingStatusVisibility, 
+  subscribeToBillingStatusVisibility, 
+  BillingStatusVisibilityMap 
+} from '../utils/billingColumnsConfig';
 
 const isExcludedFromRecovery = (r: any) => {
   if (!r) return false;
@@ -50,6 +55,7 @@ const HighFrequencyNodes = lazy(() => import('./HighFrequencyNodes'));
 const MapViewer = lazy(() => import('./MapViewer'));
 const EditorPanel = lazy(() => import('./EditorPanel'));
 const EntrySheet = lazy(() => import('./EntrySheet'));
+const ConversationTab = lazy(() => import('./ConversationTab'));
 const ReceiptManager = lazy(() => import('./ReceiptManager'));
 const BatchPrintModal = lazy(() => import('./BatchPrintModal'));
 
@@ -1238,6 +1244,7 @@ export default function AdminPanel({
   const location = useLocation();
   const navigate = useNavigate();
   const isEntrySheetRouteOpen = location.pathname.startsWith('/billingmod/entrysheet') || location.pathname.startsWith('/billingmod/ledger');
+  const isConversationRouteOpen = location.pathname === '/conversation' || location.pathname.startsWith('/conversation') || location.pathname.startsWith('/billingmod/conversation');
 
   const [isSyncingSheets, setIsSyncingSheets] = useState(false);
   const entrySheetOpenWithUserLedger = location.pathname.startsWith('/billingmod/ledger');
@@ -1269,15 +1276,15 @@ export default function AdminPanel({
   const [mypcFolder, setMypcFolder] = useState<'main_operations' | 'analytics_users' | 'configurations' | 'system_settings' | null>(null);
   const [mypcOpenedFile, setMypcOpenedFile] = useState<'user_details' | 'top10_complainers' | 'login_profiles' | 'system_config' | 'branding_panel' | 'integrations' | 'settings_info' | 'dealers_view' | 'complaints_view' | 'nodes_view' | 'dealers_data_view' | 'submit_view' | 'map_view' | 'whatsapp_integration' | 'billing_mod_setting' | null>(null);
 
-  // Sync /mypc sub-routes with opened file state
+  // Sync /settings and /mypc sub-routes with opened file state
   useEffect(() => {
-    if (location.pathname.startsWith('/mypc/')) {
-      const slug = location.pathname.replace('/mypc/', '').split('/')[0];
+    if (location.pathname.startsWith('/settings/') || location.pathname.startsWith('/mypc/')) {
+      const slug = location.pathname.replace(/^\/(settings|mypc)\//, '').split('/')[0];
       const targetFile = MYPC_SLUG_TO_FILE[slug];
       if (targetFile) {
         setMypcOpenedFile(targetFile as any);
       }
-    } else if (location.pathname === '/mypc') {
+    } else if (location.pathname === '/settings' || location.pathname === '/mypc') {
       setMypcOpenedFile(null);
     }
   }, [location.pathname]);
@@ -2283,7 +2290,7 @@ export default function AdminPanel({
   };
 
   const handleSaveRowField = (rowIndex: number, field: string, val: any, forceImmediate = false) => {
-    if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments') {
+    if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments' && field !== 'reminderSentAt' && field !== 'reminderSentCount') {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to edit billing information." });
       return;
     }
@@ -2802,13 +2809,19 @@ export default function AdminPanel({
     return lower === 'customer review' || lower === 'costumer review' || lower === 'customer reviews' || lower === 'costumer reviews' || lower === 'customer_review';
   };
 
+  const isFinalizedStatus = (s?: string) => {
+    if (!s) return false;
+    const lower = s.trim().toLowerCase();
+    return lower === 'complete' || lower === 'finalized' || lower === 'resolved' || lower === 'hold';
+  };
+
   const stats = [
     { label: branding.tabNames?.total_registry || 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: branding.tabNames?.pending_requests || 'Pending Requests', value: complaints.filter(c => isPendingStatus(c.status)).length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
     { label: branding.tabNames?.new_connection_pending || 'New Connection', value: complaints.filter(c => isNewConnectionCat(c.category) && isPendingStatus(c.status)).length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
     { label: branding.tabNames?.in_operation || 'In Operation', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'in process' || (c.status || '').toString().trim().toLowerCase() === 'in_process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
     { label: branding.tabNames?.customer_review || branding.tabNames?.costumer_review || 'Costumer review', value: complaints.filter(c => isCustomerReviewStatus(c.status)).length, tooltip: 'Operational tickets undergoing customer review & service verification.', color: 'border-indigo-500', textColor: 'text-indigo-500', icon: <MessageSquare size={18} />, filter: { status: 'customer review', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'complete').length, tooltip: 'Service successfully restored and verified according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
+    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => isFinalizedStatus(c.status)).length, tooltip: 'Service successfully restored, resolved or put on hold according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
   ];
 
   const handleTileClick = (filter: any) => {
@@ -2837,6 +2850,9 @@ export default function AdminPanel({
     const handleAdminNav = (e: any) => {
       if (e.detail) {
         setActiveTab(e.detail);
+        if (e.detail === 'submit' || e.detail === 'registry') {
+          setIsFormVisible(true);
+        }
         if (e.detail === 'mypc') {
           setMypcOpenedFile(null);
         }
@@ -2851,6 +2867,12 @@ export default function AdminPanel({
     window.addEventListener('admin-nav', handleAdminNav);
     return () => window.removeEventListener('admin-nav', handleAdminNav);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'submit' || activeTab === 'registry') {
+      setIsFormVisible(true);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     const handleAuthChange = (e: any) => {
@@ -3608,6 +3630,16 @@ export default function AdminPanel({
     return deduplicatedRows;
   }, [activeMonthDoc, masterClients, currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, currentUser?.lineId, billingLineFilter]);
 
+  const [billingStatusVisibility, setBillingStatusVisibility] = useState<BillingStatusVisibilityMap>(getBillingStatusVisibility);
+
+  useEffect(() => {
+    setBillingStatusVisibility(getBillingStatusVisibility());
+    const unsubscribe = subscribeToBillingStatusVisibility((newVis) => {
+      setBillingStatusVisibility(newVis);
+    });
+    return unsubscribe;
+  }, []);
+
   const filteredRows = useMemo(() => {
     const query = billingSearchQuery.toLowerCase().trim();
     return activeRows.filter((row: any) => {
@@ -3619,15 +3651,27 @@ export default function AdminPanel({
         row.paymentStatus?.toLowerCase().includes(query) ||
         row.panelDetails?.toLowerCase().includes(query);
       
+      const rawStatus = (row.paymentStatus || 'unpaid').toLowerCase();
+      const isExtra = rawStatus === 'extra' || row.name === 'Unspecified Entry' || (!row.clientId && !row.username && (!row.name || row.name === 'Unspecified Entry'));
+
+      // Check configured status visibility settings (from Billing Mod Settings)
+      const isStatusVisibleInSettings = isExtra 
+        ? (billingStatusVisibility.extra !== false)
+        : (billingStatusVisibility[rawStatus as keyof BillingStatusVisibilityMap] !== false);
+
+      if (!isStatusVisibleInSettings) {
+        return false;
+      }
+
       const matchesStatus = billingStatusFilter === 'all' || 
         (billingStatusFilter === 'extra' 
-          ? (row.paymentStatus === 'extra' || row.name === 'Unspecified Entry' || (!row.clientId && !row.username && (!row.name || row.name === 'Unspecified Entry')))
-          : row.paymentStatus === billingStatusFilter);
+          ? isExtra
+          : rawStatus === billingStatusFilter);
       const matchesArea = billingAreaFilter === 'all' || row.area === billingAreaFilter;
       
       return matchesSearch && matchesStatus && matchesArea;
     });
-  }, [activeRows, billingSearchQuery, billingStatusFilter, billingAreaFilter]);
+  }, [activeRows, billingSearchQuery, billingStatusFilter, billingAreaFilter, billingStatusVisibility]);
 
   const sortedRows = useMemo(() => {
     if (!billingSortField) return filteredRows;
@@ -4815,7 +4859,7 @@ export default function AdminPanel({
               {users.filter(u => u.role === 'dealer').map((dealer, i) => {
                 const dealerComplaints = complaints.filter(c => c.dealerId === dealer.uid);
                 const pending = dealerComplaints.filter(c => c.status === 'pending').length;
-                const completed = dealerComplaints.filter(c => c.status === 'complete').length;
+                const completed = dealerComplaints.filter(c => isFinalizedStatus(c.status)).length;
                 
                 return (
                   <motion.div
@@ -7278,6 +7322,18 @@ export default function AdminPanel({
             activeRows={activeRows}
             currentMonthId={currentMonthId}
             billingMonths={billingMonths}
+          />
+        </Suspense>
+      )}
+      {isConversationRouteOpen && (
+        <Suspense fallback={<div className="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}>
+          <ConversationTab
+            isOpen={isConversationRouteOpen}
+            onClose={() => navigate('/')}
+            dealerId={activeDealerId || 'main'}
+            currentMonthId={currentMonthId}
+            billingMonths={billingMonths}
+            currentUser={currentUser}
           />
         </Suspense>
       )}

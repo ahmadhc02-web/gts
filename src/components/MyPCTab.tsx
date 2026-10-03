@@ -300,100 +300,133 @@ export default function MyPCTab(props: MyPCTabProps) {
   } = props;
 
   const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin';
-  const canAccessLoginProfiles = currentUser?.role === 'super_admin' || isSubDealerUser;
+  const canAccessLoginProfiles = true;
 
   const [mypcSearchQuery, setMypcSearchQuery] = useState('');
-  const [mypcActiveCategory, setMypcActiveCategory] = useState<'all' | 'billing' | 'operations' | 'system'>('all');
+  const [mypcActiveCategory, setMypcActiveCategory] = useState<'all' | 'system' | 'users' | 'tools' | 'operations'>('all');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleReset = () => {
       setMypcOpenedFile(null);
-      navigate('/mypc');
+      navigate('/settings');
     };
     window.addEventListener('mypc-reset-desktop', handleReset);
     return () => window.removeEventListener('mypc-reset-desktop', handleReset);
   }, [navigate, setMypcOpenedFile]);
 
-  const mypcTilesList = [
+  const mypcTilesList = useMemo(() => [
     { 
       id: 'system_config', 
       icon: Workflow, 
       title: 'Workflow Config', 
-      desc: 'Edit Categories, Active Zones, and System Parameters'
+      desc: 'Edit Categories, Active Zones, and System Parameters',
+      category: 'system' as const
+    },
+    { 
+      id: 'billing_mod_setting', 
+      icon: CreditCard, 
+      title: 'Billing Mod Settings', 
+      desc: 'Configure visible columns, amounts, and display settings for Billing module',
+      category: 'system' as const
     },
     { 
       id: 'user_details', 
       icon: Users, 
       title: 'Users Management', 
-      desc: 'Manage logins and clearance levels'
+      desc: 'Manage logins and clearance levels',
+      category: 'users' as const
     },
-    ...(canAccessLoginProfiles ? [{ 
+    { 
       id: 'login_profiles', 
       icon: ShieldCheck, 
-      title: isSubDealerUser ? 'Subaccounts' : 'Login Profiles', 
-      desc: isSubDealerUser ? 'Manage Dealer Subaccounts' : 'Active Credentials and Roles Overview'
-    }] : []),
+      title: 'Login Profiles', 
+      desc: isSubDealerUser ? 'Manage Dealer Subaccounts & Operators' : 'Active Credentials and Roles Overview',
+      category: 'users' as const
+    },
     ...(currentUser?.role === 'super_admin' ? [{ 
       id: 'dealers_view', 
       icon: ShieldAlert, 
       title: 'Dealer Section', 
-      desc: 'Authorized Dealers Registry Setup'
+      desc: 'Authorized Dealers Registry Setup',
+      category: 'users' as const
     }] : []),
     { 
       id: 'settings_info', 
       icon: Shield, 
       title: 'Security', 
-      desc: 'Audio Matrix, Voice Protocols, and Security Keys'
+      desc: 'Audio Matrix, Voice Protocols, and Security Keys',
+      category: 'system' as const
     },
     { 
       id: 'branding_panel', 
       icon: Palette, 
       title: 'Customization', 
-      desc: 'Design aesthetics, cards, and app layouts'
+      desc: 'Design aesthetics, cards, and app layouts',
+      category: 'system' as const
     },
     { 
       id: 'whatsapp_integration', 
       icon: MessageCircle, 
       title: 'WhatsApp', 
-      desc: 'Connect and manage automated WhatsApp messaging'
+      desc: 'Connect and manage automated WhatsApp messaging',
+      category: 'tools' as const
     },
     { 
       id: 'integrations', 
       icon: CloudUpload, 
       title: 'Google Sheet Link', 
-      desc: 'One-Time Enterprise Sheets Synchronization'
+      desc: 'One-Time Enterprise Sheets Synchronization',
+      category: 'tools' as const
     },
     { 
       id: 'print_receipt_view', 
       icon: Printer, 
       title: 'Print', 
-      desc: 'Receipt designer and invoice print templates'
+      desc: 'Receipt designer and invoice print templates',
+      category: 'tools' as const
     },
     { 
       id: 'nodes_view', 
       icon: Flame, 
       title: 'Active Complainers', 
-      desc: 'Monitor dynamic hotspots and active nodes'
+      desc: 'Monitor dynamic hotspots and active nodes',
+      category: 'operations' as const
     },
     { 
       id: 'submit_view', 
       icon: PlusSquare, 
       title: branding?.tabNames?.submit || 'Complain Reg', 
-      desc: 'File fresh customer operational complaints'
+      desc: 'File fresh customer operational complaints',
+      category: 'operations' as const
     },
     { 
       id: 'map_view', 
       icon: MapPinned, 
       title: 'Network Map', 
-      desc: 'Diagnostic geographic connection grid'
+      desc: 'Diagnostic geographic connection grid',
+      category: 'operations' as const
     },
     { 
       id: 'top10_complainers', 
       icon: BarChart2, 
       title: 'Top 10 Complainer', 
-      desc: 'High frequency support identifiers'
+      desc: 'High frequency support identifiers',
+      category: 'operations' as const
     }
-  ];
+  ], [canAccessLoginProfiles, isSubDealerUser, currentUser?.role, branding?.tabNames?.submit]);
+
+  const filteredTiles = useMemo(() => {
+    return mypcTilesList.filter(item => {
+      const q = mypcSearchQuery.trim().toLowerCase();
+      const matchesSearch = !q || 
+        item.title.toLowerCase().includes(q) ||
+        item.desc.toLowerCase().includes(q);
+      
+      const matchesCategory = mypcActiveCategory === 'all' || item.category === mypcActiveCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [mypcTilesList, mypcSearchQuery, mypcActiveCategory]);
 
   const activeFile = mypcOpenedFile || 'system_config';
   const activeItem = mypcTilesList.find(i => i.id === activeFile) || mypcTilesList[0];
@@ -407,12 +440,20 @@ export default function MyPCTab(props: MyPCTabProps) {
   };
 
   const handleSelectTab = (id: string) => {
+    if (id === 'submit_view') {
+      if (onNavigate) {
+        onNavigate('submit');
+      }
+      window.dispatchEvent(new CustomEvent('admin-nav', { detail: 'submit' }));
+      navigate('/registry');
+      return;
+    }
     setMypcOpenedFile(id as any);
     const slug = MYPC_FILE_TO_SLUG[id];
     if (slug) {
-      navigate(`/mypc/${slug}`);
+      navigate(`/settings/${slug}`);
     } else {
-      navigate('/mypc');
+      navigate('/settings');
     }
   };
 
@@ -450,48 +491,243 @@ export default function MyPCTab(props: MyPCTabProps) {
           </div>
         </div>
 
-        {/* Right Corner indicator */}
+        {/* Right Corner indicator & Mobile Options Trigger */}
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 hidden md:inline">
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="lg:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+            title="Browse all settings"
+          >
+            <SlidersHorizontal size={14} />
+            <span>Options ({mypcTilesList.length})</span>
+            <ChevronDown size={14} className={cn("transition-transform duration-200", isMobileMenuOpen && "rotate-180")} />
+          </button>
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400 hidden lg:inline">
             Active:
           </span>
-          <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-slate-700 truncate max-w-[160px] sm:max-w-none">
+          <span className="hidden sm:inline-flex px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-slate-700 truncate max-w-[160px] sm:max-w-none">
             {activeItem?.title}
           </span>
         </div>
       </header>
 
-      {/* Two Column Layout Filling Full Viewport Height */}
-      <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden text-left">
-        {/* Left Sidebar List */}
-        <aside className="w-full lg:w-72 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 p-3 sm:p-4 overflow-y-auto">
-          <nav className="flex flex-row lg:flex-col gap-1 overflow-x-auto lg:overflow-x-visible pb-1 lg:pb-0 no-scrollbar">
+      {/* Mobile Options Collapsible Sheet (< lg screens) */}
+      <div className="lg:hidden shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 backdrop-blur-md px-3 py-2 z-10">
+        {isMobileMenuOpen ? (
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-lg space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+            {/* Search and Category Filter inside Mobile Sheet */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search settings..."
+                  value={mypcSearchQuery}
+                  onChange={(e) => setMypcSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-7 py-2 rounded-xl text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+                {mypcSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setMypcSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="p-2 rounded-xl bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 text-xs font-bold shrink-0 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Category Filter Chips on Mobile */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'system', label: 'System' },
+                { id: 'users', label: 'Users' },
+                { id: 'tools', label: 'Tools' },
+                { id: 'operations', label: 'Operations' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setMypcActiveCategory(cat.id as any)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors shrink-0 cursor-pointer",
+                    mypcActiveCategory === cat.id
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100"
+                  )}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Options Grid (Mobile) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto pr-1">
+              {filteredTiles.map((item) => {
+                const isActive = activeFile === item.id;
+                const ItemIcon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      handleSelectTab(item.id);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={cn(
+                      "flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer",
+                      isActive
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <ItemIcon size={16} className={cn("shrink-0 mt-0.5", isActive ? "text-white" : "text-blue-500")} />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold truncate">{item.title}</p>
+                      <p className={cn("text-[10px] line-clamp-1", isActive ? "text-blue-100" : "text-slate-400")}>{item.desc}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          /* Horizontal swipeable quick tabs when drawer is closed */
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
             {mypcTilesList.map((item) => {
               const isActive = activeFile === item.id;
-              const IconComponent = item.icon;
+              const ItemIcon = item.icon;
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => handleSelectTab(item.id)}
                   className={cn(
-                    "flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-colors text-left shrink-0 lg:w-full cursor-pointer select-none",
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all border cursor-pointer",
                     isActive
-                      ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold shadow-xs"
-                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-900/60"
+                      ? "bg-blue-600 text-white border-blue-600 shadow-xs ring-1 ring-blue-500/20"
+                      : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
                   )}
                 >
-                  <IconComponent size={16} className={cn("shrink-0", isActive ? "text-slate-900 dark:text-white" : "text-slate-400 dark:text-slate-500")} />
-                  <span className="truncate">{item.title}</span>
+                  <ItemIcon size={13} className={cn("shrink-0", isActive ? "text-white" : "text-slate-400")} />
+                  <span className="truncate max-w-[130px]">{item.title}</span>
                 </button>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* Two Column Layout Filling Full Viewport Height */}
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden text-left">
+        {/* Left Sidebar List (Desktop >= lg) */}
+        <aside className="hidden lg:flex w-64 xl:w-72 2xl:w-80 shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md flex-col min-h-0">
+          {/* Search & Categories Bar */}
+          <div className="p-3.5 border-b border-slate-200/80 dark:border-slate-800/80 space-y-2.5">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search settings..."
+                value={mypcSearchQuery}
+                onChange={(e) => setMypcSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-7 py-2 rounded-xl text-xs bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+              {mypcSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setMypcSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Chips */}
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+              {[
+                { id: 'all', label: 'All' },
+                { id: 'system', label: 'System' },
+                { id: 'users', label: 'Users' },
+                { id: 'tools', label: 'Tools' },
+                { id: 'operations', label: 'Ops' },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setMypcActiveCategory(cat.id as any)}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-colors shrink-0 cursor-pointer",
+                    mypcActiveCategory === cat.id
+                      ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+                      : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  )}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Options List */}
+          <nav className="flex-1 overflow-y-auto p-2.5 space-y-1">
+            {filteredTiles.map((item) => {
+              const isActive = activeFile === item.id;
+              const ItemIcon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectTab(item.id)}
+                  className={cn(
+                    "w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl text-xs transition-all text-left cursor-pointer group select-none border",
+                    isActive
+                      ? "bg-blue-600 text-white border-blue-600 font-bold shadow-sm"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-800/80 border-transparent hover:border-slate-200 dark:hover:border-slate-700/60"
+                  )}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <ItemIcon
+                      size={16}
+                      className={cn(
+                        "shrink-0 transition-transform group-hover:scale-110",
+                        isActive ? "text-white" : "text-slate-400 dark:text-slate-500 group-hover:text-blue-500"
+                      )}
+                    />
+                    <span className="truncate font-semibold">{item.title}</span>
+                  </div>
+                  <ChevronRight
+                    size={13}
+                    className={cn(
+                      "shrink-0 transition-opacity",
+                      isActive ? "opacity-100 text-white" : "opacity-0 group-hover:opacity-70 text-slate-400"
+                    )}
+                  />
+                </button>
+              );
+            })}
+            {filteredTiles.length === 0 && (
+              <div className="p-6 text-center text-xs text-slate-400">
+                No settings match &ldquo;{mypcSearchQuery}&rdquo;
+              </div>
+            )}
           </nav>
         </aside>
 
         {/* Right Content Area */}
-        <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-white dark:bg-slate-950">
-          <div className="max-w-6xl mx-auto space-y-6">
+        <main className="flex-1 min-w-0 overflow-y-auto p-3 sm:p-5 md:p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-950">
+          <div className="w-full max-w-full xl:max-w-7xl mx-auto space-y-6">
             {/* Active Section Header */}
             <div className="space-y-1 pb-4 border-b border-slate-200 dark:border-slate-800">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -971,11 +1207,11 @@ export default function MyPCTab(props: MyPCTabProps) {
 
                   {/* Subview 4: System Configurations */}
                   {activeFile === 'system_config' && (
-                    <div className="max-w-7xl mx-auto space-y-8 text-left animate-in fade-in duration-300">
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
+                    <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8 text-left animate-in fade-in duration-300">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                         {/* Category Management */}
-                        <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                          <div className="flex items-center justify-between mb-6">
+                        <div className={cn("p-4 sm:p-5 md:p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
+                          <div className="flex items-center justify-between mb-4 sm:mb-6">
                             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Service Categories</h4>
                             <Layers size={16} className="text-blue-500" />
                           </div>
@@ -1037,8 +1273,8 @@ export default function MyPCTab(props: MyPCTabProps) {
                         </div>
 
                         {/* Status Management */}
-                        <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                          <div className="flex items-center justify-between mb-6">
+                        <div className={cn("p-4 sm:p-5 md:p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
+                          <div className="flex items-center justify-between mb-4 sm:mb-6">
                             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Workflow Statuses</h4>
                             <Activity size={16} className="text-amber-500" />
                           </div>
@@ -1120,8 +1356,8 @@ export default function MyPCTab(props: MyPCTabProps) {
                         </div>
 
                         {/* Priority Management */}
-                        <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                          <div className="flex items-center justify-between mb-6">
+                        <div className={cn("p-4 sm:p-5 md:p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
+                          <div className="flex items-center justify-between mb-4 sm:mb-6">
                             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Priority Levels</h4>
                             <ShieldAlert size={16} className="text-rose-500" />
                           </div>
@@ -1183,8 +1419,8 @@ export default function MyPCTab(props: MyPCTabProps) {
                         </div>
 
                         {/* Zone Management */}
-                        <div className={cn("p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
-                          <div className="flex items-center justify-between mb-6">
+                        <div className={cn("p-4 sm:p-5 md:p-6 bg-[var(--neu-surface)] border border-slate-200 dark:border-white/10", getCardStyle(branding.cardStyle))}>
+                          <div className="flex items-center justify-between mb-4 sm:mb-6">
                             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500">Operation Zones</h4>
                             <MapPin size={16} className="text-emerald-500" />
                           </div>
@@ -2087,7 +2323,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                           <ComplaintForm 
                             onSubmit={async (data) => {
                               await onRegisterComplaint(data);
-                              navigate('/mypc/complaints');
+                              navigate('/settings/complaints');
                             }} 
                             isLoading={isLoading || false} 
                             appConfig={appConfig}
@@ -2103,7 +2339,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                   {activeFile === 'map_view' && (
                     <MapViewer
                       isOpen={activeFile === 'map_view'}
-                      onClose={() => navigate('/mypc')}
+                      onClose={() => navigate('/settings')}
                       user={currentUser}
                     />
                   )}

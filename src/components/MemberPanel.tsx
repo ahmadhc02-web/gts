@@ -89,7 +89,7 @@ export default function MemberPanel({
   const [newFullName, setNewFullName] = useState(currentUser.fullName || '');
   const [isUpdating, setIsUpdating] = useState(false);
   
-  const [localActiveTab, setLocalActiveTab] = useState<'ops' | 'clients' | 'profile' | 'monitor' | 'nodes'>('ops');
+  const [localActiveTab, setLocalActiveTab] = useState<'ops' | 'submit' | 'clients' | 'profile' | 'monitor' | 'nodes'>('ops');
   
   // Resolve activeTab from either prop or local state
   const activeTab = activeTabProp !== undefined
@@ -97,7 +97,7 @@ export default function MemberPanel({
     : localActiveTab;
 
   // Custom setter that updates the parent or local state
-  const setActiveTab = (tabId: 'ops' | 'clients' | 'profile' | 'monitor' | 'nodes') => {
+  const setActiveTab = (tabId: 'ops' | 'submit' | 'clients' | 'profile' | 'monitor' | 'nodes') => {
     if (onNavigateProp) {
       let layoutId = tabId as string;
       if (tabId === 'ops') layoutId = 'complaints';
@@ -117,8 +117,8 @@ export default function MemberPanel({
       const id = e.detail;
       if (id === 'complaints' || id === 'ops') {
         setActiveTab('ops');
-      } else if (id === 'submit') {
-        setActiveTab('ops');
+      } else if (id === 'submit' || id === 'registry') {
+        setActiveTab('submit');
         setIsFormVisible(true);
       } else if (id === 'clients') {
         setActiveTab('clients');
@@ -148,13 +148,19 @@ export default function MemberPanel({
     return lower === 'customer review' || lower === 'costumer review' || lower === 'customer reviews' || lower === 'costumer reviews' || lower === 'customer_review';
   };
 
+  const isFinalizedStatus = (s?: string) => {
+    if (!s) return false;
+    const lower = s.trim().toLowerCase();
+    return lower === 'complete' || lower === 'finalized' || lower === 'resolved' || lower === 'hold';
+  };
+
   const stats = [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Global volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: 'Pending Requests', value: complaints.filter(c => isPendingStatus(c.status)).length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
     { label: 'New Connection', value: complaints.filter(c => isNewConnectionCat(c.category) && isPendingStatus(c.status)).length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
     { label: 'In Operation', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'in process' || (c.status || '').toString().trim().toLowerCase() === 'in_process').length, tooltip: 'Tasks currently under execution by on-site field technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
     { label: branding?.tabNames?.customer_review || branding?.tabNames?.costumer_review || 'Costumer review', value: complaints.filter(c => isCustomerReviewStatus(c.status)).length, tooltip: 'Operations currently under customer review and service verification.', color: 'border-indigo-500', textColor: 'text-indigo-500', icon: <MessageSquare size={18} />, filter: { status: 'customer review', priority: 'all', category: 'all' } },
-    { label: 'Finalized', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'complete').length, tooltip: 'Service successfully restored and verified from the enterprise logs.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
+    { label: 'Finalized', value: complaints.filter(c => isFinalizedStatus(c.status)).length, tooltip: 'Service successfully restored and verified from the enterprise logs (including hold/finalized records).', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
   ];
 
   const handleTileClick = (filter: any) => {
@@ -353,7 +359,7 @@ export default function MemberPanel({
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.2 }}
       >
-        {activeTab === 'ops' && (
+        {(activeTab === 'ops' || activeTab === 'submit' || activeTab === 'complaints') && (
           <div className="space-y-6">
             <section>
               <div 

@@ -420,8 +420,8 @@ async function startServer() {
   });
   // -----------------------------------
 
-  // --- Real Native Network Ping Proxy Engine (For ServiceMonitor.tsx) ---
-  app.get("/api/network-ping", (req, res) => {
+  // --- Real Native Network Ping Proxy Engine (Hetzner Cloud POP) ---
+  app.get("/api/network-ping", async (req, res) => {
     let host = (req.query.host as string) || "8.8.8.8";
 
     // Clean target url to secure arguments against injections
@@ -431,62 +431,104 @@ async function startServer() {
       .split(":")[0]
       .trim();
 
-    // Strict validation: host must strictly match a valid hostname or IP address without leading dashes
+    // Strict validation: host must strictly match a valid hostname or IP address
     if (!host || !/^[a-zA-Z0-9.-]+$/.test(host) || host.startsWith("-")) {
       return res.status(400).json({ error: "Invalid Host Matrix Protocol" });
     }
 
     const isWin = process.platform === "win32";
     const pingCmd = "ping";
-    const pingArgs = isWin ? ["-n", "1", host] : ["-c", "1", "-W", "2", host];
+    const pingArgs = isWin ? ["-n", "1", "-w", "1200", host] : ["-c", "1", "-W", "1", host];
 
-    exec.execFile(pingCmd, pingArgs, { timeout: 3000 }, (err, stdout) => {
-      if (err) {
-        return res.json({ ms: "Error", status: "offline" });
-      }
+    exec.execFile(pingCmd, pingArgs, { timeout: 2000 }, (err, stdout) => {
+      let measuredMs: number | null = null;
 
-      let ms: number | "Error" = "Error";
-
-      if (isWin) {
-        // Attempt to find Average ms on Windows, otherwise fallback to the sequence time
-        const avgMatch = stdout.match(/Average\s*=\s*([\d.]+)\s*ms/i);
-        if (avgMatch) {
-          ms = Math.round(parseFloat(avgMatch[1]));
+      if (!err && stdout) {
+        if (isWin) {
+          const avgMatch = stdout.match(/Average\s*=\s*([\d.]+)\s*ms/i) || stdout.match(/time[=<]([\d.]+)\s*ms/i);
+          if (avgMatch) measuredMs = Math.round(parseFloat(avgMatch[1]));
         } else {
-          const match = stdout.match(/time[=<]([\d.]+)\s*ms/i);
-          if (match) ms = Math.round(parseFloat(match[1]));
-        }
-      } else {
-        // Use RTT average for higher precision calculation if available
-        const rttMatch = stdout.match(
-          /rtt\s+min\/avg\/max\/mdev\s*=\s*[\d.]+\/([\d.]+)\//i,
-        );
-        if (rttMatch) {
-          ms = Math.round(parseFloat(rttMatch[1]));
-        } else {
-          const match = stdout.match(/time=([\d.]+)\s*ms/i);
-          if (match) ms = Math.round(parseFloat(match[1]));
+          const rttMatch = stdout.match(/rtt\s+min\/avg\/max\/mdev\s*=\s*[\d.]+\/([\d.]+)\//i) || stdout.match(/time=([\d.]+)\s*ms/i);
+          if (rttMatch) measuredMs = Math.round(parseFloat(rttMatch[1]));
         }
       }
 
-      if (typeof ms === "number" && !isNaN(ms)) {
-        if (ms > 1000) {
-          // If original real ms crosses 1000, treat as offline
-          return res.json({ ms: "Error", status: "offline" });
-        } else {
-          ms = ms - 200;
-          // Ensure it doesn't show negative or 0. Give it a tiny, realistic value if it goes too low.
-          if (ms < 1) ms = Math.floor(Math.random() * 5) + 1;
-        }
-      } else {
-        ms = "Error";
+      if (measuredMs !== null && !isNaN(measuredMs) && measuredMs > 0) {
+        return res.json({
+          ms: measuredMs,
+          status: "online",
+          host,
+          method: "icmp",
+          pop: "Hetzner Cloud Edge"
+        });
       }
 
-      if (ms === "Error") {
-        return res.json({ ms: "Error", status: "offline" });
-      }
+      // Real TCP connect timing fallback if ICMP raw socket is filtered
+      const net = require("net");
+      const socket = new net.Socket();
+      socket.setTimeout(1500);
+      const socketStart = performance.now();
 
-      res.json({ ms, status: "online" });
+      socket.connect(443, host, () => {
+        const socketElapsed = Math.max(1, Math.round(performance.now() - socketStart));
+        socket.destroy();
+        return res.json({
+          ms: socketElapsed,
+          status: "online",
+          host,
+          method: "tcp-443",
+          pop: "Hetzner Cloud Edge"
+        });
+      });
+
+      socket.on("error", () => {
+        socket.destroy();
+        const socket80 = new net.Socket();
+        socket80.setTimeout(1500);
+        const start80 = performance.now();
+
+        socket80.connect(80, host, () => {
+          const elapsed80 = Math.max(1, Math.round(performance.now() - start80));
+          socket80.destroy();
+          return res.json({
+            ms: elapsed80,
+            status: "online",
+            host,
+            method: "tcp-80",
+            pop: "Hetzner Cloud Edge"
+          });
+        });
+
+        socket80.on("error", () => {
+          socket80.destroy();
+          // Real DNS lookup timing
+          const dns = require("dns");
+          const dnsStart = performance.now();
+          dns.lookup(host, (dnsErr: any) => {
+            if (dnsErr) {
+              return res.json({ ms: "Error", status: "offline", host, pop: "Hetzner Cloud Edge" });
+            }
+            const dnsElapsed = Math.max(1, Math.round(performance.now() - dnsStart));
+            return res.json({
+              ms: dnsElapsed,
+              status: "online",
+              host,
+              method: "dns",
+              pop: "Hetzner Cloud Edge"
+            });
+          });
+        });
+
+        socket80.on("timeout", () => {
+          socket80.destroy();
+          return res.json({ ms: "Error", status: "offline", host, pop: "Hetzner Cloud Edge" });
+        });
+      });
+
+      socket.on("timeout", () => {
+        socket.destroy();
+        return res.json({ ms: "Error", status: "offline", host, pop: "Hetzner Cloud Edge" });
+      });
     });
   });
   // --- End Network Ping Proxy Engine ---
@@ -694,6 +736,34 @@ async function startServer() {
       return res.json({ success: true, count: tokens.length });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  app.post("/api/whatsapp/start-lead", async (req, res) => {
+    try {
+      const { leadId } = req.body;
+      if (!leadId) {
+        return res.status(400).json({ success: false, error: "leadId is required" });
+      }
+
+      if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+        try {
+          const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/start-lead`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ leadId }),
+            signal: AbortSignal.timeout(10000),
+          });
+          const data = await response.json();
+          return res.status(response.status).json(data);
+        } catch (err: any) {
+          return res.status(502).json({ success: false, error: "External WhatsApp bridge unreachable: " + (err.message || String(err)) });
+        }
+      }
+
+      return res.json({ started: true, leadId });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message || String(error) });
     }
   });
   // --- End WhatsApp Endpoints ---
@@ -3315,7 +3385,9 @@ System instructions:
   // Vite middleware for development vs static files for production
   const distCandidates = [
     path.join(process.cwd(), "dist"),
+    path.join(process.cwd(), "build"),
     path.resolve(currentDirname, "dist"),
+    path.resolve(currentDirname, "build"),
     currentDirname,
   ];
   const foundDistPath = distCandidates.find((dir) =>

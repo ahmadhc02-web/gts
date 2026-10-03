@@ -1452,6 +1452,12 @@ export default function BillingTab(props: BillingTabProps) {
                                         paymentStatus={rowRef.paymentStatus || 'unpaid'}
                                         username={rowRef.username || rowRef.clientId || ''}
                                         area={rowRef.area || ''}
+                                        reminderSentAt={rowRef.reminderSentAt}
+                                        reminderSentCount={rowRef.reminderSentCount || 0}
+                                        onReminderSent={(newCount, sentAtIso) => {
+                                          handleSaveRowField(globalRowIdx, 'reminderSentCount', newCount, false);
+                                          handleSaveRowField(globalRowIdx, 'reminderSentAt', sentAtIso, true);
+                                        }}
                                       />
                                       {canDeleteBillingRows && (
                                         <button
@@ -1674,6 +1680,12 @@ export default function BillingTab(props: BillingTabProps) {
                                     paymentStatus={rowRef.paymentStatus || "unpaid"}
                                     username={rowRef.username || rowRef.clientId || ""}
                                     area={rowRef.area || ""}
+                                    reminderSentAt={rowRef.reminderSentAt}
+                                    reminderSentCount={rowRef.reminderSentCount || 0}
+                                    onReminderSent={(newCount, sentAtIso) => {
+                                      handleSaveRowField(globalRowIdx, 'reminderSentCount', newCount, false);
+                                      handleSaveRowField(globalRowIdx, 'reminderSentAt', sentAtIso, true);
+                                    }}
                                   />
                                 {canDeleteBillingRows && (
                                   <button
@@ -2329,6 +2341,12 @@ export default function BillingTab(props: BillingTabProps) {
                                     paymentStatus={rowRef.paymentStatus || "unpaid"}
                                     username={rowRef.username || rowRef.clientId || ""}
                                     area={rowRef.area || ""}
+                                    reminderSentAt={rowRef.reminderSentAt}
+                                    reminderSentCount={rowRef.reminderSentCount || 0}
+                                    onReminderSent={(newCount, sentAtIso) => {
+                                      handleSaveRowField(globalRowIdx, 'reminderSentCount', newCount, false);
+                                      handleSaveRowField(globalRowIdx, 'reminderSentAt', sentAtIso, true);
+                                    }}
                                   />
                                 {canDeleteBillingRows && (
                                   <button
@@ -2663,7 +2681,7 @@ export default function BillingTab(props: BillingTabProps) {
                             Billing Mod Column Setting Console
                           </h3>
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                            بلنگ موڈ ریکوری روز کالم کنٹرول
+                            Billing Mode Recovery Rows Column Control
                           </p>
                         </div>
                       </div>
@@ -2676,7 +2694,7 @@ export default function BillingTab(props: BillingTabProps) {
                               onNavigate('mypc');
                             }
                             window.dispatchEvent(new CustomEvent('admin-nav', { detail: 'mypc' }));
-                            navigate('/mypc/billing-mod-setting');
+                            navigate('/settings/billing-mod-setting');
                           }}
                           className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-blue-500 border border-[var(--neu-border)] cursor-pointer"
                         >

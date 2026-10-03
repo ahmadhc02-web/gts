@@ -50,6 +50,11 @@ if (supabase) {
   });
 }
 
+const { init: initLeadProcessor, processReminderLead, resumeInterruptedLeads } = require('./leadProcessor');
+if (supabase) {
+  initLeadProcessor(supabase);
+}
+
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 app.use(express.json());
 
@@ -135,6 +140,15 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
+app.post('/start-lead', async (req, res) => {
+  const { leadId } = req.body;
+  if (!leadId) return res.status(400).json({ error: 'leadId is required' });
+  if (!supabase) return res.status(500).json({ error: 'Supabase not configured on WhatsApp backend' });
+  // Fire-and-forget: respond immediately, keep processing in background
+  processReminderLead(leadId).catch(err => console.error('[Server] Lead processing error:', err));
+  res.json({ started: true, leadId });
+});
+
 app.get('/template', async (req, res) => {
   if (!supabase) return res.status(500).json({ error: 'Supabase not configured' });
   try {
@@ -200,4 +214,10 @@ app.post('/template', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`WhatsApp Baileys service listening on port ${PORT}`);
+  // Resume any interrupted running leads after Baileys has initialized
+  setTimeout(() => {
+    if (supabase) {
+      resumeInterruptedLeads();
+    }
+  }, 15000);
 });

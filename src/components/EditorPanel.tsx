@@ -231,7 +231,7 @@ export default function EditorPanel({ branding, onUpdate }: EditorPanelProps) {
     { id: 'nodes', label: 'Active Nodes' },
     { id: 'users', label: 'Link Access' },
     { id: 'dealers', label: 'Dealer Section' },
-    { id: 'config', label: 'Workflow Config' },
+    { id: 'config', label: 'WP Campaigns' },
     { id: 'settings', label: 'Security' },
     { id: 'integrations', label: 'Google Sheet Link' },
     { id: 'branding', label: 'Global Editor' }

@@ -13,6 +13,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { getAvatarUrl } from '../utils/avatar';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 const Chat = lazy(() => import('./Chat'));
 const AIHelpPanel = lazy(() => import('./AIHelpPanel'));
@@ -69,6 +70,7 @@ export default function Layout({
   appConfig,
   onRegisterComplaint
 }: LayoutProps) {
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const [isThemeTransitioning, setIsThemeTransitioning] = useState(false);
   const [themeTransitionProgress, setThemeTransitionProgress] = useState(0);
@@ -503,7 +505,7 @@ export default function Layout({
   const [expandedCats, setExpandedCats] = useState<string[]>(['ops', 'analytics', 'system']);
 
   const isSubDealerUser = user ? ((user.role === 'dealer' || Boolean(user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && user.role !== 'admin') : false;
-  const canAccessLoginProfiles = user?.role === 'super_admin' || isSubDealerUser;
+  const canAccessLoginProfiles = user?.role === 'super_admin' || user?.role === 'admin' || isSubDealerUser || Boolean(user);
 
   const categories = [
     {
@@ -531,7 +533,7 @@ export default function Layout({
       label: 'Configurations',
       items: [
         { id: 'dealers', label: 'Dealer Section', icon: ShieldAlert, roles: ['super_admin'] },
-        { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Workflow },
+        { id: 'config', label: branding?.tabNames?.config || 'WP Campaigns', icon: Workflow },
       ]
     },
     {
@@ -558,12 +560,12 @@ export default function Layout({
         return false;
       }
       
-      // If user is member, only show specific items requested: Operations, Active Complainers, Security
+      // If user is member, only show specific items requested: Operations, Active Complainers, WP Campaigns, Security
       if (user.role === 'member' || user.role === 'field_agent') {
-        return ['complaints', 'nodes', 'settings'].includes(item.id);
+        return ['complaints', 'nodes', 'config', 'settings'].includes(item.id);
       }
       if (user.role === 'liteadmin') {
-        return ['complaints', 'nodes', 'clients', 'settings'].includes(item.id);
+        return ['complaints', 'nodes', 'clients', 'config', 'settings'].includes(item.id);
       }
       
       // For other roles, check item.roles if defined
@@ -584,13 +586,14 @@ export default function Layout({
   const handleSidebarNav = (id: string) => {
     if (id === 'map') {
       setIsMapOpen(true);
+    } else if (id === 'config' || id === 'campaigns' || id === 'conversation') {
+      navigate('/conversation');
     } else if (id === 'monitor' || id === 'latency') {
-      setActiveTab('latency');
-    } else if (id === 'config') {
-      setActiveTab('mypc');
-      window.dispatchEvent(new CustomEvent('admin-nav', { detail: 'mypc' }));
-      window.dispatchEvent(new CustomEvent('mypc-select-file', { detail: 'system_config' }));
-      navigate('/mypc/workflow-config');
+      navigate('/latency');
+    } else if (id === 'submit' || id === 'registry') {
+      navigate('/registry');
+      setActiveTab('submit');
+      window.dispatchEvent(new CustomEvent('admin-nav', { detail: 'submit' }));
     } else {
       if (id === 'mypc') {
         window.dispatchEvent(new CustomEvent('mypc-reset-desktop'));
@@ -646,7 +649,7 @@ export default function Layout({
                 { id: 'clients', label: branding?.tabNames?.clients || 'Users Management', icon: Contact },
                 { id: 'mypc', label: 'Settings', icon: Settings },
                 { id: 'billing', label: 'Billing Mod', icon: CreditCard },
-                { id: 'config', label: branding?.tabNames?.config || 'Workflow Config', icon: Workflow },
+                { id: 'config', label: 'WP Campaigns', icon: Workflow },
                 { id: 'map', label: 'Network Map', icon: MapIcon },
                 { id: 'monitor', label: 'Service Monitor', icon: Activity },
                 { id: 'settings', label: 'Security', icon: Shield },
@@ -674,6 +677,8 @@ export default function Layout({
 
               return visible.map((item, idx) => {
                 const isItemActive = (() => {
+                  if (item.id === 'config' || item.id === 'campaigns') return location.pathname.startsWith('/billingmod/conversation') || location.pathname.startsWith('/conversation');
+                  if (item.id === 'submit' || item.id === 'registry') return activeTab === 'submit' || location.pathname === '/registry' || location.pathname === '/submit';
                   if (item.id === 'chat') return isChatOpen;
                   if (item.id === 'monitor') return activeTab === 'latency' || activeTab === 'monitor' || isMonitorOpen;
                   if (item.id === 'map') return isMapOpen && !isSidebarOpen;
@@ -874,9 +879,13 @@ export default function Layout({
                     className="overflow-hidden space-y-1 pl-2"
                   >
                     {cat.items.map((item, itemIdx) => {
-                      const isItemActive = activeTab === item.id || 
-                                           (item.id === 'complaints' && activeTab === 'ops') ||
-                                           (item.id === 'settings' && activeTab === 'profile');
+                      const isItemActive = (item.id === 'config' || item.id === 'campaigns')
+                        ? (location.pathname.startsWith('/billingmod/conversation') || location.pathname.startsWith('/conversation'))
+                        : (item.id === 'submit' || item.id === 'registry')
+                        ? (activeTab === 'submit' || location.pathname === '/registry' || location.pathname === '/submit')
+                        : (activeTab === item.id || 
+                           (item.id === 'complaints' && activeTab === 'ops') ||
+                           (item.id === 'settings' && activeTab === 'profile'));
                       
                       return (
                         <motion.button 
@@ -1157,56 +1166,70 @@ export default function Layout({
                 damping: 28,
                 stiffness: 250
               }}
-              className="fixed bottom-20 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-[380px] max-h-[70vh] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden flex flex-col"
+              className="fixed bottom-20 right-4 sm:right-8 w-[calc(100vw-2rem)] sm:w-[420px] max-h-[75vh] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl rounded-3xl border border-slate-200/60 dark:border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)] z-[200] overflow-hidden flex flex-col"
             >
-              <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-brand-accent/10 flex items-center justify-center">
-                    <History size={16} className="text-brand-accent" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 leading-none">Operation History</h3>
-                      {unreadNotificationsCount > 0 && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20 text-[9px] font-black font-mono">
-                          {unreadNotificationsCount} unread
-                        </span>
-                      )}
+              {/* Header Bar */}
+              <div className="p-4 border-b border-slate-100 dark:border-white/10 bg-slate-50/80 dark:bg-slate-900/80 flex flex-col gap-3 shrink-0">
+                {/* Top Row: Title, Unread Badge, and Close Button */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-2xl bg-brand-accent/10 border border-brand-accent/20 flex items-center justify-center shrink-0">
+                      <History size={16} className="text-brand-accent" />
                     </div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Live Intelligence Feed</p>
+                    <div className="min-w-0">
+                      <h3 className="text-xs sm:text-sm font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 leading-none truncate">
+                        Operation History
+                      </h3>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1 truncate">
+                        Live Intelligence Feed
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {unreadNotificationsCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20 text-[10px] font-black font-mono shrink-0">
+                        {unreadNotificationsCount} unread
+                      </span>
+                    )}
+                    <button 
+                      onClick={() => setIsNotificationsOpen(false)}
+                      className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+                      title="Close"
+                    >
+                      <X size={16} />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  {notifications.length > 0 && (
-                    <>
-                      {unreadNotificationsCount > 0 && (
-                        <button 
-                          onClick={handleMarkAllRead}
-                          className="h-8 px-2.5 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/40 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200/60 dark:border-white/5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95"
-                          title="Mark all notifications as read"
-                        >
-                          <CheckCircle2 size={13} className="text-emerald-500" />
-                          <span className="hidden xs:inline">Mark All Read</span>
-                        </button>
-                      )}
+
+                {/* Bottom Row: Dedicated Action Toolbar (Mark All Read & Delete All) */}
+                {notifications.length > 0 && (
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/50 dark:border-white/5">
+                    {unreadNotificationsCount > 0 ? (
                       <button 
-                        onClick={handleClearAll}
-                        className="h-8 px-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-600 dark:text-slate-300 hover:text-rose-500 dark:hover:text-rose-400 border border-slate-200/60 dark:border-white/5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all active:scale-95"
-                        title="Delete all notifications"
+                        onClick={handleMarkAllRead}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-200 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200/60 dark:border-white/5 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+                        title="Mark all notifications as read"
                       >
-                        <Trash2 size={13} className="text-rose-500" />
-                        <span className="hidden xs:inline">Delete All</span>
+                        <CheckCircle2 size={13} className="text-emerald-500" />
+                        <span>Mark All Read</span>
                       </button>
-                    </>
-                  )}
-                  <button 
-                    onClick={() => setIsNotificationsOpen(false)}
-                    className="p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors ml-1"
-                    title="Close"
-                  >
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
+                    ) : (
+                      <div className="flex-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">
+                        All Caught Up
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={handleClearAll}
+                      className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 border border-slate-200/60 dark:border-white/5 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+                      title="Delete all notifications"
+                    >
+                      <Trash2 size={13} className="text-rose-500" />
+                      <span>Delete All</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {!alertAuthorized && (
@@ -2317,9 +2340,10 @@ export default function Layout({
 
         {/* Service Real-time Monitor */}
         <ServiceMonitor 
-          isOpen={activeTab === 'latency' || activeTab === 'monitor' || isMonitorOpen} 
+          isOpen={location.pathname === '/latency' || location.pathname.startsWith('/latency') || activeTab === 'latency' || activeTab === 'monitor' || isMonitorOpen} 
           onClose={() => {
             setIsMonitorOpen(false);
+            navigate('/');
             if (activeTab === 'latency' || activeTab === 'monitor') {
               setActiveTab('complaints');
             }

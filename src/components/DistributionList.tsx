@@ -169,9 +169,9 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
     }
 
     return complaints.filter(c => {
-      // Show only finalized or complete complaints/connections
+      // Show only finalized or complete complaints/connections (including hold)
       const statusLower = (c.status || '').toLowerCase();
-      if (statusLower !== 'complete' && statusLower !== 'finalized') {
+      if (statusLower !== 'complete' && statusLower !== 'finalized' && statusLower !== 'resolved' && statusLower !== 'hold') {
         return false;
       }
 

@@ -234,6 +234,9 @@ export default function ComplaintList({
         if (normFilter === 'hold') {
           return normEff === 'hold';
         }
+        if (normFilter === 'complete' || normFilter === 'finalized' || normFilter === 'resolved' || normFilter === 'closed') {
+          return normEff === 'complete' || normEff === 'finalized' || normEff === 'resolved' || normEff === 'closed' || normEff === 'hold';
+        }
         if (normFilter === 'in process' || normFilter === 'in_process') {
           return normEff === 'in process' || normEff === 'in_process';
         }
@@ -947,6 +950,17 @@ export default function ComplaintList({
                 )}
               >
                 Hold
+              </button>
+              <button
+                onClick={() => setStatusFilter('complete')}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                  (statusFilter === 'complete' || statusFilter === 'finalized' || statusFilter === 'resolved')
+                    ? "neu-raised text-brand-accent"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-slate-330"
+                )}
+              >
+                Finalized
               </button>
             </div>
 
