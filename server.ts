@@ -739,6 +739,92 @@ async function startServer() {
     }
   });
 
+  app.post("/api/whatsapp/create-lead", async (req, res) => {
+    try {
+      if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+        try {
+          const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/create-lead`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(req.body),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            return res.status(response.status).json(data);
+          }
+        } catch (err: any) {
+          console.warn("Proxy to external create-lead failed, trying direct REST insert:", err.message);
+        }
+      }
+
+      // Direct REST fallback with Service Role or Anon key
+      const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+      const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+      const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
+      const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+
+      const { name, dealerId, lineCode, monthId, dueDateStart, dueDateEnd, waitSeconds, items } = req.body;
+
+      const leadRes = await fetch(`${SUPABASE_URL}/rest/v1/reminder_leads`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify({
+          name: name || 'Reminder Lead',
+          dealer_id: dealerId || 'main',
+          line_code: lineCode || null,
+          month_id: monthId,
+          due_date_start: dueDateStart,
+          due_date_end: dueDateEnd,
+          wait_seconds: waitSeconds || 30,
+          status: 'pending',
+          total_count: Array.isArray(items) ? items.length : 0,
+          success_count: 0,
+          failed_count: 0
+        }),
+      });
+
+      if (!leadRes.ok) {
+        const errText = await leadRes.text();
+        return res.status(leadRes.status).json({ success: false, error: errText });
+      }
+
+      const createdLeads = await leadRes.json();
+      const leadId = createdLeads[0]?.id;
+
+      if (Array.isArray(items) && items.length > 0 && leadId) {
+        const itemRows = items.map((item: any, idx: number) => ({
+          lead_id: leadId,
+          client_id: String(item.clientId || ''),
+          name: String(item.name || ''),
+          mobile_number: String(item.mobileNumber || ''),
+          message: item.message || null,
+          status: 'pending',
+          sort_order: idx
+        }));
+
+        await fetch(`${SUPABASE_URL}/rest/v1/reminder_lead_items`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(itemRows),
+        });
+      }
+
+      return res.json({ success: true, leadId });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message || String(error) });
+    }
+  });
+
   app.post("/api/whatsapp/start-lead", async (req, res) => {
     try {
       const { leadId } = req.body;

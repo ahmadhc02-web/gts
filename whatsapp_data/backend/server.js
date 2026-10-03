@@ -140,6 +140,59 @@ app.post('/send-message', async (req, res) => {
   }
 });
 
+app.post('/create-lead', async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Supabase not configured' });
+  try {
+    const { name, dealerId, lineCode, monthId, dueDateStart, dueDateEnd, waitSeconds, items } = req.body;
+    
+    // 1. Insert lead using Service Role client (bypasses RLS)
+    const { data: leadRow, error: leadErr } = await supabase
+      .from('reminder_leads')
+      .insert({
+        name: name || 'Reminder Lead',
+        dealer_id: dealerId || 'main',
+        line_code: lineCode || null,
+        month_id: monthId,
+        due_date_start: dueDateStart,
+        due_date_end: dueDateEnd,
+        wait_seconds: waitSeconds || 30,
+        status: 'pending',
+        total_count: Array.isArray(items) ? items.length : 0,
+        success_count: 0,
+        failed_count: 0
+      })
+      .select('id')
+      .single();
+
+    if (leadErr) throw leadErr;
+    const leadId = leadRow.id;
+
+    // 2. Insert lead items
+    if (Array.isArray(items) && items.length > 0) {
+      const itemRows = items.map((item, idx) => ({
+        lead_id: leadId,
+        client_id: String(item.clientId || ''),
+        name: String(item.name || ''),
+        mobile_number: String(item.mobileNumber || ''),
+        message: item.message || null,
+        status: 'pending',
+        sort_order: idx
+      }));
+
+      const { error: itemsErr } = await supabase
+        .from('reminder_lead_items')
+        .insert(itemRows);
+
+      if (itemsErr) throw itemsErr;
+    }
+
+    res.json({ success: true, leadId });
+  } catch (err) {
+    console.error('Failed to create lead on server:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/start-lead', async (req, res) => {
   const { leadId } = req.body;
   if (!leadId) return res.status(400).json({ error: 'leadId is required' });

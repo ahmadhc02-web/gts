@@ -94,6 +94,23 @@ export async function sendMessage(phone: string, message: string) {
   }
 }
 
+export async function createReminderLeadServer(payload: any) {
+  try {
+    const res = await fetch(`${API_URL}/create-lead`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.leadId) {
+      throw new Error(data.error || 'Failed to create lead via server');
+    }
+    return data.leadId;
+  } catch (err: any) {
+    throw new Error(err.message || 'Failed to create lead via server');
+  }
+}
+
 export async function startReminderLead(leadId: string) {
   try {
     const res = await fetch(`${API_URL}/start-lead`, {
