@@ -1,4 +1,39 @@
-const { sendMessage, normalizePakistaniPhone } = require('./baileysClient');
+const http = require('http');
+const PORT = process.env.PORT || 3001;
+
+function sendViaLocalRoute(phoneNumber, message) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({ phone: phoneNumber, message });
+    const req = http.request({
+      hostname: 'localhost',
+      port: PORT,
+      path: '/send-message',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (res.statusCode >= 200 && res.statusCode < 300 && parsed.success) {
+            resolve(parsed);
+          } else {
+            reject(new Error(parsed.error || `Send failed with status ${res.statusCode}`));
+          }
+        } catch (e) {
+          reject(new Error('Invalid response from send-message route: ' + data));
+        }
+      });
+    });
+    req.on('error', (err) => reject(err));
+    req.write(payload);
+    req.end();
+  });
+}
 
 let supabase = null;
 const activeLeadIds = new Set();
@@ -6,6 +41,35 @@ const activeLeadIds = new Set();
 function init(supabaseClient) {
   supabase = supabaseClient;
   console.log('[Lead Processor] Initialized with Supabase client');
+}
+
+async function recordClientReminderSent(clientId, monthId) {
+  if (!supabase || !clientId) return;
+  try {
+    const nowIso = new Date().toISOString();
+    let query = supabase.from('billing_rows').select('id, reminder_sent_count');
+    if (monthId) query = query.eq('month_id', monthId);
+    query = query.or(`client_id.eq.${clientId},client_username.eq.${clientId}`);
+    const { data: rows, error: selErr } = await query;
+    if (selErr) {
+      console.error('[Lead Processor] recordClientReminderSent select error:', selErr.message);
+      return;
+    }
+    if (rows && rows.length > 0) {
+      for (const r of rows) {
+        await supabase
+          .from('billing_rows')
+          .update({
+            reminder_sent_count: (Number(r.reminder_sent_count || 0)) + 1,
+            reminder_sent_at: nowIso,
+            updated_at: nowIso
+          })
+          .eq('id', r.id);
+      }
+    }
+  } catch (e) {
+    console.error('[Lead Processor] recordClientReminderSent exception:', e.message);
+  }
 }
 
 /**
@@ -102,11 +166,12 @@ async function processReminderLead(leadId) {
           throw new Error('No mobile number available for client');
         }
 
-        const normalizedPhone = normalizePakistaniPhone(item.mobile_number);
-        console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${phone} (${normalizedPhone}) for lead ${leadId}...`);
-        await sendMessage(normalizedPhone, messageText);
+        console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${phone} for lead ${leadId} via /send-message...`);
+        await sendViaLocalRoute(item.mobile_number, messageText);
 
         currentSuccessCount++;
+        await recordClientReminderSent(item.client_id, lead.month_id);
+
         await supabase
           .from('reminder_lead_items')
           .update({
