@@ -4,6 +4,19 @@ const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 
+function normalizePakistaniPhone(phone) {
+  if (!phone) return phone;
+  let normalized = String(phone).replace(/[\s-]/g, '');
+  if (normalized.startsWith('0')) {
+    normalized = '92' + normalized.substring(1);
+  } else if (normalized.startsWith('+')) {
+    normalized = normalized.substring(1);
+  } else if (normalized.startsWith('3')) {
+    normalized = '92' + normalized;
+  }
+  return normalized;
+}
+
 let sock = null;
 let currentQr = null;
 let isConnected = false;
@@ -14,6 +27,7 @@ let reconnectDelay = 3000; // start with 3 seconds
 let reconnectTimer = null;
 let resetBackoffTimer = null;
 let lastConnectionOpenTimestamp = 0;
+let lastActivityTimestamp = Date.now();
 let isReconnectPending = false;
 let keepAliveTimer = null;
 
@@ -23,6 +37,7 @@ function startKeepAlive() {
     if (isConnected && sock) {
       try {
         await sock.sendPresenceUpdate('available');
+        lastActivityTimestamp = Date.now();
       } catch (e) {
         console.log('Keep-alive presence ping failed:', e.message);
       }
@@ -33,6 +48,27 @@ function startKeepAlive() {
 function stopKeepAlive() {
   if (keepAliveTimer) clearInterval(keepAliveTimer);
   keepAliveTimer = null;
+}
+
+const PROACTIVE_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000; // every 4 hours
+let proactiveRefreshTimer = null;
+
+function startProactiveRefresh() {
+  if (proactiveRefreshTimer) clearInterval(proactiveRefreshTimer);
+  proactiveRefreshTimer = setInterval(() => {
+    if (isConnected && messageQueue.length === 0 && !isProcessingQueue) {
+      console.log('[Proactive Refresh] Refreshing WhatsApp connection to prevent long-uptime staleness...');
+      isConnected = false;
+      initBaileys();
+    } else {
+      console.log('[Proactive Refresh] Skipped — queue busy, will retry next interval.');
+    }
+  }, PROACTIVE_REFRESH_INTERVAL_MS);
+}
+
+function stopProactiveRefresh() {
+  if (proactiveRefreshTimer) clearInterval(proactiveRefreshTimer);
+  proactiveRefreshTimer = null;
 }
 
 // Message Queue State
@@ -58,6 +94,15 @@ function isRateLimitReached() {
 async function initBaileys() {
   try {
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (sock) {
+      try {
+        sock.ev.removeAllListeners();
+        sock.end(new Error('Reinitializing connection'));
+      } catch (e) {
+        console.log('Error closing previous socket (safe to ignore):', e.message);
+      }
+      sock = null;
+    }
     console.log('Initializing Baileys...');
     const { state, saveCreds } = await useMultiFileAuthState('./auth_session');
 
@@ -82,6 +127,7 @@ async function initBaileys() {
 
       if (connection === 'close') {
         stopKeepAlive();
+        stopProactiveRefresh();
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
         console.log(`Connection closed. StatusCode: ${statusCode}. Logged out: ${isLoggedOut}`);
@@ -110,12 +156,14 @@ async function initBaileys() {
         isConnected = true;
         currentQr = null;
         lastConnectionOpenTimestamp = Date.now();
+        lastActivityTimestamp = Date.now();
         if (sock?.user?.id) {
           userPhoneNumber = sock.user.id.split(':')[0];
         }
         
-        // Start keep-alive presence ping
+        // Start keep-alive presence ping and proactive refresh
         startKeepAlive();
+        startProactiveRefresh();
 
         // Reset backoff delay after 2 minutes of stable connection
         if (resetBackoffTimer) clearTimeout(resetBackoffTimer);
@@ -128,7 +176,10 @@ async function initBaileys() {
         }, 120000); // 2 minutes stable
 
         // Trigger queue processor in case we have items waiting
-        processQueue();
+        setTimeout(() => {
+          console.log('[Connection Settle] Connection settled, resuming queue processing.');
+          processQueue();
+        }, 5000);
       }
     });
 
@@ -182,7 +233,7 @@ async function sendMessage(phoneNumber, message) {
 
 const MAX_SEND_ATTEMPTS = 3;
 const SEND_TIMEOUT_MS = 65000;
-const RECONNECT_WAIT_TIMEOUT_MS = 45000; // max time to wait for reconnect
+const RECONNECT_WAIT_TIMEOUT_MS = 60000; // max time to wait for reconnect
 
 function waitForReconnect(timeoutMs) {
   return new Promise((resolve, reject) => {
@@ -205,6 +256,17 @@ async function sendWithRetry(phoneNumber, message) {
   const jid = `${phoneNumber}@s.whatsapp.net`;
   let lastError = null;
 
+  const STALE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
+  if (Date.now() - lastActivityTimestamp > STALE_THRESHOLD_MS) {
+    console.log(`[Staleness Check] ${Math.round((Date.now() - lastActivityTimestamp) / 60000)} min since last activity — refreshing connection before sending.`);
+    isConnected = false;
+    handleReconnect();
+    await waitForReconnect(RECONNECT_WAIT_TIMEOUT_MS);
+    console.log('[Connection Settle] Waiting 4s for connection to stabilize after reconnect...');
+    await new Promise(r => setTimeout(r, 4000));
+    lastActivityTimestamp = Date.now();
+  }
+
   for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
     try {
       // Make sure we're connected before even trying
@@ -212,6 +274,8 @@ async function sendWithRetry(phoneNumber, message) {
         console.log(`Attempt ${attempt}: not connected, waiting for reconnect...`);
         handleReconnect();
         await waitForReconnect(RECONNECT_WAIT_TIMEOUT_MS);
+        console.log('[Connection Settle] Waiting 4s for connection to stabilize after reconnect...');
+        await new Promise(r => setTimeout(r, 4000));
       }
 
       // Liveness ping before every attempt — cheap, and catches a
@@ -221,25 +285,16 @@ async function sendWithRetry(phoneNumber, message) {
         new Promise((_, rej) => setTimeout(() => rej(new Error('Liveness ping timed out')), 10000))
       ]);
 
-      // Confirm the number is on WhatsApp (only needs to happen once,
-      // but cheap enough to keep here for simplicity/correctness)
-      const [result] = await sock.onWhatsApp(jid);
-      if (!result || !result.exists) {
-        throw new Error('__NOT_REGISTERED__'); // not retryable
-      }
-
       // The actual send, with a hard timeout so it can never hang forever
       await Promise.race([
         sock.sendMessage(jid, { text: message }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Send timed out')), SEND_TIMEOUT_MS))
       ]);
 
+      lastActivityTimestamp = Date.now();
       return { success: true }; // done — exit the retry loop
     } catch (err) {
       lastError = err;
-      if (err.message === '__NOT_REGISTERED__') {
-        throw new Error('Phone number is not registered on WhatsApp'); // don't retry this one
-      }
       console.log(`Send attempt ${attempt}/${MAX_SEND_ATTEMPTS} to ${phoneNumber} failed: ${err.message}`);
       // Treat ANY failure here as a possibly-stale connection: force a
       // reconnect before the next attempt, rather than assuming it's
@@ -295,6 +350,7 @@ async function processQueue() {
 
 async function logoutBaileys() {
   stopKeepAlive();
+  stopProactiveRefresh();
   if (sock) {
     try {
       await sock.logout();
@@ -341,4 +397,5 @@ module.exports = {
   sendMessage,
   logoutBaileys,
   registerMessageLogCallback,
+  normalizePakistaniPhone,
 };

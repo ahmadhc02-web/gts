@@ -1,4 +1,4 @@
-const { sendMessage } = require('./baileysClient');
+const { sendMessage, normalizePakistaniPhone } = require('./baileysClient');
 
 let supabase = null;
 const activeLeadIds = new Set();
@@ -102,8 +102,9 @@ async function processReminderLead(leadId) {
           throw new Error('No mobile number available for client');
         }
 
-        console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${phone} for lead ${leadId}...`);
-        await sendMessage(phone, messageText);
+        const normalizedPhone = normalizePakistaniPhone(item.mobile_number);
+        console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${phone} (${normalizedPhone}) for lead ${leadId}...`);
+        await sendMessage(normalizedPhone, messageText);
 
         currentSuccessCount++;
         await supabase

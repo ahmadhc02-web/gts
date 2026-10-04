@@ -16,7 +16,7 @@ This is a standalone Node.js service that runs the WhatsApp Baileys integration 
    ```
 
 2. **Database:**
-   Run the SQL command in `schema.sql` on your Supabase project to create the required table for the message template.
+   Ensure your Supabase project contains the `whatsapp_settings` and `whatsapp_message_log` tables for template and messaging logs.
 
 3. **Environment Variables:**
    Copy `.env.example` to `.env` and fill in your Supabase URL, Service Role Key, and the allowed origin (the URL where your frontend app is hosted).

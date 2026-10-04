@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const ws = require('ws');
-const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, logoutBaileys, registerMessageLogCallback } = require('./baileysClient');
+const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, logoutBaileys, registerMessageLogCallback, normalizePakistaniPhone } = require('./baileysClient');
 const { createClient } = require('@supabase/supabase-js');
 
 const admin = require("firebase-admin");
@@ -118,16 +118,7 @@ app.post('/send-message', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Phone and message are required' });
     }
 
-    // Normalize Pakistani number
-    let normalizedPhone = phone.replace(/[\s-]/g, '');
-    if (normalizedPhone.startsWith('0')) {
-      normalizedPhone = '92' + normalizedPhone.substring(1);
-    } else if (normalizedPhone.startsWith('+')) {
-      normalizedPhone = normalizedPhone.substring(1);
-    } else if (normalizedPhone.startsWith('3')) {
-      normalizedPhone = '92' + normalizedPhone;
-    }
-
+    const normalizedPhone = normalizePakistaniPhone(phone);
     const result = await sendMessage(normalizedPhone, message);
     if (result.success) {
       res.json({ success: true });
