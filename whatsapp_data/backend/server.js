@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const ws = require('ws');
-const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, logoutBaileys, registerMessageLogCallback, normalizePakistaniPhone } = require('./baileysClient');
+const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, logoutBaileys, resetBaileysSession, registerMessageLogCallback, normalizePakistaniPhone } = require('./baileysClient');
 const { createClient } = require('@supabase/supabase-js');
 
 const admin = require("firebase-admin");
@@ -76,6 +76,16 @@ app.get('/qr', async (req, res) => {
 app.post('/disconnect', async (req, res) => {
   await logoutBaileys();
   res.json({ success: true });
+});
+
+app.post('/reset-session', async (req, res) => {
+  try {
+    const result = await resetBaileysSession();
+    res.json(result);
+  } catch (err) {
+    console.error('Failed to reset session:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to reset session' });
+  }
 });
 
 app.post('/send-push', async (req, res) => {

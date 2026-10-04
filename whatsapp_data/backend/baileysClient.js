@@ -104,15 +104,16 @@ async function initBaileys() {
       sock = null;
     }
     console.log('Initializing Baileys...');
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_session');
+    const authDir = path.join(__dirname, 'auth_session');
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
     sock = makeWASocket({
       auth: state,
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      defaultQueryTimeoutMs: 60000,   // was using Baileys' default, now explicit 60s
+      defaultQueryTimeoutMs: 60000,   // explicit 60s
       connectTimeoutMs: 60000,
-      keepAliveIntervalMs: 25000,     // native WS ping every 25s, complements our own presence-ping keep-alive
+      keepAliveIntervalMs: 25000,     // native WS ping every 25s
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -129,23 +130,31 @@ async function initBaileys() {
         stopKeepAlive();
         stopProactiveRefresh();
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-        console.log(`Connection closed. StatusCode: ${statusCode}. Logged out: ${isLoggedOut}`);
+        const isLoggedOut = 
+          statusCode === DisconnectReason.loggedOut ||
+          statusCode === DisconnectReason.badSession ||
+          statusCode === 401 ||
+          statusCode === 403 ||
+          statusCode === 500;
+        console.log(`Connection closed. StatusCode: ${statusCode}. Logged out/Invalid: ${isLoggedOut}`);
         
         isConnected = false;
         userPhoneNumber = null;
         
         if (isLoggedOut) {
-          console.log('Logged out of WhatsApp. Waiting for manual scan. Clearing session auth...');
+          console.log('Logged out or invalid session on WhatsApp. Clearing auth and preparing fresh QR...');
           reconnectDelay = 3000; // Reset backoff delay
           isReconnectPending = false;
-          const authDir = path.join(__dirname, 'auth_session');
           if (fs.existsSync(authDir)) {
-            fs.rmSync(authDir, { recursive: true, force: true });
-            console.log('Cleared stale auth_session folder after force logout.');
+            try {
+              fs.rmSync(authDir, { recursive: true, force: true });
+              console.log('Cleared stale auth_session folder.');
+            } catch (rmErr) {
+              console.warn('Failed to clear auth_session:', rmErr.message);
+            }
           }
           currentQr = null;
-          // Initialize fresh Baileys to show new QR code
+          // Initialize fresh Baileys to immediately emit new QR code
           initBaileys();
         } else {
           // Transient network disconnect, apply exponential backoff reconnect
@@ -213,7 +222,15 @@ function getBaileysStatus() {
 }
 
 async function getBaileysQr() {
-  if (isConnected || !currentQr) return null;
+  if (isConnected) return null;
+  if (!currentQr) {
+    // If not connected and no QR exists, ensure socket is initialized
+    if (!sock && !isReconnectPending) {
+      console.log('[QR Engine] No active socket or QR found, triggering fresh initialization...');
+      initBaileys();
+    }
+    return null;
+  }
   try {
     const dataUrl = await QRCode.toDataURL(currentQr);
     return dataUrl;
@@ -351,23 +368,82 @@ async function processQueue() {
 async function logoutBaileys() {
   stopKeepAlive();
   stopProactiveRefresh();
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  isReconnectPending = false;
+
   if (sock) {
     try {
       await sock.logout();
     } catch (e) {
       console.error('Logout error', e);
-    } finally {
-      const authDir = path.join(__dirname, 'auth_session');
-      if (fs.existsSync(authDir)) {
-        fs.rmSync(authDir, { recursive: true, force: true });
-        console.log('Cleared stale auth_session folder after logout.');
-      }
-      currentQr = null;
-      isConnected = false;
-      isReconnectPending = false;
-      userPhoneNumber = null;
     }
   }
+  
+  const authDir = path.join(__dirname, 'auth_session');
+  if (fs.existsSync(authDir)) {
+    try {
+      fs.rmSync(authDir, { recursive: true, force: true });
+      console.log('Cleared auth_session folder after logout.');
+    } catch (rmErr) {
+      console.warn('Failed to delete auth_session during logout:', rmErr.message);
+    }
+  }
+  currentQr = null;
+  isConnected = false;
+  isReconnectPending = false;
+  userPhoneNumber = null;
+
+  // Immediately re-initialize so a new QR code is generated right away
+  initBaileys();
+}
+
+async function resetBaileysSession() {
+  console.log('[Baileys] Manual session reset requested...');
+  stopKeepAlive();
+  stopProactiveRefresh();
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  isReconnectPending = false;
+
+  if (sock) {
+    try {
+      sock.ev.removeAllListeners();
+      sock.end(new Error('Manual session reset requested'));
+    } catch (e) {
+      console.log('Error ending socket on reset (safe to ignore):', e.message);
+    }
+    sock = null;
+  }
+
+  const authDir = path.join(__dirname, 'auth_session');
+  if (fs.existsSync(authDir)) {
+    try {
+      fs.rmSync(authDir, { recursive: true, force: true });
+      console.log('Cleared auth_session folder for fresh session reset.');
+    } catch (rmErr) {
+      console.warn('Failed to clear auth_session during reset:', rmErr.message);
+    }
+  }
+
+  currentQr = null;
+  isConnected = false;
+  userPhoneNumber = null;
+  reconnectDelay = 3000;
+
+  // Reinitialize socket fresh
+  await initBaileys();
+
+  // Wait up to 5 seconds for QR code to be emitted
+  for (let i = 0; i < 10; i++) {
+    if (currentQr) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  const qrDataUrl = await getBaileysQr();
+  return {
+    success: true,
+    qr: qrDataUrl,
+    connected: isConnected,
+  };
 }
 
 // 5-Minute Health Check Daemon
@@ -396,6 +472,7 @@ module.exports = {
   getBaileysQr,
   sendMessage,
   logoutBaileys,
+  resetBaileysSession,
   registerMessageLogCallback,
   normalizePakistaniPhone,
 };

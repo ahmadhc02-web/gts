@@ -545,44 +545,183 @@ async function startServer() {
 
   const WHATSAPP_SERVICE_BACKEND_URL = process.env.WHATSAPP_SERVICE_URL || process.env.VITE_WHATSAPP_SERVICE_URL || "";
 
+  // Auto-start local WhatsApp Baileys service if port 3001 is not running
+  let whatsappBackendProcess: any = null;
+  let lastWhatsAppBackendError: string | null = null;
+  const startWhatsAppBackendIfDown = async () => {
+    try {
+      const testRes = await fetch("http://127.0.0.1:3001/status", { signal: AbortSignal.timeout(1000) });
+      if (testRes.ok) return; // already active on port 3001
+    } catch (_) {
+      const backendDir = path.join(process.cwd(), "whatsapp_data", "backend");
+      const backendScript = path.join(backendDir, "server.js");
+      if (fs.existsSync(backendScript) && !whatsappBackendProcess) {
+        try {
+          console.log("[WhatsApp Bridge] Starting local WhatsApp Baileys service on port 3001...");
+          const { spawn } = await import("child_process");
+          const rootNodeModules = path.join(process.cwd(), "node_modules");
+          const backendNodeModules = path.join(backendDir, "node_modules");
+          const nodePath = [backendNodeModules, rootNodeModules, process.env.NODE_PATH || ""].filter(Boolean).join(":");
+
+          whatsappBackendProcess = spawn("node", ["server.js"], {
+            cwd: backendDir,
+            env: {
+              ...process.env,
+              PORT: "3001",
+              NODE_PATH: nodePath,
+            },
+            stdio: "pipe"
+          });
+          whatsappBackendProcess.stdout?.on("data", (data: any) => {
+            const str = data.toString().trim();
+            if (str) console.log(`[WhatsApp Backend] ${str}`);
+          });
+          whatsappBackendProcess.stderr?.on("data", (data: any) => {
+            const str = data.toString().trim();
+            if (str) {
+              console.warn(`[WhatsApp Backend Error] ${str}`);
+              lastWhatsAppBackendError = str;
+            }
+          });
+          whatsappBackendProcess.on("exit", (code: any) => {
+            console.log(`[WhatsApp Backend] Process exited with code ${code}`);
+            if (code !== 0) {
+              lastWhatsAppBackendError = `Process exited with code ${code}. ${lastWhatsAppBackendError || ""}`.trim();
+            }
+            whatsappBackendProcess = null;
+          });
+        } catch (spawnErr: any) {
+          lastWhatsAppBackendError = spawnErr?.message || String(spawnErr);
+          console.warn("[WhatsApp Bridge] Failed to auto-spawn local WhatsApp service:", spawnErr);
+        }
+      }
+    }
+  };
+
+  // Trigger check on server start
+  startWhatsAppBackendIfDown();
+
   app.get("/api/whatsapp/status", async (req, res) => {
-    if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+    const candidateUrls = [
+      "http://127.0.0.1:3001",
+      WHATSAPP_SERVICE_BACKEND_URL,
+      "http://localhost:3001"
+    ].filter((u): u is string => Boolean(u && typeof u === "string" && u.startsWith("http")));
+
+    for (const target of candidateUrls) {
       try {
-        const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/status`, { signal: AbortSignal.timeout(3000) });
+        const response = await fetch(`${target}/status`, { signal: AbortSignal.timeout(2500) });
         if (response.ok) {
           const data = await response.json();
+          lastWhatsAppBackendError = null;
           return res.json(data);
         }
       } catch (err) {}
     }
+
+    startWhatsAppBackendIfDown();
+
     return res.json({
       connected: false,
       phoneNumber: null,
       rateLimitReached: false,
-      queuedCount: 0
+      queuedCount: 0,
+      serviceStarting: true,
+      backendError: lastWhatsAppBackendError || null
     });
   });
 
   app.get("/api/whatsapp/qr", async (req, res) => {
-    if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+    const candidateUrls = [
+      "http://127.0.0.1:3001",
+      WHATSAPP_SERVICE_BACKEND_URL,
+      "http://localhost:3001"
+    ].filter((u): u is string => Boolean(u && typeof u === "string" && u.startsWith("http")));
+
+    for (const target of candidateUrls) {
       try {
-        const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/qr`, { signal: AbortSignal.timeout(3000) });
+        const response = await fetch(`${target}/qr`, { signal: AbortSignal.timeout(2500) });
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.qr) {
+            return res.json(data);
+          }
+        }
+      } catch (err) {}
+    }
+
+    // If port 3001 was offline, ensure it's triggered and try quick retry
+    startWhatsAppBackendIfDown();
+    try {
+      await new Promise(r => setTimeout(r, 1200));
+      const retryRes = await fetch("http://127.0.0.1:3001/qr", { signal: AbortSignal.timeout(2000) });
+      if (retryRes.ok) {
+        const data = await retryRes.json();
+        if (data && data.qr) return res.json(data);
+      }
+    } catch (_) {}
+
+    return res.json({ qr: null, serviceStarting: true, backendError: lastWhatsAppBackendError || null });
+  });
+
+  app.post("/api/whatsapp/disconnect", async (req, res) => {
+    const candidateUrls = [
+      "http://127.0.0.1:3001",
+      WHATSAPP_SERVICE_BACKEND_URL,
+      "http://localhost:3001"
+    ].filter((u): u is string => Boolean(u && typeof u === "string" && u.startsWith("http")));
+
+    for (const target of candidateUrls) {
+      try {
+        await fetch(`${target}/disconnect`, { method: "POST", signal: AbortSignal.timeout(2500) });
+        break;
+      } catch (err) {}
+    }
+    return res.json({ success: true });
+  });
+
+  app.post("/api/whatsapp/reset-session", async (req, res) => {
+    const candidateUrls = [
+      "http://127.0.0.1:3001",
+      WHATSAPP_SERVICE_BACKEND_URL,
+      "http://localhost:3001"
+    ].filter((u): u is string => Boolean(u && typeof u === "string" && u.startsWith("http")));
+
+    for (const target of candidateUrls) {
+      try {
+        const response = await fetch(`${target}/reset-session`, { method: "POST", signal: AbortSignal.timeout(6000) });
         if (response.ok) {
           const data = await response.json();
           return res.json(data);
         }
       } catch (err) {}
     }
-    return res.json({ qr: null });
-  });
 
-  app.post("/api/whatsapp/disconnect", async (req, res) => {
-    if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
-      try {
-        await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/disconnect`, { method: "POST", signal: AbortSignal.timeout(3000) });
-      } catch (err) {}
+    // Fallback: If port 3001 is completely unresponsive or down, clear auth folder directly
+    try {
+      const authDir = path.join(process.cwd(), "whatsapp_data", "backend", "auth_session");
+      if (fs.existsSync(authDir)) {
+        fs.rmSync(authDir, { recursive: true, force: true });
+        console.log("[WhatsApp Bridge] Cleared auth_session directory on fallback reset.");
+      }
+      if (whatsappBackendProcess) {
+        try {
+          whatsappBackendProcess.kill();
+        } catch (_) {}
+        whatsappBackendProcess = null;
+      }
+      await startWhatsAppBackendIfDown();
+      await new Promise(r => setTimeout(r, 2500));
+      const retryRes = await fetch("http://127.0.0.1:3001/qr", { signal: AbortSignal.timeout(3000) });
+      if (retryRes.ok) {
+        const data = await retryRes.json();
+        return res.json({ success: true, qr: data.qr });
+      }
+    } catch (e: any) {
+      console.warn("Fallback reset session error:", e);
     }
-    return res.json({ success: true });
+
+    return res.json({ success: true, qr: null });
   });
 
   app.get("/api/whatsapp/template", async (req, res) => {
@@ -702,19 +841,23 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "Phone and message are required" });
       }
 
-      if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+      const candidateUrls = [
+        "http://127.0.0.1:3001",
+        WHATSAPP_SERVICE_BACKEND_URL,
+        "http://localhost:3001"
+      ].filter((u): u is string => Boolean(u && typeof u === "string" && u.startsWith("http")));
+
+      for (const target of candidateUrls) {
         try {
-          const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/send-message`, {
+          const response = await fetch(`${target}/send-message`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ phone, message }),
-            signal: AbortSignal.timeout(10000),
+            signal: AbortSignal.timeout(15000),
           });
           const data = await response.json();
           return res.status(response.status).json(data);
-        } catch (err: any) {
-          return res.status(502).json({ success: false, error: "External WhatsApp bridge unreachable: " + (err.message || String(err)) });
-        }
+        } catch (err: any) {}
       }
 
       return res.json({
@@ -832,9 +975,15 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "leadId is required" });
       }
 
-      if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
+      const candidateUrls = [
+        "http://127.0.0.1:3001",
+        WHATSAPP_SERVICE_BACKEND_URL,
+        "http://localhost:3001"
+      ].filter((u): u is string => Boolean(u && typeof u === "string" && u.startsWith("http")));
+
+      for (const target of candidateUrls) {
         try {
-          const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/start-lead`, {
+          const response = await fetch(`${target}/start-lead`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ leadId }),
@@ -842,9 +991,7 @@ async function startServer() {
           });
           const data = await response.json();
           return res.status(response.status).json(data);
-        } catch (err: any) {
-          return res.status(502).json({ success: false, error: "External WhatsApp bridge unreachable: " + (err.message || String(err)) });
-        }
+        } catch (err: any) {}
       }
 
       return res.json({ started: true, leadId });

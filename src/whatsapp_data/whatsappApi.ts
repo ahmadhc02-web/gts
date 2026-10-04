@@ -1,19 +1,58 @@
 /// <reference types="vite/client" />
 const envUrl = import.meta.env.VITE_WHATSAPP_SERVICE_URL;
-const API_URL = (envUrl && !envUrl.includes('localhost:3001')) ? envUrl : '/api/whatsapp';
+
+// Determine primary API endpoint:
+// If browser is on HTTPS and envUrl is insecure http://, prefer same-origin /api/whatsapp to avoid Mixed Content blocks
+const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+const isEnvInsecureHttp = envUrl && envUrl.startsWith('http://');
+
+let primaryApiUrl = '/api/whatsapp';
+if (envUrl && !envUrl.includes('localhost:3001') && !(isPageHttps && isEnvInsecureHttp)) {
+  primaryApiUrl = envUrl.replace(/\/+$/, '');
+}
+
+const API_URL = primaryApiUrl;
 
 export async function getStatus() {
   try {
     const res = await fetch(`${API_URL}/status`);
-    if (!res.ok) throw new Error(`Status HTTP ${res.status}`);
-    return await res.json();
+    if (!res.ok) {
+      // If external or reverse-proxied URL returned 502/503, try same-origin fallback
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && API_URL !== '/api/whatsapp') {
+        try {
+          const fallbackRes = await fetch('/api/whatsapp/status');
+          if (fallbackRes.ok) return await fallbackRes.json();
+        } catch (_) {}
+      }
+      if (res.status === 502) {
+        return {
+          connected: false,
+          phoneNumber: null,
+          rateLimitReached: false,
+          queuedCount: 0,
+          _error: 'WhatsApp service is starting or offline on port 3001. Please run "pm2 restart whatsapp-service" on your server.'
+        };
+      }
+      throw new Error(`Status HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (data.serviceStarting && data.backendError) {
+      data._error = `Backend warning: ${data.backendError}`;
+    }
+    return data;
   } catch (err: any) {
+    if (API_URL !== '/api/whatsapp') {
+      try {
+        const fallbackRes = await fetch('/api/whatsapp/status');
+        if (fallbackRes.ok) return await fallbackRes.json();
+      } catch (_) {}
+    }
     return {
       connected: false,
       phoneNumber: null,
       rateLimitReached: false,
       queuedCount: 0,
-      _error: err.message || 'Network request failed'
+      _error: err.message || 'WhatsApp service unreachable'
     };
   }
 }
@@ -21,13 +60,62 @@ export async function getStatus() {
 export async function getQr() {
   try {
     const res = await fetch(`${API_URL}/qr`);
-    if (!res.ok) throw new Error(`QR HTTP ${res.status}`);
-    return await res.json();
+    if (!res.ok) {
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && API_URL !== '/api/whatsapp') {
+        try {
+          const fallbackRes = await fetch('/api/whatsapp/qr');
+          if (fallbackRes.ok) return await fallbackRes.json();
+        } catch (_) {}
+      }
+      if (res.status === 502) {
+        return { 
+          qr: null,
+          _error: 'WhatsApp backend service is offline (502). Please run "pm2 restart whatsapp-service".'
+        };
+      }
+      throw new Error(`QR HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (!data.qr && data.backendError) {
+      data._error = data.backendError;
+    }
+    return data;
   } catch (err: any) {
+    if (API_URL !== '/api/whatsapp') {
+      try {
+        const fallbackRes = await fetch('/api/whatsapp/qr');
+        if (fallbackRes.ok) return await fallbackRes.json();
+      } catch (_) {}
+    }
     return { 
       qr: null,
       _error: err.message || 'Network request failed'
     };
+  }
+}
+
+export async function resetWhatsAppSession() {
+  try {
+    const res = await fetch(`${API_URL}/reset-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) {
+      if (API_URL !== '/api/whatsapp') {
+        const fallbackRes = await fetch('/api/whatsapp/reset-session', { method: 'POST' });
+        if (fallbackRes.ok) return await fallbackRes.json();
+      }
+      throw new Error(`Reset HTTP ${res.status}`);
+    }
+    return await res.json();
+  } catch (err: any) {
+    if (API_URL !== '/api/whatsapp') {
+      try {
+        const fallbackRes = await fetch('/api/whatsapp/reset-session', { method: 'POST' });
+        if (fallbackRes.ok) return await fallbackRes.json();
+      } catch (_) {}
+    }
+    throw new Error(err.message || 'Failed to reset WhatsApp session');
   }
 }
 

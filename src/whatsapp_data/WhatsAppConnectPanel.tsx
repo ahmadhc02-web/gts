@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { QrCode, Smartphone, LogOut, CheckCircle2, Loader2, X, AlertTriangle } from 'lucide-react';
-import { getStatus, getQr, disconnectWhatsApp } from './whatsappApi';
+import { QrCode, Smartphone, LogOut, CheckCircle2, Loader2, X, AlertTriangle, RefreshCw, RotateCcw } from 'lucide-react';
+import { getStatus, getQr, disconnectWhatsApp, resetWhatsAppSession } from './whatsappApi';
 import { motion } from 'motion/react';
 
 export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void }) {
@@ -9,9 +9,13 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
     phoneNumber: string | null;
     rateLimitReached?: boolean;
     queuedCount?: number;
+    serviceStarting?: boolean;
+    backendError?: string | null;
   } | null>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const statusRef = useRef(status);
@@ -50,7 +54,7 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
         setQrCode(null);
       }
       if ((qrData as any)?._error) {
-        setError(`QR fetch failed: ${(qrData as any)._error}`);
+        setError(`QR fetch: ${(qrData as any)._error}`);
       } else if (qrData?.qr) {
         setError(null);
       }
@@ -99,10 +103,41 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
     try {
       await disconnectWhatsApp();
       await fetchStatusOnly();
+      await fetchQrOnly();
     } catch (err) {
       console.error('Disconnect failed', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const s = await fetchStatusOnly();
+      if (!s?.connected) {
+        await fetchQrOnly();
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleResetSession = async () => {
+    setIsResetting(true);
+    setError(null);
+    try {
+      const res = await resetWhatsAppSession();
+      if (res?.qr) {
+        setQrCode(res.qr);
+      } else {
+        await fetchQrOnly();
+      }
+      await fetchStatusOnly();
+    } catch (err: any) {
+      setError(`Reset error: ${err.message || 'Unable to reset session'}`);
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -131,6 +166,13 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
         <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 rounded-2xl text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-start gap-3 shadow-xs">
           <AlertTriangle size={18} className="shrink-0 text-rose-500 mt-0.5" />
           <p className="leading-relaxed">{error}</p>
+        </div>
+      )}
+
+      {status?.serviceStarting && !status?.connected && (
+        <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 rounded-xl text-amber-700 dark:text-amber-300 text-xs font-medium flex items-center gap-2.5">
+          <Loader2 size={16} className="animate-spin shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>WhatsApp backend service is starting up on the server... QR code will appear in a moment.</span>
         </div>
       )}
 
@@ -179,14 +221,35 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose: () => void 
               ) : (
                 <div className="flex flex-col items-center text-slate-400">
                   <QrCode size={28} className="mb-2 opacity-50 text-slate-400" />
-                  <p className="text-[9px] font-black uppercase tracking-widest opacity-60 text-slate-500">Generating QR...</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest opacity-60 text-slate-500">
+                    {isResetting ? "Generating New QR..." : "Waiting for QR..."}
+                  </p>
                 </div>
               )}
             </div>
-            <div className="mt-2">
+            <div className="mt-2 flex flex-col items-center gap-2">
               <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 leading-relaxed">
                 Open WhatsApp on your phone &rarr; Tap <span className="font-bold text-slate-800 dark:text-slate-200">Linked Devices</span> &rarr; <span className="font-bold text-slate-800 dark:text-slate-200">Link a Device</span> and scan the code.
               </p>
+              <div className="flex items-center gap-2 flex-wrap justify-center mt-1">
+                <button
+                  onClick={handleRefresh}
+                  disabled={isRefreshing || isResetting}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw size={12} className={isRefreshing ? "animate-spin" : ""} />
+                  {isRefreshing ? "Checking..." : "Reload QR / Recheck"}
+                </button>
+                <button
+                  onClick={handleResetSession}
+                  disabled={isResetting || isRefreshing}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer border border-emerald-200 dark:border-emerald-800/40 disabled:opacity-50"
+                  title="Force delete old session and generate brand new QR code"
+                >
+                  <RotateCcw size={12} className={isResetting ? "animate-spin" : ""} />
+                  {isResetting ? "Resetting Session..." : "Reset & New QR"}
+                </button>
+              </div>
             </div>
           </div>
         )}
