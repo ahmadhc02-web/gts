@@ -554,16 +554,17 @@ async function startServer() {
       if (testRes.ok) return; // already active on port 3001
     } catch (_) {
       const backendDir = path.join(process.cwd(), "whatsapp_data", "backend");
-      const backendScript = path.join(backendDir, "server.js");
-      if (fs.existsSync(backendScript) && !whatsappBackendProcess) {
+      const backendScript = fs.existsSync(path.join(backendDir, "server.cjs")) ? "server.cjs" : "server.js";
+      const fullScriptPath = path.join(backendDir, backendScript);
+      if (fs.existsSync(fullScriptPath) && !whatsappBackendProcess) {
         try {
-          console.log("[WhatsApp Bridge] Starting local WhatsApp Baileys service on port 3001...");
+          console.log(`[WhatsApp Bridge] Starting local WhatsApp Baileys service (${backendScript}) on port 3001...`);
           const { spawn } = await import("child_process");
           const rootNodeModules = path.join(process.cwd(), "node_modules");
           const backendNodeModules = path.join(backendDir, "node_modules");
           const nodePath = [backendNodeModules, rootNodeModules, process.env.NODE_PATH || ""].filter(Boolean).join(":");
 
-          whatsappBackendProcess = spawn("node", ["server.js"], {
+          whatsappBackendProcess = spawn("node", [backendScript], {
             cwd: backendDir,
             env: {
               ...process.env,
@@ -601,7 +602,7 @@ async function startServer() {
   // Trigger check on server start
   startWhatsAppBackendIfDown();
 
-  app.get("/api/whatsapp/status", async (req, res) => {
+  app.get(["/api/whatsapp/status", "/whatsapp-api/status"], async (req, res) => {
     const candidateUrls = [
       "http://127.0.0.1:3001",
       WHATSAPP_SERVICE_BACKEND_URL,
@@ -631,7 +632,7 @@ async function startServer() {
     });
   });
 
-  app.get("/api/whatsapp/qr", async (req, res) => {
+  app.get(["/api/whatsapp/qr", "/whatsapp-api/qr"], async (req, res) => {
     const candidateUrls = [
       "http://127.0.0.1:3001",
       WHATSAPP_SERVICE_BACKEND_URL,
@@ -664,7 +665,7 @@ async function startServer() {
     return res.json({ qr: null, serviceStarting: true, backendError: lastWhatsAppBackendError || null });
   });
 
-  app.post("/api/whatsapp/disconnect", async (req, res) => {
+  app.post(["/api/whatsapp/disconnect", "/whatsapp-api/disconnect"], async (req, res) => {
     const candidateUrls = [
       "http://127.0.0.1:3001",
       WHATSAPP_SERVICE_BACKEND_URL,
@@ -680,7 +681,7 @@ async function startServer() {
     return res.json({ success: true });
   });
 
-  app.post("/api/whatsapp/reset-session", async (req, res) => {
+  app.post(["/api/whatsapp/reset-session", "/whatsapp-api/reset-session"], async (req, res) => {
     const candidateUrls = [
       "http://127.0.0.1:3001",
       WHATSAPP_SERVICE_BACKEND_URL,
@@ -724,7 +725,26 @@ async function startServer() {
     return res.json({ success: true, qr: null });
   });
 
-  app.get("/api/whatsapp/template", async (req, res) => {
+  const TEMPLATES_BACKUP_FILE = path.join(process.cwd(), "whatsapp_templates.json");
+  const readServerTemplatesBackup = () => {
+    try {
+      if (fs.existsSync(TEMPLATES_BACKUP_FILE)) {
+        return JSON.parse(fs.readFileSync(TEMPLATES_BACKUP_FILE, "utf-8"));
+      }
+    } catch (e) {
+      console.warn("Failed to read server templates backup:", e);
+    }
+    return null;
+  };
+  const writeServerTemplatesBackup = (data: any) => {
+    try {
+      fs.writeFileSync(TEMPLATES_BACKUP_FILE, JSON.stringify(data, null, 2), "utf-8");
+    } catch (e) {
+      console.warn("Failed to write server templates backup:", e);
+    }
+  };
+
+  app.get(["/api/whatsapp/template", "/whatsapp-api/template"], async (req, res) => {
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const rawKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
     const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
@@ -776,16 +796,28 @@ async function startServer() {
       }
     }
 
+    const backup = readServerTemplatesBackup();
+    if (backup) {
+      return res.json({
+        template: backup.template || inMemoryWhatsAppSettings.template,
+        complaintRegisteredTemplate: backup.complaintRegisteredTemplate || inMemoryWhatsAppSettings.complaintRegisteredTemplate,
+        complaintCompletedTemplate: backup.complaintCompletedTemplate || inMemoryWhatsAppSettings.complaintCompletedTemplate,
+        completedStatusValue: backup.completedStatusValue || inMemoryWhatsAppSettings.completedStatusValue,
+      });
+    }
+
     return res.json(inMemoryWhatsAppSettings);
   });
 
-  app.post("/api/whatsapp/template", async (req, res) => {
+  app.post(["/api/whatsapp/template", "/whatsapp-api/template"], async (req, res) => {
     const { template, complaintRegisteredTemplate, complaintCompletedTemplate, completedStatusValue } = req.body;
 
     if (template !== undefined) inMemoryWhatsAppSettings.template = template;
     if (complaintRegisteredTemplate !== undefined) inMemoryWhatsAppSettings.complaintRegisteredTemplate = complaintRegisteredTemplate;
     if (complaintCompletedTemplate !== undefined) inMemoryWhatsAppSettings.complaintCompletedTemplate = complaintCompletedTemplate;
     if (completedStatusValue !== undefined) inMemoryWhatsAppSettings.completedStatusValue = completedStatusValue;
+
+    writeServerTemplatesBackup(inMemoryWhatsAppSettings);
 
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const rawKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -831,10 +863,10 @@ async function startServer() {
       }
     }
 
-    return res.json({ success: true });
+    return res.json({ success: true, ...inMemoryWhatsAppSettings });
   });
 
-  app.post("/api/whatsapp/send-message", async (req, res) => {
+  app.post(["/api/whatsapp/send-message", "/whatsapp-api/send-message"], async (req, res) => {
     try {
       const { phone, message } = req.body;
       if (!phone || !message) {
@@ -870,7 +902,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/whatsapp/send-push", async (req, res) => {
+  app.post(["/api/whatsapp/send-push", "/whatsapp-api/send-push"], async (req, res) => {
     try {
       const { tokens } = req.body;
       if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
@@ -882,7 +914,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/whatsapp/create-lead", async (req, res) => {
+  app.post(["/api/whatsapp/create-lead", "/whatsapp-api/create-lead"], async (req, res) => {
     try {
       if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
         try {
@@ -968,7 +1000,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/whatsapp/start-lead", async (req, res) => {
+  app.post(["/api/whatsapp/start-lead", "/whatsapp-api/start-lead"], async (req, res) => {
     try {
       const { leadId } = req.body;
       if (!leadId) {

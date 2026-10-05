@@ -2354,21 +2354,22 @@ export default function MyPCTab(props: MyPCTabProps) {
 
                   {/* Subview 15: WhatsApp Integration whatsapp_integration */}
                   {activeFile === 'whatsapp_integration' && (
-                    <div className="max-w-5xl mx-auto space-y-6 text-left animate-in fade-in duration-300">
+                    <div className="max-w-6xl w-full mx-auto space-y-7 text-left animate-in fade-in duration-300">
                       {/* Safety / Anti-Ban Warning Header Card */}
                       <div className="p-4 sm:p-5 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-500/10 text-slate-800 dark:text-amber-200">
                         <div className="flex gap-3 items-start">
                           <span className="text-xl shrink-0 mt-0.5">⚠️</span>
                           <div>
-                            <h4 className="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">Safe Sending Compliance Warning</h4>
+                            <h4 className="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">Safe Sending Compliance & Anti-Ban Safeguards</h4>
                             <p className="text-[11px] font-bold mt-1 text-amber-700/95 dark:text-amber-400/90 leading-relaxed">
-                              Avoid sending more than ~50-100 messages per hour to reduce ban risk. Always personalize messages. Personalized tags (like <span className="font-mono text-xs text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-1 py-0.5 rounded">{"{{name}}"}</span> or <span className="font-mono text-xs text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-1 py-0.5 rounded">{"{{amount}}"}</span>) are automatically substituted to maintain natural variations.
+                              Avoid sending more than ~50-100 messages per hour to minimize ban risk. Personalized tags (like <span className="font-mono text-xs text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-1 py-0.5 rounded">{"{{name}}"}</span> or <span className="font-mono text-xs text-amber-900 dark:text-amber-200 bg-amber-100 dark:bg-amber-950 px-1 py-0.5 rounded">{"{{amount}}"}</span>) are automatically populated per customer to keep communication human and organic.
                             </p>
                           </div>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                      {/* Stacked Landscape Panels */}
+                      <div className="flex flex-col gap-7 w-full">
                         <WhatsAppConnectPanel onClose={() => setMypcOpenedFile(null)} />
                         <WhatsAppMessageTemplateBox statuses={appConfig?.statuses} />
                       </div>
