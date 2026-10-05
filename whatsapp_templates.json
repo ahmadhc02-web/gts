@@ -1,6 +1,6 @@
 {
-  "template": "Custom test billing template for {{name}} - Rs. {{amount}}",
-  "complaintRegisteredTemplate": "Dear {{name}}, your complaint (#{{complaintId}}) regarding \"{{category}}\" has been registered. Our team will contact you soon. Thank you for your patience.",
-  "complaintCompletedTemplate": "Dear {{name}}, your complaint (#{{complaintId}}) has been resolved. Thank you for choosing us. Please contact us if the issue persists.",
+  "template": "Dear {{name}}, your {{package}} internet bill of Rs. {{amount}} is due on 5th. Thank you.",
+  "complaintRegisteredTemplate": "Dear {{name}}, ticket {{complaintId}} has been registered.",
+  "complaintCompletedTemplate": "Dear {{name}}, ticket {{complaintId}} is resolved.",
   "completedStatusValue": "Resolved"
 }

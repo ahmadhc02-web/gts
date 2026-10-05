@@ -1444,7 +1444,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     style={{ width: `${billingColWidths.act}px`, minWidth: `${billingColWidths.act}px`, maxWidth: `${billingColWidths.act}px`, overflow: 'hidden' }}
                                   >
                                     <div className="flex items-center justify-center gap-1">
-                                      <WhatsAppSendButton
+                                       <WhatsAppSendButton
                                         name={rowRef.name || ''}
                                         mobileNumber={rowRef.mobileNumber || rowRef.phone || rowRef.number || ''}
                                         totalAmount={rowRef.totalAmount}
@@ -1452,6 +1452,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         paymentStatus={rowRef.paymentStatus || 'unpaid'}
                                         username={rowRef.username || rowRef.clientId || ''}
                                         area={rowRef.area || ''}
+                                        package={rowRef.package || rowRef.pkgDetails || rowRef.pkg || rowRef.plan || ''}
                                         reminderSentAt={rowRef.reminderSentAt}
                                         reminderSentCount={rowRef.reminderSentCount || 0}
                                         onReminderSent={(newCount, sentAtIso) => {
@@ -1680,6 +1681,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     paymentStatus={rowRef.paymentStatus || "unpaid"}
                                     username={rowRef.username || rowRef.clientId || ""}
                                     area={rowRef.area || ""}
+                                    package={rowRef.package || rowRef.pkgDetails || rowRef.pkg || rowRef.plan || ""}
                                     reminderSentAt={rowRef.reminderSentAt}
                                     reminderSentCount={rowRef.reminderSentCount || 0}
                                     onReminderSent={(newCount, sentAtIso) => {
@@ -2341,6 +2343,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     paymentStatus={rowRef.paymentStatus || "unpaid"}
                                     username={rowRef.username || rowRef.clientId || ""}
                                     area={rowRef.area || ""}
+                                    package={rowRef.package || rowRef.pkgDetails || rowRef.pkg || rowRef.plan || ""}
                                     reminderSentAt={rowRef.reminderSentAt}
                                     reminderSentCount={rowRef.reminderSentCount || 0}
                                     onReminderSent={(newCount, sentAtIso) => {

@@ -9,11 +9,15 @@ export interface ClientReminderData {
   clientId?: string;
   id?: string;
   area?: string;
+  package?: string;
+  pkg?: string;
+  pkgDetails?: string;
+  packageDetails?: string;
 }
 
 /**
  * Builds a WhatsApp reminder message from a template string by replacing placeholders:
- * {{name}}, {{amount}}, {{username}}, {{status}}, {{area}}
+ * {{name}}, {{amount}}, {{username}}, {{package}}, {{pkg}}, {{status}}, {{area}}
  */
 export function buildReminderMessage(template: string, client: ClientReminderData): string {
   let message = template || '';
@@ -22,12 +26,17 @@ export function buildReminderMessage(template: string, client: ClientReminderDat
   const username = client.username || client.clientId || client.id || 'N/A';
   const status = (client.paymentStatus || client.status || 'unpaid').toUpperCase();
   const area = client.area || 'N/A';
+  const pkg = client.package || client.pkgDetails || client.packageDetails || client.pkg || 'N/A';
 
-  message = message.replace(/\{\{name\}\}/g, name);
-  message = message.replace(/\{\{amount\}\}/g, amount);
-  message = message.replace(/\{\{username\}\}/g, username);
-  message = message.replace(/\{\{status\}\}/g, status);
-  message = message.replace(/\{\{area\}\}/g, area);
+  message = message.replace(/\{\{name\}\}/gi, name);
+  message = message.replace(/\{\{amount\}\}/gi, amount);
+  message = message.replace(/\{\{username\}\}/gi, username);
+  message = message.replace(/\{\{package\}\}/gi, pkg);
+  message = message.replace(/\{\{pkg\}\}/gi, pkg);
+  message = message.replace(/\{\{pkgDetails\}\}/gi, pkg);
+  message = message.replace(/\{\{packageDetails\}\}/gi, pkg);
+  message = message.replace(/\{\{status\}\}/gi, status);
+  message = message.replace(/\{\{area\}\}/gi, area);
 
   return message;
 }

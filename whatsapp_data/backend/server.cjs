@@ -233,17 +233,39 @@ app.get('/template', async (req, res) => {
 
   if (supabase) {
     try {
-      const { data, error } = await supabase
-        .from('whatsapp_settings')
-        .select('message_template, complaint_registered_template, complaint_completed_template, complaint_completed_status_value')
-        .eq('id', 'main')
-        .single();
+      const { data } = await supabase
+        .from('branding_config')
+        .select('*')
+        .eq('config_type', 'whatsapp_templates')
+        .limit(1);
 
-      if (!error && data) {
-        dbData = data;
+      if (data && data.length > 0 && data[0].branding_data) {
+        const parsed = typeof data[0].branding_data === 'string' ? JSON.parse(data[0].branding_data) : data[0].branding_data;
+        if (parsed && (parsed.template || parsed.message_template)) {
+          dbData = {
+            message_template: parsed.template || parsed.message_template,
+            complaint_registered_template: parsed.complaintRegisteredTemplate || parsed.complaint_registered_template,
+            complaint_completed_template: parsed.complaintCompletedTemplate || parsed.complaint_completed_template,
+            complaint_completed_status_value: parsed.completedStatusValue || parsed.complaint_completed_status_value
+          };
+        }
       }
-    } catch (err) {
-      console.warn('[Server] Supabase get template warning (using fallback):', err.message);
+    } catch (_) {}
+
+    if (!dbData) {
+      try {
+        const { data, error } = await supabase
+          .from('whatsapp_settings')
+          .select('message_template, complaint_registered_template, complaint_completed_template, complaint_completed_status_value')
+          .eq('id', 'main')
+          .single();
+
+        if (!error && data) {
+          dbData = data;
+        }
+      } catch (err) {
+        console.warn('[Server] Supabase get template warning (using fallback):', err.message);
+      }
     }
   }
 
@@ -273,6 +295,16 @@ app.post('/template', async (req, res) => {
     writeLocalTemplates(localToSave);
 
     if (supabase) {
+      try {
+        await supabase
+          .from('branding_config')
+          .upsert({
+            config_type: 'whatsapp_templates',
+            branding_data: JSON.stringify(localToSave),
+            updated_at: localToSave.updated_at
+          }, { onConflict: 'config_type' });
+      } catch (_) {}
+
       try {
         const updateData = {
           id: 'main',

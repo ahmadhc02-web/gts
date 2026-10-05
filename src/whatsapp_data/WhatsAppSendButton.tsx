@@ -14,6 +14,10 @@ interface Props {
   paymentStatus: string;
   username: string;
   area: string;
+  package?: string;
+  pkg?: string;
+  pkgDetails?: string;
+  packageDetails?: string;
   reminderSentAt?: string | number | null;
   reminderSentCount?: number;
   onReminderSent?: (newCount: number, sentAtIso: string) => void;
@@ -32,6 +36,10 @@ export default function WhatsAppSendButton({
   paymentStatus,
   username,
   area,
+  package: packageProp,
+  pkg,
+  pkgDetails,
+  packageDetails,
   reminderSentAt,
   reminderSentCount = 0,
   onReminderSent,
@@ -155,13 +163,16 @@ export default function WhatsAppSendButton({
       }
 
       // Build message using shared helper
+      const clientPkg = packageProp || pkg || pkgDetails || packageDetails;
       const message = buildReminderMessage(cachedTemplate || '', {
         name,
         totalAmount,
         baseAmount,
         username,
         paymentStatus,
-        area
+        area,
+        package: clientPkg,
+        pkg: clientPkg
       });
 
       await sendMessage(mobileNumber, message);

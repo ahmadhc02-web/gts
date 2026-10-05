@@ -447,7 +447,6 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
                 <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
                 <span>{isConnected ? `Linked to active number (+${status?.phoneNumber || ''})` : 'Awaiting mobile device connection'}</span>
               </div>
-              <span className="text-[10px] font-mono text-slate-400">Port 3001 Ready</span>
             </div>
 
           </div>

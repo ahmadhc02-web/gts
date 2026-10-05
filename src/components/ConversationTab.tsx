@@ -371,6 +371,7 @@ export default function ConversationTab({
 
       // 2. Precompute message for each matched client
       const items = matchedClients.map(c => {
+        const pkg = (c as any).package || (c as any).pkgDetails || (c as any).pkg || (c as any).packageDetails || '';
         const builtMessage = buildReminderMessage(templateText, {
           name: c.name,
           amount: c.amount ?? c.totalAmount ?? c.baseAmount ?? 0,
@@ -379,7 +380,9 @@ export default function ConversationTab({
           username: c.username || c.clientId || c.id,
           clientId: c.clientId || c.id || c.username,
           paymentStatus: c.status || c.paymentStatus || 'unpaid',
-          area: c.area
+          area: c.area,
+          package: pkg,
+          pkg: pkg
         });
 
         return {

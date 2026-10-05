@@ -15,7 +15,7 @@ import {
   Settings2,
   FileText
 } from 'lucide-react';
-import { getTemplate, saveTemplate } from './whatsappApi';
+import { getTemplate, saveTemplate, getSynchronousCachedTemplates, DEFAULT_WHATSAPP_TEMPLATES } from './whatsappApi';
 import { supabaseService } from '../lib/supabaseService';
 import { toast } from 'sonner';
 
@@ -29,6 +29,9 @@ const SAMPLE_CLIENT_DATA: Record<string, string> = {
   '{{name}}': 'Ali Khan',
   '{{amount}}': '2,500',
   '{{username}}': 'ali.gts01',
+  '{{package}}': '15 Mbps Unlimited Fiber',
+  '{{pkg}}': '15 Mbps Unlimited Fiber',
+  '{{pkgDetails}}': '15 Mbps Unlimited Fiber',
   '{{status}}': 'UNPAID',
   '{{area}}': 'Gulshan Block 4',
   '{{complaintId}}': 'CMP-8942',
@@ -36,19 +39,39 @@ const SAMPLE_CLIENT_DATA: Record<string, string> = {
   '{{description}}': 'No Internet connectivity since morning'
 };
 
-const DEFAULT_TEMPLATES = {
-  billing: 'Dear {{name}}, this is a reminder that your internet bill of Rs. {{amount}} is due. Please clear it at your earliest convenience. Thank you.',
-  registered: 'Dear {{name}}, your complaint (#{{complaintId}}) regarding "{{category}}" has been registered. Our team will contact you soon. Thank you for your patience.',
-  completed: 'Dear {{name}}, your complaint (#{{complaintId}}) has been resolved. Thank you for choosing us. Please contact us if the issue persists.',
-  statusValue: 'Resolved'
+const findBestCompletedStatus = (statuses: string[], currentVal?: string) => {
+  if (!statuses || statuses.length === 0) return currentVal || 'complete';
+  // 1. If currentVal matches one of the statuses (case-insensitive)
+  if (currentVal && currentVal.trim()) {
+    const directMatch = statuses.find(s => s.trim().toLowerCase() === currentVal.trim().toLowerCase());
+    if (directMatch) return directMatch;
+  }
+  // 2. Look for standard 'complete' / 'completed' / 'resolved' / 'done'
+  const completeMatch = statuses.find(s => {
+    const norm = s.trim().toLowerCase();
+    return norm === 'complete' || norm === 'completed' || norm === 'resolved' || norm === 'done';
+  });
+  if (completeMatch) return completeMatch;
+  
+  // 3. Look for status that contains 'complete' or 'resolve'
+  const partialMatch = statuses.find(s => {
+    const norm = s.trim().toLowerCase();
+    return norm.includes('complete') || norm.includes('resolve');
+  });
+  if (partialMatch) return partialMatch;
+
+  return statuses.find(s => s.toLowerCase() === 'complete') || statuses[0] || 'complete';
 };
 
 export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: WhatsAppMessageTemplateBoxProps = {}) {
   const [activeTab, setActiveTab] = useState<TemplateTab>('billing');
-  const [template, setTemplate] = useState(DEFAULT_TEMPLATES.billing);
-  const [complaintRegisteredTemplate, setComplaintRegisteredTemplate] = useState(DEFAULT_TEMPLATES.registered);
-  const [complaintCompletedTemplate, setComplaintCompletedTemplate] = useState(DEFAULT_TEMPLATES.completed);
-  const [completedStatusValue, setCompletedStatusValue] = useState(DEFAULT_TEMPLATES.statusValue);
+  
+  // Initialize directly from permanent cached store so there is NEVER a flicker or default reset
+  const initialCached = getSynchronousCachedTemplates();
+  const [template, setTemplate] = useState<string>(initialCached.template);
+  const [complaintRegisteredTemplate, setComplaintRegisteredTemplate] = useState<string>(initialCached.complaintRegisteredTemplate);
+  const [complaintCompletedTemplate, setComplaintCompletedTemplate] = useState<string>(initialCached.complaintCompletedTemplate);
+  const [completedStatusValue, setCompletedStatusValue] = useState<string>(initialCached.completedStatusValue || 'complete');
   
   const [configuredStatuses, setConfiguredStatuses] = useState<string[]>(propsStatuses || []);
   const [isStatusesLoading, setIsStatusesLoading] = useState(true);
@@ -61,6 +84,7 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
   useEffect(() => {
     if (propsStatuses && propsStatuses.length > 0) {
       setConfiguredStatuses(propsStatuses);
+      setCompletedStatusValue(prev => findBestCompletedStatus(propsStatuses, prev));
       setIsStatusesLoading(false);
       return;
     }
@@ -69,6 +93,7 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
       .then(statuses => {
         if (statuses && statuses.length > 0) {
           setConfiguredStatuses(statuses);
+          setCompletedStatusValue(prev => findBestCompletedStatus(statuses, prev));
         }
       })
       .catch(err => {
@@ -83,10 +108,12 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
     getTemplate()
       .then(data => {
         if (data) {
-          setTemplate(data.template || DEFAULT_TEMPLATES.billing);
-          setComplaintRegisteredTemplate(data.complaintRegisteredTemplate || DEFAULT_TEMPLATES.registered);
-          setComplaintCompletedTemplate(data.complaintCompletedTemplate || DEFAULT_TEMPLATES.completed);
-          setCompletedStatusValue(data.completedStatusValue || DEFAULT_TEMPLATES.statusValue);
+          if (data.template) setTemplate(data.template);
+          if (data.complaintRegisteredTemplate) setComplaintRegisteredTemplate(data.complaintRegisteredTemplate);
+          if (data.complaintCompletedTemplate) setComplaintCompletedTemplate(data.complaintCompletedTemplate);
+          if (data.completedStatusValue) {
+            setCompletedStatusValue(data.completedStatusValue);
+          }
         }
       })
       .catch((err) => {
@@ -98,14 +125,14 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
     setIsSaving(true);
     setIsSaved(false);
     try {
-      const res = await saveTemplate({ 
+      await saveTemplate({ 
         template,
         complaintRegisteredTemplate,
         complaintCompletedTemplate,
         completedStatusValue
       });
       setIsSaved(true);
-      toast.success('Message templates saved successfully!');
+      toast.success('Message templates permanently saved!');
       setTimeout(() => setIsSaved(false), 3000);
     } catch (error: any) {
       toast.error(error.message || 'Failed to save template');
@@ -145,11 +172,11 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
 
   const handleResetToDefault = () => {
     if (activeTab === 'billing') {
-      setTemplate(DEFAULT_TEMPLATES.billing);
+      setTemplate(DEFAULT_WHATSAPP_TEMPLATES.template);
     } else if (activeTab === 'registered') {
-      setComplaintRegisteredTemplate(DEFAULT_TEMPLATES.registered);
+      setComplaintRegisteredTemplate(DEFAULT_WHATSAPP_TEMPLATES.complaintRegisteredTemplate);
     } else {
-      setComplaintCompletedTemplate(DEFAULT_TEMPLATES.completed);
+      setComplaintCompletedTemplate(DEFAULT_WHATSAPP_TEMPLATES.complaintCompletedTemplate);
     }
     toast.info('Reset to default template copy');
   };
@@ -170,14 +197,13 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
     setTimeout(() => setCopiedPreview(false), 2000);
   };
 
-  const matchedStatus = configuredStatuses.find(
-    s => s.toLowerCase() === (completedStatusValue || '').trim().toLowerCase()
+  const selectValue = findBestCompletedStatus(configuredStatuses, completedStatusValue);
+  const isValueInStatuses = configuredStatuses.some(
+    s => s.trim().toLowerCase() === (selectValue || '').trim().toLowerCase()
   );
-  const isValueInStatuses = Boolean(matchedStatus);
-  const selectValue = matchedStatus ? matchedStatus : completedStatusValue;
 
   const currentPlaceholders = activeTab === 'billing'
-    ? ['{{name}}', '{{amount}}', '{{username}}', '{{status}}', '{{area}}']
+    ? ['{{name}}', '{{amount}}', '{{username}}', '{{package}}', '{{status}}', '{{area}}']
     : activeTab === 'registered'
       ? ['{{name}}', '{{complaintId}}', '{{category}}', '{{area}}', '{{description}}']
       : ['{{name}}', '{{complaintId}}'];
@@ -193,10 +219,10 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
           </div>
           <div>
             <h2 className="text-sm font-black tracking-wider text-slate-900 dark:text-white uppercase font-mono">
-              WhatsApp Message Template Studio
+              WhatsApp Message Studio
             </h2>
             <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-              Customize dynamic notifications and auto-response formats
+              Customize auto-response formats
             </p>
           </div>
         </div>
