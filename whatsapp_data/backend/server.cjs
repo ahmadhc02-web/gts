@@ -1,4 +1,5 @@
 require('dotenv').config();
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
@@ -7,23 +8,40 @@ const ws = require('ws');
 const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, logoutBaileys, resetBaileysSession, registerMessageLogCallback, normalizePakistaniPhone } = require('./baileysClient.cjs');
 const { createClient } = require('@supabase/supabase-js');
 
-const admin = require("firebase-admin");
+let admin = null;
 let firebaseApp = null;
-try {
-  const serviceAccount = require("./firebase-service-account.json");
-  firebaseApp = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-  console.log("[Firebase] Admin initialized successfully");
-} catch (e) {
-  console.warn("[Firebase] Failed to initialize (firebase-service-account.json might be missing):", e.message);
+const serviceAccountPath = path.join(__dirname, "firebase-service-account.json");
+if (fs.existsSync(serviceAccountPath)) {
+  try {
+    admin = require("firebase-admin");
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, "utf8"));
+    firebaseApp = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    console.log("[Firebase] Admin initialized successfully");
+  } catch (e) {
+    console.log("[Firebase] Service account found but initialization skipped:", e.message);
+  }
+} else {
+  // Silent fallback when firebase-service-account.json is not present
+  console.log("[Firebase] No firebase-service-account.json detected. Push notifications will use direct/fallback paths.");
 }
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.WHATSAPP_PORT || 3001;
 
-// Setup Supabase with Node.js 20 Realtime WebSocket Transport Fix
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Setup Supabase with Node.js 20 Realtime WebSocket Transport Fix & Auth Headers
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://167.233.41.7.sslip.io';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo';
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+  global: {
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`
+    }
+  },
   realtime: {
     transport: ws,
   },
@@ -93,7 +111,7 @@ app.post('/reset-session', async (req, res) => {
 app.post('/send-push', async (req, res) => {
   try {
     const { tokens, title, body, data } = req.body;
-    if (!firebaseApp) {
+    if (!firebaseApp || !admin) {
       return res.status(503).json({ success: false, error: 'Firebase not configured on server' });
     }
     if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
@@ -334,7 +352,7 @@ app.post('/template', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`WhatsApp Baileys service listening on port ${PORT}`);
   // Resume any interrupted running leads after Baileys has initialized
   setTimeout(() => {
@@ -342,4 +360,8 @@ app.listen(PORT, () => {
       resumeInterruptedLeads();
     }
   }, 15000);
+});
+
+server.on('error', (err) => {
+  console.warn(`[WhatsApp Service] Port ${PORT} listen notice:`, err.message);
 });

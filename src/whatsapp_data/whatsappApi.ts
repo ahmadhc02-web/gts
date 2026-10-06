@@ -322,17 +322,26 @@ export async function createReminderLeadServer(payload: any) {
 }
 
 export async function startReminderLead(leadId: string) {
-  try {
-    const res = await fetch(`${API_URL}/start-lead`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leadId }),
-    });
-    if (!res.ok) throw new Error('Failed to start lead on server');
-    return await res.json();
-  } catch (err: any) {
-    throw new Error(err.message || 'Failed to start lead on server');
+  const candidateUrls = getCandidateEndpoints();
+  let lastError: Error | null = null;
+
+  for (const url of candidateUrls) {
+    try {
+      const res = await fetch(`${url}/start-lead`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId }),
+        signal: AbortSignal.timeout(10000)
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err: any) {
+      lastError = err;
+    }
   }
+
+  throw lastError || new Error('Failed to start lead on server');
 }
 
 export async function sendPushNotification(tokens: string[], title: string, body: string, data?: any) {

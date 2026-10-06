@@ -1,39 +1,4 @@
-const http = require('http');
-const PORT = process.env.PORT || 3001;
-
-function sendViaLocalRoute(phoneNumber, message) {
-  return new Promise((resolve, reject) => {
-    const payload = JSON.stringify({ phone: phoneNumber, message });
-    const req = http.request({
-      hostname: 'localhost',
-      port: PORT,
-      path: '/send-message',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(payload),
-      },
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (res.statusCode >= 200 && res.statusCode < 300 && parsed.success) {
-            resolve(parsed);
-          } else {
-            reject(new Error(parsed.error || `Send failed with status ${res.statusCode}`));
-          }
-        } catch (e) {
-          reject(new Error('Invalid response from send-message route: ' + data));
-        }
-      });
-    });
-    req.on('error', (err) => reject(err));
-    req.write(payload);
-    req.end();
-  });
-}
+const { sendMessage, normalizePakistaniPhone } = require('./baileysClient.cjs');
 
 let supabase = null;
 const activeLeadIds = new Set();
@@ -114,16 +79,14 @@ async function processReminderLead(leadId) {
     const waitSeconds = Math.max(1, Number(lead.wait_seconds || 5));
 
     // 2. Transition pending -> running
-    if (lead.status === 'pending') {
-      await supabase
-        .from('reminder_leads')
-        .update({
-          status: 'running',
-          started_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', leadId);
-    }
+    await supabase
+      .from('reminder_leads')
+      .update({
+        status: 'running',
+        started_at: lead.started_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', leadId);
 
     // 3. Fetch pending items sorted by sort_order
     const { data: items, error: itemsErr } = await supabase
@@ -158,16 +121,21 @@ async function processReminderLead(leadId) {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const isLastItem = (i === items.length - 1);
-      const phone = (item.mobile_number || '').trim();
+      const rawPhone = (item.mobile_number || '').trim();
       const messageText = item.message || 'Dear Customer, this is a reminder regarding your internet service bill due date. Thank you.';
 
       try {
-        if (!phone) {
+        if (!rawPhone) {
           throw new Error('No mobile number available for client');
         }
 
-        console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${phone} for lead ${leadId} via /send-message...`);
-        await sendViaLocalRoute(item.mobile_number, messageText);
+        const normalizedPhone = normalizePakistaniPhone(rawPhone);
+        console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${normalizedPhone} for lead ${leadId}...`);
+        
+        const sendResult = await sendMessage(normalizedPhone, messageText);
+        if (!sendResult || sendResult.success === false) {
+          throw new Error(sendResult?.error || 'WhatsApp send returned failure');
+        }
 
         currentSuccessCount++;
         await recordClientReminderSent(item.client_id, lead.month_id);
@@ -191,7 +159,7 @@ async function processReminderLead(leadId) {
           .eq('id', leadId);
 
       } catch (err) {
-        console.error(`[Lead Processor] Failed item ${item.id} (${phone}) on lead ${leadId}:`, err.message);
+        console.error(`[Lead Processor] Failed item ${item.id} (${rawPhone}) on lead ${leadId}:`, err.message);
         currentFailedCount++;
 
         await supabase
@@ -274,7 +242,7 @@ async function resumeInterruptedLeads() {
       .eq('status', 'running');
 
     if (error) {
-      console.warn('[Lead Processor] Failed to query running leads on startup:', error.message);
+      console.log('[Lead Processor] Startup leads check notice (no active leads to resume):', error.message);
       return;
     }
 

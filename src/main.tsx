@@ -84,24 +84,35 @@ if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined')
 }
 
 
-// Ensure complete service worker bypass and cache purge in development mode
+// Ensure clean service worker state in development mode without throwing unhandled rejections
 if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
   try {
+    const dummyRegistration = {
+      active: null,
+      installing: null,
+      waiting: null,
+      scope: '/',
+      unregister: () => Promise.resolve(true),
+      update: () => Promise.resolve(),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    };
     navigator.serviceWorker.register = () => {
-      return Promise.reject(new Error('Service Worker registration disabled in development mode.'));
+      return Promise.resolve(dummyRegistration as unknown as ServiceWorkerRegistration);
     };
   } catch (e) {}
 
   navigator.serviceWorker.getRegistrations().then(registrations => {
     for (const registration of registrations) {
-      registration.unregister();
+      registration.unregister().catch(() => {});
     }
   }).catch(() => {});
 
   if ('caches' in window) {
     caches.keys().then(keys => {
       for (const key of keys) {
-        caches.delete(key);
+        caches.delete(key).catch(() => {});
       }
     }).catch(() => {});
   }

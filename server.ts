@@ -74,8 +74,15 @@ const localOtpStore = new Map<string, MemoryOTP>();
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  // In this Cloud Run container environment, Nginx listens on 8080 and reverse-proxies to port 3000.
+  // The Node application must always bind to port 3000 (never 8080, which is owned by Nginx).
+  const PORT = process.env.APP_PORT || process.env.NODE_PORT ? Number(process.env.APP_PORT || process.env.NODE_PORT) : 3000;
   const httpServer = http.createServer(app);
+
+  // Cloud Run & load-balancer health check routes
+  app.get(["/healthz", "/_health", "/health", "/_ah/health"], (_req, res) => {
+    res.status(200).send("OK");
+  });
 
   // Robust CORS Middleware supporting this project's domains
   app.use(
@@ -564,12 +571,20 @@ async function startServer() {
           const backendNodeModules = path.join(backendDir, "node_modules");
           const nodePath = [backendNodeModules, rootNodeModules, process.env.NODE_PATH || ""].filter(Boolean).join(":");
 
+          const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://167.233.41.7.sslip.io";
+          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
+
           whatsappBackendProcess = spawn("node", [backendScript], {
             cwd: backendDir,
             env: {
               ...process.env,
               PORT: "3001",
               NODE_PATH: nodePath,
+              SUPABASE_URL: supabaseUrl,
+              VITE_SUPABASE_URL: supabaseUrl,
+              SUPABASE_ANON_KEY: supabaseKey,
+              VITE_SUPABASE_ANON_KEY: supabaseKey,
+              NODE_TLS_REJECT_UNAUTHORIZED: "0",
             },
             stdio: "pipe"
           });
@@ -580,8 +595,16 @@ async function startServer() {
           whatsappBackendProcess.stderr?.on("data", (data: any) => {
             const str = data.toString().trim();
             if (str) {
-              console.warn(`[WhatsApp Backend Error] ${str}`);
-              lastWhatsAppBackendError = str;
+              if (
+                str.includes("EADDRINUSE") ||
+                str.includes("ReferenceError") ||
+                str.includes("SyntaxError")
+              ) {
+                console.warn(`[WhatsApp Backend Fatal Error] ${str}`);
+                lastWhatsAppBackendError = str;
+              } else {
+                console.log(`[WhatsApp Backend Notice] ${str}`);
+              }
             }
           });
           whatsappBackendProcess.on("exit", (code: any) => {
@@ -3329,7 +3352,7 @@ System instructions:
       try {
         const db = await getFirestoreOnServer();
         if (!db) {
-          console.warn(
+          console.log(
             "[Server Auto-Backup] Firebase/Firestore not initialized yet. Skipping check.",
           );
           return;
@@ -3653,23 +3676,41 @@ System instructions:
     path.join(process.cwd(), "build"),
     path.resolve(currentDirname, "dist"),
     path.resolve(currentDirname, "build"),
-    currentDirname,
   ];
-  const foundDistPath = distCandidates.find((dir) =>
+  let foundDistPath = distCandidates.find((dir) =>
     fs.existsSync(path.join(dir, "index.html"))
   );
 
-  const isDevEnv =
-    process.env.NODE_ENV === "development" ||
-    Boolean(process.env.K_SERVICE?.startsWith("ais-dev-"));
+  const isCloudRun = Boolean(
+    process.env.K_SERVICE ||
+    process.env.K_REVISION ||
+    (process.env.PORT && process.env.PORT !== "3000")
+  );
 
-  const isProd =
-    (process.env.NODE_ENV === "production" || Boolean(foundDistPath)) &&
-    !isDevEnv;
+  // Serve production static build whenever dist exists, in production mode, or in Cloud Run
+  const isProd = Boolean(foundDistPath) || process.env.NODE_ENV === "production" || isCloudRun;
+
+  // If in production/Cloud Run but dist artifacts were missing, auto-build synchronously
+  if (isProd && !foundDistPath) {
+    const targetDist = path.join(process.cwd(), "dist");
+    try {
+      console.log("[Production Setup] Production build artifacts not found in dist/. Compiling client bundle...");
+      const { execSync } = await import("child_process");
+      execSync("npx vite build", { stdio: "inherit", cwd: process.cwd() });
+      if (fs.existsSync(path.join(targetDist, "index.html"))) {
+        foundDistPath = targetDist;
+      }
+    } catch (buildErr) {
+      console.error("[Production Setup] Auto-build attempt failed:", buildErr);
+    }
+  }
 
   if (!isProd) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);

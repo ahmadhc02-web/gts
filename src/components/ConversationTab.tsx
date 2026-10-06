@@ -31,7 +31,8 @@ import {
   subscribeReminderLeads,
   subscribeReminderLeadItems,
   createReminderLead,
-  updateReminderLead
+  updateReminderLead,
+  getReminderLeads
 } from '../lib/supabaseService';
 import { getTemplate, startReminderLead, buildReminderMessage } from '../whatsapp_data';
 import { cn } from '../lib/utils';
@@ -205,14 +206,31 @@ export default function ConversationTab({
   const [customSearchQuery, setCustomSearchQuery] = useState('');
   const [selectedCustomUserIds, setSelectedCustomUserIds] = useState<string[]>([]);
 
-  // Subscribe to reminder leads
+  // Subscribe to reminder leads with live polling fallback
   useEffect(() => {
     if (!isOpen) return;
+
+    const fetchFreshLeads = async () => {
+      try {
+        const fresh = await getReminderLeads(dealerId);
+        if (fresh && fresh.length >= 0) {
+          setLeads(fresh);
+        }
+      } catch (_) {}
+    };
+
+    fetchFreshLeads();
+
     const unsub = subscribeReminderLeads((data) => {
       setLeads(data || []);
     }, dealerId);
+
+    // Active polling interval while tab is open to reflect background server progress
+    const pollTimer = setInterval(fetchFreshLeads, 2500);
+
     return () => {
       if (unsub) unsub();
+      clearInterval(pollTimer);
     };
   }, [isOpen, dealerId]);
 
@@ -338,10 +356,15 @@ export default function ConversationTab({
   };
 
   const handleStartLead = async (leadId: string) => {
+    // Optimistically show as running
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: 'running', startedAt: l.startedAt || new Date().toISOString() } : l));
     toast.info("Starting reminder lead campaign on server...");
     try {
       await startReminderLead(leadId);
       toast.success("Lead campaign running in background on server!");
+      // Immediate fetch after trigger
+      const fresh = await getReminderLeads(dealerId);
+      if (fresh) setLeads(fresh);
     } catch (err: any) {
       toast.error(`Lead execution error: ${err.message || 'Unknown error'}`);
     }

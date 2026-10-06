@@ -30,6 +30,7 @@ let lastConnectionOpenTimestamp = 0;
 let lastActivityTimestamp = Date.now();
 let isReconnectPending = false;
 let keepAliveTimer = null;
+let consecutiveBadSessionCount = 0;
 
 function startKeepAlive() {
   if (keepAliveTimer) clearInterval(keepAliveTimer);
@@ -130,39 +131,57 @@ async function initBaileys() {
         stopKeepAlive();
         stopProactiveRefresh();
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        const isLoggedOut = 
-          statusCode === DisconnectReason.loggedOut ||
-          statusCode === DisconnectReason.badSession ||
-          statusCode === 401 ||
-          statusCode === 403 ||
-          statusCode === 500;
-        console.log(`Connection closed. StatusCode: ${statusCode}. Logged out/Invalid: ${isLoggedOut}`);
-        
+        const isDefinitiveLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+        const isPossibleBadSession = statusCode === DisconnectReason.badSession || statusCode === 500 || statusCode === 403;
+        console.log(`Connection closed. StatusCode: ${statusCode}. Definitive logout: ${isDefinitiveLogout}. Possible bad session: ${isPossibleBadSession} (consecutive count: ${consecutiveBadSessionCount}).`);
+
         isConnected = false;
         userPhoneNumber = null;
-        
-        if (isLoggedOut) {
-          console.log('Logged out or invalid session on WhatsApp. Clearing auth and preparing fresh QR...');
-          reconnectDelay = 3000; // Reset backoff delay
+
+        if (isDefinitiveLogout) {
+          console.log('Logged out of WhatsApp (confirmed). Clearing auth and preparing fresh QR...');
+          consecutiveBadSessionCount = 0;
+          reconnectDelay = 3000;
           isReconnectPending = false;
           if (fs.existsSync(authDir)) {
             try {
               fs.rmSync(authDir, { recursive: true, force: true });
-              console.log('Cleared stale auth_session folder.');
+              console.log('Cleared auth_session folder after confirmed logout.');
             } catch (rmErr) {
               console.warn('Failed to clear auth_session:', rmErr.message);
             }
           }
           currentQr = null;
-          // Initialize fresh Baileys to immediately emit new QR code
           initBaileys();
+        } else if (isPossibleBadSession) {
+          consecutiveBadSessionCount++;
+          if (consecutiveBadSessionCount >= 3) {
+            console.log(`Bad session reported ${consecutiveBadSessionCount} times in a row — clearing auth and requiring fresh QR.`);
+            consecutiveBadSessionCount = 0;
+            reconnectDelay = 3000;
+            isReconnectPending = false;
+            if (fs.existsSync(authDir)) {
+              try {
+                fs.rmSync(authDir, { recursive: true, force: true });
+                console.log('Cleared auth_session folder after repeated bad-session errors.');
+              } catch (rmErr) {
+                console.warn('Failed to clear auth_session:', rmErr.message);
+              }
+            }
+            currentQr = null;
+            initBaileys();
+          } else {
+            console.log(`Treating this as a possibly transient bad-session signal (attempt ${consecutiveBadSessionCount}/3) — reconnecting with the EXISTING session instead of wiping it.`);
+            handleReconnect();
+          }
         } else {
-          // Transient network disconnect, apply exponential backoff reconnect
+          // Ordinary transient network disconnect
           handleReconnect();
         }
       } else if (connection === 'open') {
         console.log('Opened connection to WhatsApp');
         isConnected = true;
+        consecutiveBadSessionCount = 0;
         currentQr = null;
         lastConnectionOpenTimestamp = Date.now();
         lastActivityTimestamp = Date.now();

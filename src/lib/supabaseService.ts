@@ -4989,6 +4989,24 @@ export const supabaseService = {
     }
   },
 
+  getReminderLeads: async (dealerId?: string): Promise<ReminderLead[]> => {
+    try {
+      let query = supabase.from('reminder_leads').select('*').order('created_at', { ascending: false });
+      if (dealerId && dealerId !== 'main') {
+        query = query.eq('dealer_id', dealerId);
+      }
+      const { data, error } = await query;
+      if (error) {
+        console.error("getReminderLeads error:", error);
+        return [];
+      }
+      return (data || []).map(r => fromDb('reminder_leads', r));
+    } catch (e) {
+      console.error("getReminderLeads exception:", e);
+      return [];
+    }
+  },
+
   subscribeReminderLeads: (callback: (leads: ReminderLead[]) => void, dealerId?: string) => {
     return subscribeTable('reminder_leads', (data) => {
       const sorted = (data || []).sort((a: any, b: any) => {
@@ -5026,6 +5044,13 @@ export const supabaseService = {
       callback(items);
     }).catch(console.warn);
 
+    // Live polling interval for guaranteed realtime updates even without WebSockets
+    const pollInterval = setInterval(() => {
+      supabaseService.getReminderLeadItems(leadId).then(items => {
+        callback(items);
+      }).catch(() => {});
+    }, 2500);
+
     const channelName = `lead_items_${leadId}_${Math.random().toString(36).substring(2, 7)}`;
     const channel = supabase
       .channel(channelName)
@@ -5045,6 +5070,7 @@ export const supabaseService = {
       .subscribe();
 
     return () => {
+      clearInterval(pollInterval);
       try {
         supabase.removeChannel(channel);
       } catch (e) {}
@@ -5205,6 +5231,9 @@ export const getLedgerSheetDirect = (sheetId: string) => {
 };
 export const createReminderLead = (data: any) => {
   return supabaseService.createReminderLead(data);
+};
+export const getReminderLeads = (dealerId?: string) => {
+  return supabaseService.getReminderLeads(dealerId);
 };
 export const subscribeReminderLeads = (callback: (leads: ReminderLead[]) => void, dealerId?: string) => {
   return supabaseService.subscribeReminderLeads(callback, dealerId);

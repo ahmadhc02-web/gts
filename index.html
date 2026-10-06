@@ -19,42 +19,33 @@
     <meta http-equiv="Expires" content="0" />
     <script>
       (function() {
-        // Enforce cache bypass and block service worker registration in development
+        // Enforce clean cache and prevent service worker issues in development
         if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
           try {
+            var dummyReg = {
+              active: null,
+              installing: null,
+              waiting: null,
+              scope: '/',
+              unregister: function() { return Promise.resolve(true); },
+              update: function() { return Promise.resolve(); },
+              addEventListener: function() {},
+              removeEventListener: function() {},
+              dispatchEvent: function() { return false; }
+            };
             navigator.serviceWorker.register = function() {
-              return Promise.reject(new Error('Service Worker registration disabled in development environment.'));
+              return Promise.resolve(dummyReg);
             };
           } catch (e) {}
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            if (regs && regs.length > 0) {
-              var p = [];
-              for (var i = 0; i < regs.length; i++) {
-                p.push(regs[i].unregister());
-              }
-              if (typeof window !== 'undefined' && 'caches' in window) {
-                caches.keys().then(function(keys) {
-                  var p2 = keys.map(function(k) { return caches.delete(k); });
-                  Promise.all(p.concat(p2)).then(function() {
-                    console.log('Old SW purged, reloading page...');
-                    window.location.reload();
-                  });
-                });
-              } else {
-                Promise.all(p).then(function() {
-                  window.location.reload();
-                });
-              }
-            } else if (typeof window !== 'undefined' && 'caches' in window) {
-              caches.keys().then(function(keys) {
-                if (keys && keys.length > 0) {
-                  Promise.all(keys.map(function(k) { return caches.delete(k); })).then(function() {
-                    window.location.reload();
-                  });
+          try {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              if (regs && regs.length > 0) {
+                for (var i = 0; i < regs.length; i++) {
+                  try { regs[i].unregister(); } catch (err) {}
                 }
-              });
-            }
-          }).catch(function() {});
+              }
+            }).catch(function() {});
+          } catch (e) {}
         }
       })();
     </script>

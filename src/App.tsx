@@ -1093,12 +1093,14 @@ export default function App() {
               data: { url: window.location.origin }
             };
 
-            if ('serviceWorker' in navigator) {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
               navigator.serviceWorker.ready.then(registration => {
                 registration.showNotification(`GTS: ${latest.type.toUpperCase()}`, options);
+              }).catch(() => {
+                try { new Notification(`GTS: ${latest.type.toUpperCase()}`, options); } catch (e) {}
               });
             } else {
-              new Notification(`GTS: ${latest.type.toUpperCase()}`, options);
+              try { new Notification(`GTS: ${latest.type.toUpperCase()}`, options); } catch (e) {}
             }
           }
         }
@@ -1163,10 +1165,12 @@ export default function App() {
               vibrate: [200, 50, 200],
             };
 
-            if ('serviceWorker' in navigator) {
-              navigator.serviceWorker.ready.then(reg => reg.showNotification(`New from ${latest.senderName}`, options));
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.ready.then(reg => reg.showNotification(`New from ${latest.senderName}`, options)).catch(() => {
+                try { new Notification(`New from ${latest.senderName}`, options); } catch (e) {}
+              });
             } else {
-              new Notification(`New from ${latest.senderName}`, options);
+              try { new Notification(`New from ${latest.senderName}`, options); } catch (e) {}
             }
           }
 
