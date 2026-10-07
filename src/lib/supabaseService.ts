@@ -2261,12 +2261,14 @@ export const supabaseService = {
           // PRESERVE COMMENTS: If the new row has empty comments but the old row had comments, we automatically migrate/preserve the comments instead of losing them!
           if (incRow && newComment === '' && oldComment !== '') {
              incRow.comments = oldComment;
-          } else if (newComment !== oldComment && newComment === '') { 
+          } else if (!incRow && oldComment !== '') {
+            // The row itself is missing from the incoming save entirely — that's a genuine loss.
             wipedCommentsCount++;
-          } else if (newComment !== oldComment) {
-             // It's different, also count as wiped/reverted if it's a regression
-             wipedCommentsCount++;
           }
+          // NOTE: a comment changing from one non-empty value to a DIFFERENT
+          // non-empty value is a normal, intentional user edit — it must
+          // NOT be counted as "wiped", otherwise every legitimate comment
+          // edit gets flagged as data loss and blocks the save.
         }
       });
     }

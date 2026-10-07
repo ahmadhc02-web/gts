@@ -19,16 +19,16 @@ import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import RouteLoadingFallback from './RouteLoadingFallback';
 import BillingModSettingView from './BillingModSettingView';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import DistributionList from './DistributionList';
 
-
-const ClientManagement = lazy(() => import('./ClientManagement'));
-const RealTimeMonitor = lazy(() => import('./RealTimeMonitor'));
-const DistributionList = lazy(() => import('./DistributionList'));
-const HighFrequencyNodes = lazy(() => import('./HighFrequencyNodes'));
-const MapViewer = lazy(() => import('./MapViewer'));
-const EditorPanel = lazy(() => import('./EditorPanel'));
-const EntrySheet = lazy(() => import('./EntrySheet'));
-const ReceiptManager = lazy(() => import('./ReceiptManager'));
+const ClientManagement = lazyWithRetry(() => import('./ClientManagement'));
+const RealTimeMonitor = lazyWithRetry(() => import('./RealTimeMonitor'));
+const HighFrequencyNodes = lazyWithRetry(() => import('./HighFrequencyNodes'));
+const MapViewer = lazyWithRetry(() => import('./MapViewer'));
+const EditorPanel = lazyWithRetry(() => import('./EditorPanel'));
+const EntrySheet = lazyWithRetry(() => import('./EntrySheet'));
+const ReceiptManager = lazyWithRetry(() => import('./ReceiptManager'));
 
 
 const MYPC_FILE_TO_SLUG: Record<string, string> = {

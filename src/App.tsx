@@ -21,26 +21,7 @@ import { Clock } from 'lucide-react';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
-
-function lazyWithRetry<T extends ComponentType<any>>(
-  importFn: () => Promise<{ default: T }>
-) {
-  return lazy(async () => {
-    try {
-      return await importFn();
-    } catch (error) {
-      console.warn('Dynamic module import failed, attempting fallback reload...', error);
-      // Wait 300ms and retry once
-      await new Promise(res => setTimeout(res, 300));
-      try {
-        return await importFn();
-      } catch (retryErr) {
-        console.error('Dynamic module reload failed:', retryErr);
-        throw retryErr;
-      }
-    }
-  });
-}
+import { lazyWithRetry } from './lib/lazyWithRetry';
 
 const LoginForm = lazyWithRetry(() => import('./components/LoginForm'));
 const AdminPanel = lazyWithRetry(() => import('./components/AdminPanel'));

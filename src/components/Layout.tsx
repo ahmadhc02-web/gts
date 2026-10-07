@@ -14,12 +14,13 @@ import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { getAvatarUrl } from '../utils/avatar';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
 
-const Chat = lazy(() => import('./Chat'));
-const AIHelpPanel = lazy(() => import('./AIHelpPanel'));
-const ServiceMonitor = lazy(() => import('./ServiceMonitor'));
-const MapViewer = lazy(() => import('./MapViewer'));
-const ComplaintForm = lazy(() => import('./ComplaintForm'));
+const Chat = lazyWithRetry(() => import('./Chat'));
+const AIHelpPanel = lazyWithRetry(() => import('./AIHelpPanel'));
+const ServiceMonitor = lazyWithRetry(() => import('./ServiceMonitor'));
+const MapViewer = lazyWithRetry(() => import('./MapViewer'));
+const ComplaintForm = lazyWithRetry(() => import('./ComplaintForm'));
 
 interface LayoutProps {
   children: React.ReactNode;

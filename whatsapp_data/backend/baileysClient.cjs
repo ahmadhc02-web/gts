@@ -51,7 +51,7 @@ function stopKeepAlive() {
   keepAliveTimer = null;
 }
 
-const PROACTIVE_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000; // every 4 hours
+const PROACTIVE_REFRESH_INTERVAL_MS = 10 * 60 * 1000; // every 10 minutes
 let proactiveRefreshTimer = null;
 
 function startProactiveRefresh() {

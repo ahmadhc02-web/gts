@@ -3750,6 +3750,13 @@ System instructions:
       if (req.path.startsWith("/api/")) {
         return next();
       }
+      // Never send HTML for missing asset requests (prevents module syntax error when a stale chunk is requested)
+      if (req.path.startsWith("/assets/") || req.path.match(/\.(js|css|map|wasm|png|jpg|svg|ico|woff2?)$/i)) {
+        return res.status(404).set({
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Content-Type": "text/plain"
+        }).send("Asset not found");
+      }
       const indexPath = path.join(distPath, "index.html");
       if (fs.existsSync(indexPath)) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');

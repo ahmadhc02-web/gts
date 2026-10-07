@@ -1,8 +1,10 @@
 import { useTheme } from "../hooks/useTheme";
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import DistributionList from './DistributionList';
 
-const MyPCTab = lazy(() => import('./MyPCTab'));
-const BillingTab = lazy(() => import('./BillingTab'));
+const MyPCTab = lazyWithRetry(() => import('./MyPCTab'));
+const BillingTab = lazyWithRetry(() => import('./BillingTab'));
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
@@ -48,16 +50,15 @@ const isExcludedFromRecovery = (r: any) => {
   return check(r.name) || check(r.username) || check(r.comments);
 };
 
-const ClientManagement = lazy(() => import('./ClientManagement'));
-const RealTimeMonitor = lazy(() => import('./RealTimeMonitor'));
-const DistributionList = lazy(() => import('./DistributionList'));
-const HighFrequencyNodes = lazy(() => import('./HighFrequencyNodes'));
-const MapViewer = lazy(() => import('./MapViewer'));
-const EditorPanel = lazy(() => import('./EditorPanel'));
-const EntrySheet = lazy(() => import('./EntrySheet'));
-const ConversationTab = lazy(() => import('./ConversationTab'));
-const ReceiptManager = lazy(() => import('./ReceiptManager'));
-const BatchPrintModal = lazy(() => import('./BatchPrintModal'));
+const ClientManagement = lazyWithRetry(() => import('./ClientManagement'));
+const RealTimeMonitor = lazyWithRetry(() => import('./RealTimeMonitor'));
+const HighFrequencyNodes = lazyWithRetry(() => import('./HighFrequencyNodes'));
+const MapViewer = lazyWithRetry(() => import('./MapViewer'));
+const EditorPanel = lazyWithRetry(() => import('./EditorPanel'));
+const EntrySheet = lazyWithRetry(() => import('./EntrySheet'));
+const ConversationTab = lazyWithRetry(() => import('./ConversationTab'));
+const ReceiptManager = lazyWithRetry(() => import('./ReceiptManager'));
+const BatchPrintModal = lazyWithRetry(() => import('./BatchPrintModal'));
 
 const MYPC_SLUG_TO_FILE: Record<string, string> = {
   'active-nodes': 'nodes_view',

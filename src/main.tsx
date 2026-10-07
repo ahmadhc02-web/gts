@@ -118,6 +118,24 @@ if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'servic
   }
 }
 
+// Gracefully handle Vite dynamic chunk import updates/network disconnects
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', (event: any) => {
+    console.warn('[Vite] Dynamic import preload error caught:', event);
+    if (event?.preventDefault) {
+      event.preventDefault();
+    }
+    const reloadKey = 'vite_chunk_err_' + (window.location.pathname || 'app');
+    const lastReload = sessionStorage.getItem(reloadKey);
+    const now = Date.now();
+    if (!lastReload || now - Number(lastReload) > 10000) {
+      sessionStorage.setItem(reloadKey, String(now));
+      console.log('[Vite] Refreshing session to synchronize latest build chunks...');
+      window.location.reload();
+    }
+  });
+}
+
 let shouldRender = true;
 if (typeof window !== 'undefined') {
   const urlParams = new URLSearchParams(window.location.search);
