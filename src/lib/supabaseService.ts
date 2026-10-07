@@ -5026,13 +5026,15 @@ export const supabaseService = {
     const pollInterval = setInterval(async () => {
       try {
         let query = supabase.from('reminder_leads').select('*');
-        if (dealerId) query = query.eq('dealer_id', dealerId);
+        if (dealerId && dealerId !== 'main') {
+          query = query.eq('dealer_id', dealerId);
+        }
         const { data, error } = await query;
         if (!error && data) {
           callback(sortLeads(data.map((r: any) => fromDb('reminder_leads', r))));
         }
       } catch (e) {}
-    }, 2500);
+    }, 1500);
 
     return () => {
       clearInterval(pollInterval);
@@ -5071,7 +5073,7 @@ export const supabaseService = {
       supabaseService.getReminderLeadItems(leadId).then(items => {
         callback(items);
       }).catch(() => {});
-    }, 2500);
+    }, 1500);
 
     const channelName = `lead_items_${leadId}_${Math.random().toString(36).substring(2, 7)}`;
     const channel = supabase
@@ -5111,7 +5113,6 @@ export const supabaseService = {
       if (patch.sentAt !== undefined) updateData.sent_at = patch.sentAt;
       if (patch.errorMessage !== undefined) updateData.error_message = patch.errorMessage;
       if (patch.waitSecondsAfter !== undefined) updateData.wait_seconds_after = patch.waitSecondsAfter;
-      updateData.updated_at = new Date().toISOString();
 
       const { error } = await supabase
         .from('reminder_lead_items')
@@ -5140,7 +5141,6 @@ export const supabaseService = {
       if (patch.failedCount !== undefined) updateData.failed_count = patch.failedCount;
       if (patch.startedAt !== undefined) updateData.started_at = patch.startedAt;
       if (patch.completedAt !== undefined) updateData.completed_at = patch.completedAt;
-      updateData.updated_at = new Date().toISOString();
 
       const { error } = await supabase
         .from('reminder_leads')

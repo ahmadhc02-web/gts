@@ -75,7 +75,7 @@ function formatDateTime(iso?: string | null): string {
 }
 
 // Sub-component for individual lead row's expanded items
-function LeadItemsList({ leadId }: { leadId: string }) {
+function LeadItemsList({ leadId, defaultWaitSeconds }: { leadId: string; defaultWaitSeconds?: number }) {
   const [items, setItems] = useState<ReminderLeadItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -168,8 +168,12 @@ function LeadItemsList({ leadId }: { leadId: string }) {
                 </td>
                 <td className="py-2 px-3 text-[11px] text-slate-500 dark:text-slate-400">
                   {item.waitSecondsAfter ? (
-                    <span className="font-mono text-blue-600 dark:text-blue-400">
-                      Waited {item.waitSecondsAfter}s after this
+                    <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">
+                      Waited {item.waitSecondsAfter}s
+                    </span>
+                  ) : defaultWaitSeconds ? (
+                    <span className="font-mono text-slate-600 dark:text-slate-300 font-medium">
+                      {defaultWaitSeconds}s delay
                     </span>
                   ) : !isPending ? (
                     '—'
@@ -230,7 +234,7 @@ export default function ConversationTab({
     }, dealerId);
 
     // Active polling interval while tab is open to reflect background server progress
-    const pollTimer = setInterval(fetchFreshLeads, 2500);
+    const pollTimer = setInterval(fetchFreshLeads, 1500);
 
     return () => {
       if (unsub) unsub();
@@ -820,7 +824,7 @@ export default function ConversationTab({
                         {isExpanded && (
                           <tr className="bg-slate-50/40 dark:bg-slate-950/20">
                             <td colSpan={10} className="p-4 pt-1 pb-4">
-                              <LeadItemsList leadId={lead.id} />
+                              <LeadItemsList leadId={lead.id} defaultWaitSeconds={Number(lead.waitSeconds) || 30} />
                             </td>
                           </tr>
                         )}

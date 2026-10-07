@@ -87,14 +87,16 @@ async function processReminderLead(leadId) {
     const waitSeconds = Math.max(1, Number(lead.wait_seconds || 5));
 
     // 2. Transition pending -> running
-    await supabase
+    const { error: runErr } = await supabase
       .from('reminder_leads')
       .update({
         status: 'running',
-        started_at: lead.started_at || new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        started_at: lead.started_at || new Date().toISOString()
       })
       .eq('id', leadId);
+    if (runErr) {
+      console.error(`[Lead Processor] Failed to set status=running for lead ${leadId}:`, runErr.message);
+    }
 
     // 3. Fetch pending items sorted by sort_order
     const { data: items, error: itemsErr } = await supabase
@@ -111,14 +113,14 @@ async function processReminderLead(leadId) {
 
     if (!items || items.length === 0) {
       const finalStatus = currentSuccessCount > 0 ? 'completed' : (currentFailedCount > 0 ? 'failed' : 'completed');
-      await supabase
+      const { error: compErr } = await supabase
         .from('reminder_leads')
         .update({
           status: finalStatus,
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          completed_at: new Date().toISOString()
         })
         .eq('id', leadId);
+      if (compErr) console.error(`[Lead Processor] Failed to mark completed:`, compErr.message);
       console.log(`[Lead Processor] Lead ${leadId} has no pending items. Marked as ${finalStatus}.`);
       return;
     }
@@ -154,44 +156,54 @@ async function processReminderLead(leadId) {
         currentSuccessCount++;
         await recordClientReminderSent(item.client_id, lead.month_id);
 
-        await supabase
+        const { error: itemErr } = await supabase
           .from('reminder_lead_items')
           .update({
             status: 'sent',
             sent_at: new Date().toISOString(),
-            error_message: null,
-            updated_at: new Date().toISOString()
+            error_message: null
           })
           .eq('id', item.id);
+        if (itemErr) {
+          console.error(`[Lead Processor] Error updating item ${item.id} to sent:`, itemErr.message);
+        }
 
-        await supabase
+        const { error: leadErr2 } = await supabase
           .from('reminder_leads')
           .update({
             success_count: currentSuccessCount,
-            updated_at: new Date().toISOString()
+            status: 'running'
           })
           .eq('id', leadId);
+        if (leadErr2) {
+          console.error(`[Lead Processor] Error updating success_count for lead ${leadId}:`, leadErr2.message);
+        }
 
       } catch (err) {
         console.error(`[Lead Processor] Failed item ${item.id} (${rawPhone}) on lead ${leadId}:`, err.message);
         currentFailedCount++;
 
-        await supabase
+        const { error: itemErr } = await supabase
           .from('reminder_lead_items')
           .update({
             status: 'failed',
-            error_message: err.message || 'Send failed',
-            updated_at: new Date().toISOString()
+            error_message: err.message || 'Send failed'
           })
           .eq('id', item.id);
+        if (itemErr) {
+          console.error(`[Lead Processor] Error updating item ${item.id} to failed:`, itemErr.message);
+        }
 
-        await supabase
+        const { error: leadErr2 } = await supabase
           .from('reminder_leads')
           .update({
             failed_count: currentFailedCount,
-            updated_at: new Date().toISOString()
+            status: 'running'
           })
           .eq('id', leadId);
+        if (leadErr2) {
+          console.error(`[Lead Processor] Error updating failed_count for lead ${leadId}:`, leadErr2.message);
+        }
       }
 
       // Wait between messages if not the last item
@@ -205,13 +217,15 @@ async function processReminderLead(leadId) {
           }
           await new Promise(r => setTimeout(r, 1000));
         }
-        await supabase
+        const { error: waitErr } = await supabase
           .from('reminder_lead_items')
           .update({
-            wait_seconds_after: waitSeconds,
-            updated_at: new Date().toISOString()
+            wait_seconds_after: waitSeconds
           })
           .eq('id', item.id);
+        if (waitErr) {
+          console.error(`[Lead Processor] Error updating wait_seconds_after for item ${item.id}:`, waitErr.message);
+        }
       }
     }
 
@@ -224,14 +238,14 @@ async function processReminderLead(leadId) {
 
     if (!remainingPending || remainingPending.length === 0) {
       const finalStatus = currentSuccessCount > 0 ? 'completed' : (currentFailedCount > 0 ? 'failed' : 'completed');
-      await supabase
+      const { error: finErr } = await supabase
         .from('reminder_leads')
         .update({
           status: finalStatus,
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          completed_at: new Date().toISOString()
         })
         .eq('id', leadId);
+      if (finErr) console.error(`[Lead Processor] Error marking lead final status:`, finErr.message);
       console.log(`[Lead Processor] Lead ${leadId} finished with status: ${finalStatus} (Success: ${currentSuccessCount}, Failed: ${currentFailedCount})`);
     }
 
@@ -240,8 +254,7 @@ async function processReminderLead(leadId) {
     await supabase
       .from('reminder_leads')
       .update({
-        status: 'failed',
-        updated_at: new Date().toISOString()
+        status: 'failed'
       })
       .eq('id', leadId)
       .catch(() => {});
