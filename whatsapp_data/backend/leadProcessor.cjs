@@ -2,6 +2,14 @@ const { sendMessage, normalizePakistaniPhone } = require('./baileysClient.cjs');
 
 let supabase = null;
 const activeLeadIds = new Set();
+const cancelledLeadIds = new Set();
+
+function cancelReminderLead(leadId) {
+  if (!leadId) return;
+  cancelledLeadIds.add(leadId);
+  activeLeadIds.delete(leadId);
+  console.log(`[Lead Processor] Lead ${leadId} cancellation/deletion registered`);
+}
 
 function init(supabaseClient) {
   supabase = supabaseClient;
@@ -119,6 +127,12 @@ async function processReminderLead(leadId) {
 
     // 4. Process items sequentially
     for (let i = 0; i < items.length; i++) {
+      if (cancelledLeadIds.has(leadId)) {
+        console.log(`[Lead Processor] Halting execution of deleted/cancelled lead ${leadId}`);
+        cancelledLeadIds.delete(leadId);
+        return;
+      }
+
       const item = items[i];
       const isLastItem = (i === items.length - 1);
       const rawPhone = (item.mobile_number || '').trim();
@@ -183,7 +197,14 @@ async function processReminderLead(leadId) {
       // Wait between messages if not the last item
       if (!isLastItem) {
         console.log(`[Lead Processor] Waiting ${waitSeconds}s before next item...`);
-        await new Promise(r => setTimeout(r, waitSeconds * 1000));
+        for (let s = 0; s < waitSeconds; s++) {
+          if (cancelledLeadIds.has(leadId)) {
+            console.log(`[Lead Processor] Lead ${leadId} cancelled during interval.`);
+            cancelledLeadIds.delete(leadId);
+            return;
+          }
+          await new Promise(r => setTimeout(r, 1000));
+        }
         await supabase
           .from('reminder_lead_items')
           .update({
@@ -226,6 +247,7 @@ async function processReminderLead(leadId) {
       .catch(() => {});
   } finally {
     activeLeadIds.delete(leadId);
+    cancelledLeadIds.delete(leadId);
   }
 }
 
@@ -264,6 +286,7 @@ async function resumeInterruptedLeads() {
 module.exports = {
   init,
   processReminderLead,
+  cancelReminderLead,
   resumeInterruptedLeads,
   activeLeadIds
 };

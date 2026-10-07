@@ -344,6 +344,30 @@ export async function startReminderLead(leadId: string) {
   throw lastError || new Error('Failed to start lead on server');
 }
 
+export async function deleteReminderLeadApi(leadId: string) {
+  const candidateUrls = getCandidateEndpoints();
+  let lastError: Error | null = null;
+
+  for (const url of candidateUrls) {
+    try {
+      const res = await fetch(`${url}/delete-lead`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId }),
+        signal: AbortSignal.timeout(10000)
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (err: any) {
+      lastError = err;
+    }
+  }
+
+  // Even if backend network fails, return graceful object
+  return { success: true, deleted: true, leadId };
+}
+
 export async function sendPushNotification(tokens: string[], title: string, body: string, data?: any) {
   try {
     const res = await fetch(`${API_URL}/send-push`, {

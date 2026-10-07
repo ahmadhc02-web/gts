@@ -1054,6 +1054,65 @@ async function startServer() {
       return res.status(500).json({ success: false, error: error.message || String(error) });
     }
   });
+
+  app.post(["/api/whatsapp/delete-lead", "/whatsapp-api/delete-lead"], async (req, res) => {
+    try {
+      const { leadId } = req.body;
+      if (!leadId) {
+        return res.status(400).json({ success: false, error: "leadId is required" });
+      }
+
+      // 1. Direct database delete for resilience and speed
+      try {
+        const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+        const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+        if (rawUrl && rawKey) {
+          await fetch(`${rawUrl}/rest/v1/reminder_lead_items?lead_id=eq.${encodeURIComponent(leadId)}`, {
+            method: "DELETE",
+            headers: {
+              apikey: rawKey,
+              Authorization: `Bearer ${rawKey}`,
+              "Content-Type": "application/json",
+            },
+          });
+          await fetch(`${rawUrl}/rest/v1/reminder_leads?id=eq.${encodeURIComponent(leadId)}`, {
+            method: "DELETE",
+            headers: {
+              apikey: rawKey,
+              Authorization: `Bearer ${rawKey}`,
+              "Content-Type": "application/json",
+            },
+          });
+        }
+      } catch (dbErr) {
+        console.warn("Direct DB delete error in server.ts:", dbErr);
+      }
+
+      // 2. Notify WhatsApp background service to halt if processing
+      const candidateUrls = [
+        "http://127.0.0.1:3001",
+        WHATSAPP_SERVICE_BACKEND_URL,
+        "http://localhost:3001"
+      ].filter((u): u is string => Boolean(u && typeof u === "string" && u.startsWith("http")));
+
+      for (const target of candidateUrls) {
+        try {
+          const response = await fetch(`${target}/delete-lead`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ leadId }),
+            signal: AbortSignal.timeout(6000),
+          });
+          const data = await response.json();
+          return res.status(response.status).json(data);
+        } catch (err: any) {}
+      }
+
+      return res.json({ success: true, deleted: true, leadId });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message || String(error) });
+    }
+  });
   // --- End WhatsApp Endpoints ---
 
   // --- Password OTP Recovery Endpoints ---
@@ -3681,16 +3740,13 @@ System instructions:
     fs.existsSync(path.join(dir, "index.html"))
   );
 
-  const isCloudRun = Boolean(
-    process.env.K_SERVICE ||
-    process.env.K_REVISION ||
-    (process.env.PORT && process.env.PORT !== "3000")
-  );
+  // Determine development vs production mode:
+  // In AI Studio development environment, NODE_ENV is "development" and K_SERVICE starts with "ais-dev-".
+  // Dev mode MUST mount vite.middlewares as specified in guidelines.
+  const isDev = process.env.NODE_ENV === "development" || Boolean(process.env.K_SERVICE?.startsWith("ais-dev-"));
+  const isProd = !isDev && (process.env.NODE_ENV === "production" || Boolean(foundDistPath));
 
-  // Serve production static build whenever dist exists, in production mode, or in Cloud Run
-  const isProd = Boolean(foundDistPath) || process.env.NODE_ENV === "production" || isCloudRun;
-
-  // If in production/Cloud Run but dist artifacts were missing, auto-build synchronously
+  // If in production mode but dist artifacts were missing, auto-build synchronously
   if (isProd && !foundDistPath) {
     const targetDist = path.join(process.cwd(), "dist");
     try {

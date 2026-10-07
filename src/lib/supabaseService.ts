@@ -5010,14 +5010,34 @@ export const supabaseService = {
   },
 
   subscribeReminderLeads: (callback: (leads: ReminderLead[]) => void, dealerId?: string) => {
-    return subscribeTable('reminder_leads', (data) => {
-      const sorted = (data || []).sort((a: any, b: any) => {
-        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.created ? new Date(a.created).getTime() : 0);
-        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.created ? new Date(b.created).getTime() : 0);
-        return timeB - timeA;
-      });
-      callback(sorted);
+    const sortLeads = (data: any[]) => (data || []).sort((a: any, b: any) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : (a.created ? new Date(a.created).getTime() : 0);
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : (b.created ? new Date(b.created).getTime() : 0);
+      return timeB - timeA;
+    });
+
+    const unsubscribeTable = subscribeTable('reminder_leads', (data) => {
+      callback(sortLeads(data));
     }, r => fromDb('reminder_leads', r), dealerId);
+
+    // Polling fallback (matches subscribeReminderLeadItems) so the lead
+    // registry keeps updating live even if realtime isn't delivering
+    // postgres_changes events on this instance.
+    const pollInterval = setInterval(async () => {
+      try {
+        let query = supabase.from('reminder_leads').select('*');
+        if (dealerId) query = query.eq('dealer_id', dealerId);
+        const { data, error } = await query;
+        if (!error && data) {
+          callback(sortLeads(data.map((r: any) => fromDb('reminder_leads', r))));
+        }
+      } catch (e) {}
+    }, 2500);
+
+    return () => {
+      clearInterval(pollInterval);
+      if (typeof unsubscribeTable === 'function') unsubscribeTable();
+    };
   },
 
   getReminderLeadItems: async (leadId: string): Promise<ReminderLeadItem[]> => {
@@ -5132,6 +5152,50 @@ export const supabaseService = {
       }
     } catch (e) {
       console.error("updateReminderLead exception:", e);
+    }
+  },
+
+  deleteReminderLead: async (leadId: string): Promise<boolean> => {
+    try {
+      if (!leadId) return false;
+
+      // 1. Delete associated reminder_lead_items first
+      try {
+        const { error: itemsErr } = await supabase
+          .from('reminder_lead_items')
+          .delete()
+          .eq('lead_id', leadId);
+
+        if (itemsErr) {
+          console.warn("deleteReminderLead items delete warning:", itemsErr);
+        }
+      } catch (errItems) {
+        console.warn("deleteReminderLead items exception:", errItems);
+      }
+
+      // 2. Delete the lead from reminder_leads
+      const { error: leadErr } = await supabase
+        .from('reminder_leads')
+        .delete()
+        .eq('id', leadId);
+
+      if (leadErr) {
+        console.error("deleteReminderLead error:", leadErr);
+        throw leadErr;
+      }
+
+      // 3. Notify backend / server to halt if background job is processing
+      try {
+        const { deleteReminderLeadApi } = await import('../whatsapp_data');
+        if (typeof deleteReminderLeadApi === 'function') {
+          deleteReminderLeadApi(leadId).catch(() => {});
+        }
+      } catch (_) {}
+
+      return true;
+    } catch (e: any) {
+      console.error("deleteReminderLead exception:", e);
+      throw e;
     }
   },
 
@@ -5251,6 +5315,9 @@ export const updateReminderLeadItem = (itemId: string, patch: any) => {
 };
 export const updateReminderLead = (leadId: string, patch: any) => {
   return supabaseService.updateReminderLead(leadId, patch);
+};
+export const deleteReminderLead = (leadId: string) => {
+  return supabaseService.deleteReminderLead(leadId);
 };
 export const recordClientReminderSent = (clientId: string, monthId?: string) => {
   return supabaseService.recordClientReminderSent(clientId, monthId);

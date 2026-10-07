@@ -22,7 +22,8 @@ import {
   ShieldCheck,
   Search,
   CheckSquare,
-  Square
+  Square,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -32,6 +33,7 @@ import {
   subscribeReminderLeadItems,
   createReminderLead,
   updateReminderLead,
+  deleteReminderLead,
   getReminderLeads
 } from '../lib/supabaseService';
 import { getTemplate, startReminderLead, buildReminderMessage } from '../whatsapp_data';
@@ -196,6 +198,8 @@ export default function ConversationTab({
   const [expandedLeadIds, setExpandedLeadIds] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null);
+  const [leadToDelete, setLeadToDelete] = useState<ReminderLead | null>(null);
 
   // New Lead Form State
   const [leadName, setLeadName] = useState('');
@@ -367,6 +371,34 @@ export default function ConversationTab({
       if (fresh) setLeads(fresh);
     } catch (err: any) {
       toast.error(`Lead execution error: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleDeleteLead = (lead: ReminderLead) => {
+    setLeadToDelete(lead);
+  };
+
+  const confirmDeleteLead = async () => {
+    if (!leadToDelete) return;
+    const targetLead = leadToDelete;
+    setDeletingLeadId(targetLead.id);
+    setLeadToDelete(null);
+
+    // Optimistically remove from list
+    setLeads(prev => prev.filter(l => l.id !== targetLead.id));
+
+    try {
+      await deleteReminderLead(targetLead.id);
+      toast.success(`Lead "${targetLead.name}" permanently deleted.`);
+      const fresh = await getReminderLeads(dealerId);
+      if (fresh) setLeads(fresh);
+    } catch (err: any) {
+      console.error("Delete lead error:", err);
+      toast.error(`Failed to delete lead: ${err.message || 'Database error'}`);
+      const fresh = await getReminderLeads(dealerId);
+      if (fresh) setLeads(fresh);
+    } finally {
+      setDeletingLeadId(null);
     }
   };
 
@@ -758,6 +790,21 @@ export default function ConversationTab({
                                 </button>
                               )}
 
+                              {/* Delete Lead Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLead(lead)}
+                                disabled={deletingLeadId === lead.id}
+                                className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 transition-colors cursor-pointer disabled:opacity-50"
+                                title="Permanently Delete Lead"
+                              >
+                                {deletingLeadId === lead.id ? (
+                                  <Loader2 size={12} className="animate-spin text-rose-500" />
+                                ) : (
+                                  <Trash2 size={12} />
+                                )}
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => toggleExpand(lead.id)}
@@ -1087,6 +1134,84 @@ export default function ConversationTab({
           </motion.div>
         </div>
       )}
+
+      {/* Delete Lead Confirmation Modal */}
+      <AnimatePresence>
+        {leadToDelete && (
+          <div className="fixed inset-0 z-[10050] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/40 rounded-2xl max-w-md w-full p-6 shadow-2xl relative"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <span className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
+                  <Trash2 size={22} />
+                </span>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    Permanently Delete Lead?
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    This action is permanent and cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-white/5 rounded-xl p-3.5 mb-5 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">Lead Name:</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">{leadToDelete.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">Total Recipients:</span>
+                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{leadToDelete.totalCount || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-semibold">Status:</span>
+                  <span className="font-bold uppercase text-[10px] px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                    {leadToDelete.status}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-rose-600 dark:text-rose-400 font-medium mb-6">
+                The lead campaign record and all associated recipient dispatch logs will be permanently deleted from the database.
+              </p>
+
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setLeadToDelete(null)}
+                  disabled={deletingLeadId === leadToDelete.id}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDeleteLead}
+                  disabled={deletingLeadId === leadToDelete.id}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {deletingLeadId === leadToDelete.id ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={14} />
+                      <span>Permanently Delete</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

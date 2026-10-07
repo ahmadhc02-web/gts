@@ -70,7 +70,7 @@ if (supabase) {
   });
 }
 
-const { init: initLeadProcessor, processReminderLead, resumeInterruptedLeads } = require('./leadProcessor.cjs');
+const { init: initLeadProcessor, processReminderLead, resumeInterruptedLeads, cancelReminderLead } = require('./leadProcessor.cjs');
 if (supabase) {
   initLeadProcessor(supabase);
 }
@@ -221,6 +221,24 @@ app.post('/start-lead', async (req, res) => {
   // Fire-and-forget: respond immediately, keep processing in background
   processReminderLead(leadId).catch(err => console.error('[Server] Lead processing error:', err));
   res.json({ started: true, leadId });
+});
+
+app.post('/delete-lead', async (req, res) => {
+  const { leadId } = req.body;
+  if (!leadId) return res.status(400).json({ error: 'leadId is required' });
+  try {
+    if (typeof cancelReminderLead === 'function') {
+      cancelReminderLead(leadId);
+    }
+    if (supabase) {
+      await supabase.from('reminder_lead_items').delete().eq('lead_id', leadId);
+      await supabase.from('reminder_leads').delete().eq('id', leadId);
+    }
+    res.json({ success: true, deleted: true, leadId });
+  } catch (err) {
+    console.error('Failed to delete lead on server:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 const TEMPLATES_FILE = path.join(__dirname, 'templates.json');
