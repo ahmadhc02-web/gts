@@ -321,6 +321,28 @@ async function sendWithRetry(phoneNumber, message) {
         new Promise((_, rej) => setTimeout(() => rej(new Error('Liveness ping timed out')), 10000))
       ]);
 
+      // Check if number is registered on WhatsApp
+      if (sock && typeof sock.onWhatsApp === 'function') {
+        try {
+          const waCheck = await Promise.race([
+            sock.onWhatsApp(jid),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('onWhatsApp check timed out')), 6000))
+          ]);
+          if (Array.isArray(waCheck)) {
+            const isRegistered = waCheck.length > 0 && waCheck[0]?.exists !== false;
+            if (!isRegistered) {
+              console.log(`[WhatsApp Verification] ${phoneNumber} is not registered on WhatsApp.`);
+              const noWaErr = new Error('Number is not registered on WhatsApp');
+              noWaErr.isNotOnWhatsApp = true;
+              throw noWaErr;
+            }
+          }
+        } catch (checkErr) {
+          if (checkErr.isNotOnWhatsApp) throw checkErr;
+          console.warn(`[WhatsApp Verification] Check warning for ${phoneNumber}:`, checkErr.message);
+        }
+      }
+
       // The actual send, with a hard timeout so it can never hang forever
       await Promise.race([
         sock.sendMessage(jid, { text: message }),
@@ -332,6 +354,9 @@ async function sendWithRetry(phoneNumber, message) {
     } catch (err) {
       lastError = err;
       console.log(`Send attempt ${attempt}/${MAX_SEND_ATTEMPTS} to ${phoneNumber} failed: ${err.message}`);
+      if (err.isNotOnWhatsApp) {
+        break; // Non-existent WhatsApp number: fail immediately without wasting retry reconnects
+      }
       // Treat ANY failure here as a possibly-stale connection: force a
       // reconnect before the next attempt, rather than assuming it's
       // still fine.

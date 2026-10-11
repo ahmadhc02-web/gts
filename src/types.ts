@@ -279,6 +279,7 @@ export interface ReminderLeadItem {
   id: string;
   leadId: string;
   clientId: string;
+  username?: string | null;
   name: string;
   mobileNumber: string;
   message?: string | null;

@@ -320,6 +320,7 @@ export const mappings: Record<string, Record<string, string>> = {
     id: 'id',
     leadId: 'lead_id',
     clientId: 'client_id',
+    username: 'username',
     name: 'name',
     mobileNumber: 'mobile_number',
     message: 'message',
@@ -422,6 +423,10 @@ export function fromDb(table: string, obj: any): any {
     if (obj[dbKey] !== undefined && obj[dbKey] !== null) {
       result[clientKey] = obj[dbKey];
     }
+  }
+
+  if (table === 'reminder_lead_items') {
+    result.username = obj.username || (obj.message ? (obj.message.match(/Your Id\.?\s*([^\s,]+)/i)?.[1] || null) : null) || obj.client_id || '';
   }
 
   if (table === 'users') {
@@ -1549,7 +1554,7 @@ export const supabaseService = {
   },
 
   // --- BILLING CONFIG & RECOVERY SHEETS ---
-  async getBillingMonths(dealerId: string = 'main', bypassLineCodeFilter: boolean | string | number = false, monthsBack: number = 1) {
+  async getBillingMonths(dealerId: string = 'main', bypassLineCodeFilter: boolean | string | number = false, monthsBack: number = 6) {
     let effectiveMonthsBack = monthsBack;
     let effectiveBypass = bypassLineCodeFilter;
     if (typeof bypassLineCodeFilter === 'number') {
@@ -1560,25 +1565,11 @@ export const supabaseService = {
     try {
       const monthMap = new Map<string, any>();
 
-      // Generate date cutoff and candidate month IDs for the last monthsBack months
+      // Generate date cutoff and candidate month IDs for recent months
       const cutoffDate = new Date();
       cutoffDate.setDate(1);
       cutoffDate.setHours(0, 0, 0, 0);
       cutoffDate.setMonth(cutoffDate.getMonth() - Math.max(0, effectiveMonthsBack - 1));
-      const cutoffIso = cutoffDate.toISOString();
-
-      const candidateMonthIds: string[] = [];
-      const fullMonths = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
-      const shortMonths = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-      for (let i = -1; i <= effectiveMonthsBack; i++) {
-        const d = new Date();
-        d.setDate(1);
-        d.setMonth(d.getMonth() - i);
-        const m = d.getMonth();
-        const yr = String(d.getFullYear()).slice(-2);
-        const fullYr = String(d.getFullYear());
-        candidateMonthIds.push(`${fullMonths[m]}-${yr}`, `${shortMonths[m]}-${yr}`, `${fullMonths[m]}-${fullYr}`, `${shortMonths[m]}-${fullYr}`);
-      }
 
       try {
         let query = supabase.from('billing_months').select('*');
@@ -1600,8 +1591,8 @@ export const supabaseService = {
           query = query.or('line_code.is.null,line_code.eq.');
         }
 
-        // Limit billing_months query to the last monthsBack window
-        query = query.or(`created.gte.${cutoffIso},month_id.in.(${candidateMonthIds.join(',')})`);
+        // Limit to recent months ordered by newest first
+        query = query.order('created', { ascending: false }).limit(Math.max(6, effectiveMonthsBack));
 
         const { data: supMonths } = await query;
         if (supMonths) {
@@ -1620,124 +1611,138 @@ export const supabaseService = {
             });
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.warn("billing_months fetch error:", err);
+      }
 
-      try {
-        let query = supabase.from('billing_rows').select('*');
-        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
-          query = query.eq('dealer_id', dealerId);
-        }
-        const cleanBypass = typeof effectiveBypass === 'string' ? String(effectiveBypass || '').trim() : '';
-        const cleanActive = String(activeLineCode || '').trim();
-        if (effectiveBypass === true || effectiveBypass === 'all') {
-          // Explicitly query all lines across network
-        } else if (cleanBypass === '__without_line__' || effectiveBypass === null) {
-          query = query.or('line_code.is.null,line_code.eq.');
-        } else if (cleanBypass) {
-          query = query.eq('line_code', cleanBypass);
-        } else if (cleanActive) {
-          query = query.eq('line_code', cleanActive);
-        } else {
-          // No line code set: strictly isolate to the "without line" room
-          query = query.or('line_code.is.null,line_code.eq.');
-        }
+      // Check if all months returned already have complete authoritative rows data
+      const allMonthsHaveRows = monthMap.size > 0 && Array.from(monthMap.values()).every(m => m.rows && m.rows.length > 0);
+      const monthsMissingRows = Array.from(monthMap.values()).filter(m => !m.rows || m.rows.length === 0).map(m => m.id);
 
-        // Limit billing_rows query to the last monthsBack window
-        const targetMonthIds = Array.from(new Set([...candidateMonthIds, ...Array.from(monthMap.keys())]));
-        query = query.or(`created.gte.${cutoffIso},month_id.in.(${targetMonthIds.join(',')})`);
-
-        const { data: rowRecords } = await query;
-        if (rowRecords && rowRecords.length > 0) {
-          const rowsByMonth = new Map<string, any[]>();
-          for (const r of rowRecords) {
-            const mId = r.month_id || 'UNKNOWN';
-            if (isExcludedFromRecovery(r.name, r.username)) continue;
-            if (activeLineCode && r.line_code && r.line_code.trim().toLowerCase() !== activeLineCode.trim().toLowerCase()) continue;
-            if (!activeLineCode && (r.line_code || (r.dealer_id && r.dealer_id !== 'main'))) continue;
-            if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
-            rowsByMonth.get(mId)!.push({
-              id: r.client_id || r.id,
-              clientId: r.client_id || r.id,
-              name: r.name || '',
-              username: r.username || '',
-              mobileNumber: r.mobile_number || '',
-              area: r.area || '',
-              rt: r.rt || '',
-              baseAmount: Number(r.base_amount ?? r.amount ?? 0),
-              cr: Number(r.cr ?? 0),
-              totalAmount: Number(r.total_amount ?? 0),
-              billingDay: r.billing_day || '5',
-              paymentReceived: Number(r.payment_received ?? 0),
-              paymentStatus: r.payment_status || 'unpaid',
-              comments: r.comments || '',
-              occ: r.occ || '',
-              panelDetails: r.panel_details || '',
-              pkgDetails: r.pkg_details || '',
-              sag: r.sag || '',
-              lai: r.lai || '',
-              connectionDate: r.connection_date || '',
-              devicePrice: r.device_price || '',
-              abl: r.abl || '',
-              lineCode: r.line_code || '',
-              lineId: r.line_id || null,
-              reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
-              reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
-              line_code: r.line_code || '',
-              line_id: r.line_id || null
-            });
+      // Only query billing_rows if monthMap is empty or some month is missing rows_data
+      if (!allMonthsHaveRows) {
+        try {
+          let query = supabase.from('billing_rows').select('*');
+          if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+            query = query.eq('dealer_id', dealerId);
+          }
+          const cleanBypass = typeof effectiveBypass === 'string' ? String(effectiveBypass || '').trim() : '';
+          const cleanActive = String(activeLineCode || '').trim();
+          if (effectiveBypass === true || effectiveBypass === 'all') {
+            // Explicitly query all lines across network
+          } else if (cleanBypass === '__without_line__' || effectiveBypass === null) {
+            query = query.or('line_code.is.null,line_code.eq.');
+          } else if (cleanBypass) {
+            query = query.eq('line_code', cleanBypass);
+          } else if (cleanActive) {
+            query = query.eq('line_code', cleanActive);
+          } else {
+            query = query.or('line_code.is.null,line_code.eq.');
           }
 
-          for (const [mId, rowList] of rowsByMonth.entries()) {
-            if (!monthMap.has(mId)) {
-              if (dealerId && dealerId !== 'main' && (!rowList || rowList.length === 0)) continue;
-              monthMap.set(mId, {
-                id: mId,
-                dealerId: dealerId || 'main',
-                lineCode: activeLineCode || '',
-                rows: rowList,
-                hasAuthoritativeRowsData: false,
-                updatedAt: Date.now(),
-                createdAt: Date.now()
+          if (monthsMissingRows.length > 0) {
+            query = query.in('month_id', monthsMissingRows);
+          } else {
+            query = query.order('created', { ascending: false }).limit(2000);
+          }
+
+          const { data: rowRecords } = await query;
+          if (rowRecords && rowRecords.length > 0) {
+            const rowsByMonth = new Map<string, any[]>();
+            for (const r of rowRecords) {
+              const mId = r.month_id || 'UNKNOWN';
+              if (isExcludedFromRecovery(r.name, r.username)) continue;
+              if (activeLineCode && r.line_code && r.line_code.trim().toLowerCase() !== activeLineCode.trim().toLowerCase()) continue;
+              if (!activeLineCode && (r.line_code || (r.dealer_id && r.dealer_id !== 'main'))) continue;
+              if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
+              rowsByMonth.get(mId)!.push({
+                id: r.client_id || r.id,
+                clientId: r.client_id || r.id,
+                name: r.name || '',
+                username: r.username || '',
+                mobileNumber: r.mobile_number || '',
+                area: r.area || '',
+                rt: r.rt || '',
+                baseAmount: Number(r.base_amount ?? r.amount ?? 0),
+                cr: Number(r.cr ?? 0),
+                totalAmount: Number(r.total_amount ?? 0),
+                billingDay: r.billing_day || '5',
+                paymentReceived: Number(r.payment_received ?? 0),
+                paymentStatus: r.payment_status || 'unpaid',
+                comments: r.comments || '',
+                occ: r.occ || '',
+                panelDetails: r.panel_details || '',
+                pkgDetails: r.pkg_details || '',
+                sag: r.sag || '',
+                lai: r.lai || '',
+                connectionDate: r.connection_date || '',
+                devicePrice: r.device_price || '',
+                abl: r.abl || '',
+                lineCode: r.line_code || '',
+                lineId: r.line_id || null,
+                reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
+                reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
+                line_code: r.line_code || '',
+                line_id: r.line_id || null
               });
-            } else {
-              const existingMonth = monthMap.get(mId)!;
-              if (!existingMonth.rows || existingMonth.rows.length === 0) {
-                existingMonth.rows = rowList;
-              } else if (!existingMonth.hasAuthoritativeRowsData) {
-                const rowByClientId = new Map<string, any>();
-                const rowByUsername = new Map<string, any>();
-                for (const r of rowList) {
-                  if (r.clientId) rowByClientId.set(String(r.clientId).toLowerCase(), r);
-                  if (r.username) rowByUsername.set(String(r.username).toLowerCase(), r);
-                }
-                existingMonth.rows = existingMonth.rows.map((r: any, idx: number) => {
-                  const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
-                                (r.username && rowByUsername.get(String(r.username).toLowerCase()));
-                  if (dbRow) {
-                    return {
-                      ...r,
-                      ...dbRow,
-                      comments: (dbRow.comments && dbRow.comments.trim() !== '') ? dbRow.comments : (r.comments || ''),
-                      baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
-                      cr: dbRow.cr ?? r.cr ?? 0,
-                      totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
-                      paymentReceived: dbRow.paymentReceived ?? r.paymentReceived ?? 0,
-                      paymentStatus: dbRow.paymentStatus ?? r.paymentStatus ?? 'unpaid'
-                    };
-                  }
-                  return r;
+            }
+
+            for (const [mId, rowList] of rowsByMonth.entries()) {
+              if (!monthMap.has(mId)) {
+                if (dealerId && dealerId !== 'main' && (!rowList || rowList.length === 0)) continue;
+                monthMap.set(mId, {
+                  id: mId,
+                  dealerId: dealerId || 'main',
+                  lineCode: activeLineCode || '',
+                  rows: rowList,
+                  hasAuthoritativeRowsData: false,
+                  updatedAt: Date.now(),
+                  createdAt: Date.now()
                 });
+              } else {
+                const existingMonth = monthMap.get(mId)!;
+                if (!existingMonth.rows || existingMonth.rows.length === 0) {
+                  existingMonth.rows = rowList;
+                } else if (!existingMonth.hasAuthoritativeRowsData) {
+                  const rowByClientId = new Map<string, any>();
+                  const rowByUsername = new Map<string, any>();
+                  for (const r of rowList) {
+                    if (r.clientId) rowByClientId.set(String(r.clientId).toLowerCase(), r);
+                    if (r.username) rowByUsername.set(String(r.username).toLowerCase(), r);
+                  }
+                  existingMonth.rows = existingMonth.rows.map((r: any) => {
+                    const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
+                                  (r.username && rowByUsername.get(String(r.username).toLowerCase()));
+                    if (dbRow) {
+                      return {
+                        ...r,
+                        ...dbRow,
+                        comments: (dbRow.comments && dbRow.comments.trim() !== '') ? dbRow.comments : (r.comments || ''),
+                        baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
+                        cr: dbRow.cr ?? r.cr ?? 0,
+                        totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
+                        paymentReceived: dbRow.paymentReceived ?? r.paymentReceived ?? 0,
+                        paymentStatus: dbRow.paymentStatus ?? r.paymentStatus ?? 'unpaid'
+                      };
+                    }
+                    return r;
+                  });
+                }
               }
             }
           }
+        } catch (err) {
+          console.warn("billing_rows fetch error:", err);
         }
-      } catch (err) {}
+      }
 
       const sortedList = Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
       try {
         const lc = activeLineCode || 'nolc';
         const cacheKey = dealerId && dealerId !== 'main' ? `gts_cache_v3_billing_months_${dealerId}_${lc}` : `gts_cache_v3_billing_months_all_${lc}`;
         localStorage.setItem(cacheKey, JSON.stringify(sortedList));
+        const syncKey = `${'billing_months'}_${dealerId || 'all'}_${lc}`;
+        globalTableCaches[syncKey] = sortedList;
       } catch (e) {}
 
       return sortedList;
@@ -1796,6 +1801,16 @@ export const supabaseService = {
 
   getBillingMonthsHistory: async (monthId: string, dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
     try {
+      const lc = activeLineCode || 'nolc';
+      const syncKey = dealerId && dealerId !== 'main' ? `billing_months_${dealerId}_${lc}` : `billing_months_all_${lc}`;
+      const cachedList = globalTableCaches[syncKey];
+      if (Array.isArray(cachedList)) {
+        const found = cachedList.find((m: any) => (m?.id || m?.month_id) === monthId);
+        if (found && Array.isArray(found.rows) && found.rows.length > 0) {
+          return found;
+        }
+      }
+
       const monthMap = new Map<string, any>();
 
       try {
@@ -1835,6 +1850,12 @@ export const supabaseService = {
           }
         }
       } catch (err) {}
+
+      // Fast path: If month was found with authoritative rows_data, return immediately!
+      const resolved = monthMap.get(monthId);
+      if (resolved && resolved.rows && resolved.rows.length > 0) {
+        return resolved;
+      }
 
       try {
         let query = supabase.from('billing_rows').select('*').eq('month_id', monthId);
@@ -4964,21 +4985,37 @@ export const supabaseService = {
       const leadId = leadRow.id;
 
       if (data.items && data.items.length > 0) {
-        const itemRows = data.items.map((item, idx) => ({
-          lead_id: leadId,
-          client_id: String(item.clientId || ''),
-          name: String(item.name || ''),
-          mobile_number: String(item.mobileNumber || ''),
-          message: item.message || null,
-          status: 'pending',
-          sort_order: idx
-        }));
+        const itemRows = data.items.map((item: any, idx: number) => {
+          const row: any = {
+            lead_id: leadId,
+            client_id: String(item.username || item.clientId || ''),
+            name: String(item.name || ''),
+            mobile_number: String(item.mobileNumber || ''),
+            message: item.message || null,
+            status: 'pending',
+            sort_order: idx
+          };
+          if (item.username) {
+            row.username = String(item.username);
+          }
+          return row;
+        });
 
-        const { error: itemsErr } = await supabase
+        let { error: itemsErr } = await supabase
           .from('reminder_lead_items')
           .insert(itemRows);
 
-        if (itemsErr) {
+        if (itemsErr && itemsErr.message?.includes('username')) {
+          console.warn("Retrying reminder_lead_items insert without username column:", itemsErr.message);
+          const fallbackRows = itemRows.map(({ username, ...rest }: any) => rest);
+          const { error: fallbackErr } = await supabase
+            .from('reminder_lead_items')
+            .insert(fallbackRows);
+          if (fallbackErr) {
+            console.error("Failed to insert reminder_lead_items on fallback:", fallbackErr);
+            throw fallbackErr;
+          }
+        } else if (itemsErr) {
           console.error("Failed to insert reminder_lead_items:", itemsErr);
           throw itemsErr;
         }

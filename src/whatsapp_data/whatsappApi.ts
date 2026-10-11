@@ -21,13 +21,14 @@ function getCandidateEndpoints(): string[] {
   ].filter((u): u is string => Boolean(u && typeof u === 'string'))));
 }
 
-export async function getStatus() {
+export async function getStatus(sessionKey?: string) {
   const candidateUrls = getCandidateEndpoints();
   let lastData: any = null;
+  const qStr = sessionKey ? `?session=${encodeURIComponent(sessionKey)}` : '';
 
   for (const url of candidateUrls) {
     try {
-      const res = await fetch(`${url}/status`);
+      const res = await fetch(`${url}/status${qStr}`);
       if (res.ok) {
         const data = await res.json();
         if (data.connected || !data.serviceStarting) {
@@ -48,19 +49,21 @@ export async function getStatus() {
   return {
     connected: false,
     phoneNumber: null,
+    session: sessionKey || 'main',
     rateLimitReached: false,
     queuedCount: 0,
     _error: 'WhatsApp service is starting or offline on port 3001. Please run "pm2 restart whatsapp-service" on your server.'
   };
 }
 
-export async function getQr() {
+export async function getQr(sessionKey?: string) {
   const candidateUrls = getCandidateEndpoints();
   let lastError: string | null = null;
+  const qStr = sessionKey ? `?session=${encodeURIComponent(sessionKey)}` : '';
 
   for (const url of candidateUrls) {
     try {
-      const res = await fetch(`${url}/qr`);
+      const res = await fetch(`${url}/qr${qStr}`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.qr) {
@@ -75,11 +78,12 @@ export async function getQr() {
 
   return { 
     qr: null,
+    session: sessionKey || 'main',
     _error: lastError || null
   };
 }
 
-export async function resetWhatsAppSession() {
+export async function resetWhatsAppSession(sessionKey?: string) {
   const candidateUrls = getCandidateEndpoints();
 
   for (const url of candidateUrls) {
@@ -87,6 +91,7 @@ export async function resetWhatsAppSession() {
       const res = await fetch(`${url}/reset-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: sessionKey || 'main' })
       });
       if (res.ok) {
         return await res.json();
@@ -270,9 +275,13 @@ export async function saveTemplate(data: { template?: string, complaintRegistere
   return { success: true, savedOnServer, ...merged };
 }
 
-export async function disconnectWhatsApp() {
+export async function disconnectWhatsApp(sessionKey?: string) {
   try {
-    const res = await fetch(`${API_URL}/disconnect`, { method: 'POST' });
+    const res = await fetch(`${API_URL}/disconnect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session: sessionKey || 'main' })
+    });
     if (!res.ok) throw new Error('Failed to disconnect');
     return await res.json();
   } catch (err) {
@@ -280,12 +289,12 @@ export async function disconnectWhatsApp() {
   }
 }
 
-export async function sendMessage(phone: string, message: string) {
+export async function sendMessage(phone: string, message: string, sessionKey?: string) {
   try {
     const res = await fetch(`${API_URL}/send-message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, message })
+      body: JSON.stringify({ phone, message, session: sessionKey || 'main' })
     });
     
     let data;

@@ -783,20 +783,73 @@ export default function AdminPanel({
   const [restoreError, setRestoreError] = useState('');
   const [restoreSuccess, setRestoreSuccess] = useState(false);
 
-  const [billingMonths, setBillingMonths] = useState<any[]>([]);
-  const [billingMonthsList, setBillingMonthsList] = useState<{ id: string }[]>([]);
+  const [billingMonths, setBillingMonths] = useState<any[]>(() => {
+    try {
+      const lc = currentUser?.lineCode || 'nolc';
+      const dealer = activeDealerId || 'main';
+      const syncKeys = [
+        `billing_months_${dealer}_${lc}`,
+        `billing_months_all_${lc}`,
+        `billing_months_main_${lc}`
+      ];
+      for (const k of syncKeys) {
+        if (globalTableCaches[k] && Array.isArray(globalTableCaches[k]) && globalTableCaches[k].length > 0) {
+          return globalTableCaches[k];
+        }
+        const saved = localStorage.getItem(`gts_cache_v3_${k}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            globalTableCaches[k] = parsed;
+            return parsed;
+          }
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
 
-  React.useEffect(() => {
-    // Permanent purge of legacy billing months caches from local storage
-    [`gts_cache_v3_billing_months_all_${currentUser?.lineCode || 'nolc'}`, `gts_cache_v3_billing_months_main_${currentUser?.lineCode || 'nolc'}`, `gts_cache_v3_billing_months_${activeDealerId || 'main'}_${currentUser?.lineCode || 'nolc'}`].forEach(k => {
-      try {
-        localStorage.removeItem(k);
-      } catch (e) {}
-    });
-  }, []);
+  const [billingMonthsList, setBillingMonthsList] = useState<{ id: string }[]>(() => {
+    try {
+      const lc = currentUser?.lineCode || 'nolc';
+      const dealer = activeDealerId || 'main';
+      const syncKeys = [
+        `billing_months_${dealer}_${lc}`,
+        `billing_months_all_${lc}`,
+        `billing_months_main_${lc}`
+      ];
+      for (const k of syncKeys) {
+        const cached = globalTableCaches[k] || JSON.parse(localStorage.getItem(`gts_cache_v3_${k}`) || '[]');
+        if (Array.isArray(cached) && cached.length > 0) {
+          return cached.map((m: any) => ({ id: m.id || m.month_id }));
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
+
   const billingMonthsRef = React.useRef<any[]>([]);
   const isBillingDataFresh = React.useRef(false);
-  const [isBillingMonthsLoading, setIsBillingMonthsLoading] = useState(true);
+  const [isBillingMonthsLoading, setIsBillingMonthsLoading] = useState<boolean>(() => {
+    try {
+      const lc = currentUser?.lineCode || 'nolc';
+      const dealer = activeDealerId || 'main';
+      const syncKeys = [
+        `billing_months_${dealer}_${lc}`,
+        `billing_months_all_${lc}`,
+        `billing_months_main_${lc}`
+      ];
+      for (const k of syncKeys) {
+        if (globalTableCaches[k] && globalTableCaches[k].length > 0) return false;
+        const saved = localStorage.getItem(`gts_cache_v3_${k}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return false;
+        }
+      }
+    } catch (e) {}
+    return true;
+  });
   React.useEffect(() => {
     billingMonthsRef.current = billingMonths;
   }, [billingMonths]);
@@ -970,10 +1023,18 @@ export default function AdminPanel({
 
   const [currentMonthId, _setCurrentMonthId] = useState<string>(() => {
     try {
-      const syncKey = `billing_months_${activeDealerId || 'main'}_${currentUser?.lineCode || 'nolc'}`;
-      const cached: any[] = globalTableCaches[syncKey];
-      if (Array.isArray(cached) && cached.length > 0) {
-        return cached[0].id || cached[0].month_id || '';
+      const lc = currentUser?.lineCode || 'nolc';
+      const dealer = activeDealerId || 'main';
+      const syncKeys = [
+        `billing_months_${dealer}_${lc}`,
+        `billing_months_all_${lc}`,
+        `billing_months_main_${lc}`
+      ];
+      for (const k of syncKeys) {
+        const cached: any[] = globalTableCaches[k] || JSON.parse(localStorage.getItem(`gts_cache_v3_${k}`) || '[]');
+        if (Array.isArray(cached) && cached.length > 0) {
+          return cached[0].id || cached[0].month_id || '';
+        }
       }
     } catch (e) {}
     return '';
@@ -998,7 +1059,7 @@ export default function AdminPanel({
     const currentMonths = billingMonthsRef.current.length > 0 ? billingMonthsRef.current : billingMonths;
     const existingMonth = currentMonths.find((m: any) => (m?.id || m?.month_id) === selectedMonthId);
 
-    if (existingMonth && Array.isArray(existingMonth.rows)) {
+    if (existingMonth && Array.isArray(existingMonth.rows) && existingMonth.rows.length > 0) {
       setCurrentMonthId(selectedMonthId);
       return;
     }
@@ -1623,12 +1684,8 @@ export default function AdminPanel({
     });
   }, [activeTab, activeDealerId, isEntrySheetRouteOpen]);
 
-  // Real-time sub for billing months (subscribes when billing section is open)
+  // Real-time sub for billing months (preloads in background on mount and stays synced)
   useEffect(() => {
-    if (activeTab !== 'billing') {
-      return;
-    }
-
     const unsubscribe = pocketbaseService.subscribeBillingMonths((data) => {
       isBillingDataFresh.current = true;
       setIsBillingMonthsLoading(false);
@@ -1639,6 +1696,8 @@ export default function AdminPanel({
         // Sort newest first by parsing e.g. "MAY-26" or using epoch createdAt
         return (b.createdAt || 0) - (a.createdAt || 0);
       });
+
+      setBillingMonthsList(sorted.map((m: any) => ({ id: m.id })));
       
       setBillingMonths(prev => {
         const nextMap = new Map<string, any>();
@@ -1700,7 +1759,7 @@ export default function AdminPanel({
       });
     }, activeDealerId);
     return () => unsubscribe();
-  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId, activeTab, filterScopedBillingMonths]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId, filterScopedBillingMonths]);
 
   // Register visibilitychange and beforeunload listeners for pending saves
   useEffect(() => {
@@ -4008,6 +4067,17 @@ export default function AdminPanel({
     const inputClasses = "w-full px-4 py-3 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-900 dark:text-slate-100 focus:outline-none focus:shadow-[var(--neu-shadow-inset-deep)] transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
 
+  const isEffectiveBillingLoading = useMemo(() => {
+    // If active month already has rows, NEVER block the UI with full-screen loading!
+    if (activeMonthDoc && Array.isArray(activeMonthDoc.rows) && activeMonthDoc.rows.length > 0) {
+      return false;
+    }
+    // If switching to a month that has no rows yet:
+    if (isSwitchingMonth) return true;
+    // Otherwise, true only if we have zero months loaded yet:
+    return isBillingMonthsLoading && billingMonths.length === 0;
+  }, [activeMonthDoc, isSwitchingMonth, isBillingMonthsLoading, billingMonths.length]);
+
   const stateProps = {
     onNavigate: onNavigateProp,
     canManageClients,
@@ -4116,7 +4186,8 @@ export default function AdminPanel({
     isEntrySheetRouteOpen,
     isExporting,
     isGeneratingBackup,
-    isLoading,
+    isLoading: isEffectiveBillingLoading,
+    isBillingSyncing: isBillingMonthsLoading && Boolean(activeMonthDoc?.rows?.length),
     isMicMuted,
     isNewConnectionCat,
     isPendingStatus,
@@ -7290,7 +7361,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'billing' && <BillingTab {...stateProps} isLoading={isBillingMonthsLoading || isSwitchingMonth} forceViewOnly={!canWriteBilling} />}
+        {activeTab === 'billing' && <BillingTab {...stateProps} isLoading={isEffectiveBillingLoading} isBillingSyncing={isBillingMonthsLoading && Boolean(activeMonthDoc?.rows?.length)} forceViewOnly={!canWriteBilling} />}
           </motion.div>
           </Suspense>
           </>

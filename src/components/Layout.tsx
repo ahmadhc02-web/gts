@@ -813,7 +813,11 @@ export default function Layout({
       </AnimatePresence>
       <AnimatePresence>
         {isWhatsAppPanelOpen && (
-          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
+          <WhatsAppConnectPanel
+            onClose={() => setIsWhatsAppPanelOpen(false)}
+            currentUser={user || undefined}
+            users={users}
+          />
         )}
       </AnimatePresence>
 

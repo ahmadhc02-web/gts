@@ -20,6 +20,26 @@
   --color-brand-border: #d3d9e4;
 }
 
+.font-lexend, [data-font-lexend="true"] {
+  font-family: 'Lexend', 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-feature-settings: "zero" 0, "ss01" 0 !important;
+}
+
+[data-font-lexend="true"] * {
+  font-family: 'Lexend', 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-feature-settings: "zero" 0, "ss01" 0 !important;
+}
+
+[data-font-lexend="true"] .font-mono,
+.font-lexend .font-mono,
+[data-font-lexend="true"] .tabular-nums,
+.font-lexend .tabular-nums {
+  font-family: 'Lexend', 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif !important;
+  font-variant-numeric: normal !important;
+  font-feature-settings: "zero" 0, "ss01" 0 !important;
+  letter-spacing: 0.02em;
+}
+
 @variant dark (&:where(.dark, .dark *));
 
 @layer base {

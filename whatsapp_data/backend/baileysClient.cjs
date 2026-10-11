@@ -17,265 +17,262 @@ function normalizePakistaniPhone(phone) {
   return normalized;
 }
 
-let sock = null;
-let currentQr = null;
-let isConnected = false;
-let userPhoneNumber = null;
-
-// Reconnect/Backoff State
-let reconnectDelay = 3000; // start with 3 seconds
-let reconnectTimer = null;
-let resetBackoffTimer = null;
-let lastConnectionOpenTimestamp = 0;
-let lastActivityTimestamp = Date.now();
-let isReconnectPending = false;
-let keepAliveTimer = null;
-let consecutiveBadSessionCount = 0;
-
-function startKeepAlive() {
-  if (keepAliveTimer) clearInterval(keepAliveTimer);
-  keepAliveTimer = setInterval(async () => {
-    if (isConnected && sock) {
-      try {
-        await sock.sendPresenceUpdate('available');
-        lastActivityTimestamp = Date.now();
-      } catch (e) {
-        console.log('Keep-alive presence ping failed:', e.message);
-      }
-    }
-  }, 3 * 60 * 1000); // every 3 minutes
+function normalizeSessionKey(rawKey) {
+  if (!rawKey || typeof rawKey !== 'string') return 'main';
+  const trimmed = rawKey.trim().toLowerCase();
+  if (!trimmed || trimmed === 'main' || trimmed === 'default' || trimmed === 'global' || trimmed === 'all') {
+    return 'main';
+  }
+  return trimmed.replace(/[^a-z0-9_-]/g, '_');
 }
 
-function stopKeepAlive() {
-  if (keepAliveTimer) clearInterval(keepAliveTimer);
-  keepAliveTimer = null;
-}
-
-const PROACTIVE_REFRESH_INTERVAL_MS = 10 * 60 * 1000; // every 10 minutes
-let proactiveRefreshTimer = null;
-
-function startProactiveRefresh() {
-  if (proactiveRefreshTimer) clearInterval(proactiveRefreshTimer);
-  proactiveRefreshTimer = setInterval(() => {
-    if (isConnected && messageQueue.length === 0 && !isProcessingQueue) {
-      console.log('[Proactive Refresh] Refreshing WhatsApp connection to prevent long-uptime staleness...');
-      isConnected = false;
-      initBaileys();
-    } else {
-      console.log('[Proactive Refresh] Skipped — queue busy, will retry next interval.');
-    }
-  }, PROACTIVE_REFRESH_INTERVAL_MS);
-}
-
-function stopProactiveRefresh() {
-  if (proactiveRefreshTimer) clearInterval(proactiveRefreshTimer);
-  proactiveRefreshTimer = null;
-}
-
-// Message Queue State
-const messageQueue = [];
-let isProcessingQueue = false;
-const sentTimestamps = []; // Slide window of sent messages
-
-// Logging Callback
+// Global Logging Callback
 let messageLogCallback = null;
-
 function registerMessageLogCallback(callback) {
   messageLogCallback = callback;
 }
 
-function getQueuedCount() {
-  return messageQueue.length;
+// Multi-Tenant Session Map
+const sessions = new Map();
+
+function getSession(rawKey = 'main', createIfMissing = true) {
+  const key = normalizeSessionKey(rawKey);
+  let session = sessions.get(key);
+  if (!session && createIfMissing) {
+    const authFolder = key === 'main' ? 'auth_session' : `auth_session_${key}`;
+    const authDir = path.join(__dirname, authFolder);
+    session = {
+      key,
+      authDir,
+      sock: null,
+      currentQr: null,
+      isConnected: false,
+      userPhoneNumber: null,
+      reconnectDelay: 3000,
+      reconnectTimer: null,
+      resetBackoffTimer: null,
+      lastConnectionOpenTimestamp: 0,
+      lastActivityTimestamp: Date.now(),
+      isReconnectPending: false,
+      keepAliveTimer: null,
+      consecutiveBadSessionCount: 0,
+      proactiveRefreshTimer: null,
+      messageQueue: [],
+      isProcessingQueue: false,
+      sentTimestamps: []
+    };
+    sessions.set(key, session);
+  }
+  return session;
 }
 
-function isRateLimitReached() {
-  return false; // Hourly message cap removed
-}
-
-async function initBaileys() {
-  try {
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (sock) {
+function startKeepAlive(session) {
+  if (session.keepAliveTimer) clearInterval(session.keepAliveTimer);
+  session.keepAliveTimer = setInterval(async () => {
+    if (session.isConnected && session.sock) {
       try {
-        sock.ev.removeAllListeners();
-        sock.end(new Error('Reinitializing connection'));
+        await session.sock.sendPresenceUpdate('available');
+        session.lastActivityTimestamp = Date.now();
       } catch (e) {
-        console.log('Error closing previous socket (safe to ignore):', e.message);
+        console.log(`[Keep-Alive (${session.key})] Presence ping failed:`, e.message);
       }
-      sock = null;
     }
-    console.log('Initializing Baileys...');
-    const authDir = path.join(__dirname, 'auth_session');
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  }, 3 * 60 * 1000);
+}
 
-    sock = makeWASocket({
+function stopKeepAlive(session) {
+  if (session.keepAliveTimer) clearInterval(session.keepAliveTimer);
+  session.keepAliveTimer = null;
+}
+
+const PROACTIVE_REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 mins
+function startProactiveRefresh(session) {
+  if (session.proactiveRefreshTimer) clearInterval(session.proactiveRefreshTimer);
+  session.proactiveRefreshTimer = setInterval(() => {
+    if (session.isConnected && session.messageQueue.length === 0 && !session.isProcessingQueue) {
+      console.log(`[Proactive Refresh (${session.key})] Refreshing socket to prevent stale connection...`);
+      session.isConnected = false;
+      initBaileys(session.key);
+    }
+  }, PROACTIVE_REFRESH_INTERVAL_MS);
+}
+
+function stopProactiveRefresh(session) {
+  if (session.proactiveRefreshTimer) clearInterval(session.proactiveRefreshTimer);
+  session.proactiveRefreshTimer = null;
+}
+
+async function initBaileys(rawKey = 'main') {
+  const session = getSession(rawKey);
+  try {
+    if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+    if (session.sock) {
+      try {
+        session.sock.ev.removeAllListeners();
+        session.sock.end(new Error(`Reinitializing connection for session ${session.key}`));
+      } catch (e) {
+        console.log(`[${session.key}] Closing previous socket (safe):`, e.message);
+      }
+      session.sock = null;
+    }
+
+    console.log(`[Baileys Multi-Tenant] Initializing session "${session.key}" at ${session.authDir}...`);
+    if (!fs.existsSync(session.authDir)) {
+      fs.mkdirSync(session.authDir, { recursive: true });
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(session.authDir);
+
+    session.sock = makeWASocket({
       auth: state,
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      defaultQueryTimeoutMs: 60000,   // explicit 60s
+      defaultQueryTimeoutMs: 60000,
       connectTimeoutMs: 60000,
-      keepAliveIntervalMs: 25000,     // native WS ping every 25s
+      keepAliveIntervalMs: 25000,
     });
 
-    sock.ev.on('creds.update', saveCreds);
+    session.sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
+    session.sock.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        currentQr = qr;
-        console.log('QR Code generated. Ready to scan.');
+        session.currentQr = qr;
+        console.log(`[${session.key}] QR Code generated. Ready to scan.`);
       }
 
       if (connection === 'close') {
-        stopKeepAlive();
-        stopProactiveRefresh();
+        stopKeepAlive(session);
+        stopProactiveRefresh(session);
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const isDefinitiveLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401;
         const isPossibleBadSession = statusCode === DisconnectReason.badSession || statusCode === 500 || statusCode === 403;
-        console.log(`Connection closed. StatusCode: ${statusCode}. Definitive logout: ${isDefinitiveLogout}. Possible bad session: ${isPossibleBadSession} (consecutive count: ${consecutiveBadSessionCount}).`);
+        console.log(`[${session.key}] Connection closed. StatusCode: ${statusCode}. Logout: ${isDefinitiveLogout}`);
 
-        isConnected = false;
-        userPhoneNumber = null;
+        session.isConnected = false;
+        session.userPhoneNumber = null;
 
         if (isDefinitiveLogout) {
-          console.log('Logged out of WhatsApp (confirmed). Clearing auth and preparing fresh QR...');
-          consecutiveBadSessionCount = 0;
-          reconnectDelay = 3000;
-          isReconnectPending = false;
-          if (fs.existsSync(authDir)) {
+          console.log(`[${session.key}] Logged out. Clearing auth and preparing fresh QR...`);
+          session.consecutiveBadSessionCount = 0;
+          session.reconnectDelay = 3000;
+          session.isReconnectPending = false;
+          if (fs.existsSync(session.authDir)) {
             try {
-              fs.rmSync(authDir, { recursive: true, force: true });
-              console.log('Cleared auth_session folder after confirmed logout.');
+              fs.rmSync(session.authDir, { recursive: true, force: true });
             } catch (rmErr) {
-              console.warn('Failed to clear auth_session:', rmErr.message);
+              console.warn(`[${session.key}] Failed to clear auth folder:`, rmErr.message);
             }
           }
-          currentQr = null;
-          initBaileys();
+          session.currentQr = null;
+          initBaileys(session.key);
         } else if (isPossibleBadSession) {
-          consecutiveBadSessionCount++;
-          if (consecutiveBadSessionCount >= 3) {
-            console.log(`Bad session reported ${consecutiveBadSessionCount} times in a row — clearing auth and requiring fresh QR.`);
-            consecutiveBadSessionCount = 0;
-            reconnectDelay = 3000;
-            isReconnectPending = false;
-            if (fs.existsSync(authDir)) {
+          session.consecutiveBadSessionCount++;
+          if (session.consecutiveBadSessionCount >= 3) {
+            console.log(`[${session.key}] Bad session repeated 3x. Wiping folder and re-initializing...`);
+            session.consecutiveBadSessionCount = 0;
+            session.reconnectDelay = 3000;
+            session.isReconnectPending = false;
+            if (fs.existsSync(session.authDir)) {
               try {
-                fs.rmSync(authDir, { recursive: true, force: true });
-                console.log('Cleared auth_session folder after repeated bad-session errors.');
-              } catch (rmErr) {
-                console.warn('Failed to clear auth_session:', rmErr.message);
-              }
+                fs.rmSync(session.authDir, { recursive: true, force: true });
+              } catch (rmErr) {}
             }
-            currentQr = null;
-            initBaileys();
+            session.currentQr = null;
+            initBaileys(session.key);
           } else {
-            console.log(`Treating this as a possibly transient bad-session signal (attempt ${consecutiveBadSessionCount}/3) — reconnecting with the EXISTING session instead of wiping it.`);
-            handleReconnect();
+            handleReconnect(session);
           }
         } else {
-          // Ordinary transient network disconnect
-          handleReconnect();
+          handleReconnect(session);
         }
       } else if (connection === 'open') {
-        console.log('Opened connection to WhatsApp');
-        isConnected = true;
-        consecutiveBadSessionCount = 0;
-        currentQr = null;
-        lastConnectionOpenTimestamp = Date.now();
-        lastActivityTimestamp = Date.now();
-        if (sock?.user?.id) {
-          userPhoneNumber = sock.user.id.split(':')[0];
+        console.log(`[${session.key}] Opened WhatsApp connection successfully!`);
+        session.isConnected = true;
+        session.consecutiveBadSessionCount = 0;
+        session.currentQr = null;
+        session.lastConnectionOpenTimestamp = Date.now();
+        session.lastActivityTimestamp = Date.now();
+
+        if (session.sock?.user?.id) {
+          session.userPhoneNumber = session.sock.user.id.split(':')[0];
+          console.log(`[${session.key}] Phone Number linked: +${session.userPhoneNumber}`);
         }
-        
-        // Start keep-alive presence ping and proactive refresh
-        startKeepAlive();
-        startProactiveRefresh();
 
-        // Reset backoff delay after 2 minutes of stable connection
-        if (resetBackoffTimer) clearTimeout(resetBackoffTimer);
-        resetBackoffTimer = setTimeout(() => {
-          if (isConnected) {
-            console.log('Connection stable. Resetting reconnect backoff delay to 3s.');
-            reconnectDelay = 3000;
-            isReconnectPending = false;
+        startKeepAlive(session);
+        startProactiveRefresh(session);
+
+        if (session.resetBackoffTimer) clearTimeout(session.resetBackoffTimer);
+        session.resetBackoffTimer = setTimeout(() => {
+          if (session.isConnected) {
+            session.reconnectDelay = 3000;
+            session.isReconnectPending = false;
           }
-        }, 120000); // 2 minutes stable
+        }, 120000);
 
-        // Trigger queue processor in case we have items waiting
         setTimeout(() => {
-          console.log('[Connection Settle] Connection settled, resuming queue processing.');
-          processQueue();
-        }, 5000);
+          processQueue(session);
+        }, 3000);
       }
     });
 
   } catch (error) {
-    console.error('Error initializing Baileys:', error);
-    handleReconnect();
+    console.error(`[${session.key}] Error initializing Baileys:`, error);
+    handleReconnect(session);
   }
 }
 
-function handleReconnect() {
-  if (isReconnectPending) {
-    console.log('Reconnect already pending — not rescheduling.');
-    return;
-  }
-  isReconnectPending = true;
-  console.log(`Scheduling reconnect in ${reconnectDelay / 1000} seconds...`);
-  reconnectTimer = setTimeout(() => {
-    isReconnectPending = false;
-    reconnectDelay = Math.min(reconnectDelay * 2, 60000);
-    initBaileys();
-  }, reconnectDelay);
+function handleReconnect(session) {
+  if (session.isReconnectPending) return;
+  session.isReconnectPending = true;
+  console.log(`[${session.key}] Scheduling reconnect in ${session.reconnectDelay / 1000}s...`);
+  session.reconnectTimer = setTimeout(() => {
+    session.isReconnectPending = false;
+    session.reconnectDelay = Math.min(session.reconnectDelay * 2, 60000);
+    initBaileys(session.key);
+  }, session.reconnectDelay);
 }
 
-function getBaileysStatus() {
+function getBaileysStatus(rawKey = 'main') {
+  const session = getSession(rawKey, false);
   return {
-    connected: isConnected,
-    phoneNumber: userPhoneNumber,
-    rateLimitReached: isRateLimitReached(),
-    queuedCount: getQueuedCount()
+    session: normalizeSessionKey(rawKey),
+    connected: session ? session.isConnected : false,
+    phoneNumber: session ? session.userPhoneNumber : null,
+    rateLimitReached: false,
+    queuedCount: session ? session.messageQueue.length : 0
   };
 }
 
-async function getBaileysQr() {
-  if (isConnected) return null;
-  if (!currentQr) {
-    // If not connected and no QR exists, ensure socket is initialized
-    if (!sock && !isReconnectPending) {
-      console.log('[QR Engine] No active socket or QR found, triggering fresh initialization...');
-      initBaileys();
+async function getBaileysQr(rawKey = 'main') {
+  const session = getSession(rawKey, true);
+  if (session.isConnected) return null;
+  if (!session.currentQr) {
+    if (!session.sock && !session.isReconnectPending) {
+      console.log(`[${session.key}] No socket or QR found, starting fresh session...`);
+      initBaileys(session.key);
     }
     return null;
   }
   try {
-    const dataUrl = await QRCode.toDataURL(currentQr);
+    const dataUrl = await QRCode.toDataURL(session.currentQr);
     return dataUrl;
   } catch (err) {
-    console.error('Error generating QR code data URL', err);
+    console.error(`[${session.key}] Error generating QR code:`, err);
     return null;
   }
 }
 
-// Queue message for transmission
-async function sendMessage(phoneNumber, message) {
-  return new Promise((resolve, reject) => {
-    messageQueue.push({ phoneNumber, message, resolve, reject });
-    processQueue();
-  });
-}
-
 const MAX_SEND_ATTEMPTS = 3;
 const SEND_TIMEOUT_MS = 65000;
-const RECONNECT_WAIT_TIMEOUT_MS = 60000; // max time to wait for reconnect
+const RECONNECT_WAIT_TIMEOUT_MS = 60000;
 
-function waitForReconnect(timeoutMs) {
+function waitForReconnect(session, timeoutMs) {
   return new Promise((resolve, reject) => {
-    if (isConnected && sock) return resolve();
+    if (session.isConnected && session.sock) return resolve();
     const checkInterval = setInterval(() => {
-      if (isConnected && sock) {
+      if (session.isConnected && session.sock) {
         clearInterval(checkInterval);
         clearTimeout(timer);
         resolve();
@@ -283,210 +280,226 @@ function waitForReconnect(timeoutMs) {
     }, 500);
     const timer = setTimeout(() => {
       clearInterval(checkInterval);
-      reject(new Error('Timed out waiting for reconnect'));
+      reject(new Error(`Timed out waiting for reconnect on session ${session.key}`));
     }, timeoutMs);
   });
 }
 
-async function sendWithRetry(phoneNumber, message) {
+async function sendWithRetry(session, phoneNumber, message) {
   const jid = `${phoneNumber}@s.whatsapp.net`;
   let lastError = null;
 
-  const STALE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
-  if (Date.now() - lastActivityTimestamp > STALE_THRESHOLD_MS) {
-    console.log(`[Staleness Check] ${Math.round((Date.now() - lastActivityTimestamp) / 60000)} min since last activity — refreshing connection before sending.`);
-    isConnected = false;
-    handleReconnect();
-    await waitForReconnect(RECONNECT_WAIT_TIMEOUT_MS);
-    console.log('[Connection Settle] Waiting 4s for connection to stabilize after reconnect...');
-    await new Promise(r => setTimeout(r, 4000));
-    lastActivityTimestamp = Date.now();
-  }
-
   for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
     try {
-      // Make sure we're connected before even trying
-      if (!isConnected || !sock) {
-        console.log(`Attempt ${attempt}: not connected, waiting for reconnect...`);
-        handleReconnect();
-        await waitForReconnect(RECONNECT_WAIT_TIMEOUT_MS);
-        console.log('[Connection Settle] Waiting 4s for connection to stabilize after reconnect...');
-        await new Promise(r => setTimeout(r, 4000));
+      if (!session.isConnected || !session.sock) {
+        console.log(`[${session.key}] Attempt ${attempt}: not connected, waiting for reconnect...`);
+        handleReconnect(session);
+        await waitForReconnect(session, RECONNECT_WAIT_TIMEOUT_MS);
+        await new Promise(r => setTimeout(r, 3000));
       }
 
-      // Liveness ping before every attempt — cheap, and catches a
-      // stale connection BEFORE we try to send the real message
       await Promise.race([
-        sock.sendPresenceUpdate('available'),
+        session.sock.sendPresenceUpdate('available'),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Liveness ping timed out')), 10000))
       ]);
 
-      // The actual send, with a hard timeout so it can never hang forever
+      if (session.sock && typeof session.sock.onWhatsApp === 'function') {
+        try {
+          const waCheck = await Promise.race([
+            session.sock.onWhatsApp(jid),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('onWhatsApp check timed out')), 6000))
+          ]);
+          if (Array.isArray(waCheck)) {
+            const isRegistered = waCheck.length > 0 && waCheck[0]?.exists !== false;
+            if (!isRegistered) {
+              const noWaErr = new Error('Number is not registered on WhatsApp');
+              noWaErr.isNotOnWhatsApp = true;
+              throw noWaErr;
+            }
+          }
+        } catch (checkErr) {
+          if (checkErr.isNotOnWhatsApp) throw checkErr;
+        }
+      }
+
       await Promise.race([
-        sock.sendMessage(jid, { text: message }),
+        session.sock.sendMessage(jid, { text: message }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Send timed out')), SEND_TIMEOUT_MS))
       ]);
 
-      lastActivityTimestamp = Date.now();
-      return { success: true }; // done — exit the retry loop
+      session.lastActivityTimestamp = Date.now();
+      return { success: true };
     } catch (err) {
       lastError = err;
-      console.log(`Send attempt ${attempt}/${MAX_SEND_ATTEMPTS} to ${phoneNumber} failed: ${err.message}`);
-      // Treat ANY failure here as a possibly-stale connection: force a
-      // reconnect before the next attempt, rather than assuming it's
-      // still fine.
-      isConnected = false;
-      handleReconnect();
+      console.log(`[${session.key}] Send attempt ${attempt}/${MAX_SEND_ATTEMPTS} to ${phoneNumber} failed: ${err.message}`);
+      if (err.isNotOnWhatsApp) {
+        break;
+      }
+      session.isConnected = false;
+      handleReconnect(session);
       if (attempt < MAX_SEND_ATTEMPTS) {
-        const backoffMs = 2000 * attempt; // 2s, 4s, ...
-        await new Promise(r => setTimeout(r, backoffMs));
+        await new Promise(r => setTimeout(r, 2000 * attempt));
       }
     }
   }
-  throw lastError || new Error('Failed to send after retries');
+  throw lastError || new Error(`Failed to send after retries on session ${session.key}`);
 }
 
-// Queue processor
-async function processQueue() {
-  if (isProcessingQueue) return;
-  isProcessingQueue = true;
+async function processQueue(session) {
+  if (session.isProcessingQueue) return;
+  session.isProcessingQueue = true;
 
-  while (messageQueue.length > 0) {
-    // 1. Check if WhatsApp is connected
-    if (!isConnected || !sock) {
-      console.log('Queue paused: WhatsApp is not connected');
+  let disconnectedChecks = 0;
+  while (session.messageQueue.length > 0) {
+    if (!session.isConnected || !session.sock) {
+      disconnectedChecks++;
+      if (disconnectedChecks > 6) {
+        console.warn(`[${session.key}] Queue aborted: WhatsApp session is not connected. Failing queued messages.`);
+        const connErr = new Error(`WhatsApp is not connected for session "${session.key}". Please scan QR code first.`);
+        while (session.messageQueue.length > 0) {
+          const t = session.messageQueue.shift();
+          if (messageLogCallback) messageLogCallback(t.phoneNumber, t.message, 'failed', connErr.message, session.key);
+          t.reject(connErr);
+        }
+        break;
+      }
+      console.log(`[${session.key}] Queue waiting: session not connected (attempt ${disconnectedChecks}/6)...`);
       await new Promise(r => setTimeout(r, 2000));
       continue;
     }
+    disconnectedChecks = 0;
 
-    // Pop the next message from the queue
-    const task = messageQueue.shift();
+    const task = session.messageQueue.shift();
     const { phoneNumber, message, resolve, reject } = task;
 
-    // Randomized human-like delay before each send
-    const delayMs = Math.floor(Math.random() * (8000 - 3000 + 1)) + 3000;
-    console.log(`Rate limiter: Waiting ${delayMs / 1000}s before sending to ${phoneNumber}...`);
+    const delayMs = Math.floor(Math.random() * (7000 - 3000 + 1)) + 3000;
     await new Promise(r => setTimeout(r, delayMs));
 
     try {
-      await sendWithRetry(phoneNumber, message);
-      sentTimestamps.push(Date.now());
-      console.log(`Successfully sent message to ${phoneNumber}`);
-      if (messageLogCallback) messageLogCallback(phoneNumber, message, 'success', null);
-      resolve({ success: true });
+      await sendWithRetry(session, phoneNumber, message);
+      session.sentTimestamps.push(Date.now());
+      console.log(`[${session.key}] Successfully sent message to ${phoneNumber}`);
+      if (messageLogCallback) messageLogCallback(phoneNumber, message, 'success', null, session.key);
+      resolve({ success: true, session: session.key });
     } catch (err) {
-      console.error(`Giving up on message to ${phoneNumber} after retries:`, err.message);
-      if (messageLogCallback) messageLogCallback(phoneNumber, message, 'failed', err.message || 'Unknown error');
+      console.error(`[${session.key}] Giving up on message to ${phoneNumber}:`, err.message);
+      if (messageLogCallback) messageLogCallback(phoneNumber, message, 'failed', err.message || 'Unknown error', session.key);
       reject(err);
     }
   }
 
-  isProcessingQueue = false;
+  session.isProcessingQueue = false;
 }
 
-async function logoutBaileys() {
-  stopKeepAlive();
-  stopProactiveRefresh();
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  isReconnectPending = false;
-
-  if (sock) {
-    try {
-      await sock.logout();
-    } catch (e) {
-      console.error('Logout error', e);
-    }
-  }
-  
-  const authDir = path.join(__dirname, 'auth_session');
-  if (fs.existsSync(authDir)) {
-    try {
-      fs.rmSync(authDir, { recursive: true, force: true });
-      console.log('Cleared auth_session folder after logout.');
-    } catch (rmErr) {
-      console.warn('Failed to delete auth_session during logout:', rmErr.message);
-    }
-  }
-  currentQr = null;
-  isConnected = false;
-  isReconnectPending = false;
-  userPhoneNumber = null;
-
-  // Immediately re-initialize so a new QR code is generated right away
-  initBaileys();
+// Queue message for transmission
+async function sendMessage(phoneNumber, message, options = {}, rawKey = 'main') {
+  const session = getSession(rawKey, true);
+  return new Promise((resolve, reject) => {
+    session.messageQueue.push({ phoneNumber, message, resolve, reject });
+    processQueue(session);
+  });
 }
 
-async function resetBaileysSession() {
-  console.log('[Baileys] Manual session reset requested...');
-  stopKeepAlive();
-  stopProactiveRefresh();
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  isReconnectPending = false;
+async function logoutBaileys(rawKey = 'main') {
+  const session = getSession(rawKey, false);
+  if (!session) return;
 
-  if (sock) {
+  stopKeepAlive(session);
+  stopProactiveRefresh(session);
+  if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+  session.isReconnectPending = false;
+
+  if (session.sock) {
     try {
-      sock.ev.removeAllListeners();
-      sock.end(new Error('Manual session reset requested'));
+      await session.sock.logout();
     } catch (e) {
-      console.log('Error ending socket on reset (safe to ignore):', e.message);
+      console.error(`[${session.key}] Logout error:`, e.message);
     }
-    sock = null;
   }
 
-  const authDir = path.join(__dirname, 'auth_session');
-  if (fs.existsSync(authDir)) {
+  if (fs.existsSync(session.authDir)) {
     try {
-      fs.rmSync(authDir, { recursive: true, force: true });
-      console.log('Cleared auth_session folder for fresh session reset.');
+      fs.rmSync(session.authDir, { recursive: true, force: true });
+      console.log(`[${session.key}] Cleared auth folder after logout.`);
     } catch (rmErr) {
-      console.warn('Failed to clear auth_session during reset:', rmErr.message);
+      console.warn(`[${session.key}] Failed to delete auth folder:`, rmErr.message);
     }
   }
 
-  currentQr = null;
-  isConnected = false;
-  userPhoneNumber = null;
-  reconnectDelay = 3000;
+  session.currentQr = null;
+  session.isConnected = false;
+  session.isReconnectPending = false;
+  session.userPhoneNumber = null;
 
-  // Reinitialize socket fresh
-  await initBaileys();
+  initBaileys(session.key);
+}
 
-  // Wait up to 5 seconds for QR code to be emitted
+async function resetBaileysSession(rawKey = 'main') {
+  const session = getSession(rawKey, true);
+  console.log(`[${session.key}] Manual session reset requested...`);
+  stopKeepAlive(session);
+  stopProactiveRefresh(session);
+  if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+  session.isReconnectPending = false;
+
+  if (session.sock) {
+    try {
+      session.sock.ev.removeAllListeners();
+      session.sock.end(new Error('Manual session reset'));
+    } catch (e) {}
+    session.sock = null;
+  }
+
+  if (fs.existsSync(session.authDir)) {
+    try {
+      fs.rmSync(session.authDir, { recursive: true, force: true });
+      console.log(`[${session.key}] Cleared auth folder for reset.`);
+    } catch (rmErr) {}
+  }
+
+  session.currentQr = null;
+  session.isConnected = false;
+  session.userPhoneNumber = null;
+  session.reconnectDelay = 3000;
+
+  await initBaileys(session.key);
+
   for (let i = 0; i < 10; i++) {
-    if (currentQr) break;
+    if (session.currentQr) break;
     await new Promise((r) => setTimeout(r, 500));
   }
 
-  const qrDataUrl = await getBaileysQr();
+  const qrDataUrl = await getBaileysQr(session.key);
   return {
     success: true,
+    session: session.key,
     qr: qrDataUrl,
-    connected: isConnected,
+    connected: session.isConnected,
   };
 }
 
-// 5-Minute Health Check Daemon
-setInterval(() => {
-  console.log('--- WhatsApp Service Health Check ---');
-  console.log(`Connected: ${isConnected}`);
-  console.log(`Queue size: ${getQueuedCount()} messages`);
-  console.log(`Rate limit reached: ${isRateLimitReached()}`);
-  if (isConnected) {
-    const minutesConnected = Math.floor((Date.now() - lastConnectionOpenTimestamp) / 60000);
-    console.log(`Connection Age: ${minutesConnected} minutes`);
-    if (sock && sock.ws) {
-      console.log(`Socket status: Ready (ws state: ${sock.ws.readyState})`);
-    } else {
-      console.warn('⚠️ Alert: Connection is marked as connected, but socket object is missing!');
+// Auto-restore any existing sessions on server boot
+function autoRestoreAllSessions() {
+  initBaileys('main');
+  try {
+    const entries = fs.readdirSync(__dirname);
+    for (const item of entries) {
+      if (item.startsWith('auth_session_') && fs.statSync(path.join(__dirname, item)).isDirectory()) {
+        const sKey = item.replace(/^auth_session_/, '');
+        if (sKey) {
+          console.log(`[Baileys Multi-Tenant] Auto-restoring existing session: "${sKey}"`);
+          initBaileys(sKey);
+        }
+      }
     }
-  } else {
-    console.log('Connection state: Offline or connecting');
+  } catch (err) {
+    console.warn('[Baileys Multi-Tenant] Warning auto-restoring sessions:', err.message);
   }
-  console.log('------------------------------------');
-}, 300000); // 5 minutes
+}
 
 module.exports = {
   initBaileys,
+  autoRestoreAllSessions,
   getBaileysStatus,
   getBaileysQr,
   sendMessage,
@@ -494,4 +507,5 @@ module.exports = {
   resetBaileysSession,
   registerMessageLogCallback,
   normalizePakistaniPhone,
+  normalizeSessionKey,
 };

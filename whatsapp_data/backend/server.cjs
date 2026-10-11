@@ -5,7 +5,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const ws = require('ws');
-const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, logoutBaileys, resetBaileysSession, registerMessageLogCallback, normalizePakistaniPhone } = require('./baileysClient.cjs');
+const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, autoRestoreAllSessions, logoutBaileys, resetBaileysSession, registerMessageLogCallback, normalizePakistaniPhone } = require('./baileysClient.cjs');
 const { createClient } = require('@supabase/supabase-js');
 
 let admin = null;
@@ -78,29 +78,33 @@ if (supabase) {
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 app.use(express.json());
 
-// Init Baileys
-initBaileys();
+// Init Baileys and restore active multi-tenant sessions
+autoRestoreAllSessions();
 
 app.get('/status', (req, res) => {
-  res.json(getBaileysStatus());
+  const sessionKey = req.query.session || req.query.dealerId || req.query.vlan || 'main';
+  res.json(getBaileysStatus(sessionKey));
 });
 
 app.get('/qr', async (req, res) => {
-  const qrBase64 = await getBaileysQr();
+  const sessionKey = req.query.session || req.query.dealerId || req.query.vlan || 'main';
+  const qrBase64 = await getBaileysQr(sessionKey);
   if (!qrBase64) {
-    return res.json({ qr: null });
+    return res.json({ qr: null, session: sessionKey });
   }
-  res.json({ qr: qrBase64 });
+  res.json({ qr: qrBase64, session: sessionKey });
 });
 
 app.post('/disconnect', async (req, res) => {
-  await logoutBaileys();
-  res.json({ success: true });
+  const sessionKey = req.body?.session || req.body?.dealerId || req.body?.vlan || req.query?.session || 'main';
+  await logoutBaileys(sessionKey);
+  res.json({ success: true, session: sessionKey });
 });
 
 app.post('/reset-session', async (req, res) => {
   try {
-    const result = await resetBaileysSession();
+    const sessionKey = req.body?.session || req.body?.dealerId || req.body?.vlan || req.query?.session || 'main';
+    const result = await resetBaileysSession(sessionKey);
     res.json(result);
   } catch (err) {
     console.error('Failed to reset session:', err);
@@ -143,15 +147,16 @@ app.post('/send-push', async (req, res) => {
 
 app.post('/send-message', async (req, res) => {
   try {
-    const { phone, message } = req.body;
+    const { phone, message, session, dealerId, vlan } = req.body;
     if (!phone || !message) {
       return res.status(400).json({ success: false, error: 'Phone and message are required' });
     }
 
+    const sessionKey = session || dealerId || vlan || 'main';
     const normalizedPhone = normalizePakistaniPhone(phone);
-    const result = await sendMessage(normalizedPhone, message);
+    const result = await sendMessage(normalizedPhone, message, {}, sessionKey);
     if (result.success) {
-      res.json({ success: true });
+      res.json({ success: true, session: sessionKey });
     } else {
       res.status(500).json({ success: false, error: result.error || 'Failed to send message' });
     }
@@ -192,7 +197,7 @@ app.post('/create-lead', async (req, res) => {
     if (Array.isArray(items) && items.length > 0) {
       const itemRows = items.map((item, idx) => ({
         lead_id: leadId,
-        client_id: String(item.clientId || ''),
+        client_id: String(item.username || item.clientId || ''),
         name: String(item.name || ''),
         mobile_number: String(item.mobileNumber || ''),
         message: item.message || null,

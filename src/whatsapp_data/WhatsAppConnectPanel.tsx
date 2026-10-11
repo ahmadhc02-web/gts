@@ -15,15 +15,43 @@ import {
   ShieldCheck,
   Radio,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Shield,
+  Layers,
+  ChevronDown
 } from 'lucide-react';
 import { getStatus, getQr, disconnectWhatsApp, resetWhatsAppSession } from './whatsappApi';
 import { toast } from 'sonner';
+import { UserProfile } from '../types';
 
-export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void }) {
+export interface WhatsAppConnectPanelProps {
+  onClose?: () => void;
+  currentUser?: UserProfile;
+  initialSessionKey?: string;
+  users?: UserProfile[];
+}
+
+export default function WhatsAppConnectPanel({
+  onClose,
+  currentUser,
+  initialSessionKey,
+  users = []
+}: WhatsAppConnectPanelProps) {
+  // Determine if logged-in user is a Sub-Dealer
+  const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin';
+  const defaultSubDealerKey = currentUser?.lineCode || currentUser?.dealerId || currentUser?.uid || 'main';
+
+  // Session Key state
+  const [sessionKey, setSessionKey] = useState<string>(() => {
+    if (initialSessionKey) return initialSessionKey;
+    if (isSubDealerUser) return defaultSubDealerKey;
+    return 'main';
+  });
+
   const [status, setStatus] = useState<{
     connected: boolean;
     phoneNumber: string | null;
+    session?: string;
     rateLimitReached?: boolean;
     queuedCount?: number;
     serviceStarting?: boolean;
@@ -39,10 +67,38 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
   const statusRef = useRef(status);
   useEffect(() => { statusRef.current = status; }, [status]);
 
+  const sessionKeyRef = useRef(sessionKey);
+  useEffect(() => { sessionKeyRef.current = sessionKey; }, [sessionKey]);
+
+  // Sync state if initialSessionKey changes from outside
+  useEffect(() => {
+    if (initialSessionKey && initialSessionKey !== sessionKey) {
+      setSessionKey(initialSessionKey);
+    }
+  }, [initialSessionKey]);
+
+  // List of dealer channels for admin picker
+  const availableChannels = React.useMemo(() => {
+    const list = [{ key: 'main', label: '🌐 MASTER / MAIN GATEWAY (Default)', vlan: null, company: 'Main Admin' }];
+    const dealerUsers = (users || []).filter(u => u.lineCode || u.role === 'dealer');
+    dealerUsers.forEach(u => {
+      const key = u.lineCode || u.uid;
+      if (!list.some(item => item.key === key)) {
+        list.push({
+          key,
+          label: `⚡ VLAN ${u.lineCode || 'DEALER'} • ${u.fullName || u.companyName || u.username}`,
+          vlan: u.lineCode || null,
+          company: u.companyName || u.fullName || u.username
+        });
+      }
+    });
+    return list;
+  }, [users]);
+
   // Status fetching
-  const fetchStatusOnly = async () => {
+  const fetchStatusOnly = async (targetSession = sessionKeyRef.current) => {
     try {
-      const data = await getStatus();
+      const data = await getStatus(targetSession);
       if (data) {
         setStatus(data);
         if ((data as any)._error) {
@@ -52,10 +108,10 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
         }
         return data;
       }
-      setStatus({ connected: false, phoneNumber: null });
+      setStatus({ connected: false, phoneNumber: null, session: targetSession });
       return { connected: false, phoneNumber: null };
     } catch (err: any) {
-      setStatus({ connected: false, phoneNumber: null });
+      setStatus({ connected: false, phoneNumber: null, session: targetSession });
       return { connected: false, phoneNumber: null };
     } finally {
       setIsLoading(false);
@@ -63,9 +119,9 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
   };
 
   // QR fetching
-  const fetchQrOnly = async () => {
+  const fetchQrOnly = async (targetSession = sessionKeyRef.current) => {
     try {
-      const qrData = await getQr();
+      const qrData = await getQr(targetSession);
       if (qrData?.qr) {
         setQrCode(qrData.qr);
       } else {
@@ -81,26 +137,31 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
     }
   };
 
-  // Initial fetch
+  // When sessionKey changes, load its status and QR
   useEffect(() => {
     let active = true;
+    setIsLoading(true);
+    setQrCode(null);
+    setStatus(null);
+
     async function init() {
-      const s = await fetchStatusOnly();
+      const s = await fetchStatusOnly(sessionKey);
       if (active && s && !s.connected) {
-        await fetchQrOnly();
+        await fetchQrOnly(sessionKey);
       }
     }
     init();
+
     return () => {
       active = false;
     };
-  }, []);
+  }, [sessionKey]);
 
   // Poll status every 3 seconds while disconnected
   useEffect(() => {
     const statusInterval = setInterval(() => {
       if (!statusRef.current || !statusRef.current.connected) {
-        fetchStatusOnly();
+        fetchStatusOnly(sessionKeyRef.current);
       }
     }, 3000);
     return () => clearInterval(statusInterval);
@@ -110,20 +171,20 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
   useEffect(() => {
     const qrInterval = setInterval(() => {
       if (statusRef.current && !statusRef.current.connected) {
-        fetchQrOnly();
+        fetchQrOnly(sessionKeyRef.current);
       }
     }, 4000);
     return () => clearInterval(qrInterval);
   }, []);
 
   const handleDisconnect = async () => {
-    if (!confirm('Are you sure you want to disconnect this WhatsApp account?')) return;
+    if (!confirm(`Are you sure you want to disconnect WhatsApp for channel "${sessionKey}"?`)) return;
     setIsLoading(true);
     try {
-      await disconnectWhatsApp();
-      toast.info('WhatsApp session terminated');
-      await fetchStatusOnly();
-      await fetchQrOnly();
+      await disconnectWhatsApp(sessionKey);
+      toast.info(`WhatsApp session for ${sessionKey} terminated`);
+      await fetchStatusOnly(sessionKey);
+      await fetchQrOnly(sessionKey);
     } catch (err) {
       console.error('Disconnect failed', err);
     } finally {
@@ -134,9 +195,9 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const s = await fetchStatusOnly();
+      const s = await fetchStatusOnly(sessionKey);
       if (!s?.connected) {
-        await fetchQrOnly();
+        await fetchQrOnly(sessionKey);
       }
       toast.success('Status & QR refreshed');
     } finally {
@@ -145,17 +206,17 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
   };
 
   const handleResetSession = async () => {
-    if (!confirm('This will wipe the current session keys and generate a fresh QR code. Proceed?')) return;
+    if (!confirm(`This will wipe the session keys for "${sessionKey}" and generate a fresh QR code. Proceed?`)) return;
     setIsResetting(true);
     setError(null);
     try {
-      const res = await resetWhatsAppSession();
+      const res = await resetWhatsAppSession(sessionKey);
       if (res?.qr) {
         setQrCode(res.qr);
       } else {
-        await fetchQrOnly();
+        await fetchQrOnly(sessionKey);
       }
-      await fetchStatusOnly();
+      await fetchStatusOnly(sessionKey);
       toast.success('Session reset! Scan the newly generated QR code.');
     } catch (err: any) {
       setError(`Reset error: ${err.message || 'Unable to reset session'}`);
@@ -174,6 +235,9 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
   };
 
   const isConnected = Boolean(status?.connected);
+
+  // Active channel details
+  const activeChannelMeta = availableChannels.find(c => c.key === sessionKey);
 
   return (
     <div className="w-full bg-white dark:bg-slate-900/90 border border-slate-200/90 dark:border-slate-800 rounded-3xl shadow-xl shadow-slate-200/50 dark:shadow-none overflow-hidden flex flex-col transition-all duration-300">
@@ -204,7 +268,7 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
               )}
             </div>
             <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-              High-Speed Multi-Device Baileys Protocol Gateway
+              Multi-Tenant VLAN & Sub-Dealer Dedicated Gateway
             </p>
           </div>
         </div>
@@ -230,6 +294,46 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
         </div>
       </div>
 
+      {/* SUB-DEALER & VLAN GATEWAY SELECTOR BAR */}
+      <div className="px-6 py-3 bg-slate-100/70 dark:bg-slate-950/60 border-b border-slate-200/80 dark:border-white/5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="p-1 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+            <Layers size={14} />
+          </div>
+          <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+            Gateway Channel:
+          </span>
+          {isSubDealerUser ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black uppercase bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30">
+              <Shield size={12} />
+              <span>VLAN: {currentUser?.lineCode || 'SUB-DEALER'} ({currentUser?.companyName || currentUser?.fullName || currentUser?.username})</span>
+            </span>
+          ) : (
+            <div className="relative inline-block">
+              <select
+                value={sessionKey}
+                onChange={(e) => setSessionKey(e.target.value)}
+                className="pl-3 pr-8 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-xs appearance-none uppercase"
+              >
+                {availableChannels.map((c) => (
+                  <option key={`chan-${c.key}`} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+          )}
+        </div>
+
+        <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-2">
+          <span>Active Session:</span>
+          <code className="px-2 py-0.5 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-mono text-[10px] font-bold border border-slate-200 dark:border-slate-800">
+            {sessionKey}
+          </code>
+        </div>
+      </div>
+
       {/* Error & Warning Banners */}
       {error && (
         <div className="mx-6 mt-4 p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-2xl text-rose-700 dark:text-rose-300 text-xs font-semibold flex items-center justify-between gap-3 shadow-xs">
@@ -249,7 +353,7 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
       {status?.serviceStarting && !isConnected && (
         <div className="mx-6 mt-4 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-2xl text-amber-800 dark:text-amber-200 text-xs font-medium flex items-center gap-3">
           <Loader2 size={16} className="animate-spin shrink-0 text-amber-600 dark:text-amber-400" />
-          <span>Starting WhatsApp background engine on the server... QR code will appear automatically.</span>
+          <span>Starting WhatsApp background engine on the server for {sessionKey}... QR code will appear automatically.</span>
         </div>
       )}
 
@@ -263,7 +367,7 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
             {isLoading && !status ? (
               <div className="flex flex-col items-center justify-center gap-3 py-10 text-slate-400">
                 <Loader2 size={36} className="animate-spin text-emerald-500" />
-                <p className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Verifying session...</p>
+                <p className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Verifying session for {sessionKey}...</p>
               </div>
             ) : isConnected ? (
               /* CONNECTED STATE */
@@ -282,7 +386,7 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
                     WhatsApp Connected
                   </h3>
                   <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">
-                    Direct Socket Link Active
+                    Channel: <span className="font-bold text-slate-700 dark:text-slate-200">{sessionKey.toUpperCase()}</span>
                   </p>
                 </div>
 
@@ -299,161 +403,142 @@ export default function WhatsAppConnectPanel({ onClose }: { onClose?: () => void
                   </div>
                 )}
 
-                <button
-                  onClick={handleDisconnect}
-                  className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200/80 dark:border-rose-800/40 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
-                >
-                  <LogOut size={13} /> Terminate Session
-                </button>
+                <div className="w-full pt-4 border-t border-slate-200/60 dark:border-slate-800/80 flex flex-col gap-2">
+                  <button
+                    onClick={handleDisconnect}
+                    className="w-full py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <LogOut size={14} />
+                    <span>Disconnect Device</span>
+                  </button>
+                  <button
+                    onClick={handleResetSession}
+                    disabled={isResetting}
+                    className="w-full py-2 px-4 rounded-xl text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:underline flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw size={12} className={isResetting ? "animate-spin" : ""} />
+                    <span>Reset Gateway Session</span>
+                  </button>
+                </div>
               </div>
             ) : (
-              /* QR SCAN CODE STATE */
-              <div className="flex flex-col items-center w-full space-y-4">
-                
-                {/* Visual QR Frame */}
-                <div className="relative p-3 bg-white dark:bg-slate-950 rounded-2xl border-2 border-slate-300 dark:border-slate-800 shadow-md max-w-[210px] w-full aspect-square flex items-center justify-center group transition-all">
-                  
-                  {/* Decorative Corner Reticles */}
-                  <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 border-emerald-500 rounded-tl-sm pointer-events-none" />
-                  <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 border-emerald-500 rounded-tr-sm pointer-events-none" />
-                  <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 border-emerald-500 rounded-bl-sm pointer-events-none" />
-                  <div className="absolute bottom-1 right-1 w-3 h-3 border-b-2 border-r-2 border-emerald-500 rounded-br-sm pointer-events-none" />
-
+              /* DISCONNECTED / SCAN QR STATE */
+              <div className="flex flex-col items-center justify-center w-full space-y-4 py-2">
+                <div className="relative p-2.5 bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800">
                   {qrCode ? (
                     <img 
                       src={qrCode} 
-                      alt="WhatsApp QR Code" 
-                      className="w-full h-full object-contain rounded-lg mix-blend-multiply dark:mix-blend-normal dark:invert transition-transform duration-300 group-hover:scale-102" 
+                      alt={`WhatsApp QR Code (${sessionKey})`} 
+                      className="w-52 h-52 object-contain rounded-lg animate-in fade-in duration-300"
                     />
                   ) : (
-                    <div className="flex flex-col items-center justify-center p-4 text-slate-400">
-                      <QrCode size={38} className="mb-2 opacity-40 text-slate-400 animate-pulse" />
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                        {isResetting ? "Generating QR..." : "Waiting for QR..."}
-                      </p>
+                    <div className="w-52 h-52 flex flex-col items-center justify-center gap-2 text-slate-400 bg-slate-50 dark:bg-slate-950/50 rounded-lg">
+                      <Loader2 size={32} className="animate-spin text-indigo-500" />
+                      <p className="text-[10px] font-bold uppercase tracking-wider">Generating fresh QR...</p>
                     </div>
                   )}
                 </div>
 
-                {/* QR Quick Actions Toolbar */}
-                <div className="flex items-center gap-2 flex-wrap justify-center w-full pt-1">
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-wide">
+                    Scan With WhatsApp
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    For channel: <span className="font-bold text-blue-600 dark:text-blue-400">{sessionKey.toUpperCase()}</span>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 w-full pt-1">
                   <button
                     onClick={handleRefresh}
-                    disabled={isRefreshing || isResetting}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+                    disabled={isRefreshing}
+                    className="flex-1 py-2 px-3 rounded-xl bg-slate-200/70 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <RefreshCw size={12} className={isRefreshing ? "animate-spin text-emerald-500" : ""} />
-                    <span>{isRefreshing ? "Checking..." : "Reload QR"}</span>
+                    <RefreshCw size={13} className={isRefreshing ? "animate-spin" : ""} />
+                    <span>Reload QR</span>
                   </button>
                   <button
                     onClick={handleResetSession}
-                    disabled={isResetting || isRefreshing}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-                    title="Force clean session directory and re-initialize QR"
+                    disabled={isResetting}
+                    className="flex-1 py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:hover:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/40 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <RotateCcw size={12} className={isResetting ? "animate-spin text-emerald-500" : ""} />
-                    <span>{isResetting ? "Resetting..." : "Reset Session"}</span>
+                    <RotateCcw size={13} className={isResetting ? "animate-spin" : ""} />
+                    <span>Reset Key</span>
                   </button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* RIGHT LANDSCAPE COLUMN: Live Diagnostics, Instructions & Stats (7 Cols) */}
-          <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
-            
-            {/* Live Metrics Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-[10px] font-black uppercase tracking-wider">Gateway Protocol</span>
-                  <Zap size={14} className="text-amber-500" />
-                </div>
-                <div className="mt-2">
-                  <div className="text-xs font-black text-slate-800 dark:text-slate-200 font-mono">Baileys v6 WS</div>
-                  <div className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Multi-Device Ready</div>
-                </div>
+          {/* RIGHT LANDSCAPE COLUMN: Instructions & Multi-Tenant Specs (7 Cols) */}
+          <div className="lg:col-span-7 flex flex-col justify-between space-y-5 p-2">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 mb-3">
+                <ShieldCheck size={13} />
+                <span>Sub-Dealer WhatsApp Isolation</span>
               </div>
-
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-[10px] font-black uppercase tracking-wider">Outbound Queue</span>
-                  <Activity size={14} className="text-indigo-500" />
-                </div>
-                <div className="mt-2">
-                  <div className="text-xs font-black text-slate-800 dark:text-slate-200 font-mono">
-                    {status?.queuedCount && status.queuedCount > 0 ? `${status.queuedCount} Pending` : '0 Pending'}
-                  </div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Instant Dispatch</div>
-                </div>
-              </div>
-
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-between col-span-2 sm:col-span-1">
-                <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-[10px] font-black uppercase tracking-wider">Anti-Ban Buffer</span>
-                  <ShieldCheck size={14} className="text-emerald-500" />
-                </div>
-                <div className="mt-2">
-                  <div className="text-xs font-black text-emerald-600 dark:text-emerald-400 font-mono">Protected</div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">3-7s Adaptive Jitter</div>
-                </div>
-              </div>
-
+              <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                Dedicated WhatsApp Pairing Instructions
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                Connect your sub-dealer WhatsApp account to send reminders exclusively from your own number to your tagged subscribers on VLAN <strong className="text-slate-700 dark:text-slate-200">{sessionKey}</strong>.
+              </p>
             </div>
 
-            {/* Step-by-Step Instructions Landscape Card */}
-            <div className="p-4.5 bg-slate-50/70 dark:bg-slate-950/30 rounded-2xl border border-slate-200/70 dark:border-slate-800/80 space-y-3">
-              <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                <span>📱</span> Quick Smartphone Pairing Guide
-              </h4>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-left">
-                <div className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/70 dark:border-slate-800 flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-black text-[10px]">
-                    <span className="w-4 h-4 rounded-full bg-emerald-500/15 flex items-center justify-center text-[9px]">1</span>
-                    <span>Open App</span>
-                  </div>
-                  <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 leading-tight">
-                    Open WhatsApp on your mobile device.
+            {/* Step-by-Step Instructions */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800/60">
+                <div className="w-6 h-6 rounded-lg bg-blue-500 text-white font-black text-xs flex items-center justify-center shrink-0">
+                  1
+                </div>
+                <div className="text-xs">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Open WhatsApp on your mobile device</p>
+                  <p className="text-slate-500 dark:text-slate-400 mt-0.5 text-[11px]">
+                    Go to <strong>Settings</strong> (iOS) or tap <strong>⋮ More options</strong> (Android).
                   </p>
                 </div>
+              </div>
 
-                <div className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/70 dark:border-slate-800 flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-black text-[10px]">
-                    <span className="w-4 h-4 rounded-full bg-indigo-500/15 flex items-center justify-center text-[9px]">2</span>
-                    <span>Linked Devices</span>
-                  </div>
-                  <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 leading-tight">
-                    Tap <span className="font-bold">Settings</span> &rarr; <span className="font-bold">Linked Devices</span>.
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800/60">
+                <div className="w-6 h-6 rounded-lg bg-blue-500 text-white font-black text-xs flex items-center justify-center shrink-0">
+                  2
+                </div>
+                <div className="text-xs">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Select "Linked Devices"</p>
+                  <p className="text-slate-500 dark:text-slate-400 mt-0.5 text-[11px]">
+                    Tap <strong>"Link a Device"</strong> and scan the QR code displayed on the left.
                   </p>
                 </div>
+              </div>
 
-                <div className="p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/70 dark:border-slate-800 flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 font-black text-[10px]">
-                    <span className="w-4 h-4 rounded-full bg-purple-500/15 flex items-center justify-center text-[9px]">3</span>
-                    <span>Scan QR Code</span>
-                  </div>
-                  <p className="text-[11px] font-medium text-slate-600 dark:text-slate-400 leading-tight">
-                    Point camera at this screen to pair.
+              <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/60 dark:border-slate-800/60">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white font-black text-xs flex items-center justify-center shrink-0">
+                  3
+                </div>
+                <div className="text-xs">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">Dedicated Campaign Dispatch</p>
+                  <p className="text-slate-500 dark:text-slate-400 mt-0.5 text-[11px]">
+                    Once paired, all automated reminder campaigns for VLAN <strong className="text-emerald-600 dark:text-emerald-400">{sessionKey}</strong> will dispatch from your personal/business WhatsApp number!
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Bottom Status Help Footer */}
-            <div className="flex items-center justify-between gap-3 text-[11px] font-semibold text-slate-500 dark:text-slate-400 pt-1 px-1">
-              <div className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                <span>{isConnected ? `Linked to active number (+${status?.phoneNumber || ''})` : 'Awaiting mobile device connection'}</span>
-              </div>
+            {/* Feature Badges */}
+            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-wrap gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+              <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center gap-1">
+                ⚡ Multi-Session Baileys
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center gap-1">
+                🔒 Isolated Auth Directories
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center gap-1">
+                📡 24/7 Socket Reconnect
+              </span>
             </div>
-
           </div>
-
         </div>
       </div>
-
     </div>
   );
 }

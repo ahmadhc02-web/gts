@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned, Send, Users, Activity, RotateCcw, FileSpreadsheet, Flag, UserPlus, Info, Sparkles, Search } from 'lucide-react';
+import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned, Send, Users, Activity, RotateCcw, FileSpreadsheet, Flag, UserPlus, Info, Sparkles, Search, CheckCheck, CornerDownRight } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig, ComplaintReview } from '../types';
 import { cn } from '../lib/utils';
 import { getCardStyle } from '../lib/styleUtils';
@@ -97,6 +97,99 @@ export default function ComplaintList({
   const [showInlineSchedulePicker, setShowInlineSchedulePicker] = React.useState(false);
   const [scheduleModalDate, setScheduleModalDate] = React.useState('');
   const [showPrintPreview, setShowPrintPreview] = React.useState(false);
+
+  const handleAddProtocol = async (customText?: string) => {
+    if (!selectedComplaint) return;
+    const rawTrimmed = (customText !== undefined ? customText : statusRemarks).trim();
+    const trimmed = getCleanProtocolText(rawTrimmed);
+    if (!trimmed) {
+      toast.error("Please enter a valid Team Resolution Protocol.");
+      return;
+    }
+
+    const authorName = currentUser.fullName || currentUser.username || 'Staff';
+    const authorId = currentUser.uid;
+
+    const newProtocol: ComplaintReview = {
+      id: 'proto-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      text: trimmed,
+      createdAt: Date.now(),
+      authorId,
+      authorName
+    };
+
+    const updatedProtocols = [...(selectedComplaint.protocols || []), newProtocol];
+    const payload = JSON.stringify(updatedProtocols);
+
+    setSelectedComplaint(prev => prev ? { 
+      ...prev, 
+      remarks: payload, 
+      protocols: updatedProtocols,
+      remarkAuthorName: authorName,
+      remarkAuthorId: authorId
+    } : null);
+    setStatusRemarks('');
+    setEditedRemarks('');
+    setIsEditingRemarks(false);
+
+    try {
+      const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+      sound.volume = 0.2;
+      sound.play().catch(() => {});
+    } catch (e) {}
+
+    try {
+      if (onUpdateRemarks) {
+        await onUpdateRemarks(selectedComplaint.id, payload);
+      } else if (onEdit) {
+        await onEdit(selectedComplaint.id, { remarks: payload, protocols: updatedProtocols });
+      }
+      toast.success("Team Resolution Protocol saved to database.");
+    } catch (err) {
+      console.error("Failed to commit protocol updates:", err);
+      toast.error("Failed to save protocol to database. Kept in memory.");
+    }
+  };
+
+  const handleAddCustomerReview = async (customText?: string) => {
+    if (!selectedComplaint) return;
+    const trimmed = (customText !== undefined ? customText : customerReview).trim();
+    if (!trimmed) {
+      toast.error("Please type a Customer Review first.");
+      return;
+    }
+
+    const newReview: ComplaintReview = {
+      id: 'rev-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      text: trimmed,
+      createdAt: Date.now(),
+      authorId: currentUser.uid,
+      authorName: selectedComplaint.customerName || currentUser.fullName || currentUser.username || 'Customer'
+    };
+
+    const updatedReviews = [...(selectedComplaint.reviews || []), newReview];
+
+    setSelectedComplaint(prev => prev ? { ...prev, reviews: updatedReviews } : null);
+    setCustomerReview('');
+
+    try {
+      const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
+      sound.volume = 0.2;
+      sound.play().catch(() => {});
+    } catch (e) {}
+
+    try {
+      if (onEdit) {
+        await onEdit(selectedComplaint.id, { reviews: updatedReviews });
+        toast.success("Customer Review saved to database.");
+      } else {
+        toast.success("Customer Review saved in memory.");
+      }
+    } catch (err) {
+      console.error("Failed to add review:", err);
+      toast.error("Failed to save review.");
+    }
+  };
 
   const playPopupSound = () => {
     try {
@@ -1839,290 +1932,226 @@ export default function ComplaintList({
                   {/* Left Side: Descriptions */}
                   <div className="col-span-12 lg:col-span-7 space-y-3 sm:space-y-4">
                     
-                    {/* Block 1: Operational Log */}
-                    <motion.div 
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3 }}
-                      className="group relative rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] overflow-hidden transition-all duration-300"
-                    >
-                      {/* Side indicator with priority color */}
-                      <div className={cn(
-                        "absolute left-0 top-0 bottom-0 w-1.5 transition-all duration-300 group-hover:w-2",
-                        selectedComplaint.priority === 'High' ? 'bg-rose-500 shadow-[2px_0_10px_rgba(244,63,94,0.4)]' :
-                        selectedComplaint.priority === 'Critical' ? 'bg-red-600 shadow-[2px_0_12px_rgba(220,38,38,0.5)]' :
-                        selectedComplaint.priority === 'Medium' ? 'bg-amber-500 shadow-[2px_0_10px_rgba(245,158,11,0.4)]' :
-                        'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]'
-                      )} />
+                    {/* Operational Log & Resolution Chat (WhatsApp-Style Section) */}
+                    {(() => {
+                      const allProtocols: ComplaintReview[] = (selectedComplaint.protocols && selectedComplaint.protocols.length > 0)
+                        ? selectedComplaint.protocols
+                        : (selectedComplaint.remarks && getCleanProtocolText(selectedComplaint.remarks))
+                        ? [{
+                            id: 'proto-default',
+                            text: getCleanProtocolText(selectedComplaint.remarks),
+                            createdAt: selectedComplaint.createdAt,
+                            authorId: selectedComplaint.remarkAuthorId || selectedComplaint.memberId,
+                            authorName: selectedComplaint.remarkAuthorName || 'Team Technician'
+                          }]
+                        : [];
 
-                      <div className="p-3 pl-5 space-y-2">
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-1.5">
-                            <span className="p-1 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-emerald-500 shadow-[var(--neu-shadow-inset)]">
-                              <Network size={10} className="animate-pulse" />
-                            </span>
-                            <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
-                              {customNames.complaint || 'Operational Log'}
-                            </span>
-                          </div>
-                          
-                          <motion.div 
-                            whileHover={{ scale: 1.05 }}
-                            className={cn(
-                              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all shadow-[var(--neu-shadow-inset)]",
-                              selectedComplaint.priority === 'High' || selectedComplaint.priority === 'Critical'
-                                ? 'bg-rose-500/10 dark:bg-rose-500/5 text-rose-500 border-rose-500/20'
-                                : selectedComplaint.priority === 'Medium'
-                                ? 'bg-amber-500/10 dark:bg-amber-500/5 text-amber-500 border-amber-500/20'
-                                : 'bg-emerald-500/10 dark:bg-emerald-500/5 text-emerald-500 border-emerald-500/20'
-                            )}
-                          >
-                            <Zap size={8} className="shrink-0" />
-                            <span>{selectedComplaint.priority || 'Medium'} PRIORITY</span>
-                          </motion.div>
-                        </div>
+                      const allReviews: ComplaintReview[] = selectedComplaint.reviews || [];
+                      const hasTeamProtocol = allProtocols.length > 0;
+                      const hasCustomerReview = allReviews.length > 0;
+                      const latestProtocolText = allProtocols[allProtocols.length - 1]?.text;
 
-                        <div className="relative p-4 sm:p-5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] flex items-center">
-                          <div className="absolute top-1 left-2.5 text-slate-300 dark:text-slate-800 text-3xl font-serif pointer-events-none select-none">“</div>
-                          <p className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-200 leading-relaxed italic relative z-10 pl-3 pr-3">
-                            {selectedComplaint.description}
-                          </p>
-                          <div className="absolute bottom-1 right-2.5 text-slate-300 dark:text-slate-800 text-3xl font-serif pointer-events-none select-none">”</div>
-                        </div>
-                      </div>
-                    </motion.div>
-
-                    {/* Block 2: Team Resolution Protocol */}
-                    <motion.div 
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3, delay: 0.05 }}
-                      className="group relative rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] overflow-hidden transition-all duration-300"
-                    >
-                      <div className="p-3 space-y-2 relative overflow-hidden">
-                        {/* Thank You Animation Background Overlay */}
-                        <AnimatePresence>
-                          {showLeftThankYou && (
-                            <motion.div 
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              exit={{ opacity: 0 }}
-                              className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-950/20 dark:to-teal-950/25 backdrop-blur-[2.5px] z-20 flex flex-col items-center justify-center pointer-events-none"
-                            >
-                              <motion.div
-                                initial={{ scale: 0, rotate: -15 }}
-                                animate={{ scale: [0, 1.25, 1], rotate: 0 }}
-                                transition={{ duration: 0.5, ease: "easeOut" }}
-                                className="flex flex-col items-center gap-1"
-                              >
-                                <CheckCircle className="text-emerald-500 dark:text-emerald-400 animate-bounce" size={22} />
-                                <span className="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-600 dark:text-emerald-400">Thank You!</span>
-                              </motion.div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-1.5">
-                            <span className="p-1 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-emerald-500 shadow-[var(--neu-shadow-inset)]">
-                              <CheckCircle size={10} />
-                            </span>
-                            <span className="text-[9px] font-black uppercase tracking-[0.18em] text-emerald-500">
-                              Team Resolution Protocol
-                            </span>
-                          </div>
-                          
-                          {(!isEditingRemarks) && (
-                            <motion.button 
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                              onClick={() => {
-                                  const initialText = getCleanProtocolText(selectedComplaint.remarks, selectedComplaint.protocols);
-                                  setEditedRemarks(initialText);
-                                  setIsEditingRemarks(true);
-                              }}
-                              className="text-[8px] font-black uppercase tracking-wider text-emerald-500 hover:text-emerald-600 flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] cursor-pointer transition-all"
-                            >
-                              <Pencil size={9} />
-                              <span>{(selectedComplaint.protocols?.length || selectedComplaint.remarks) ? 'Amend' : 'Formulate'}</span>
-                            </motion.button>
-                          )}
-                        </div>
-
-                        <AnimatePresence mode="wait">
-                          {isEditingRemarks ? (
-                            <motion.div 
-                              initial={{ opacity: 0, scale: 0.98 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.98 }}
-                              className="space-y-1.5"
-                            >
-                              <textarea
-                                value={editedRemarks}
-                                onChange={(e) => setEditedRemarks(e.target.value)}
-                                className="w-full p-3 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none h-24 resize-none text-slate-800 dark:text-slate-100 font-semibold"
-                                placeholder="Type structural logging protocol..."
-                                autoFocus
-                              />
-                              <div className="flex justify-end gap-1.5 text-[9px] font-black uppercase tracking-widest">
-                                <button 
-                                  type="button"
-                                  onClick={() => setIsEditingRemarks(false)}
-                                  className="px-2 py-1 text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-900 rounded cursor-pointer transition-all"
-                                >
-                                  Cancel
-                                </button>
-                                <button 
-                                  type="button"
-                                  onClick={async () => {
-                                    const rawTrimmed = editedRemarks.trim();
-                                    const trimmed = getCleanProtocolText(rawTrimmed);
-                                    if (!trimmed) {
-                                      toast.error("Please enter a valid resolution protocol.");
-                                      return;
-                                    }
-
-                                    const authorName = currentUser.fullName || currentUser.username || 'Staff';
-                                    const authorId = currentUser.uid;
-
-                                    const updatedProtocol: ComplaintReview = {
-                                      id: selectedComplaint.protocols?.[0]?.id || ('proto-' + Date.now()),
-                                      text: trimmed,
-                                      createdAt: Date.now(),
-                                      authorId,
-                                      authorName
-                                    };
-
-                                    const updatedProtocols = [updatedProtocol];
-                                    const payload = JSON.stringify(updatedProtocols);
-
-                                    // 1. Instantly update UI (Optimistic update)
-                                    setSelectedComplaint(prev => prev ? { 
-                                      ...prev, 
-                                      remarks: payload, 
-                                      protocols: updatedProtocols,
-                                      remarkAuthorName: authorName,
-                                      remarkAuthorId: authorId
-                                    } : null);
-                                    setIsEditingRemarks(false);
-
-                                    // 2. Perform DB update asynchronously
-                                    try {
-                                      if (onUpdateRemarks) {
-                                        onUpdateRemarks(selectedComplaint.id, payload).catch(err => {
-                                          console.error("Failed to commit protocol updates:", err);
-                                          toast.error("Failed to update protocol.");
-                                        });
-                                      } else if (onEdit) {
-                                        onEdit(selectedComplaint.id, { remarks: payload, protocols: updatedProtocols }).catch(err => {
-                                          console.error("Failed to commit protocol updates:", err);
-                                          toast.error("Failed to update protocol.");
-                                        });
-                                      }
-                                      // Note: parent onUpdateRemarks already handles the toast success message internally
-                                    } catch (err) {
-                                      console.error("Failed to trigger update:", err);
-                                    }
-                                  }}
-                                  className="px-3 py-1 neu-btn hover:text-emerald-500 hover:border-emerald-500/20 rounded cursor-pointer transition-all"
-                                >
-                                  Commit Updates
-                                </button>
+                      return (
+                        <motion.div
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] overflow-hidden flex flex-col"
+                        >
+                          {/* Chat Header Bar */}
+                          <div className="h-[40px] px-3 sm:px-4 py-1.5 flex items-center justify-between bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-sm shrink-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="relative shrink-0">
+                                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center font-bold text-xs shadow-inner">
+                                  <MessageSquare size={13} className="text-white" />
+                                </div>
+                                <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-400 border border-emerald-700"></span>
                               </div>
-                            </motion.div>
-                          ) : (selectedComplaint.protocols && selectedComplaint.protocols.length > 0) ? (
-                            <motion.div 
-                              key={`protocols-${selectedComplaint.id}-${selectedComplaint.protocols.length}-${selectedComplaint.protocols[0]?.createdAt}-${selectedComplaint.protocols[0]?.text}`}
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              className="p-3"
-                            >
-                              <ReviewTimeline reviews={selectedComplaint.protocols} type="protocol" />
-                            </motion.div>
-                          ) : selectedComplaint.remarks && getCleanProtocolText(selectedComplaint.remarks) ? (
-                            <motion.div 
-                              key={`remarks-${selectedComplaint.id || 'cmp'}-${selectedComplaint.remarks}`}
-                              initial={animateRemarksLeft ? { x: 180, opacity: 0, scale: 0.9 } : { opacity: 0, scale: 0.95 }}
-                              animate={{ x: 0, opacity: 1, scale: 1 }}
-                              transition={{ type: "spring", stiffness: 150, damping: 15 }}
-                              className="p-4 sm:p-5 bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] text-emerald-600 dark:text-emerald-400 rounded-xl text-sm sm:text-base font-semibold whitespace-pre-wrap leading-relaxed"
-                            >
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="relative flex h-2 w-2">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <h3 className="text-[11px] sm:text-xs font-black tracking-wide uppercase text-white truncate">
+                                    Operational Log
+                                  </h3>
+                                  <span className="text-[7.5px] px-1.5 py-0.2 rounded bg-white/20 text-white font-mono font-bold shrink-0">
+                                    #{selectedComplaint.id.slice(-6).toUpperCase()}
+                                  </span>
+                                </div>
+                                <p className="text-[8.5px] sm:text-[9px] text-emerald-100 font-medium truncate hidden sm:block">
+                                  {selectedComplaint.customerName} • {selectedComplaint.customerUsername || selectedComplaint.area}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-full text-[7.5px] sm:text-[8px] font-black uppercase tracking-wider",
+                                selectedComplaint.priority === 'High' || selectedComplaint.priority === 'Critical'
+                                  ? 'bg-rose-500 text-white shadow-xs'
+                                  : selectedComplaint.priority === 'Medium'
+                                  ? 'bg-amber-400 text-slate-900 shadow-xs'
+                                  : 'bg-emerald-400 text-slate-900 shadow-xs'
+                              )}>
+                                {selectedComplaint.priority || 'Medium'} PRIORITY
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Chat Messages Body (WhatsApp Chat Thread) */}
+                          <div className="h-[332px] p-2.5 sm:p-4 space-y-3 bg-[#f0f2f5] dark:bg-[#0b141a] overflow-y-auto rounded-b-2xl flex flex-col justify-start border-t border-slate-200/60 dark:border-white/5 scrollbar-thin">
+                            {/* Date Badge */}
+                            <div className="flex justify-center my-0.5">
+                              <span className="px-2.5 py-0.5 rounded-full bg-slate-200/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-400 text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider shadow-xs">
+                                📅 Logged: {new Date(selectedComplaint.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </span>
+                            </div>
+
+                            {/* 1. REGISTRY INCOMING MESSAGE */}
+                            <div className="flex flex-col items-start max-w-[94%] sm:max-w-[85%]">
+                              <div className="flex items-center gap-1.5 mb-1 pl-1">
+                                <span className="w-4 h-4 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-[9px] font-black text-emerald-600 dark:text-emerald-400">
+                                  <Network size={10} />
                                 </span>
-                                <span className="text-[8px] sm:text-[9.5px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Verifiably Deployed</span>
+                                <span className="text-[9px] sm:text-[9.5px] font-black uppercase text-slate-700 dark:text-slate-300 tracking-wider">
+                                  {customNames.complaint || 'Operations Registry'}
+                                </span>
+                                <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500">
+                                  • {new Date(selectedComplaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
                               </div>
-                              <p className="italic">"{getCleanProtocolText(selectedComplaint.remarks)}"</p>
-                            </motion.div>
-                          ) : (
-                            <motion.div 
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              className="p-2.5 border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-[10px] text-amber-500 font-bold uppercase italic tracking-wider text-center flex flex-col items-center justify-center gap-1 rounded-xl"
-                            >
-                              <ShieldAlert size={12} className="text-amber-500 animate-bounce" />
-                              <span>⚠️ Protocol Outstanding</span>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
 
-                        {selectedComplaint.remarkAuthorName && !isEditingRemarks && (
-                          <div className="flex justify-end items-center gap-1 text-[7px] font-black text-slate-400 uppercase tracking-widest leading-none pr-1">
-                            <span>COMMITTED BY:</span> 
-                            <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 px-1 py-0.5 rounded border border-emerald-500/10">
-                              {selectedComplaint.remarkAuthorName}
-                            </span>
+                              <div className="relative p-2.5 sm:p-3 rounded-2xl rounded-tl-xs bg-white dark:bg-[#111b21] border border-slate-200/90 dark:border-white/10 shadow-xs text-slate-800 dark:text-slate-100 break-words w-full">
+                                <div className="flex items-center gap-1.5 mb-1 pb-1 border-b border-slate-100 dark:border-white/5 text-[8.5px] sm:text-[9px] font-bold text-slate-400">
+                                  <span className="text-emerald-600 dark:text-emerald-400 uppercase font-black">
+                                    Official Ticket Log
+                                  </span>
+                                  <span>•</span>
+                                  <span className="uppercase truncate">{selectedComplaint.category || 'Service Issue'}</span>
+                                </div>
+                                <p className="text-[11.5px] sm:text-xs font-semibold leading-relaxed">
+                                  {selectedComplaint.description}
+                                </p>
+                                <div className="flex justify-end items-center gap-1 mt-1 text-[8px] text-slate-400 dark:text-slate-500 font-mono">
+                                  <span>{new Date(selectedComplaint.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  <CheckCheck size={12} className="text-slate-400 shrink-0" />
+                                </div>
+                              </div>
+
+                              {/* Status under Registry message */}
+                              {!hasTeamProtocol ? (
+                                <div className="mt-1.5 ml-1 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider animate-pulse">
+                                  <Clock size={10} className="animate-spin-slow shrink-0" />
+                                  <span>Waiting for Team Resolution Protocol</span>
+                                </div>
+                              ) : (
+                                <div className="mt-1 ml-1 flex items-center gap-1 text-[8px] sm:text-[8.5px] font-bold text-emerald-600 dark:text-emerald-400">
+                                  <CheckCheck size={11} className="text-emerald-500 shrink-0" />
+                                  <span>Acknowledged & Reply Received from Field Team</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 2. TEAM PROTOCOL REPLIES */}
+                            {allProtocols.map((proto, pIdx) => (
+                              <div key={`chat-proto-${proto.id || pIdx}`} className="flex flex-col items-end self-end max-w-[94%] sm:max-w-[85%]">
+                                <div className="flex items-center gap-1.5 mb-1 pr-1">
+                                  <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500">
+                                    {new Date(proto.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} •
+                                  </span>
+                                  <span className="text-[9px] sm:text-[9.5px] font-black uppercase text-emerald-700 dark:text-emerald-400 tracking-wider">
+                                    {proto.authorName || selectedComplaint.remarkAuthorName || 'Team Technician'}
+                                  </span>
+                                  <span className="px-1 py-0.2 rounded text-[7px] sm:text-[7.5px] font-black uppercase bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                                    Team Protocol
+                                  </span>
+                                </div>
+
+                                <div className="relative p-2.5 sm:p-3 rounded-2xl rounded-tr-xs bg-[#d9fdd3] dark:bg-[#005c4b]/80 border border-emerald-200 dark:border-emerald-700/50 shadow-xs text-slate-900 dark:text-emerald-50 break-words w-full">
+                                  {/* Quotation preview */}
+                                  <div className="mb-1.5 p-1.5 rounded-lg bg-emerald-600/10 dark:bg-emerald-950/60 border-l-2 border-emerald-600 text-[9px] text-slate-700 dark:text-emerald-100/90">
+                                    <div className="flex items-center gap-1 font-bold text-emerald-800 dark:text-emerald-300 text-[8px] uppercase">
+                                      <CornerDownRight size={9} />
+                                      <span>Replying to Operations Registry</span>
+                                    </div>
+                                    <p className="truncate opacity-85 italic mt-0.5">"{selectedComplaint.description}"</p>
+                                  </div>
+
+                                  <p className="text-[11.5px] sm:text-xs font-semibold leading-relaxed">
+                                    {getCleanProtocolText(proto.text)}
+                                  </p>
+
+                                  <div className="flex justify-end items-center gap-1 mt-1 text-[8px] text-emerald-800 dark:text-emerald-300 font-mono">
+                                    <span>{new Date(proto.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <CheckCheck size={12} className="text-blue-600 dark:text-blue-400 inline shrink-0" />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Waiting for customer review indicator */}
+                            {hasTeamProtocol && !hasCustomerReview && (
+                              <div className="flex justify-start ml-1">
+                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-700 dark:text-indigo-400 text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider animate-pulse">
+                                  <Clock size={10} className="animate-spin-slow shrink-0" />
+                                  <span>Waiting for Customer Review / Feedback</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 3. CUSTOMER REVIEW REPLIES */}
+                            {allReviews.map((rev, rIdx) => (
+                              <div key={`chat-rev-${rev.id || rIdx}`} className="flex flex-col items-start max-w-[94%] sm:max-w-[85%]">
+                                <div className="flex items-center gap-1.5 mb-1 pl-1">
+                                  <span className="w-4 h-4 rounded-full bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center text-[9px] font-black text-indigo-600 dark:text-indigo-400">
+                                    <User size={10} />
+                                  </span>
+                                  <span className="text-[9px] sm:text-[9.5px] font-black uppercase text-indigo-700 dark:text-indigo-400 tracking-wider">
+                                    {rev.authorName || selectedComplaint.customerName || 'Customer'}
+                                  </span>
+                                  <span className="px-1 py-0.2 rounded text-[7px] sm:text-[7.5px] font-black uppercase bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20">
+                                    Customer Review
+                                  </span>
+                                  <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500">
+                                    • {new Date(rev.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+
+                                <div className="relative p-2.5 sm:p-3 rounded-2xl rounded-tl-xs bg-[#eef2ff] dark:bg-[#1e1b4b]/80 border border-indigo-200 dark:border-indigo-800/50 shadow-xs text-slate-900 dark:text-indigo-100 break-words w-full">
+                                  {/* Quotation preview */}
+                                  <div className="mb-1.5 p-1.5 rounded-lg bg-indigo-500/10 dark:bg-indigo-950/60 border-l-2 border-indigo-500 text-[9px] text-slate-700 dark:text-indigo-200/90">
+                                    <div className="flex items-center gap-1 font-bold text-indigo-800 dark:text-indigo-300 text-[8px] uppercase">
+                                      <CornerDownRight size={9} />
+                                      <span>Replying to Team Resolution Protocol</span>
+                                    </div>
+                                    <p className="truncate opacity-85 italic mt-0.5">
+                                      "{latestProtocolText || 'Team Resolution Protocol'}"
+                                    </p>
+                                  </div>
+
+                                  <p className="text-[11.5px] sm:text-xs font-semibold leading-relaxed">
+                                    "{rev.text}"
+                                  </p>
+
+                                  <div className="flex justify-end items-center gap-1 mt-1 text-[8px] text-indigo-800 dark:text-indigo-300 font-mono">
+                                    <span>{new Date(rev.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <CheckCheck size={12} className="text-blue-600 dark:text-blue-400 inline shrink-0" />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Case Verified Banner */}
+                            {hasTeamProtocol && hasCustomerReview && (
+                              <div className="p-2 sm:p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 dark:text-emerald-200 flex items-center justify-between text-xs font-bold shadow-xs">
+                                <div className="flex items-center gap-2">
+                                  <CheckCircle size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                  <span className="text-[10px] sm:text-[11px]">Resolution Protocol & Customer Review verified. Ready to complete ticket!</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </motion.div>
-
-                    {/* Block 3: Customer Review */}
-                    <motion.div 
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3, delay: 0.1 }}
-                      className="group relative rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] overflow-hidden transition-all duration-300"
-                    >
-                      <div className="p-3 space-y-2 relative overflow-hidden">
-                        {/* Thank You Animation Background Overlay */}
-                        <AnimatePresence>
-                          {showLeftThankYou && (
-                            <motion.div 
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              exit={{ opacity: 0 }}
-                              className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 dark:from-indigo-950/20 dark:to-teal-950/25 backdrop-blur-[2.5px] z-20 flex flex-col items-center justify-center pointer-events-none"
-                            >
-                              <motion.div
-                                initial={{ scale: 0, rotate: 15 }}
-                                animate={{ scale: [0, 1.25, 1], rotate: 0 }}
-                                transition={{ duration: 0.5, ease: "easeOut" }}
-                                className="flex flex-col items-center gap-1"
-                              >
-                                <Sparkles className="text-indigo-500 dark:text-indigo-400 animate-bounce" size={22} />
-                                <span className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 dark:text-indigo-400">Thank You!</span>
-                              </motion.div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-1.5">
-                            <span className="p-1 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-emerald-500 shadow-[var(--neu-shadow-inset)]">
-                              <User size={10} />
-                            </span>
-                            <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-slate-300">
-                              Customer Review
-                            </span>
-                          </div>
-                        </div>
-
-                        <ReviewTimeline reviews={selectedComplaint.reviews} />
-                      </div>
-                    </motion.div>
+                        </motion.div>
+                      );
+                    })()}
 
                     {/* Footer Stats / Delegates */}
                     <motion.div 
@@ -2261,53 +2290,11 @@ export default function ComplaintList({
                                       value={statusRemarks}
                                       onChange={(e) => setStatusRemarks(e.target.value.toUpperCase())}
                                       placeholder="Enter resolution protocol details..."
-                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-xs font-semibold focus:ring-1 focus:ring-emerald-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case text-slate-800 dark:text-slate-100"
+                                      className="w-full h-[74px] p-2 pr-12 pb-6 rounded-lg border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-xs font-semibold focus:ring-1 focus:ring-emerald-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case text-slate-800 dark:text-slate-100"
                                     />
                                     <button
                                       type="button"
-                                      onClick={async () => {
-                                        if (!statusRemarks.trim()) {
-                                          toast.error("Please enter a Team Resolution Protocol first.");
-                                          return;
-                                        }
-                                        
-                                        const newProtocol: ComplaintReview = {
-                                          id: 'proto-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
-                                          text: statusRemarks.trim(),
-                                          createdAt: Date.now(),
-                                          authorId: currentUser.uid,
-                                          authorName: currentUser.fullName || currentUser.username
-                                        };
-
-                                        const updatedProtocols = [...(selectedComplaint.protocols || []), newProtocol];
-
-                                        setSelectedComplaint(prev => prev ? { ...prev, protocols: updatedProtocols } : null);
-                                        setStatusRemarks('');
-
-                                        try {
-                                          const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
-                                          sound.volume = 0.2;
-                                          sound.play().catch(() => {});
-                                        } catch (e) {}
-
-                                        try {
-                                          if (onUpdateRemarks) {
-                                            // Passing the serialized array as string since onUpdateRemarks might just expect string 
-                                            // but we actually modified it to take protocols array in supabaseService! Wait, we didn't change onUpdateRemarks signature. Let's pass the array as string for now if it's expecting string, or we should update it. Actually, `selectedComplaint.protocols` is what we pass. 
-                                            // Let's just stringify it for `onUpdateRemarks` which expects a string.
-                                            await onUpdateRemarks(selectedComplaint.id, JSON.stringify(updatedProtocols));
-                                            toast.success("Protocol saved to database.");
-                                          } else if (onEdit) {
-                                            await onEdit(selectedComplaint.id, { protocols: updatedProtocols });
-                                            toast.success("Protocol saved to database.");
-                                          } else {
-                                            toast.success("Protocol saved in memory.");
-                                          }
-                                        } catch (err) {
-                                          console.error("Failed to update database remarks:", err);
-                                          toast.error("Failed to save to database. Kept in memory.");
-                                        }
-                                      }}
+                                      onClick={() => handleAddProtocol()}
                                       className="absolute bottom-2 right-2 px-2.5 py-1 bg-[var(--neu-surface)] border border-[var(--neu-border)] text-emerald-500 rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-[var(--neu-shadow-btn)]"
                                     >
                                       <span>Add</span>
@@ -2334,47 +2321,11 @@ export default function ComplaintList({
                                       value={customerReview}
                                       onChange={(e) => setCustomerReview(e.target.value.toUpperCase())}
                                       placeholder="Type customer feedback or review here..."
-                                      className="w-full h-14 sm:h-16 p-2 pr-12 pb-6 rounded-lg border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-xs font-semibold focus:ring-1 focus:ring-indigo-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case text-slate-800 dark:text-slate-100"
+                                      className="w-full h-[74px] p-2 pr-12 pb-6 rounded-lg border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-xs font-semibold focus:ring-1 focus:ring-indigo-500/20 outline-none resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case text-slate-800 dark:text-slate-100"
                                     />
                                     <button
                                       type="button"
-                                      onClick={async () => {
-                                        if (!customerReview.trim()) {
-                                          toast.error("Please type a Customer Review first.");
-                                          return;
-                                        }
-                                        
-                                        const newReview: ComplaintReview = {
-                                          id: 'rev-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
-                                          text: customerReview.trim(),
-                                          createdAt: Date.now(),
-                                          authorId: currentUser.uid,
-                                          authorName: currentUser.fullName || currentUser.username
-                                        };
-
-                                        const updatedReviews = [...(selectedComplaint.reviews || []), newReview];
-
-                                        setSelectedComplaint(prev => prev ? { ...prev, reviews: updatedReviews } : null);
-                                        setCustomerReview('');
-
-                                        try {
-                                          const sound = new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3');
-                                          sound.volume = 0.2;
-                                          sound.play().catch(() => {});
-                                        } catch (e) {}
-
-                                        try {
-                                          if (onEdit) {
-                                            await onEdit(selectedComplaint.id, { reviews: updatedReviews });
-                                            toast.success("Review added to database.");
-                                          } else {
-                                            toast.success("Review added in memory.");
-                                          }
-                                        } catch (err) {
-                                          console.error("Failed to add review:", err);
-                                          toast.error("Failed to save review.");
-                                        }
-                                      }}
+                                      onClick={() => handleAddCustomerReview()}
                                       className="absolute bottom-2 right-2 px-2.5 py-1 bg-[var(--neu-surface)] border border-[var(--neu-border)] text-indigo-500 rounded-md text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-[var(--neu-shadow-btn)]"
                                     >
                                       <span>Add</span>

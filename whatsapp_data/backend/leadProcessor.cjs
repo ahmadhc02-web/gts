@@ -82,8 +82,21 @@ async function processReminderLead(leadId) {
       return;
     }
 
-    let currentSuccessCount = Number(lead.success_count || 0);
-    let currentFailedCount = Number(lead.failed_count || 0);
+    // Accurate count initialization from items table
+    const { count: alreadySentCount } = await supabase
+      .from('reminder_lead_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('lead_id', leadId)
+      .eq('status', 'sent');
+
+    const { count: alreadyFailedCount } = await supabase
+      .from('reminder_lead_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('lead_id', leadId)
+      .eq('status', 'failed');
+
+    let currentSuccessCount = Number(alreadySentCount !== null && alreadySentCount !== undefined ? alreadySentCount : (lead.success_count || 0));
+    let currentFailedCount = Number(alreadyFailedCount !== null && alreadyFailedCount !== undefined ? alreadyFailedCount : (lead.failed_count || 0));
     const waitSeconds = Math.max(1, Number(lead.wait_seconds || 5));
 
     // 2. Transition pending -> running
@@ -117,6 +130,8 @@ async function processReminderLead(leadId) {
         .from('reminder_leads')
         .update({
           status: finalStatus,
+          success_count: currentSuccessCount,
+          failed_count: currentFailedCount,
           completed_at: new Date().toISOString()
         })
         .eq('id', leadId);
@@ -125,7 +140,7 @@ async function processReminderLead(leadId) {
       return;
     }
 
-    console.log(`[Lead Processor] Processing ${items.length} pending items for lead ${leadId}`);
+    console.log(`[Lead Processor] Processing ${items.length} pending items for lead ${leadId} (already sent: ${currentSuccessCount}, already failed: ${currentFailedCount})`);
 
     // 4. Process items sequentially
     for (let i = 0; i < items.length; i++) {
@@ -142,15 +157,20 @@ async function processReminderLead(leadId) {
 
       try {
         if (!rawPhone) {
-          throw new Error('No mobile number available for client');
+          throw new Error('No mobile number available for customer');
         }
 
         const normalizedPhone = normalizePakistaniPhone(rawPhone);
-        console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${normalizedPhone} for lead ${leadId}...`);
+        if (!normalizedPhone || normalizedPhone.length < 10) {
+          throw new Error('Invalid mobile number format');
+        }
+
+        console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${normalizedPhone} for lead ${leadId} via session "${lead.line_code || lead.dealer_id || 'main'}"...`);
         
-        const sendResult = await sendMessage(normalizedPhone, messageText);
+        const leadSessionKey = lead.line_code || lead.dealer_id || 'main';
+        const sendResult = await sendMessage(normalizedPhone, messageText, {}, leadSessionKey);
         if (!sendResult || sendResult.success === false) {
-          throw new Error(sendResult?.error || 'WhatsApp send returned failure');
+          throw new Error(sendResult?.error || 'WhatsApp dispatch returned failure');
         }
 
         currentSuccessCount++;
@@ -183,11 +203,23 @@ async function processReminderLead(leadId) {
         console.error(`[Lead Processor] Failed item ${item.id} (${rawPhone}) on lead ${leadId}:`, err.message);
         currentFailedCount++;
 
+        let errorMsg = 'Send failed';
+        if (err.message) {
+          if (err.message.includes('not registered') || err.message.includes('not on WhatsApp')) {
+            errorMsg = 'Number not on WhatsApp';
+          } else if (err.message.includes('Invalid mobile number')) {
+            errorMsg = 'Invalid mobile number';
+          } else {
+            errorMsg = err.message;
+          }
+        }
+
         const { error: itemErr } = await supabase
           .from('reminder_lead_items')
           .update({
             status: 'failed',
-            error_message: err.message || 'Send failed'
+            sent_at: new Date().toISOString(),
+            error_message: errorMsg
           })
           .eq('id', item.id);
         if (itemErr) {
@@ -206,7 +238,7 @@ async function processReminderLead(leadId) {
         }
       }
 
-      // Wait between messages if not the last item
+      // Wait between messages only if NOT the last item
       if (!isLastItem) {
         console.log(`[Lead Processor] Waiting ${waitSeconds}s before next item...`);
         for (let s = 0; s < waitSeconds; s++) {
@@ -226,10 +258,27 @@ async function processReminderLead(leadId) {
         if (waitErr) {
           console.error(`[Lead Processor] Error updating wait_seconds_after for item ${item.id}:`, waitErr.message);
         }
+      } else {
+        console.log(`[Lead Processor] Final item ${i + 1}/${items.length} completed. No delay after final item.`);
       }
     }
 
-    // 5. Check if any items are still pending before marking completed
+    // 5. Query exact final counts and complete
+    const { count: finalSent } = await supabase
+      .from('reminder_lead_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('lead_id', leadId)
+      .eq('status', 'sent');
+
+    const { count: finalFailed } = await supabase
+      .from('reminder_lead_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('lead_id', leadId)
+      .eq('status', 'failed');
+
+    const exactSent = Number(finalSent !== null && finalSent !== undefined ? finalSent : currentSuccessCount);
+    const exactFailed = Number(finalFailed !== null && finalFailed !== undefined ? finalFailed : currentFailedCount);
+
     const { data: remainingPending } = await supabase
       .from('reminder_lead_items')
       .select('id')
@@ -237,16 +286,42 @@ async function processReminderLead(leadId) {
       .eq('status', 'pending');
 
     if (!remainingPending || remainingPending.length === 0) {
-      const finalStatus = currentSuccessCount > 0 ? 'completed' : (currentFailedCount > 0 ? 'failed' : 'completed');
+      const finalStatus = (exactFailed > 0 && exactSent === 0) ? 'failed' : 'completed';
       const { error: finErr } = await supabase
         .from('reminder_leads')
         .update({
           status: finalStatus,
+          success_count: exactSent,
+          failed_count: exactFailed,
           completed_at: new Date().toISOString()
         })
         .eq('id', leadId);
       if (finErr) console.error(`[Lead Processor] Error marking lead final status:`, finErr.message);
-      console.log(`[Lead Processor] Lead ${leadId} finished with status: ${finalStatus} (Success: ${currentSuccessCount}, Failed: ${currentFailedCount})`);
+      console.log(`[Lead Processor] Lead ${leadId} finished with status: ${finalStatus} (Success: ${exactSent}, Failed: ${exactFailed})`);
+    } else {
+      console.warn(`[Lead Processor] Lead ${leadId} had ${remainingPending.length} unprocessed pending items. Marking them failed...`);
+      for (const p of remainingPending) {
+        await supabase
+          .from('reminder_lead_items')
+          .update({
+            status: 'failed',
+            sent_at: new Date().toISOString(),
+            error_message: 'Unprocessed on lead completion'
+          })
+          .eq('id', p.id);
+      }
+      const totalFailed = exactFailed + remainingPending.length;
+      const finalStatus = (totalFailed > 0 && exactSent === 0) ? 'failed' : 'completed';
+      await supabase
+        .from('reminder_leads')
+        .update({
+          status: finalStatus,
+          success_count: exactSent,
+          failed_count: totalFailed,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', leadId);
+      console.log(`[Lead Processor] Lead ${leadId} force-completed remaining items with status: ${finalStatus}`);
     }
 
   } catch (err) {

@@ -23,7 +23,11 @@ import {
   Search,
   CheckSquare,
   Square,
-  Trash2
+  Trash2,
+  Smartphone,
+  Shield,
+  QrCode,
+  Radio
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -36,7 +40,8 @@ import {
   deleteReminderLead,
   getReminderLeads
 } from '../lib/supabaseService';
-import { getTemplate, startReminderLead, buildReminderMessage } from '../whatsapp_data';
+import { getTemplate, startReminderLead, buildReminderMessage, WhatsAppConnectPanel } from '../whatsapp_data';
+import { getStatus } from '../whatsapp_data/whatsappApi';
 import { cn } from '../lib/utils';
 
 interface ConversationTabProps {
@@ -46,6 +51,8 @@ interface ConversationTabProps {
   currentMonthId?: string;
   billingMonths?: any[];
   currentUser?: UserProfile;
+  users?: UserProfile[];
+  masterClients?: any[];
 }
 
 function formatDuration(ms: number): string {
@@ -75,9 +82,24 @@ function formatDateTime(iso?: string | null): string {
 }
 
 // Sub-component for individual lead row's expanded items
-function LeadItemsList({ leadId, defaultWaitSeconds }: { leadId: string; defaultWaitSeconds?: number }) {
+function LeadItemsList({
+  leadId,
+  defaultWaitSeconds = 30,
+  isLeadRunning = false
+}: {
+  leadId: string;
+  defaultWaitSeconds?: number;
+  isLeadRunning?: boolean;
+}) {
   const [items, setItems] = useState<ReminderLeadItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [now, setNow] = useState(Date.now());
+
+  // Real-time 1-second ticking timer for live delay countdown/countup
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     setIsLoading(true);
@@ -107,13 +129,25 @@ function LeadItemsList({ leadId, defaultWaitSeconds }: { leadId: string; default
     );
   }
 
+  const waitSec = Math.max(1, Number(defaultWaitSeconds) || 30);
+  
+  // Find index of the most recently processed item (sent or failed)
+  const lastProcessedIdx = items.reduce(
+    (last, item, idx) => (item.status === 'sent' || item.status === 'failed' ? idx : last),
+    -1
+  );
+
+  // Check if there are remaining pending items in the queue
+  const hasRemainingPending = items.some((item, idx) => idx > lastProcessedIdx && item.status === 'pending');
+
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50/60 dark:bg-slate-900/60 p-2 shadow-inner">
-      <table className="w-full text-left text-xs font-sans">
+      <table className="w-full text-left text-xs font-lexend">
         <thead>
           <tr className="border-b border-slate-200 dark:border-white/10 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
             <th className="py-2 px-3">#</th>
             <th className="py-2 px-3">Customer Name</th>
+            <th className="py-2 px-3">Customer ID</th>
             <th className="py-2 px-3">Mobile Number</th>
             <th className="py-2 px-3">Status</th>
             <th className="py-2 px-3">Sent Time</th>
@@ -125,19 +159,51 @@ function LeadItemsList({ leadId, defaultWaitSeconds }: { leadId: string; default
             const isSent = item.status === 'sent';
             const isFailed = item.status === 'failed';
             const isPending = item.status === 'pending';
+            const isLastLeadItem = (idx === items.length - 1);
+
+            const customerUsername = (
+              item.username ||
+              (item.message ? (item.message.match(/Your Id\.?\s*([^\s,]+)/i)?.[1] || null) : null) ||
+              item.clientId ||
+              '—'
+            );
+
+            // Calculate live elapsed seconds for the currently active item
+            let elapsedSec = 1;
+            if (item.sentAt) {
+              const sentTime = new Date(item.sentAt).getTime();
+              if (!isNaN(sentTime) && sentTime > 0) {
+                elapsedSec = Math.max(1, Math.floor((now - sentTime) / 1000));
+              }
+            }
+
+            // An item is actively counting delay if:
+            // 1. The campaign is currently running
+            // 2. There are still pending recipients left to process
+            // 3. This item was the one most recently dispatched (sent or failed)
+            const isActivelyCountingDelay = (
+              isLeadRunning &&
+              hasRemainingPending &&
+              idx === lastProcessedIdx
+            );
+
+            const displayCount = Math.min(waitSec, elapsedSec);
 
             return (
               <tr
                 key={item.id || idx}
                 className="hover:bg-white/80 dark:hover:bg-slate-800/50 transition-colors"
               >
-                <td className="py-2 px-3 font-mono font-bold text-slate-400">
+                <td className="py-2 px-3 tabular-nums font-bold text-slate-400 font-lexend">
                   {item.sortOrder !== undefined ? item.sortOrder + 1 : idx + 1}
                 </td>
                 <td className="py-2 px-3 font-bold text-slate-800 dark:text-slate-200">
                   {item.name || 'Unnamed Client'}
                 </td>
-                <td className="py-2 px-3 font-mono text-slate-600 dark:text-slate-300">
+                <td className="py-2 px-3 tabular-nums font-bold text-blue-600 dark:text-blue-400 font-lexend">
+                  {customerUsername}
+                </td>
+                <td className="py-2 px-3 tabular-nums text-slate-600 dark:text-slate-300 font-lexend">
                   {item.mobileNumber || '—'}
                 </td>
                 <td className="py-2 px-3">
@@ -149,11 +215,13 @@ function LeadItemsList({ leadId, defaultWaitSeconds }: { leadId: string; default
                   )}
                   {isFailed && (
                     <span
-                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40"
+                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40 shadow-xs"
                       title={item.errorMessage || 'Send failure'}
                     >
-                      <XCircle size={12} className="text-rose-500" />
-                      <span className="truncate max-w-[140px]">{item.errorMessage ? `Failed: ${item.errorMessage}` : 'Failed'}</span>
+                      <XCircle size={12} className="text-rose-500 shrink-0" />
+                      <span className="truncate max-w-[170px] font-bold">
+                        {item.errorMessage ? `Failed: ${item.errorMessage}` : 'Failed'}
+                      </span>
                     </span>
                   )}
                   {isPending && (
@@ -163,22 +231,37 @@ function LeadItemsList({ leadId, defaultWaitSeconds }: { leadId: string; default
                     </span>
                   )}
                 </td>
-                <td className="py-2 px-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                <td className="py-2 px-3 tabular-nums text-[11px] text-slate-500 dark:text-slate-400 font-lexend">
                   {formatDateTime(item.sentAt)}
                 </td>
-                <td className="py-2 px-3 text-[11px] text-slate-500 dark:text-slate-400">
-                  {item.waitSecondsAfter ? (
-                    <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">
-                      Waited {item.waitSecondsAfter}s
+                <td className="py-2 px-3 text-[11px]">
+                  {isActivelyCountingDelay ? (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/40 tabular-nums font-bold shadow-xs font-lexend">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                      </span>
+                      <span>
+                        Waiting {displayCount}s / {waitSec}s
+                        {elapsedSec >= waitSec ? " • Dispatching next..." : ""}
+                      </span>
+                    </div>
+                  ) : (isSent || isFailed) ? (
+                    isLastLeadItem ? (
+                      <span className="tabular-nums text-emerald-600 dark:text-emerald-400 font-bold font-lexend">
+                        ✓ Completed (No delay on final)
+                      </span>
+                    ) : (
+                      <span className="tabular-nums text-emerald-600 dark:text-emerald-400 font-bold font-lexend">
+                        ✓ Waited {item.waitSecondsAfter || waitSec}s
+                      </span>
+                    )
+                  ) : isPending ? (
+                    <span className="tabular-nums text-slate-400 dark:text-slate-500 italic font-lexend">
+                      {waitSec}s delay set
                     </span>
-                  ) : defaultWaitSeconds ? (
-                    <span className="font-mono text-slate-600 dark:text-slate-300 font-medium">
-                      {defaultWaitSeconds}s delay
-                    </span>
-                  ) : !isPending ? (
-                    '—'
                   ) : (
-                    <span className="text-slate-400 italic">queued</span>
+                    <span className="text-slate-400">—</span>
                   )}
                 </td>
               </tr>
@@ -196,7 +279,9 @@ export default function ConversationTab({
   dealerId = 'main',
   currentMonthId,
   billingMonths = [],
-  currentUser
+  currentUser,
+  users = [],
+  masterClients = []
 }: ConversationTabProps) {
   const [leads, setLeads] = useState<ReminderLead[]>([]);
   const [expandedLeadIds, setExpandedLeadIds] = useState<Set<string>>(new Set());
@@ -204,6 +289,78 @@ export default function ConversationTab({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<ReminderLead | null>(null);
+
+  // Determine if logged-in user is a Sub-Dealer (Multi-tenancy isolation)
+  const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin';
+  const subDealerLineCode = (currentUser?.lineCode || '').trim();
+  const subDealerDealerId = (currentUser?.role === 'dealer' ? currentUser?.uid : (currentUser?.dealerId || currentUser?.uid || 'main')).trim();
+
+  // List of available VLAN channels for Admin channel switcher
+  const availableVlanChannels = useMemo(() => {
+    const list = [{ key: 'all', label: '🌐 ALL VLANS / GLOBAL GATEWAY', vlan: null, dealerId: 'main', company: 'Global Master' }];
+    const dealerUsers = (users || []).filter(u => u.lineCode || u.role === 'dealer');
+    dealerUsers.forEach(u => {
+      const key = u.lineCode || u.uid;
+      if (!list.some(item => item.key === key)) {
+        list.push({
+          key,
+          label: `⚡ VLAN ${u.lineCode || 'DEALER'} • ${u.fullName || u.companyName || u.username}`,
+          vlan: u.lineCode || null,
+          dealerId: u.uid,
+          company: u.companyName || u.fullName || u.username
+        });
+      }
+    });
+    return list;
+  }, [users]);
+
+  // Selected Channel state: Sub-dealers are strictly locked to their own VLAN
+  const [selectedVlanChannel, setSelectedVlanChannel] = useState<string>(() => {
+    if (isSubDealerUser) return subDealerLineCode || subDealerDealerId;
+    return 'all';
+  });
+
+  // Effective Active Session Key for WhatsApp operations & QR Code
+  const activeSessionKey = useMemo(() => {
+    if (isSubDealerUser) {
+      return subDealerLineCode || subDealerDealerId || 'main';
+    }
+    if (selectedVlanChannel && selectedVlanChannel !== 'all') {
+      return selectedVlanChannel;
+    }
+    return 'main';
+  }, [isSubDealerUser, subDealerLineCode, subDealerDealerId, selectedVlanChannel]);
+
+  // Live WhatsApp device connection status for this active session
+  const [whatsAppStatus, setWhatsAppStatus] = useState<{
+    connected: boolean;
+    phoneNumber: string | null;
+    session?: string;
+  } | null>(null);
+  const [isConnectPanelOpen, setIsConnectPanelOpen] = useState(false);
+
+  // Poll WhatsApp Status for activeSessionKey
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+
+    const checkStatus = async () => {
+      try {
+        const st = await getStatus(activeSessionKey);
+        if (active && st) {
+          setWhatsAppStatus(st);
+        }
+      } catch (_) {}
+    };
+
+    checkStatus();
+    const timer = setInterval(checkStatus, 3500);
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [isOpen, activeSessionKey]);
 
   // New Lead Form State
   const [leadName, setLeadName] = useState('');
@@ -252,16 +409,48 @@ export default function ConversationTab({
     return Array.isArray(activeMonthDoc?.rows) ? activeMonthDoc.rows : [];
   }, [activeMonthDoc]);
 
-  // All strictly unpaid clients with a valid phone number
-  const allUnpaidClients = useMemo(() => {
+  // STRICT MULTI-TENANCY: Scope rows strictly to the active VLAN / Sub-Dealer
+  const scopedRows = useMemo(() => {
     if (!activeRows || activeRows.length === 0) return [];
-    return activeRows.filter((r: any) => {
+
+    if (isSubDealerUser) {
+      const userLc = subDealerLineCode.toLowerCase();
+      const userDId = subDealerDealerId;
+      return activeRows.filter((r: any) => {
+        const rowLc = (r.lineCode || r.line_code || '').toLowerCase().trim();
+        const rowDId = (r.dealerId || r.dealer_id || '').trim();
+        if (userLc && rowLc === userLc) return true;
+        if (userDId && rowDId === userDId) return true;
+        return false;
+      });
+    }
+
+    if (selectedVlanChannel && selectedVlanChannel !== 'all') {
+      const channel = availableVlanChannels.find(c => c.key === selectedVlanChannel);
+      const targetLc = (channel?.vlan || selectedVlanChannel).toLowerCase().trim();
+      const targetDId = (channel?.dealerId || '').trim();
+      return activeRows.filter((r: any) => {
+        const rowLc = (r.lineCode || r.line_code || '').toLowerCase().trim();
+        const rowDId = (r.dealerId || r.dealer_id || '').trim();
+        if (targetLc && rowLc === targetLc) return true;
+        if (targetDId && rowDId === targetDId) return true;
+        return false;
+      });
+    }
+
+    return activeRows;
+  }, [activeRows, isSubDealerUser, subDealerLineCode, subDealerDealerId, selectedVlanChannel, availableVlanChannels]);
+
+  // All strictly unpaid clients within this VLAN's scoped data
+  const allUnpaidClients = useMemo(() => {
+    if (!scopedRows || scopedRows.length === 0) return [];
+    return scopedRows.filter((r: any) => {
       const phone = (r.mobileNumber || r.phone || r.number || '').trim();
       if (!phone) return false;
       const pStatus = String(r.paymentStatus || r.status || '').toLowerCase().trim();
       return pStatus === 'unpaid';
     });
-  }, [activeRows]);
+  }, [scopedRows]);
 
   // Mode 1: Automatic Matched Clients (by Due Date Range)
   const autoMatchedClients = useMemo(() => {
@@ -324,14 +513,44 @@ export default function ConversationTab({
     }
   };
 
-  // Top 4 Summary Cards Metrics
+  // STRICT MULTI-TENANCY: Only show campaigns belonging to the active sub-dealer / VLAN
+  const scopedLeads = useMemo(() => {
+    if (isSubDealerUser) {
+      const targetLc = subDealerLineCode.toLowerCase();
+      const targetDId = subDealerDealerId;
+      return leads.filter(l => {
+        const leadLc = (l.lineCode || '').toLowerCase().trim();
+        const leadDId = (l.dealerId || '').trim();
+        if (targetLc && leadLc === targetLc) return true;
+        if (targetDId && leadDId === targetDId) return true;
+        return false;
+      });
+    }
+
+    if (selectedVlanChannel && selectedVlanChannel !== 'all') {
+      const channel = availableVlanChannels.find(c => c.key === selectedVlanChannel);
+      const targetLc = (channel?.vlan || selectedVlanChannel).toLowerCase().trim();
+      const targetDId = (channel?.dealerId || '').trim();
+      return leads.filter(l => {
+        const leadLc = (l.lineCode || '').toLowerCase().trim();
+        const leadDId = (l.dealerId || '').trim();
+        if (targetLc && leadLc === targetLc) return true;
+        if (targetDId && leadDId === targetDId) return true;
+        return false;
+      });
+    }
+
+    return leads;
+  }, [leads, isSubDealerUser, subDealerLineCode, subDealerDealerId, selectedVlanChannel, availableVlanChannels]);
+
+  // Top 4 Summary Cards Metrics for Scoped Campaigns
   const summaryMetrics = useMemo(() => {
-    const totalLeads = leads.length;
+    const totalLeads = scopedLeads.length;
     let completedReminders = 0;
     let failedReminders = 0;
     let totalTimeMs = 0;
 
-    leads.forEach(l => {
+    scopedLeads.forEach(l => {
       completedReminders += Number(l.successCount || 0);
       failedReminders += Number(l.failedCount || 0);
       if (l.startedAt && l.completedAt) {
@@ -349,7 +568,7 @@ export default function ConversationTab({
       failedReminders,
       totalTime: formatDuration(totalTimeMs)
     };
-  }, [leads]);
+  }, [scopedLeads]);
 
   const toggleExpand = (leadId: string) => {
     setExpandedLeadIds(prev => {
@@ -446,17 +665,27 @@ export default function ConversationTab({
 
         return {
           clientId: c.clientId || c.id || c.username || '',
+          username: c.username || c.clientId || c.id || '',
           name: c.name || 'Customer',
           mobileNumber: (c.mobileNumber || c.phone || c.number || '').trim(),
           message: builtMessage
         };
       });
 
-      // 3. Create lead and items in database
+      // Determine target dealerId and lineCode based on active VLAN scoping
+      const targetDealerId = isSubDealerUser
+        ? subDealerDealerId
+        : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.dealerId || selectedVlanChannel) : (dealerId || 'main'));
+
+      const targetLineCode = isSubDealerUser
+        ? (subDealerLineCode || undefined)
+        : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.vlan || selectedVlanChannel) : undefined);
+
+      // 3. Create lead and items in database tagged strictly to this VLAN/dealer
       const newLeadId = await createReminderLead({
         name: leadName.trim(),
-        dealerId: dealerId || 'main',
-        lineCode: currentUser?.lineCode || undefined,
+        dealerId: targetDealerId || 'main',
+        lineCode: targetLineCode || undefined,
         monthId: currentMonthId || activeMonthDoc?.id || 'UNKNOWN',
         dueDateStart,
         dueDateEnd,
@@ -467,9 +696,13 @@ export default function ConversationTab({
       toast.success(`Created lead "${leadName}" with ${matchedClients.length} customers!`);
       setIsModalOpen(false);
 
+      if (!whatsAppStatus?.connected) {
+        toast.warning(`WhatsApp for session "${activeSessionKey}" is not connected yet. Scan QR code to start sending.`, { duration: 5000 });
+      }
+
       // 4. Trigger server-side background campaign processor
       startReminderLead(newLeadId).then(() => {
-        toast.success(`Lead "${leadName}" is now running on the server.`);
+        toast.success(`Lead "${leadName}" is now running on the server via session "${activeSessionKey}".`);
       }).catch((err) => {
         console.error("Server lead trigger error:", err);
         toast.error(`Lead created, but server failed to start: ${err.message || 'Unknown error'}`);
@@ -484,41 +717,98 @@ export default function ConversationTab({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[10000] w-screen h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col overflow-y-auto">
+    <div
+      data-font-lexend="true"
+      className="fixed inset-0 z-[10000] w-screen h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col overflow-y-auto font-lexend antialiased"
+      style={{ fontFamily: "'Lexend', ui-sans-serif, system-ui, sans-serif" }}
+    >
       {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-30 shrink-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-white/10 px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-30 shrink-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-white/10 px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer shrink-0"
             title="Return to Dashboard"
           >
             <ArrowLeft size={18} />
           </button>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="p-1.5 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 shrink-0">
                 <MessageSquare size={18} />
               </span>
-              <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-white">
-                WhatsApp Conversation & Reminder Leads Hub
+              <h1 className="text-base sm:text-lg font-black tracking-tight text-slate-900 dark:text-white truncate">
+                WhatsApp Conversation & Reminder Leads
               </h1>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-              Automated sequential reminder batches with custom spacing and 24-hour row tracking.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium hidden sm:block truncate">
+              Multi-Tenant VLAN isolated campaigns, separate WhatsApp QR authentication & automated customer reminders.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Action Controls & Channel Switcher */}
+        <div className="flex items-center gap-2.5 flex-wrap ml-auto">
+          {/* Sub-Dealer locked badge OR Admin VLAN Channel Switcher */}
+          {isSubDealerUser ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 text-xs font-black uppercase tracking-wider shadow-xs">
+              <Shield size={13} className="text-blue-500 shrink-0" />
+              <span>VLAN: {subDealerLineCode || 'SUB-DEALER'}</span>
+            </div>
+          ) : (
+            <div className="relative flex items-center">
+              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-blue-500">
+                <Layers size={13} />
+              </div>
+              <select
+                value={selectedVlanChannel}
+                onChange={(e) => setSelectedVlanChannel(e.target.value)}
+                className="pl-7 pr-7 py-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-black text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer uppercase shadow-xs appearance-none"
+                title="Switch Gateway & Campaign Scoping by Sub-Dealer VLAN"
+              >
+                {availableVlanChannels.map(c => (
+                  <option key={`c-${c.key}`} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+          )}
+
+          {/* Dedicated WhatsApp Device & QR Connection Button */}
+          <button
+            onClick={() => setIsConnectPanelOpen(true)}
+            className={cn(
+              "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all cursor-pointer shadow-xs",
+              whatsAppStatus?.connected
+                ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/60"
+                : "bg-amber-50 dark:bg-amber-950/40 border-amber-500/30 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/60 animate-pulse"
+            )}
+            title={`WhatsApp Device Authentication for session "${activeSessionKey}"`}
+          >
+            <Smartphone size={15} className={whatsAppStatus?.connected ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"} />
+            <span className="font-mono">
+              {whatsAppStatus?.connected
+                ? `Live: +${whatsAppStatus.phoneNumber || 'Active'}`
+                : `Link WhatsApp QR`}
+            </span>
+            <span className={cn(
+              "w-2 h-2 rounded-full shrink-0",
+              whatsAppStatus?.connected ? "bg-emerald-500 animate-ping" : "bg-amber-500"
+            )} />
+          </button>
+
+          {/* Start New Lead Button */}
           <button
             onClick={() => {
-              setLeadName(`Reminder Batch ${new Date().toLocaleDateString()}`);
+              const channelLabel = isSubDealerUser ? `VLAN ${subDealerLineCode || 'Dealer'}` : (selectedVlanChannel !== 'all' ? `VLAN ${selectedVlanChannel}` : 'Global');
+              setLeadName(`${channelLabel} Reminder - ${new Date().toLocaleDateString()}`);
               setIsModalOpen(true);
             }}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
           >
-            <Plus size={16} />
+            <Plus size={15} />
             <span>Start New Lead</span>
           </button>
         </div>
@@ -538,7 +828,7 @@ export default function ConversationTab({
                 <Layers size={18} />
               </span>
             </div>
-            <div className="text-3xl font-black text-slate-900 dark:text-white font-sans">
+            <div className="text-3xl font-black text-slate-900 dark:text-white font-lexend">
               {summaryMetrics.totalLeads}
             </div>
             <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">
@@ -556,7 +846,7 @@ export default function ConversationTab({
                 <CheckCircle2 size={18} />
               </span>
             </div>
-            <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 font-sans">
+            <div className="text-3xl font-black text-emerald-600 dark:text-emerald-400 font-lexend">
               {summaryMetrics.completedReminders.toLocaleString()}
             </div>
             <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">
@@ -574,7 +864,7 @@ export default function ConversationTab({
                 <XCircle size={18} />
               </span>
             </div>
-            <div className="text-3xl font-black text-rose-600 dark:text-rose-400 font-sans">
+            <div className="text-3xl font-black text-rose-600 dark:text-rose-400 font-lexend">
               {summaryMetrics.failedReminders.toLocaleString()}
             </div>
             <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">
@@ -592,7 +882,7 @@ export default function ConversationTab({
                 <Clock size={18} />
               </span>
             </div>
-            <div className="text-3xl font-black text-violet-600 dark:text-violet-400 font-sans">
+            <div className="text-3xl font-black text-violet-600 dark:text-violet-400 font-lexend">
               {summaryMetrics.totalTime}
             </div>
             <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold mt-1">
@@ -608,7 +898,7 @@ export default function ConversationTab({
               <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
                 <span>Reminder Leads Registry</span>
                 <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/30">
-                  {leads.length} campaigns
+                  {scopedLeads.length} campaigns
                 </span>
               </h2>
               <p className="text-xs text-slate-400 dark:text-slate-500">
@@ -617,21 +907,21 @@ export default function ConversationTab({
             </div>
           </div>
 
-          {leads.length === 0 ? (
+          {scopedLeads.length === 0 ? (
             <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
               <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400">
                 <MessageSquare size={32} />
               </div>
               <h3 className="text-sm font-black text-slate-700 dark:text-slate-300">
-                No Reminder Leads Yet
+                No Reminder Leads For This VLAN Channel
               </h3>
               <p className="text-xs text-slate-400 max-w-sm">
-                Click the "Start New Lead" button above to launch your first automated WhatsApp reminder campaign for your subscribers.
+                Click the "Start New Lead" button above to launch an automated WhatsApp reminder campaign for your subscribers under {isSubDealerUser ? `VLAN ${subDealerLineCode || 'Sub-Dealer'}` : (selectedVlanChannel !== 'all' ? `VLAN ${selectedVlanChannel}` : 'Global Network')}.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-sans">
+              <table className="w-full text-left text-xs font-lexend">
                 <thead>
                   <tr className="bg-slate-50/70 dark:bg-slate-950/40 border-b border-slate-200 dark:border-white/10 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     <th className="py-3 px-4">Lead Name</th>
@@ -647,7 +937,7 @@ export default function ConversationTab({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {leads.map((lead) => {
+                  {scopedLeads.map((lead) => {
                     const isExpanded = expandedLeadIds.has(lead.id);
                     const isRunning = lead.status === 'running';
                     const isCompleted = lead.status === 'completed';
@@ -685,7 +975,7 @@ export default function ConversationTab({
                         >
                           {/* Lead Name */}
                           <td className="py-3 px-4 font-bold text-slate-800 dark:text-slate-100">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               {isRunning && (
                                 <span className="relative flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -693,6 +983,11 @@ export default function ConversationTab({
                                 </span>
                               )}
                               <span>{lead.name}</span>
+                              {lead.lineCode && (
+                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono">
+                                  ⚡ VLAN {lead.lineCode}
+                                </span>
+                              )}
                               {isRunning && (
                                 <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/40">
                                   Running
@@ -717,32 +1012,32 @@ export default function ConversationTab({
                           </td>
 
                           {/* Total Customers */}
-                          <td className="py-3 px-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
+                          <td className="py-3 px-3 text-center tabular-nums font-bold text-slate-700 dark:text-slate-300 font-lexend text-xs">
                             {totalCount}
                           </td>
 
                           {/* Success */}
-                          <td className="py-3 px-3 text-center font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                          <td className="py-3 px-3 text-center tabular-nums font-extrabold text-emerald-600 dark:text-emerald-400 font-lexend text-xs">
                             {successCount}
                           </td>
 
                           {/* Failed */}
-                          <td className="py-3 px-3 text-center font-mono font-extrabold text-rose-600 dark:text-rose-400">
+                          <td className="py-3 px-3 text-center tabular-nums font-extrabold text-rose-600 dark:text-rose-400 font-lexend text-xs">
                             {failedCount}
                           </td>
 
                           {/* Total Processed */}
-                          <td className="py-3 px-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300">
+                          <td className="py-3 px-3 text-center tabular-nums font-bold text-slate-700 dark:text-slate-300 font-lexend text-xs">
                             {processed}
                           </td>
 
                           {/* Start Time */}
-                          <td className="py-3 px-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                          <td className="py-3 px-3 tabular-nums text-[11px] text-slate-500 dark:text-slate-400 font-lexend">
                             {formatDateTime(lead.startedAt)}
                           </td>
 
                           {/* End Time */}
-                          <td className="py-3 px-3 font-mono text-[11px]">
+                          <td className="py-3 px-3 tabular-nums text-[11px] font-lexend">
                             {isRunning ? (
                               <span className="text-blue-500 font-bold animate-pulse">● Running...</span>
                             ) : (
@@ -751,14 +1046,14 @@ export default function ConversationTab({
                           </td>
 
                           {/* Duration */}
-                          <td className="py-3 px-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                          <td className="py-3 px-3 tabular-nums text-[11px] text-slate-500 dark:text-slate-400 font-lexend">
                             {durationStr}
                           </td>
 
                           {/* % Complete */}
                           <td className="py-3 px-4">
                             <div className="flex flex-col gap-1">
-                              <div className="flex items-center justify-between text-[10px] font-black">
+                              <div className="flex items-center justify-between text-[10px] font-black tabular-nums font-lexend">
                                 <span className="text-slate-500">{processed}/{totalCount}</span>
                                 <span className={pct === 100 ? "text-emerald-600 font-black" : "text-blue-600"}>{pct}%</span>
                               </div>
@@ -824,7 +1119,11 @@ export default function ConversationTab({
                         {isExpanded && (
                           <tr className="bg-slate-50/40 dark:bg-slate-950/20">
                             <td colSpan={10} className="p-4 pt-1 pb-4">
-                              <LeadItemsList leadId={lead.id} defaultWaitSeconds={Number(lead.waitSeconds) || 30} />
+                              <LeadItemsList
+                                leadId={lead.id}
+                                defaultWaitSeconds={Number(lead.waitSeconds) || 30}
+                                isLeadRunning={isRunning}
+                              />
                             </td>
                           </tr>
                         )}
@@ -845,7 +1144,8 @@ export default function ConversationTab({
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative"
+            data-font-lexend="true"
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative font-lexend"
           >
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-white/10 mb-4">
@@ -869,6 +1169,41 @@ export default function ConversationTab({
                 <X size={18} />
               </button>
             </div>
+
+            {/* Scoped VLAN & WhatsApp Gateway Banner */}
+            <div className="p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-950/80 border border-slate-200/80 dark:border-white/10 flex flex-wrap items-center justify-between gap-2.5 mb-3">
+              <div className="flex items-center gap-2">
+                <Shield size={14} className="text-blue-500 shrink-0" />
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Target Gateway:
+                </span>
+                <span className="px-2 py-0.5 rounded-lg text-xs font-black uppercase bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30">
+                  {isSubDealerUser ? `⚡ VLAN ${subDealerLineCode || 'DEALER'}` : (selectedVlanChannel === 'all' ? '🌐 ALL VLANS' : `⚡ VLAN ${selectedVlanChannel}`)}
+                </span>
+              </div>
+              <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                {scopedRows.length} clients in scope ({allUnpaidClients.length} unpaid)
+              </div>
+            </div>
+
+            {/* Offline warning if this session is not linked */}
+            {!whatsAppStatus?.connected && (
+              <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 text-xs font-medium text-amber-800 dark:text-amber-200 flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span className="truncate">
+                    WhatsApp for session "{activeSessionKey}" is not connected.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsConnectPanelOpen(true)}
+                  className="px-2.5 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] shrink-0 cursor-pointer shadow-xs"
+                >
+                  Link QR
+                </button>
+              </div>
+            )}
 
             {/* Mode Selection Tabs (Automatic vs Custom) */}
             <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-white/10 mb-1">
@@ -1013,12 +1348,12 @@ export default function ConversationTab({
                                 <p className="font-bold truncate text-slate-900 dark:text-white">
                                   {client.name || 'Customer'}
                                 </p>
-                                <p className="text-[10px] text-slate-400 font-mono">
+                                <p className="text-[10px] text-slate-400 font-lexend tabular-nums">
                                   {client.username || client.clientId} • {phone}
                                 </p>
                               </div>
                             </div>
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
+                            <span className="text-[10px] font-lexend tabular-nums px-2 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
                               Due: {due}
                             </span>
                           </div>
@@ -1076,7 +1411,7 @@ export default function ConversationTab({
                     }
                   }}
                   placeholder="Enter seconds (e.g. 30, 45, 60...)"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none font-lexend tabular-nums"
                 />
                 <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-1 block">
                   Recommended: 30–60 seconds to prevent WhatsApp account rate limits.
@@ -1147,7 +1482,8 @@ export default function ConversationTab({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/40 rounded-2xl max-w-md w-full p-6 shadow-2xl relative"
+              data-font-lexend="true"
+              className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/40 rounded-2xl max-w-md w-full p-6 shadow-2xl relative font-lexend"
             >
               <div className="flex items-center gap-3 mb-4">
                 <span className="p-2.5 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
@@ -1170,7 +1506,7 @@ export default function ConversationTab({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-semibold">Total Recipients:</span>
-                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{leadToDelete.totalCount || 0}</span>
+                  <span className="font-lexend tabular-nums font-bold text-slate-700 dark:text-slate-300">{leadToDelete.totalCount || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-semibold">Status:</span>
@@ -1212,6 +1548,30 @@ export default function ConversationTab({
                   )}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* WhatsApp Device Authentication & QR Modal */}
+      <AnimatePresence>
+        {isConnectPanelOpen && (
+          <div className="fixed inset-0 z-[12000] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-2xl my-auto"
+            >
+              <WhatsAppConnectPanel
+                onClose={() => {
+                  setIsConnectPanelOpen(false);
+                  getStatus(activeSessionKey).then((st) => st && setWhatsAppStatus(st));
+                }}
+                currentUser={currentUser}
+                initialSessionKey={activeSessionKey}
+                users={users}
+              />
             </motion.div>
           </div>
         )}

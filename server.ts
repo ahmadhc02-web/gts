@@ -626,6 +626,9 @@ async function startServer() {
   startWhatsAppBackendIfDown();
 
   app.get(["/api/whatsapp/status", "/whatsapp-api/status"], async (req, res) => {
+    const sessionKey = (req.query.session || req.query.dealerId || req.query.vlan || "") as string;
+    const qStr = sessionKey ? `?session=${encodeURIComponent(sessionKey)}` : "";
+
     const candidateUrls = [
       "http://127.0.0.1:3001",
       WHATSAPP_SERVICE_BACKEND_URL,
@@ -634,7 +637,7 @@ async function startServer() {
 
     for (const target of candidateUrls) {
       try {
-        const response = await fetch(`${target}/status`, { signal: AbortSignal.timeout(2500) });
+        const response = await fetch(`${target}/status${qStr}`, { signal: AbortSignal.timeout(2500) });
         if (response.ok) {
           const data = await response.json();
           lastWhatsAppBackendError = null;
@@ -648,6 +651,7 @@ async function startServer() {
     return res.json({
       connected: false,
       phoneNumber: null,
+      session: sessionKey || 'main',
       rateLimitReached: false,
       queuedCount: 0,
       serviceStarting: true,
@@ -656,6 +660,9 @@ async function startServer() {
   });
 
   app.get(["/api/whatsapp/qr", "/whatsapp-api/qr"], async (req, res) => {
+    const sessionKey = (req.query.session || req.query.dealerId || req.query.vlan || "") as string;
+    const qStr = sessionKey ? `?session=${encodeURIComponent(sessionKey)}` : "";
+
     const candidateUrls = [
       "http://127.0.0.1:3001",
       WHATSAPP_SERVICE_BACKEND_URL,
@@ -664,7 +671,7 @@ async function startServer() {
 
     for (const target of candidateUrls) {
       try {
-        const response = await fetch(`${target}/qr`, { signal: AbortSignal.timeout(2500) });
+        const response = await fetch(`${target}/qr${qStr}`, { signal: AbortSignal.timeout(2500) });
         if (response.ok) {
           const data = await response.json();
           if (data && data.qr) {
@@ -678,14 +685,14 @@ async function startServer() {
     startWhatsAppBackendIfDown();
     try {
       await new Promise(r => setTimeout(r, 1200));
-      const retryRes = await fetch("http://127.0.0.1:3001/qr", { signal: AbortSignal.timeout(2000) });
+      const retryRes = await fetch(`http://127.0.0.1:3001/qr${qStr}`, { signal: AbortSignal.timeout(2000) });
       if (retryRes.ok) {
         const data = await retryRes.json();
         if (data && data.qr) return res.json(data);
       }
     } catch (_) {}
 
-    return res.json({ qr: null, serviceStarting: true, backendError: lastWhatsAppBackendError || null });
+    return res.json({ qr: null, session: sessionKey || 'main', serviceStarting: true, backendError: lastWhatsAppBackendError || null });
   });
 
   app.post(["/api/whatsapp/disconnect", "/whatsapp-api/disconnect"], async (req, res) => {
@@ -697,7 +704,12 @@ async function startServer() {
 
     for (const target of candidateUrls) {
       try {
-        await fetch(`${target}/disconnect`, { method: "POST", signal: AbortSignal.timeout(2500) });
+        await fetch(`${target}/disconnect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(req.body || {}),
+          signal: AbortSignal.timeout(2500)
+        });
         break;
       } catch (err) {}
     }
@@ -713,7 +725,12 @@ async function startServer() {
 
     for (const target of candidateUrls) {
       try {
-        const response = await fetch(`${target}/reset-session`, { method: "POST", signal: AbortSignal.timeout(6000) });
+        const response = await fetch(`${target}/reset-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(req.body || {}),
+          signal: AbortSignal.timeout(6000)
+        });
         if (response.ok) {
           const data = await response.json();
           return res.json(data);
@@ -998,7 +1015,7 @@ async function startServer() {
       if (Array.isArray(items) && items.length > 0 && leadId) {
         const itemRows = items.map((item: any, idx: number) => ({
           lead_id: leadId,
-          client_id: String(item.clientId || ''),
+          client_id: String(item.username || item.clientId || ''),
           name: String(item.name || ''),
           mobile_number: String(item.mobileNumber || ''),
           message: item.message || null,
