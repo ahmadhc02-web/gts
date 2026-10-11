@@ -1,4 +1,6 @@
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const baileys = require('@whiskeysockets/baileys');
+const makeWASocket = baileys.makeWASocket || baileys.default;
+const { useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, fetchLatestBaileysVersion } = baileys;
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
@@ -34,6 +36,19 @@ function registerMessageLogCallback(callback) {
 
 // Multi-Tenant Session Map
 const sessions = new Map();
+
+const sentMessageStore = new Map();
+const SENT_STORE_MAX = 1000;
+function rememberSent(sentMsg) {
+  try {
+    const id = sentMsg?.key?.id;
+    if (!id || !sentMsg.message) return;
+    sentMessageStore.set(id, sentMsg.message);
+    if (sentMessageStore.size > SENT_STORE_MAX) {
+      sentMessageStore.delete(sentMessageStore.keys().next().value);
+    }
+  } catch (_) {}
+}
 
 function getSession(rawKey = 'main', createIfMissing = true) {
   const key = normalizeSessionKey(rawKey);
@@ -122,11 +137,29 @@ async function initBaileys(rawKey = 'main') {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(session.authDir);
+    const logger = pino({ level: 'silent' });
+
+    let waVersion;
+    try {
+      const v = await fetchLatestBaileysVersion();
+      waVersion = v.version;
+      console.log(`[${session.key}] Using WhatsApp Web version ${waVersion.join('.')}`);
+    } catch (e) {
+      console.log(`[${session.key}] Could not fetch latest WA version, using built-in default:`, e.message);
+    }
 
     session.sock = makeWASocket({
-      auth: state,
+      ...(waVersion ? { version: waVersion } : {}),
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger),
+      },
       printQRInTerminal: false,
-      logger: pino({ level: 'silent' }),
+      logger,
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+      generateHighQualityLinkPreview: false,
+      getMessage: async (key) => sentMessageStore.get(key.id),
       defaultQueryTimeoutMs: 60000,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
@@ -201,7 +234,7 @@ async function initBaileys(rawKey = 'main') {
         }
 
         startKeepAlive(session);
-        startProactiveRefresh(session);
+        // Proactive refresh disabled on purpose: tearing down a healthy socket every 15 minutes corrupts Signal session state
 
         if (session.resetBackoffTimer) clearTimeout(session.resetBackoffTimer);
         session.resetBackoffTimer = setTimeout(() => {
@@ -322,10 +355,11 @@ async function sendWithRetry(session, phoneNumber, message) {
         }
       }
 
-      await Promise.race([
+      const sent = await Promise.race([
         session.sock.sendMessage(jid, { text: message }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Send timed out')), SEND_TIMEOUT_MS))
       ]);
+      rememberSent(sent);
 
       session.lastActivityTimestamp = Date.now();
       return { success: true };
