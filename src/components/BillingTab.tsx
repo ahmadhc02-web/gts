@@ -138,6 +138,7 @@ export default function BillingTab(props: BillingTabProps) {
     isExporting,
     isGeneratingBackup,
     isLoading,
+    isBillingFresh = true,
     isBillingSyncing = false,
     isMicMuted,
     isNewConnectionCat,
@@ -282,7 +283,7 @@ export default function BillingTab(props: BillingTabProps) {
     users
   } = props;
 
-  const effectiveBillingUnlocked = forceViewOnly ? false : isBillingUnlocked;
+  const effectiveBillingUnlocked = (forceViewOnly || !isBillingFresh) ? false : isBillingUnlocked;
 
   // Only Sub-Dealer and Super Admin can delete recovery/billing rows
   const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin';
@@ -536,9 +537,9 @@ export default function BillingTab(props: BillingTabProps) {
             )}
 
             {isLoading && (!activeRows || activeRows.length === 0) ? (
-              <div className="p-10 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-[var(--neu-surface)] flex flex-col items-center justify-center gap-3 animate-pulse">
-                <div className="w-12 h-12 rounded-xl bg-slate-300/30 dark:bg-slate-700/30" />
-                <p className="text-slate-400 font-black uppercase text-xs tracking-wider">
+              <div className="p-12 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-[var(--neu-surface)] flex flex-col items-center justify-center gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                <p className="text-slate-400 font-bold uppercase text-xs tracking-wider">
                   Loading billing data...
                 </p>
               </div>
@@ -617,12 +618,17 @@ export default function BillingTab(props: BillingTabProps) {
                     <h4 className="text-sm font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-2 flex-wrap">
                       <Layers size={16} className="text-blue-500" />
                       Recovery Rows ({filteredRows.length} listed)
-                      {isBillingSyncing && (
+                      {!isBillingFresh ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 animate-pulse">
+                          <Loader2 size={10} className="animate-spin text-amber-500" />
+                          Syncing latest data...
+                        </span>
+                      ) : isBillingSyncing ? (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                           <Loader2 size={10} className="animate-spin text-blue-500" />
                           Syncing...
                         </span>
-                      )}
+                      ) : null}
                       
                       {/* Header Save Changes Button */}
                       <AnimatePresence>

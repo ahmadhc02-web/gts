@@ -1493,6 +1493,10 @@ export default function EntrySheet({
   };
 
   const handleSaveSheet = async () => {
+    if (!pocketbaseService.isBillingFresh) {
+      toast.error("Syncing In Progress", { description: "Latest data is still syncing, please wait a few seconds" });
+      return;
+    }
     if (isLocked) {
       toast.error("🔒 SYSTEM SECURED", { description: "Please unlock the Billing Security Shield first." });
       return;
@@ -2146,7 +2150,9 @@ export default function EntrySheet({
               currentUser?.username || 'admin',
               activeDealerId,
               true,
-              changedIndices
+              changedIndices,
+              undefined,
+              true
             )
           );
         }
@@ -3892,8 +3898,8 @@ export default function EntrySheet({
             {/* Save active sheet */}
             <button
               onClick={handleSaveSheet}
-              disabled={isSavingSheet}
-              className={`p-2 rounded-xl text-white text-[9px] font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-1 border-none ${isSavingSheet ? 'bg-emerald-600/50 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer active:scale-95'}`}
+              disabled={isSavingSheet || !pocketbaseService.isBillingFresh}
+              className={`p-2 rounded-xl text-white text-[9px] font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-1 border-none ${isSavingSheet || !pocketbaseService.isBillingFresh ? 'bg-emerald-600/50 cursor-not-allowed opacity-60' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer active:scale-95'}`}
               title="Commit active sheet to historical database logs"
             >
               {isSavingSheet ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}

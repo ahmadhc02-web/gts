@@ -326,10 +326,11 @@ export default function App() {
 
   const forceLogoutForInactivity = React.useCallback(() => {
     try {
+      pocketbaseService.clearAllLocalCaches();
       // Clear all app-specific cached data on this device so no stale
       // snapshot can ever be reused after a long gap.
       Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('gts_cache_v3_') || key.startsWith('gts_app_config') || key === ACTIVITY_STORAGE_KEY) {
+        if (key.startsWith('gts_cache_v3_') || key.startsWith('gts_cache_meta_') || key.startsWith('gts_app_config') || key === ACTIVITY_STORAGE_KEY) {
           localStorage.removeItem(key);
         }
       });
@@ -1772,6 +1773,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    pocketbaseService.clearAllLocalCaches();
     setUser(null);
     navigate('/login');
     safeLocalStorage.removeItem('complaint_app_user');

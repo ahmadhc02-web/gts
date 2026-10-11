@@ -556,6 +556,7 @@ async function startServer() {
   let whatsappBackendProcess: any = null;
   let lastWhatsAppBackendError: string | null = null;
   const startWhatsAppBackendIfDown = async () => {
+    if (process.env.WHATSAPP_AUTOSTART !== 'true') return;
     try {
       const testRes = await fetch("http://127.0.0.1:3001/status", { signal: AbortSignal.timeout(1000) });
       if (testRes.ok) return; // already active on port 3001

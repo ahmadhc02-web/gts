@@ -78,8 +78,7 @@ if (supabase) {
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 app.use(express.json());
 
-// Init Baileys and restore active multi-tenant sessions
-autoRestoreAllSessions();
+// Init Baileys and restore active multi-tenant sessions deferred until port is bound
 
 app.get('/status', (req, res) => {
   const sessionKey = req.query.session || req.query.dealerId || req.query.vlan || 'main';
@@ -376,6 +375,7 @@ app.post('/template', async (req, res) => {
 });
 
 const server = app.listen(PORT, () => {
+  autoRestoreAllSessions();
   console.log(`WhatsApp Baileys service listening on port ${PORT}`);
   // Resume any interrupted running leads after Baileys has initialized
   setTimeout(() => {
@@ -386,5 +386,9 @@ const server = app.listen(PORT, () => {
 });
 
 server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[WhatsApp Service] Port ${PORT} already in use, another instance is running. Exiting.`);
+    process.exit(1);
+  }
   console.warn(`[WhatsApp Service] Port ${PORT} listen notice:`, err.message);
 });

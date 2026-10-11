@@ -786,21 +786,20 @@ export default function AdminPanel({
   const [billingMonths, setBillingMonths] = useState<any[]>(() => {
     try {
       const lc = currentUser?.lineCode || 'nolc';
-      const dealer = activeDealerId || 'main';
-      const syncKeys = [
-        `billing_months_${dealer}_${lc}`,
-        `billing_months_all_${lc}`,
-        `billing_months_main_${lc}`
-      ];
-      for (const k of syncKeys) {
-        if (globalTableCaches[k] && Array.isArray(globalTableCaches[k]) && globalTableCaches[k].length > 0) {
-          return globalTableCaches[k];
+      const dealer = activeDealerId || 'all';
+      const exactKey = `billing_months_${dealer}_${lc}`;
+      const metaStr = localStorage.getItem(`gts_cache_meta_${exactKey}`);
+      const metaTime = metaStr ? Number(metaStr) : 0;
+      const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+      if (metaTime && Date.now() - metaTime <= CACHE_MAX_AGE_MS) {
+        if (globalTableCaches[exactKey] && Array.isArray(globalTableCaches[exactKey]) && globalTableCaches[exactKey].length > 0) {
+          return globalTableCaches[exactKey];
         }
-        const saved = localStorage.getItem(`gts_cache_v3_${k}`);
+        const saved = localStorage.getItem(`gts_cache_v3_${exactKey}`);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            globalTableCaches[k] = parsed;
+            globalTableCaches[exactKey] = parsed;
             return parsed;
           }
         }
@@ -812,14 +811,13 @@ export default function AdminPanel({
   const [billingMonthsList, setBillingMonthsList] = useState<{ id: string }[]>(() => {
     try {
       const lc = currentUser?.lineCode || 'nolc';
-      const dealer = activeDealerId || 'main';
-      const syncKeys = [
-        `billing_months_${dealer}_${lc}`,
-        `billing_months_all_${lc}`,
-        `billing_months_main_${lc}`
-      ];
-      for (const k of syncKeys) {
-        const cached = globalTableCaches[k] || JSON.parse(localStorage.getItem(`gts_cache_v3_${k}`) || '[]');
+      const dealer = activeDealerId || 'all';
+      const exactKey = `billing_months_${dealer}_${lc}`;
+      const metaStr = localStorage.getItem(`gts_cache_meta_${exactKey}`);
+      const metaTime = metaStr ? Number(metaStr) : 0;
+      const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+      if (metaTime && Date.now() - metaTime <= CACHE_MAX_AGE_MS) {
+        const cached = globalTableCaches[exactKey] || JSON.parse(localStorage.getItem(`gts_cache_v3_${exactKey}`) || '[]');
         if (Array.isArray(cached) && cached.length > 0) {
           return cached.map((m: any) => ({ id: m.id || m.month_id }));
         }
@@ -830,18 +828,18 @@ export default function AdminPanel({
 
   const billingMonthsRef = React.useRef<any[]>([]);
   const isBillingDataFresh = React.useRef(false);
+  const [isBillingFresh, setIsBillingFresh] = useState<boolean>(() => pocketbaseService.isBillingFresh);
   const [isBillingMonthsLoading, setIsBillingMonthsLoading] = useState<boolean>(() => {
     try {
       const lc = currentUser?.lineCode || 'nolc';
-      const dealer = activeDealerId || 'main';
-      const syncKeys = [
-        `billing_months_${dealer}_${lc}`,
-        `billing_months_all_${lc}`,
-        `billing_months_main_${lc}`
-      ];
-      for (const k of syncKeys) {
-        if (globalTableCaches[k] && globalTableCaches[k].length > 0) return false;
-        const saved = localStorage.getItem(`gts_cache_v3_${k}`);
+      const dealer = activeDealerId || 'all';
+      const exactKey = `billing_months_${dealer}_${lc}`;
+      const metaStr = localStorage.getItem(`gts_cache_meta_${exactKey}`);
+      const metaTime = metaStr ? Number(metaStr) : 0;
+      const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+      if (metaTime && Date.now() - metaTime <= CACHE_MAX_AGE_MS) {
+        if (globalTableCaches[exactKey] && globalTableCaches[exactKey].length > 0) return false;
+        const saved = localStorage.getItem(`gts_cache_v3_${exactKey}`);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) return false;
@@ -950,6 +948,13 @@ export default function AdminPanel({
   const savingMonthCounts = React.useRef<Record<string, number>>({});
   
   const saveBillingMonthTracked = async (monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate: boolean = false, changedIndices?: number[] | Set<number>, excludedClientKeys?: string[]) => {
+    if (!isBillingFresh) {
+      toast.error("Syncing In Progress", {
+        description: "Latest data is still syncing, please wait a few seconds",
+        duration: 5000
+      });
+      throw new Error("Latest data is still syncing, please wait a few seconds");
+    }
     savingMonthIds.current.add(monthId);
     savingMonthCounts.current[monthId] = (savingMonthCounts.current[monthId] || 0) + 1;
     try {
@@ -980,6 +985,13 @@ export default function AdminPanel({
   };
 
   const handleManualSaveAllRows = async () => {
+    if (!isBillingFresh) {
+      toast.error("Syncing In Progress", {
+        description: "Latest data is still syncing, please wait a few seconds",
+        duration: 5000
+      });
+      return;
+    }
     if (!currentMonthId) {
       toast.error("No active billing recovery sheet selected.");
       return;
@@ -1024,14 +1036,13 @@ export default function AdminPanel({
   const [currentMonthId, _setCurrentMonthId] = useState<string>(() => {
     try {
       const lc = currentUser?.lineCode || 'nolc';
-      const dealer = activeDealerId || 'main';
-      const syncKeys = [
-        `billing_months_${dealer}_${lc}`,
-        `billing_months_all_${lc}`,
-        `billing_months_main_${lc}`
-      ];
-      for (const k of syncKeys) {
-        const cached: any[] = globalTableCaches[k] || JSON.parse(localStorage.getItem(`gts_cache_v3_${k}`) || '[]');
+      const dealer = activeDealerId || 'all';
+      const exactKey = `billing_months_${dealer}_${lc}`;
+      const metaStr = localStorage.getItem(`gts_cache_meta_${exactKey}`);
+      const metaTime = metaStr ? Number(metaStr) : 0;
+      const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+      if (metaTime && Date.now() - metaTime <= CACHE_MAX_AGE_MS) {
+        const cached: any[] = globalTableCaches[exactKey] || JSON.parse(localStorage.getItem(`gts_cache_v3_${exactKey}`) || '[]');
         if (Array.isArray(cached) && cached.length > 0) {
           return cached[0].id || cached[0].month_id || '';
         }
@@ -1684,13 +1695,20 @@ export default function AdminPanel({
     });
   }, [activeTab, activeDealerId, isEntrySheetRouteOpen]);
 
+  const filterScopedBillingMonthsRef = React.useRef(filterScopedBillingMonths);
+  useEffect(() => {
+    filterScopedBillingMonthsRef.current = filterScopedBillingMonths;
+  }, [filterScopedBillingMonths]);
+
   // Real-time sub for billing months (preloads in background on mount and stays synced)
   useEffect(() => {
-    const unsubscribe = pocketbaseService.subscribeBillingMonths((data) => {
-      isBillingDataFresh.current = true;
+    const unsubscribe = pocketbaseService.subscribeBillingMonths((data, isFresh) => {
+      const freshFlag = Boolean(isFresh);
+      setIsBillingFresh(freshFlag);
+      isBillingDataFresh.current = freshFlag;
       setIsBillingMonthsLoading(false);
       const filtered = data.filter((m: any) => !deletingMonthIds.current.has(m.id));
-      const scopedData = filterScopedBillingMonths(filtered);
+      const scopedData = filterScopedBillingMonthsRef.current(filtered);
 
       const sorted = [...scopedData].sort((a, b) => {
         // Sort newest first by parsing e.g. "MAY-26" or using epoch createdAt
@@ -1759,7 +1777,43 @@ export default function AdminPanel({
       });
     }, activeDealerId);
     return () => unsubscribe();
-  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId, filterScopedBillingMonths]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId]);
+
+  // Clear all caches on dealer, user, or lineCode changes
+  const prevScopeRef = React.useRef({
+    userId: currentUser?.uid,
+    dealerId: activeDealerId,
+    lineCode: currentUser?.lineCode
+  });
+
+  useEffect(() => {
+    if (
+      prevScopeRef.current.userId !== currentUser?.uid ||
+      prevScopeRef.current.dealerId !== activeDealerId ||
+      prevScopeRef.current.lineCode !== currentUser?.lineCode
+    ) {
+      prevScopeRef.current = {
+        userId: currentUser?.uid,
+        dealerId: activeDealerId,
+        lineCode: currentUser?.lineCode
+      };
+      pocketbaseService.clearAllLocalCaches();
+      setIsBillingFresh(false);
+      isBillingDataFresh.current = false;
+      setIsBillingMonthsLoading(true);
+    }
+  }, [currentUser?.uid, currentUser?.lineCode, activeDealerId]);
+
+  // Re-scope in-memory months when clients registry updates without reconnecting database
+  useEffect(() => {
+    setBillingMonths(prev => {
+      if (!prev || prev.length === 0) return prev;
+      const scoped = filterScopedBillingMonths(prev);
+      const isSame = prev.length === scoped.length && prev.every((m, idx) => m.id === scoped[idx]?.id && (m.rows?.length || 0) === (scoped[idx]?.rows?.length || 0));
+      if (isSame) return prev;
+      return scoped;
+    });
+  }, [filterScopedBillingMonths]);
 
   // Register visibilitychange and beforeunload listeners for pending saves
   useEffect(() => {
@@ -2350,6 +2404,13 @@ export default function AdminPanel({
   };
 
   const handleSaveRowField = (rowIndex: number, field: string, val: any, forceImmediate = false) => {
+    if (!isBillingFresh) {
+      toast.error("Syncing In Progress", {
+        description: "Latest data is still syncing, please wait a few seconds",
+        duration: 5000
+      });
+      return;
+    }
     if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments' && field !== 'reminderSentAt' && field !== 'reminderSentCount') {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to edit billing information." });
       return;
@@ -4072,11 +4133,15 @@ export default function AdminPanel({
     if (activeMonthDoc && Array.isArray(activeMonthDoc.rows) && activeMonthDoc.rows.length > 0) {
       return false;
     }
+    // If any billing month in memory has rows, we have data to display immediately
+    if (billingMonths.some(m => Array.isArray(m.rows) && m.rows.length > 0)) {
+      return false;
+    }
     // If switching to a month that has no rows yet:
     if (isSwitchingMonth) return true;
     // Otherwise, true only if we have zero months loaded yet:
     return isBillingMonthsLoading && billingMonths.length === 0;
-  }, [activeMonthDoc, isSwitchingMonth, isBillingMonthsLoading, billingMonths.length]);
+  }, [activeMonthDoc, isSwitchingMonth, isBillingMonthsLoading, billingMonths]);
 
   const stateProps = {
     onNavigate: onNavigateProp,
@@ -4174,6 +4239,7 @@ export default function AdminPanel({
     isAdvanceMode,
     isAudioMuted,
     isBatchPrintOpen,
+    isBillingFresh,
     isBillingUnlocked,
     isBulkPurging,
     isBulkRestoring,
@@ -7361,7 +7427,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'billing' && <BillingTab {...stateProps} isLoading={isEffectiveBillingLoading} isBillingSyncing={isBillingMonthsLoading && Boolean(activeMonthDoc?.rows?.length)} forceViewOnly={!canWriteBilling} />}
+        {activeTab === 'billing' && <BillingTab {...stateProps} isBillingFresh={isBillingFresh} isLoading={isEffectiveBillingLoading} isBillingSyncing={(!isBillingFresh || isBillingMonthsLoading) && Boolean(activeMonthDoc?.rows?.length)} forceViewOnly={!canWriteBilling || !isBillingFresh} />}
           </motion.div>
           </Suspense>
           </>

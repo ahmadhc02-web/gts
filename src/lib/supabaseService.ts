@@ -553,7 +553,7 @@ export function fromDb(table: string, obj: any): any {
   return result;
 }
 
-const globalTableSubscribers: Record<string, Set<(data: any[]) => void>> = {};
+const globalTableSubscribers: Record<string, Set<(data: any[], isFresh?: boolean) => void>> = {};
 export const globalTableCaches: Record<string, any[]> = {};
 const globalTableIntervals: Record<string, any> = {};
 const globalTableChannels: Record<string, any> = {};
@@ -623,9 +623,11 @@ function sanitize<T>(obj: T): T {
   return result as T;
 }
 
+export const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
+
 function subscribeTable(
   tableName: string,
-  callback: (data: any[]) => void,
+  callback: (data: any[], isFresh?: boolean) => void,
   mapRow: (row: any) => any = (row) => row,
   dealerId?: string,
   bypassLineCodeFilter: boolean | string = false
@@ -636,13 +638,21 @@ function subscribeTable(
     // Skip stale localStorage pre-population for tables where momentarily stale status/data causes UI flicker (complaints & clients)
     if (tableName !== 'complaints' && tableName !== 'clients') {
       try {
-        const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
-        const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`) || (isSpecificDealer ? null : localStorage.getItem(`gts_cache_v3_${tableName}_all_${activeLineCode || 'nolc'}`));
-        if (cachedData) {
-          const parsed = JSON.parse(cachedData);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            globalTableCaches[syncKey] = parsed;
+        const metaStr = localStorage.getItem(`gts_cache_meta_${syncKey}`);
+        const metaTime = metaStr ? Number(metaStr) : 0;
+        const isExpired = !metaTime || (Date.now() - metaTime > CACHE_MAX_AGE_MS);
+
+        if (!isExpired) {
+          const cachedData = localStorage.getItem(`gts_cache_v3_${syncKey}`);
+          if (cachedData) {
+            const parsed = JSON.parse(cachedData);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              globalTableCaches[syncKey] = parsed;
+            }
           }
+        } else if (metaStr) {
+          localStorage.removeItem(`gts_cache_v3_${syncKey}`);
+          localStorage.removeItem(`gts_cache_meta_${syncKey}`);
         }
       } catch (e) {}
     }
@@ -735,7 +745,8 @@ function subscribeTable(
           } catch (e) {}
 
           if (mapped.length === 0) {
-            const localSaved = localStorage.getItem(`gts_ledger_folders_${dealerId || 'main'}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_${dealerId || 'all'}_${activeLineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_all_${activeLineCode || 'nolc'}`);
+            const exactLedgerKey = `ledger_folders_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+            const localSaved = localStorage.getItem(`gts_cache_v3_${exactLedgerKey}`);
             if (localSaved) {
               try {
                 const parsed = JSON.parse(localSaved);
@@ -764,20 +775,26 @@ function subscribeTable(
       }
 
       if (mapped.length > 0 || !error) {
+        if (tableName === 'billing_months') {
+          supabaseService.isBillingFresh = true;
+        }
+
         // Prevent double re-render if fetched data is identical to cache
         const isIdentical = globalTableCaches[syncKey] && JSON.stringify(globalTableCaches[syncKey]) === JSON.stringify(mapped);
         
         globalTableCaches[syncKey] = mapped;
         try {
           localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(mapped));
+          localStorage.setItem(`gts_cache_meta_${syncKey}`, String(Date.now()));
         } catch (e) {}
 
-        if (!isIdentical) {
+        // For billing_months, ensure initial subscribers always receive confirmation
+        if (!isIdentical || tableName === 'billing_months') {
           const subscribers = globalTableSubscribers[syncKey];
           if (subscribers) {
             subscribers.forEach((cb) => {
               try {
-                cb(mapped);
+                cb(mapped, true);
               } catch (cbErr) {
                 console.error("Error in subscriber callback:", cbErr);
               }
@@ -798,7 +815,8 @@ function subscribeTable(
   globalTableSubscribers[syncKey].add(callback);
 
   if (globalTableCaches[syncKey]) {
-    callback(globalTableCaches[syncKey]);
+    const isFresh = Boolean(tableName === 'billing_months' && supabaseService.isBillingFresh);
+    callback(globalTableCaches[syncKey], isFresh);
   }
 
   if (isFirstSubscriber) {
@@ -927,16 +945,18 @@ function subscribeTable(
                   }
                   if (tableName === 'billing_months') {
                     billingMonthResolved = true;
+                    supabaseService.isBillingFresh = true;
                   }
                   globalTableCaches[syncKey] = cache;
                   try {
                     localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
+                    localStorage.setItem(`gts_cache_meta_${syncKey}`, String(Date.now()));
                   } catch (e) {}
 
                   const subscribers = globalTableSubscribers[syncKey];
                   if (subscribers) {
                     subscribers.forEach((cb) => {
-                      try { cb(cache); } catch (err) {}
+                      try { cb(cache, true); } catch (err) {}
                     });
                   }
                 }
@@ -1145,11 +1165,33 @@ async function fetchBrandingConfigType(configType: string): Promise<any> {
 }
 
 export const supabaseService = {
+  isBillingFresh: false,
+  clearAllLocalCaches: () => {
+    Object.keys(globalTableCaches).forEach(k => {
+      delete globalTableCaches[k];
+    });
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('gts_cache_v3_') || k.startsWith('gts_cache_meta_'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch (e) {}
+    supabaseService.isBillingFresh = false;
+  },
   setActiveLineCode: (lineCode?: string, lineId?: string) => {
     const cleanCode = typeof lineCode === 'string' ? lineCode.trim() : (lineCode ? String(lineCode).trim() : '');
-    activeLineCode = cleanCode || undefined;
+    const newCode = cleanCode || undefined;
     const cleanId = typeof lineId === 'string' ? lineId.trim() : (lineId ? String(lineId).trim() : '');
-    activeLineId = cleanId || undefined;
+    const newId = cleanId || undefined;
+    if (activeLineCode !== newCode || activeLineId !== newId) {
+      supabaseService.clearAllLocalCaches();
+    }
+    activeLineCode = newCode;
+    activeLineId = newId;
   },
   getActiveLineCode: () => activeLineCode,
   getActiveLineId: () => activeLineId,
@@ -1738,11 +1780,12 @@ export const supabaseService = {
 
       const sortedList = Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
       try {
-        const lc = activeLineCode || 'nolc';
-        const cacheKey = dealerId && dealerId !== 'main' ? `gts_cache_v3_billing_months_${dealerId}_${lc}` : `gts_cache_v3_billing_months_all_${lc}`;
-        localStorage.setItem(cacheKey, JSON.stringify(sortedList));
-        const syncKey = `${'billing_months'}_${dealerId || 'all'}_${lc}`;
-        globalTableCaches[syncKey] = sortedList;
+        const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+        globalTableCaches[exactKey] = sortedList;
+        try {
+          localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(sortedList));
+          localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
+        } catch (e) {}
       } catch (e) {}
 
       return sortedList;
@@ -1801,169 +1844,235 @@ export const supabaseService = {
 
   getBillingMonthsHistory: async (monthId: string, dealerId: string = 'main', bypassLineCodeFilter: boolean | string = false) => {
     try {
-      const lc = activeLineCode || 'nolc';
-      const syncKey = dealerId && dealerId !== 'main' ? `billing_months_${dealerId}_${lc}` : `billing_months_all_${lc}`;
-      const cachedList = globalTableCaches[syncKey];
-      if (Array.isArray(cachedList)) {
-        const found = cachedList.find((m: any) => (m?.id || m?.month_id) === monthId);
-        if (found && Array.isArray(found.rows) && found.rows.length > 0) {
-          return found;
-        }
-      }
+      const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
 
-      const monthMap = new Map<string, any>();
+      // Helper function to fetch from database
+      const fetchFromDb = async () => {
+        const monthMap = new Map<string, any>();
 
-      try {
-        let query = supabase.from('billing_months').select('*').eq('month_id', monthId);
-        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
-          query = query.eq('dealer_id', dealerId);
-        }
-        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
-        const cleanActive = String(activeLineCode || '').trim();
-        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
-          // Explicitly query all lines across network
-        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
-          query = query.or('line_code.is.null,line_code.eq.');
-        } else if (cleanBypass) {
-          query = query.eq('line_code', cleanBypass);
-        } else if (cleanActive) {
-          query = query.eq('line_code', cleanActive);
-        } else {
-          query = query.or('line_code.is.null,line_code.eq.');
-        }
-
-        const { data: supMonths } = await query;
-        if (supMonths) {
-          for (const em of supMonths) {
-            const rowsFromData = parseRowsData(em.rows_data ?? em.rows);
-            monthMap.set(em.month_id, {
-              id: em.month_id,
-              dbId: em.id,
-              dealerId: em.dealer_id || dealerId,
-              lineCode: em.line_code || '',
-              rows: rowsFromData,
-              excludedClientKeys: parseExcludedKeys(em),
-              hasAuthoritativeRowsData: rowsFromData.length > 0,
-              updatedAt: em.updated ? new Date(em.updated).getTime() : Date.now(),
-              createdAt: em.created ? new Date(em.created).getTime() : Date.now()
-            });
+        try {
+          let query = supabase.from('billing_months').select('*').eq('month_id', monthId);
+          if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+            query = query.eq('dealer_id', dealerId);
           }
-        }
-      } catch (err) {}
-
-      // Fast path: If month was found with authoritative rows_data, return immediately!
-      const resolved = monthMap.get(monthId);
-      if (resolved && resolved.rows && resolved.rows.length > 0) {
-        return resolved;
-      }
-
-      try {
-        let query = supabase.from('billing_rows').select('*').eq('month_id', monthId);
-        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
-          query = query.eq('dealer_id', dealerId);
-        }
-        const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
-        const cleanActive = String(activeLineCode || '').trim();
-        if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
-          // Explicitly query all lines across network
-        } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
-          query = query.or('line_code.is.null,line_code.eq.');
-        } else if (cleanBypass) {
-          query = query.eq('line_code', cleanBypass);
-        } else if (cleanActive) {
-          query = query.eq('line_code', cleanActive);
-        } else {
-          query = query.or('line_code.is.null,line_code.eq.');
-        }
-
-        const { data: rowRecords } = await query;
-        if (rowRecords && rowRecords.length > 0) {
-          const rowsByMonth = new Map<string, any[]>();
-          for (const r of rowRecords) {
-            const mId = r.month_id || 'UNKNOWN';
-            if (isExcludedFromRecovery(r.name, r.username)) continue;
-            if (activeLineCode && r.line_code && r.line_code.trim().toLowerCase() !== activeLineCode.trim().toLowerCase()) continue;
-            if (!activeLineCode && (r.line_code || (r.dealer_id && r.dealer_id !== 'main'))) continue;
-            if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
-            rowsByMonth.get(mId)!.push({
-              id: r.client_id || r.id,
-              clientId: r.client_id || r.id,
-              name: r.name || '',
-              username: r.username || '',
-              mobileNumber: r.mobile_number || '',
-              area: r.area || '',
-              rt: r.rt || '',
-              baseAmount: Number(r.base_amount ?? r.amount ?? 0),
-              cr: Number(r.cr ?? 0),
-              totalAmount: Number(r.total_amount ?? 0),
-              billingDay: r.billing_day || '5',
-              paymentReceived: Number(r.payment_received ?? 0),
-              paymentStatus: r.payment_status || 'unpaid',
-              comments: r.comments || '',
-              occ: r.occ || '',
-              panelDetails: r.panel_details || '',
-              pkgDetails: r.pkg_details || '',
-              sag: r.sag || '',
-              lai: r.lai || '',
-              connectionDate: r.connection_date || '',
-              devicePrice: r.device_price || '',
-              abl: r.abl || '',
-              lineCode: r.line_code || '',
-              lineId: r.line_id || null,
-              reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
-              reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
-              line_code: r.line_code || '',
-              line_id: r.line_id || null
-            });
+          const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+          const cleanActive = String(activeLineCode || '').trim();
+          if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+            // Explicitly query all lines across network
+          } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+            query = query.or('line_code.is.null,line_code.eq.');
+          } else if (cleanBypass) {
+            query = query.eq('line_code', cleanBypass);
+          } else if (cleanActive) {
+            query = query.eq('line_code', cleanActive);
+          } else {
+            query = query.or('line_code.is.null,line_code.eq.');
           }
 
-          for (const [mId, rowList] of rowsByMonth.entries()) {
-            if (!monthMap.has(mId)) {
-              if (dealerId && dealerId !== 'main' && (!rowList || rowList.length === 0)) continue;
-              monthMap.set(mId, {
-                id: mId,
-                dealerId: dealerId || 'main',
-                lineCode: activeLineCode || '',
-                rows: rowList,
-                hasAuthoritativeRowsData: false,
-                updatedAt: Date.now(),
-                createdAt: Date.now()
+          const { data: supMonths } = await query;
+          if (supMonths) {
+            for (const em of supMonths) {
+              const rowsFromData = parseRowsData(em.rows_data ?? em.rows);
+              monthMap.set(em.month_id, {
+                id: em.month_id,
+                dbId: em.id,
+                dealerId: em.dealer_id || dealerId,
+                lineCode: em.line_code || '',
+                rows: rowsFromData,
+                excludedClientKeys: parseExcludedKeys(em),
+                hasAuthoritativeRowsData: rowsFromData.length > 0,
+                updatedAt: em.updated ? new Date(em.updated).getTime() : Date.now(),
+                createdAt: em.created ? new Date(em.created).getTime() : Date.now()
               });
-            } else {
-              const existingMonth = monthMap.get(mId)!;
-              if (!existingMonth.rows || existingMonth.rows.length === 0) {
-                existingMonth.rows = rowList;
-              } else if (!existingMonth.hasAuthoritativeRowsData) {
-                const rowByClientId = new Map<string, any>();
-                const rowByUsername = new Map<string, any>();
-                for (const r of rowList) {
-                  if (r.clientId) rowByClientId.set(String(r.clientId).toLowerCase(), r);
-                  if (r.username) rowByUsername.set(String(r.username).toLowerCase(), r);
-                }
-                existingMonth.rows = existingMonth.rows.map((r: any) => {
-                  const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
-                                (r.username && rowByUsername.get(String(r.username).toLowerCase()));
-                  if (dbRow) {
-                    return {
-                      ...r,
-                      ...dbRow,
-                      comments: (dbRow.comments && dbRow.comments.trim() !== '') ? dbRow.comments : (r.comments || ''),
-                      baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
-                      cr: dbRow.cr ?? r.cr ?? 0,
-                      totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
-                      paymentReceived: dbRow.paymentReceived ?? r.paymentReceived ?? 0,
-                      paymentStatus: dbRow.paymentStatus ?? r.paymentStatus ?? 'unpaid'
-                    };
-                  }
-                  return r;
+            }
+          }
+        } catch (err) {}
+
+        const resolved = monthMap.get(monthId);
+        if (resolved && resolved.rows && resolved.rows.length > 0) {
+          return resolved;
+        }
+
+        try {
+          let query = supabase.from('billing_rows').select('*').eq('month_id', monthId);
+          if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+            query = query.eq('dealer_id', dealerId);
+          }
+          const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+          const cleanActive = String(activeLineCode || '').trim();
+          if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+            // Explicitly query all lines across network
+          } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+            query = query.or('line_code.is.null,line_code.eq.');
+          } else if (cleanBypass) {
+            query = query.eq('line_code', cleanBypass);
+          } else if (cleanActive) {
+            query = query.eq('line_code', cleanActive);
+          } else {
+            query = query.or('line_code.is.null,line_code.eq.');
+          }
+
+          const { data: rowRecords } = await query;
+          if (rowRecords && rowRecords.length > 0) {
+            const rowsByMonth = new Map<string, any[]>();
+            for (const r of rowRecords) {
+              const mId = r.month_id || 'UNKNOWN';
+              if (isExcludedFromRecovery(r.name, r.username)) continue;
+              if (activeLineCode && r.line_code && r.line_code.trim().toLowerCase() !== activeLineCode.trim().toLowerCase()) continue;
+              if (!activeLineCode && (r.line_code || (r.dealer_id && r.dealer_id !== 'main'))) continue;
+              if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
+              rowsByMonth.get(mId)!.push({
+                id: r.client_id || r.id,
+                clientId: r.client_id || r.id,
+                name: r.name || '',
+                username: r.username || '',
+                mobileNumber: r.mobile_number || '',
+                area: r.area || '',
+                rt: r.rt || '',
+                baseAmount: Number(r.base_amount ?? r.amount ?? 0),
+                cr: Number(r.cr ?? 0),
+                totalAmount: Number(r.total_amount ?? 0),
+                billingDay: r.billing_day || '5',
+                paymentReceived: Number(r.payment_received ?? 0),
+                paymentStatus: r.payment_status || 'unpaid',
+                comments: r.comments || '',
+                occ: r.occ || '',
+                panelDetails: r.panel_details || '',
+                pkgDetails: r.pkg_details || '',
+                sag: r.sag || '',
+                lai: r.lai || '',
+                connectionDate: r.connection_date || '',
+                devicePrice: r.device_price || '',
+                abl: r.abl || '',
+                lineCode: r.line_code || '',
+                lineId: r.line_id || null,
+                reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
+                reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
+                line_code: r.line_code || '',
+                line_id: r.line_id || null
+              });
+            }
+
+            for (const [mId, rowList] of rowsByMonth.entries()) {
+              if (!monthMap.has(mId)) {
+                if (dealerId && dealerId !== 'main' && (!rowList || rowList.length === 0)) continue;
+                monthMap.set(mId, {
+                  id: mId,
+                  dealerId: dealerId || 'main',
+                  lineCode: activeLineCode || '',
+                  rows: rowList,
+                  hasAuthoritativeRowsData: false,
+                  updatedAt: Date.now(),
+                  createdAt: Date.now()
                 });
+              } else {
+                const existingMonth = monthMap.get(mId)!;
+                if (!existingMonth.rows || existingMonth.rows.length === 0) {
+                  existingMonth.rows = rowList;
+                } else if (!existingMonth.hasAuthoritativeRowsData) {
+                  const rowByClientId = new Map<string, any>();
+                  const rowByUsername = new Map<string, any>();
+                  for (const r of rowList) {
+                    if (r.clientId) rowByClientId.set(String(r.clientId).toLowerCase(), r);
+                    if (r.username) rowByUsername.set(String(r.username).toLowerCase(), r);
+                  }
+                  existingMonth.rows = existingMonth.rows.map((r: any) => {
+                    const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
+                                  (r.username && rowByUsername.get(String(r.username).toLowerCase()));
+                    if (dbRow) {
+                      return {
+                        ...r,
+                        ...dbRow,
+                        comments: (dbRow.comments && dbRow.comments.trim() !== '') ? dbRow.comments : (r.comments || ''),
+                        baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
+                        cr: dbRow.cr ?? r.cr ?? 0,
+                        totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
+                        paymentReceived: dbRow.paymentReceived ?? r.paymentReceived ?? 0,
+                        paymentStatus: dbRow.paymentStatus ?? r.paymentStatus ?? 'unpaid'
+                      };
+                    }
+                    return r;
+                  });
+                }
+              }
+            }
+          }
+        } catch (err) {}
+
+        return monthMap.get(monthId) || null;
+      };
+
+      const updateExactCache = (resolvedMonth: any) => {
+        if (!resolvedMonth) return;
+        if (!globalTableCaches[exactKey]) globalTableCaches[exactKey] = [];
+        const idx = globalTableCaches[exactKey].findIndex((m: any) => (m?.id || m?.month_id) === monthId);
+        if (idx >= 0) {
+          globalTableCaches[exactKey][idx] = resolvedMonth;
+        } else {
+          globalTableCaches[exactKey].push(resolvedMonth);
+        }
+        try {
+          localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(globalTableCaches[exactKey]));
+          localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
+        } catch (e) {}
+
+        const subs = globalTableSubscribers[exactKey];
+        if (subs) {
+          subs.forEach(cb => { try { cb([...globalTableCaches[exactKey]], true); } catch(e){} });
+        }
+      };
+
+      // 1. Check exact key cache with 12h expiry
+      let cachedMonth: any = null;
+      let isCacheValid = false;
+      try {
+        const metaStr = localStorage.getItem(`gts_cache_meta_${exactKey}`);
+        const metaTime = metaStr ? Number(metaStr) : 0;
+        if (metaTime && Date.now() - metaTime <= CACHE_MAX_AGE_MS) {
+          const inMem = globalTableCaches[exactKey];
+          if (Array.isArray(inMem)) {
+            const found = inMem.find((m: any) => (m?.id || m?.month_id) === monthId);
+            if (found && Array.isArray(found.rows) && found.rows.length > 0) {
+              cachedMonth = found;
+              isCacheValid = true;
+            }
+          }
+          if (!cachedMonth) {
+            const raw = localStorage.getItem(`gts_cache_v3_${exactKey}`);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                const found = parsed.find((m: any) => (m?.id || m?.month_id) === monthId);
+                if (found && Array.isArray(found.rows) && found.rows.length > 0) {
+                  cachedMonth = found;
+                  isCacheValid = true;
+                }
               }
             }
           }
         }
-      } catch (err) {}
+      } catch (e) {}
 
-      return monthMap.get(monthId) || null;
+      if (isCacheValid && cachedMonth) {
+        // Return cached month immediately, and always revalidate from database in background
+        fetchFromDb().then(freshMonth => {
+          if (freshMonth) {
+            const cachedStr = JSON.stringify(cachedMonth.rows || []);
+            const freshStr = JSON.stringify(freshMonth.rows || []);
+            if (cachedStr !== freshStr) {
+              updateExactCache(freshMonth);
+            }
+          }
+        }).catch(console.warn);
+        return cachedMonth;
+      }
+
+      // If cache is older than 12 hours or not found, fetch from the database first
+      const freshResult = await fetchFromDb();
+      if (freshResult) {
+        updateExactCache(freshResult);
+      }
+      return freshResult;
     } catch (e) {
       console.error("Failed to get billing month history:", e);
       return null;
@@ -2072,7 +2181,10 @@ export const supabaseService = {
   _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: Set<number>, excludedClientKeys?: string[] }>,
   _billingMonthSaveCounter: {} as Record<string, number>,
 
-  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>, excludedClientKeys?: string[]) {
+  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>, excludedClientKeys?: string[], freshBase = false) {
+    if (!this.isBillingFresh) {
+      throw new Error("Latest data is still syncing, please wait a few seconds");
+    }
     const key = `${monthId}_${dealerId}`;
     if (!this._saveBillingMonthLatestRows) this._saveBillingMonthLatestRows = {};
     if (!this._billingMonthSaveCounter) this._billingMonthSaveCounter = {};
@@ -2111,31 +2223,28 @@ export const supabaseService = {
     this._billingMonthSaveCounter[key] = currentCounter;
 
     // Synchronously update globalTableCaches and localStorage for instant UI updates
-    const primaryKey = `billing_months_${dealerId || 'main'}_${activeLineCode || 'nolc'}`;
-    const lc = activeLineCode || 'nolc';
-    const syncKeys = [primaryKey, `billing_months_all_${lc}`, `billing_months_main_${lc}`, `billing_months__${lc}`];
-    syncKeys.forEach(sKey => {
-      if (!globalTableCaches[sKey]) globalTableCaches[sKey] = [];
-      const idx = globalTableCaches[sKey].findIndex((m: any) => m.id === monthId || m.month_id === monthId);
-      const updatedObj = {
-        id: monthId,
-        month_id: monthId,
-        dealerId: dealerId || 'main',
-        rows,
-        rows_data: { rows, excludedClientKeys: finalExcludedKeys },
-        excludedClientKeys: finalExcludedKeys,
-        updated_by: updatedBy,
-        updatedAt: Date.now()
-      };
-      if (idx !== -1) {
-        globalTableCaches[sKey][idx] = { ...globalTableCaches[sKey][idx], ...updatedObj };
-      } else {
-        globalTableCaches[sKey].unshift(updatedObj);
-      }
-    });
+    const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+    if (!globalTableCaches[exactKey]) globalTableCaches[exactKey] = [];
+    const idx = globalTableCaches[exactKey].findIndex((m: any) => m.id === monthId || m.month_id === monthId);
+    const updatedObj = {
+      id: monthId,
+      month_id: monthId,
+      dealerId: dealerId || 'all',
+      rows,
+      rows_data: { rows, excludedClientKeys: finalExcludedKeys },
+      excludedClientKeys: finalExcludedKeys,
+      updated_by: updatedBy,
+      updatedAt: Date.now()
+    };
+    if (idx !== -1) {
+      globalTableCaches[exactKey][idx] = { ...globalTableCaches[exactKey][idx], ...updatedObj };
+    } else {
+      globalTableCaches[exactKey].unshift(updatedObj);
+    }
 
     try {
-      localStorage.setItem(`gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`, JSON.stringify(globalTableCaches[primaryKey] || globalTableCaches['billing_months_main'] || []));
+      localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(globalTableCaches[exactKey]));
+      localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
     } catch (e) {}
     
     if (!this._saveBillingMonthTimers) this._saveBillingMonthTimers = {};
@@ -2148,7 +2257,7 @@ export const supabaseService = {
       }
       const latest = this._saveBillingMonthLatestRows[key];
       if (latest) {
-        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys);
+        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys, freshBase);
         delete this._saveBillingMonthLatestRows[key];
       }
       return;
@@ -2164,7 +2273,7 @@ export const supabaseService = {
         try {
           const latest = this._saveBillingMonthLatestRows[key];
           if (latest) {
-            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys);
+            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys, freshBase);
             delete this._saveBillingMonthLatestRows[key];
           }
           resolve();
@@ -2182,21 +2291,21 @@ export const supabaseService = {
   _billingMonthExecutionLocks: {} as Record<string, Promise<void>>,
   _syncingMonths: new Set<string>(),
 
-  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, executeCounter?: number, excludedClientKeys?: string[]) {
+  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, executeCounter?: number, excludedClientKeys?: string[], skipDbFetch?: boolean) {
     const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
     if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
     
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
     
     const run = previous.then(() => {
-      return this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices, excludedClientKeys);
+      return this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices, excludedClientKeys, skipDbFetch);
     });
     
     this._billingMonthExecutionLocks[syncKey] = run.catch(() => {});
     return run;
   },
 
-  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, excludedClientKeys?: string[]) {
+  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, excludedClientKeys?: string[], skipDbFetch?: boolean) {
     const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
     if (!this._syncingMonths) this._syncingMonths = new Set<string>();
     this._syncingMonths.add(syncKey);
@@ -2210,40 +2319,94 @@ export const supabaseService = {
       }).length;
     };
 
-    const incomingTotal = Array.isArray(rows) ? rows.length : 0;
-    const incomingPaidCount = countRecordedPaymentRows(rows);
-
     // Fetch existing month data from database before saving to validate data integrity
     let dbTotal = 0;
     let dbPaidCount = 0;
     let existingRowsParsed: any[] = [];
-    try {
-      const { data: dbData } = await supabase
-        .from('billing_months')
-        .select('rows_data')
-        .eq('month_id', monthId)
-        .eq('dealer_id', dealerId)
-        .maybeSingle();
+    if (!skipDbFetch) {
+      try {
+        const { data: dbData } = await supabase
+          .from('billing_months')
+          .select('rows_data')
+          .eq('month_id', monthId)
+          .eq('dealer_id', dealerId)
+          .maybeSingle();
 
-      if (dbData && dbData.rows_data) {
-        let existingRows = dbData.rows_data;
-        if (typeof existingRows === 'string') {
-          try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
-        }
-        if (existingRows && typeof existingRows === 'object' && !Array.isArray(existingRows) && 'rows' in existingRows) {
-          if (Array.isArray(existingRows.rows)) {
-            existingRows = existingRows.rows;
+        if (dbData && dbData.rows_data) {
+          let existingRows = dbData.rows_data;
+          if (typeof existingRows === 'string') {
+            try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
+          }
+          if (existingRows && typeof existingRows === 'object' && !Array.isArray(existingRows) && 'rows' in existingRows) {
+            if (Array.isArray(existingRows.rows)) {
+              existingRows = existingRows.rows;
+            }
+          }
+          if (Array.isArray(existingRows)) {
+            existingRowsParsed = existingRows;
+            dbTotal = existingRows.length;
+            dbPaidCount = countRecordedPaymentRows(existingRows);
           }
         }
-        if (Array.isArray(existingRows)) {
-          existingRowsParsed = existingRows;
-          dbTotal = existingRows.length;
-          dbPaidCount = countRecordedPaymentRows(existingRows);
-        }
+      } catch (checkErr) {
+        console.warn("Could not fetch previous month data for validation check:", checkErr);
       }
-    } catch (checkErr) {
-      console.warn("Could not fetch previous month data for validation check:", checkErr);
+    } else {
+      // If skipping DB fetch, assume previous data is what's passed in rows or exists in cache, but for stale-proof logic, this is only used if changedIndices is empty. If changedIndices is provided, it needs DB rows.
+      // This is safe if the caller guarantees data integrity.
+      dbTotal = rows.length;
+      dbPaidCount = countRecordedPaymentRows(rows);
     }
+
+    // STALE-PROOF SAVES: when changedIndices is provided and non-empty,
+    // build rows to save from the DATABASE rows and replace ONLY the changed rows
+    const hasChangedIndices = Boolean(
+      changedIndices &&
+      ((Array.isArray(changedIndices) && changedIndices.length > 0) ||
+       (changedIndices instanceof Set && changedIndices.size > 0))
+    );
+
+    if (hasChangedIndices && existingRowsParsed.length > 0) {
+      const changedIndicesSet = changedIndices instanceof Set ? changedIndices : new Set(changedIndices);
+      const changedIncomingRows: any[] = [];
+      changedIndicesSet.forEach(idx => {
+        if (rows[idx]) {
+          changedIncomingRows.push(rows[idx]);
+        }
+      });
+
+      const mergedDbRows = existingRowsParsed.map(dbRow => ({ ...dbRow }));
+      const matchedIncoming = new Set<any>();
+
+      changedIncomingRows.forEach(incRow => {
+        const uKey = incRow.username ? String(incRow.username).toLowerCase().trim() : null;
+        const iKey = incRow.clientId ? String(incRow.clientId).toLowerCase().trim() : null;
+        const idKey = incRow.id ? String(incRow.id).toLowerCase().trim() : null;
+
+        const dbIdx = mergedDbRows.findIndex(dbRow => {
+          const dbUKey = dbRow.username ? String(dbRow.username).toLowerCase().trim() : null;
+          const dbIKey = dbRow.clientId ? String(dbRow.clientId).toLowerCase().trim() : null;
+          const dbIdKey = dbRow.id ? String(dbRow.id).toLowerCase().trim() : null;
+          return (uKey && dbUKey === uKey) || (iKey && dbIKey === iKey) || (idKey && dbIdKey === idKey);
+        });
+
+        if (dbIdx !== -1) {
+          mergedDbRows[dbIdx] = { ...mergedDbRows[dbIdx], ...incRow };
+          matchedIncoming.add(incRow);
+        }
+      });
+
+      changedIncomingRows.forEach(incRow => {
+        if (!matchedIncoming.has(incRow)) {
+          mergedDbRows.push(incRow);
+        }
+      });
+
+      rows = mergedDbRows;
+    }
+
+    const incomingTotal = Array.isArray(rows) ? rows.length : 0;
+    const incomingPaidCount = countRecordedPaymentRows(rows);
 
     // AUDIT LOGGING (Requirement 4): Log incoming vs existing row counts and payment activity
     console.log(`Saving billing month "${monthId}": incoming ${incomingTotal} rows (paid/recorded: ${incomingPaidCount}), previous ${dbTotal} rows (paid/recorded: ${dbPaidCount})`);
@@ -2321,9 +2484,10 @@ export const supabaseService = {
       await withTimeout(upsertSupabase('billing_months', 'month_id', monthId, payload, true), 20000, 'Saving billing month');
 
       try {
-        const cacheKey = `gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`;
+        const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+        const cacheKey = `gts_cache_v3_${exactKey}`;
         const rawCache = localStorage.getItem(cacheKey);
-        let list: any[] = rawCache ? JSON.parse(rawCache) : [];
+        let list: any[] = rawCache ? JSON.parse(rawCache) : (globalTableCaches[exactKey] ? [...globalTableCaches[exactKey]] : []);
         const idx = list.findIndex(m => m.id === monthId || m.month_id === monthId);
         const updatedObj = { id: monthId, month_id: monthId, dealer_id: dealerId, rows, rows_data: { rows, excludedClientKeys: excludedClientKeys || [] }, excludedClientKeys: excludedClientKeys || [], updated_by: updatedBy, updatedAt: Date.now() };
         if (idx !== -1) {
@@ -2331,7 +2495,9 @@ export const supabaseService = {
         } else {
           list.unshift(updatedObj);
         }
+        globalTableCaches[exactKey] = list;
         localStorage.setItem(cacheKey, JSON.stringify(list));
+        localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
       } catch (e) {}
 
       await withTimeout(this.syncBillingRows(monthId, dealerId, rows, changedIndices), 20000, 'Syncing billing rows');
@@ -2356,26 +2522,17 @@ export const supabaseService = {
 
         try {
           const lc = activeLineCode || 'nolc';
-          const syncKeys = [`billing_months_${dealerId}_${lc}`, `billing_months_all_${lc}`, `billing_months_main_${lc}`, `billing_months__${lc}`];
-          syncKeys.forEach(sKey => {
-            if (globalTableCaches[sKey]) {
-              globalTableCaches[sKey] = globalTableCaches[sKey].filter((m: any) => m.id !== monthId && m.month_id !== monthId);
-              const subs = globalTableSubscribers[sKey];
-              if (subs) {
-                subs.forEach(cb => { try { cb(globalTableCaches[sKey]); } catch(e){} });
-              }
-              try {
-                localStorage.setItem(`gts_cache_v3_${sKey}`, JSON.stringify(globalTableCaches[sKey]));
-              } catch (e) {}
+          const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+          if (globalTableCaches[exactKey]) {
+            globalTableCaches[exactKey] = globalTableCaches[exactKey].filter((m: any) => m.id !== monthId && m.month_id !== monthId);
+            const subs = globalTableSubscribers[exactKey];
+            if (subs) {
+              subs.forEach(cb => { try { cb(globalTableCaches[exactKey], true); } catch(e){} });
             }
-          });
-
-          const cacheKey = `gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`;
-          const rawCache = localStorage.getItem(cacheKey);
-          if (rawCache) {
-            let list: any[] = JSON.parse(rawCache);
-            list = list.filter(m => m.id !== monthId && m.month_id !== monthId);
-            localStorage.setItem(cacheKey, JSON.stringify(list));
+            try {
+              localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(globalTableCaches[exactKey]));
+              localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
+            } catch (e) {}
           }
         } catch (e) {}
       } catch (e: any) {
@@ -2400,7 +2557,10 @@ export const supabaseService = {
       await queryRows;
 
       try {
-        localStorage.removeItem(`gts_cache_v3_billing_months_all_${activeLineCode || 'nolc'}`);
+        const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+        delete globalTableCaches[exactKey];
+        localStorage.removeItem(`gts_cache_v3_${exactKey}`);
+        localStorage.removeItem(`gts_cache_meta_${exactKey}`);
       } catch (e) {}
     } catch (e: any) {
       console.error("Failed to delete all billing data:", e);
@@ -4031,7 +4191,7 @@ export const supabaseService = {
     }
   },
 
-  subscribeBillingMonths: (callback: (months: any[]) => void, dealerId?: string) => {
+  subscribeBillingMonths: (callback: (months: any[], isFresh?: boolean) => void, dealerId?: string) => {
     const parseRowsData = (val: any): any[] => {
       if (Array.isArray(val)) return val;
       if (val && typeof val === 'object' && !Array.isArray(val) && 'rows' in val) {
@@ -4308,10 +4468,7 @@ export const supabaseService = {
       }
 
       // Fallback 2: Check localStorage
-      const isSpecificDealer = Boolean(tenantId && tenantId !== 'all' && tenantId !== 'main');
-      const localCached = localStorage.getItem(`gts_cache_v3_ledger_folders_${tenantId || 'all'}_${activeLineCode || 'nolc'}`) ||
-        localStorage.getItem(`gts_cache_v3_ledger_folders_all_${activeLineCode || 'nolc'}`) ||
-        localStorage.getItem(`gts_ledger_folders_${tenantId || 'main'}`);
+      const localCached = localStorage.getItem(`gts_cache_v3_ledger_folders_${tenantId || 'all'}_${activeLineCode || 'nolc'}`);
       if (localCached) {
         try {
           const parsed = JSON.parse(localCached);
@@ -4402,8 +4559,9 @@ export const supabaseService = {
       });
 
       try {
-        localStorage.setItem(`gts_cache_v3_ledger_folders_all_${activeLineCode || 'nolc'}`, JSON.stringify(folders));
-        localStorage.setItem(`gts_ledger_folders_${tenantId || 'main'}`, JSON.stringify(folders));
+        const exactKey = `ledger_folders_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
+        localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(folders));
+        localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
       } catch (e) {}
 
       if (!supabase) return;
@@ -4857,20 +5015,21 @@ export const supabaseService = {
                   }).eq('month_id', monthId).eq('dealer_id', dealerId);
                   
                   // Trigger cache update so UI sees it instantly
-                  const lc = activeLineCode || 'nolc';
-          const syncKeys = [`billing_months_${dealerId}_${lc}`, `billing_months_all_${lc}`, `billing_months_main_${lc}`, `billing_months__${lc}`];
-                  syncKeys.forEach(sKey => {
-                    if (globalTableCaches[sKey]) {
-                      const mIndex = globalTableCaches[sKey].findIndex((m: any) => m.id === monthId && (m.dealerId === dealerId || (!m.dealerId && dealerId === 'main')));
-                      if (mIndex !== -1) {
-                        globalTableCaches[sKey][mIndex].rows = currentRows;
-                      }
-                      const subs = globalTableSubscribers[sKey];
-                      if (subs) {
-                        subs.forEach(cb => { try { cb([...globalTableCaches[sKey]]); } catch(e){} });
-                      }
+                  const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+                  if (globalTableCaches[exactKey]) {
+                    const mIndex = globalTableCaches[exactKey].findIndex((m: any) => m.id === monthId && (m.dealerId === dealerId || (!m.dealerId && (dealerId === 'main' || dealerId === 'all'))));
+                    if (mIndex !== -1) {
+                      globalTableCaches[exactKey][mIndex].rows = currentRows;
                     }
-                  });
+                    const subs = globalTableSubscribers[exactKey];
+                    if (subs) {
+                      subs.forEach(cb => { try { cb([...globalTableCaches[exactKey]], true); } catch(e){} });
+                    }
+                    try {
+                      localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(globalTableCaches[exactKey]));
+                      localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
+                    } catch (e) {}
+                  }
                 }
               }
             }
