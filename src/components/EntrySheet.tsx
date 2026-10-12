@@ -695,6 +695,9 @@ export default function EntrySheet({
         setActiveSheetIdx(0);
         setOriginalActiveRows([]);
         setOriginalActiveSheetId(newSheetId);
+        if (newSheetId) {
+          originalRowsBySheetIdRef.current.set(newSheetId, []);
+        }
         setTimeout(() => {
           isSwappingRef.current = false;
         }, 50);
@@ -940,6 +943,7 @@ export default function EntrySheet({
   const [pendingActiveRows, setPendingActiveRows] = useState<{ name: string; amount: number; comments?: string; originalIndex?: number }[]>([]);
   const [originalActiveRows, setOriginalActiveRows] = useState<{ name: string; amount: number; comments?: string; cId?: string; clientId?: string; clientUsername?: string; status?: string }[]>([]);
   const [originalActiveSheetId, setOriginalActiveSheetId] = useState<string | null>(null);
+  const originalRowsBySheetIdRef = useRef<Map<string, { name: string; amount: any; comments?: string; cId?: string; clientId?: string; clientUsername?: string; status?: string }[]>>(new Map());
 
   // New states for manual receipt selection
   const [showReceiptSelectionPopup, setShowReceiptSelectionPopup] = useState(false);
@@ -1781,59 +1785,131 @@ export default function EntrySheet({
             return matchedIdx;
           };
 
-          // 1. Check if any previously active row from THIS sheet was removed
-          const currentActiveRowsInPayload = new Set<string>();
+          // 1. Check if any previously active row from THIS sheet (or any page being saved) was removed
+          const currentActiveRowsInPayload: any[] = [];
           sheetPayloads.forEach(sp => {
             (Array.isArray(sp.table1Rows) ? sp.table1Rows : []).forEach((r: any) => {
               const amt = Number(r.amount) || 0;
+              const amtStr = String(r.amount || '').trim().toUpperCase();
+              const statStr = String(r.status || '').trim().toUpperCase();
               const hasValidName = Boolean(r.name && String(r.name).trim() && !isExcludedName(r.name));
-              const hasValidId = Boolean(r.cId && String(r.cId).trim());
-              if ((hasValidName || hasValidId) && (amt > 0 || r.status)) {
-                if (r.name) currentActiveRowsInPayload.add(String(r.name).trim().toLowerCase());
-                if (r.cId) currentActiveRowsInPayload.add(String(r.cId).trim().toLowerCase());
-                if (r.clientUsername) currentActiveRowsInPayload.add(String(r.clientUsername).trim().toLowerCase());
-                if (r.clientId) currentActiveRowsInPayload.add(String(r.clientId).trim().toLowerCase());
+              const hasValidId = Boolean((r.cId && String(r.cId).trim()) || (r.clientId && String(r.clientId).trim()) || (r.clientUsername && String(r.clientUsername).trim()));
+              if ((hasValidName || hasValidId) && (amt > 0 || amtStr === 'PAID' || statStr === 'PAID' || statStr === 'PARTIAL' || Boolean(r.status))) {
+                currentActiveRowsInPayload.push(r);
               }
             });
           });
 
-          if (originalActiveRows && originalActiveRows.length > 0 && originalActiveSheetId && sheetPayloads.some(sp => sp.id === originalActiveSheetId)) {
-            originalActiveRows.forEach((orig: any) => {
+          const processedRemovalClientKeys = new Set<string>();
+
+          // Check removals for every page being saved
+          sheetPayloads.forEach(sp => {
+            let origRowsForSheet = sp.id ? originalRowsBySheetIdRef.current.get(sp.id) : undefined;
+            if (!origRowsForSheet && originalActiveSheetId && sp.id === originalActiveSheetId && originalActiveRows && originalActiveRows.length > 0) {
+              origRowsForSheet = originalActiveRows;
+            }
+            if (!origRowsForSheet && sp.id) {
+              const histSheet = ledgerHistory.find(s => s.id === sp.id);
+              if (histSheet && Array.isArray(histSheet.table1Rows)) {
+                origRowsForSheet = histSheet.table1Rows;
+              }
+            }
+
+            if (!origRowsForSheet || origRowsForSheet.length === 0) return;
+
+            origRowsForSheet.forEach((orig: any) => {
               const origName = (orig.name || '').trim().toLowerCase();
               const origCId = (orig.cId || '').trim().toLowerCase();
               const origUser = (orig.clientUsername || '').trim().toLowerCase();
               const origId = (orig.clientId || '').trim().toLowerCase();
+              const hasOrigIdentifier = Boolean(origId || origUser || origCId);
+
+              if (!hasOrigIdentifier && !origName) return;
+              if (origName && isExcludedName(origName)) return;
+
+              const userDedupeKey = origId ? `id:${origId}` : origUser ? `user:${origUser}` : origCId ? `cid:${origCId}` : `name:${origName}`;
+              if (processedRemovalClientKeys.has(userDedupeKey)) return;
+
+              const rIdx = findRowIndex(orig);
+              const matchingBillingRow = rIdx !== -1 ? baseRecalculatedRows[rIdx] : null;
+              const matchingPaymentReceived = matchingBillingRow ? (Number(matchingBillingRow.paymentReceived) || 0) : 0;
+
+              // Gap a: origAmount > 0 skips valid cases. Also treat a row as previously active if its status was PAID/PARTIAL, its amount was the string 'PAID', or the matching billing row has paymentReceived > 0.
               const origAmount = Number(orig.amount) || 0;
+              const origAmountStr = String(orig.amount || '').trim().toUpperCase();
+              const origStatusStr = String(orig.status || '').trim().toUpperCase();
 
-              const isStillPresent = (origName && currentActiveRowsInPayload.has(origName)) ||
-                                     (origCId && currentActiveRowsInPayload.has(origCId)) ||
-                                     (origUser && currentActiveRowsInPayload.has(origUser)) ||
-                                     (origId && currentActiveRowsInPayload.has(origId));
+              const isPrevActive = 
+                origAmount > 0 ||
+                origAmountStr === 'PAID' ||
+                origStatusStr === 'PAID' ||
+                origStatusStr === 'PARTIAL' ||
+                matchingPaymentReceived > 0;
 
-              if (origAmount > 0 && !isStillPresent) {
-                // Critical safeguard: Check if ANY OTHER sheet in ledgerHistory has this client recorded with payment!
+              if (!isPrevActive) return;
+
+              // Gap d: isStillPresent must match by clientId, clientUsername, cId first, and use name only when the row has none of them.
+              const isStillPresent = currentActiveRowsInPayload.some((cur: any) => {
+                const curId = (cur.clientId || '').trim().toLowerCase();
+                const curUser = (cur.clientUsername || '').trim().toLowerCase();
+                const curCId = (cur.cId || '').trim().toLowerCase();
+                const curName = (cur.name || '').trim().toLowerCase();
+
+                if (hasOrigIdentifier) {
+                  if (origId && curId && origId === curId) return true;
+                  if (origUser && curUser && origUser === curUser) return true;
+                  if (origCId && curCId && origCId === curCId) return true;
+                  return false;
+                } else if (origName) {
+                  return curName === origName;
+                }
+                return false;
+              });
+
+              if (!isStillPresent) {
+                // Gap c: isPaidInAnotherSheet must consider only OTHER sheets (different id) of the same folder/connected month,
+                // matching by clientId/clientUsername/cId first and by name only if the row has none of those.
+                // A stale local copy of the same sheet never counts.
                 const isPaidInAnotherSheet = ledgerHistory.some(otherSheet => {
-                  if (sheetPayloads.some(sp => sp.id === otherSheet.id)) return false;
+                  if (!otherSheet || !otherSheet.id) return false;
+                  if (otherSheet.id === sp.id || sheetPayloads.some(savingSp => savingSp.id === otherSheet.id)) return false;
+
+                  const otherFolderId = otherSheet.folderId;
+                  const otherMonthId = (otherFolderId ? (folderMonthMap[otherFolderId] || folders.find(f => f.id === otherFolderId)?.connectedMonthId) : undefined) || currentMonthId;
+                  const isSameFolderOrMonth = (otherFolderId && sp.folderId && otherFolderId === sp.folderId) || (otherMonthId && otherMonthId === targetMonthId);
+                  if (!isSameFolderOrMonth) return false;
+
                   const otherRows = Array.isArray(otherSheet.table1Rows) ? otherSheet.table1Rows : [];
                   return otherRows.some((or: any) => {
-                    const matchName = origName && or.name && String(or.name).trim().toLowerCase() === origName;
-                    const matchCId = origCId && or.cId && String(or.cId).trim().toLowerCase() === origCId;
-                    const matchUser = origUser && or.clientUsername && String(or.clientUsername).trim().toLowerCase() === origUser;
-                    const matchId = origId && or.clientId && String(or.clientId).trim().toLowerCase() === origId;
-                    if (!matchName && !matchCId && !matchUser && !matchId) return false;
+                    const orId = (or.clientId || '').trim().toLowerCase();
+                    const orUser = (or.clientUsername || '').trim().toLowerCase();
+                    const orCId = (or.cId || '').trim().toLowerCase();
+                    const orName = (or.name || '').trim().toLowerCase();
+
+                    let isMatch = false;
+                    if (hasOrigIdentifier) {
+                      if (origId && orId && origId === orId) isMatch = true;
+                      else if (origUser && orUser && origUser === orUser) isMatch = true;
+                      else if (origCId && orCId && origCId === orCId) isMatch = true;
+                    } else if (origName) {
+                      isMatch = Boolean(orName && orName === origName);
+                    }
+                    if (!isMatch) return false;
+
                     const oAmt = Number(or.amount) || 0;
                     const oStat = String(or.status || '').trim().toUpperCase();
                     const oAmtStr = String(or.amount || '').trim().toUpperCase();
-                    return oAmt > 0 || oStat === 'PAID' || oAmtStr === 'PAID';
+                    return oAmt > 0 || oStat === 'PAID' || oAmtStr === 'PAID' || oStat === 'PARTIAL';
                   });
                 });
 
                 if (isPaidInAnotherSheet) {
-                  // Do not revert! Another sheet has this client's payment recorded.
-                  return;
+                  return; // Another sheet in the same folder/connected month has this client's payment recorded.
                 }
 
-                const rIdx = findRowIndex(orig);
+                processedRemovalClientKeys.add(userDedupeKey);
+
+                // Gap e: If findRowIndex(orig) returns -1, console.warn with the user's details instead of silently ignoring.
                 if (rIdx !== -1) {
                   const rObj = baseRecalculatedRows[rIdx];
                   baseRecalculatedRows[rIdx] = {
@@ -1843,11 +1919,24 @@ export default function EntrySheet({
                   };
                   accumulatedChangedIndicesMap[targetMonthId].add(rIdx);
                   totalUpdatedBillingCount++;
-                  allSyncedUsersSummary.push(`${rObj.name} (${rObj.username || rObj.clientId || ''}): UNPAID (0) [REMOVED]`);
+                  const userDetail = rObj.username || rObj.clientId || orig.clientUsername || orig.clientId || orig.cId || '';
+                  const displayName = rObj.name || orig.name || 'User';
+                  allSyncedUsersSummary.push(`set back to UNPAID: ${displayName}${userDetail ? ` (${userDetail})` : ''} [REMOVED]`);
+                } else {
+                  console.warn("Could not find matching billing row for removed user:", {
+                    name: orig.name,
+                    cId: orig.cId,
+                    clientId: orig.clientId,
+                    clientUsername: orig.clientUsername,
+                    amount: orig.amount,
+                    status: orig.status,
+                    sheetId: sp.id,
+                    targetMonthId
+                  });
                 }
               }
             });
-          }
+          });
 
           // Helper to find original active row for comparison
           const findOriginalMatch = (r: any) => {
@@ -2111,21 +2200,23 @@ export default function EntrySheet({
       // Update originalActiveRows to all saved rows across all sheets/pages in current session
       const activeRowsNow: any[] = [];
       sheetPayloads.forEach(sp => {
-        (Array.isArray(sp.table1Rows) ? sp.table1Rows : []).forEach((r: any) => {
-          if ((r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status) {
-            activeRowsNow.push(r);
-          }
-        });
+        const rows = (Array.isArray(sp.table1Rows) ? sp.table1Rows : []).filter((r: any) =>
+          (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status || String(r.amount || '').trim().toUpperCase() === 'PAID'
+        ).map((r: any) => ({
+          name: (r.name || '').trim(),
+          amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
+          comments: (r.comments || '').trim(),
+          cId: r.cId || '',
+          clientId: r.clientId || '',
+          clientUsername: r.clientUsername || '',
+          status: r.status || ''
+        }));
+        if (sp.id) {
+          originalRowsBySheetIdRef.current.set(sp.id, rows);
+        }
+        rows.forEach(r => activeRowsNow.push(r));
       });
-      setOriginalActiveRows(activeRowsNow.map(r => ({
-        name: (r.name || '').trim(),
-        amount: Number(r.amount) || 0,
-        comments: (r.comments || '').trim(),
-        cId: r.cId || '',
-        clientId: r.clientId || '',
-        clientUsername: r.clientUsername || '',
-        status: r.status || ''
-      })));
+      setOriginalActiveRows(activeRowsNow);
       setOriginalActiveSheetId(activeSavedPayload?.id || (sheetPayloads[0]?.id) || null);
 
       // 6. PARALLEL FAST DATABASE SYNC (Save A4 sheets and connected recovery rows concurrently)
@@ -2188,13 +2279,21 @@ export default function EntrySheet({
       });
 
       if (allSyncedUsersSummary.length > 0) {
+        const removedEntries = allSyncedUsersSummary.filter(s => s.startsWith("set back to UNPAID:"));
         toast.success("🎯 Connected Recovery Sheet Synced!", {
           description: (
             <div className="mt-1.5 space-y-1 text-[11px] font-bold text-slate-600 dark:text-slate-300">
               <p className="font-extrabold text-emerald-600 dark:text-emerald-400">Successfully updated recovery entries for {allSyncedUsersSummary.length} user(s):</p>
+              {removedEntries.length > 0 && (
+                <p className="font-bold text-amber-600 dark:text-amber-400">
+                  {removedEntries.map(s => s.replace(" [REMOVED]", "")).join(', ')}
+                </p>
+              )}
               <ul className="list-disc pl-3 max-h-32 overflow-y-auto space-y-0.5 font-mono">
                 {allSyncedUsersSummary.map((summary, idx) => (
-                  <li key={idx}>{summary}</li>
+                  <li key={idx} className={summary.startsWith("set back to UNPAID:") ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>
+                    {summary}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -2300,17 +2399,22 @@ export default function EntrySheet({
       t2TotalLabel: sheet.t2TotalLabel || 'TOTAL',
     };
     
-    const initialActive = reT1.filter((r: any) => (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status);
-    setOriginalActiveRows(initialActive.map((r: any) => ({
+    const initialActive = reT1.filter((r: any) => (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status || String(r.amount || '').trim().toUpperCase() === 'PAID');
+    const mappedInitialActive = initialActive.map((r: any) => ({
       name: (r.name || '').trim(),
-      amount: Number(r.amount) || 0,
+      amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
       comments: (r.comments || '').trim(),
       cId: r.cId || '',
       clientId: r.clientId || '',
       clientUsername: r.clientUsername || '',
       status: r.status || ''
-    })));
-    setOriginalActiveSheetId(restoredSheet.id || sheet.id || null);
+    }));
+    setOriginalActiveRows(mappedInitialActive);
+    const targetSheetId = restoredSheet.id || sheet.id || null;
+    setOriginalActiveSheetId(targetSheetId);
+    if (targetSheetId) {
+      originalRowsBySheetIdRef.current.set(targetSheetId, mappedInitialActive);
+    }
     isSwappingRef.current = true;
     setSheets([restoredSheet]);
     setActiveSheetIdx(0);

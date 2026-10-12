@@ -3172,6 +3172,13 @@ export default function AdminPanel({
         setNewLineCode('');
         setNewCompanyName('');
       } else {
+        // Enforce sub-dealer role restrictions
+        if (isDealerUser && !['member', 'field_agent', 'liteadmin'].includes(newUserRole)) {
+          setFormError('Sub-dealers can only create Member, Field Agent, or Lite Admin accounts.');
+          setIsCreating(false);
+          return;
+        }
+
         // Correctly associate the new user with the dealer if the current user is a dealer or creating under a dealer
         const effectiveDealerId = currentUser.role === 'dealer' ? currentUser.uid : (currentUser.dealerId && currentUser.dealerId !== 'main' ? currentUser.dealerId : undefined);
         const effectiveDealer = users.find(u => u.uid === effectiveDealerId);
@@ -6015,6 +6022,57 @@ export default function AdminPanel({
           </div>
         )}
 
+        {selectedDealerForSubAccounts && (
+          <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedDealerForSubAccounts(null)}
+              className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-2xl bg-[var(--neu-surface)] rounded-3xl shadow-2xl border border-[var(--neu-border)] overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-6 border-b border-[var(--neu-border)] flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                    {selectedDealerForSubAccounts.companyName || selectedDealerForSubAccounts.fullName} Sub Accounts
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    VLAN: {selectedDealerForSubAccounts.lineCode || 'N/A'} | Total: {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').length}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedDealerForSubAccounts(null)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-all">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 text-xs font-bold uppercase tracking-widest">
+                    No sub-accounts found.
+                  </div>
+                ) : (
+                  users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').map(sub => (
+                    <div key={sub.uid} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)] flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-black text-slate-900 dark:text-white">{sub.fullName || sub.username}</p>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-widest">@{sub.username} • {sub.role}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] text-slate-400">Created: {new Date(sub.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {activeTab === 'config' && (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'dealer') && (
           <MyPCTab {...stateProps} initialOpenedFile="system_config" />
         )}
@@ -6304,7 +6362,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {activeTab === 'branding' && (currentUser.role === 'super_admin' || currentUser.role === 'editor') && (
+        {activeTab === 'branding' && currentUser.role === 'super_admin' && (
           <EditorPanel branding={branding} onUpdate={onUpdateBranding} />
         )}
 

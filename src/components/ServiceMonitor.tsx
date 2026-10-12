@@ -12,15 +12,10 @@ import {
   Copy,
   Check,
   Zap,
-  Cpu,
-  Radio,
-  Wifi,
   ShieldCheck,
   Search,
   X,
-  AlertTriangle,
-  Database,
-  WifiOff
+  AlertTriangle
 } from 'lucide-react';
 import {
   AreaChart,
@@ -52,12 +47,13 @@ interface LatencyPoint {
 }
 
 interface ServerState {
-  currentMs: number | 'Error';
+  currentMs: number | 'Error' | 'warming...';
   status: 'excellent' | 'good' | 'fair' | 'poor' | 'offline';
   history: LatencyPoint[];
   minMs: number;
   maxMs: number;
   avgMs: number;
+  jitter?: number;
   packetLoss: number;
   lastUpdated: number;
   method?: string;
@@ -70,12 +66,74 @@ interface ServiceMonitorProps {
 }
 
 const STORAGE_KEY = 'gts_server_monitor_user_targets_v5';
+const ENDPOINT_CACHE_KEY = 'gts_ping_endpoint_cache_v2';
+
+// Known popular sites mapping for auto-name & quick add
+export const KNOWN_SITES: Record<string, string> = {
+  'google.com': 'Google',
+  'facebook.com': 'Facebook',
+  'instagram.com': 'Instagram',
+  'youtube.com': 'YouTube',
+  'tiktok.com': 'TikTok',
+  'whatsapp.com': 'WhatsApp',
+  'web.whatsapp.com': 'WhatsApp',
+  'netflix.com': 'Netflix',
+  '1.1.1.1': 'Cloudflare 1.1.1.1',
+  '8.8.8.8': 'Google DNS 8.8.8.8',
+  'speedtest.net': 'Speedtest'
+};
+
+export const QUICK_ADD_SITES = [
+  { name: 'Google', host: 'google.com' },
+  { name: 'Facebook', host: 'facebook.com' },
+  { name: 'TikTok', host: 'tiktok.com' },
+  { name: 'YouTube', host: 'youtube.com' },
+  { name: 'Instagram', host: 'instagram.com' },
+  { name: 'WhatsApp', host: 'web.whatsapp.com' },
+  { name: 'Netflix', host: 'netflix.com' },
+  { name: 'Cloudflare 1.1.1.1', host: '1.1.1.1' },
+  { name: 'Google DNS', host: '8.8.8.8' },
+  { name: 'Speedtest', host: 'speedtest.net' }
+];
+
+// Normalize any user-pasted input to clean hostname (strip protocol, path, query, port)
+export function normalizeHost(raw: string): string {
+  if (!raw) return '';
+  let s = raw.trim();
+  // Strip protocol
+  s = s.replace(/^[a-zA-Z]+:\/\//i, '');
+  // Strip path, query, hash
+  s = s.split('/')[0].split('?')[0].split('#')[0];
+  // Strip port
+  s = s.split(':')[0];
+  s = s.trim().toLowerCase();
+  // Strip trailing dots
+  s = s.replace(/\.+$/, '');
+  return s;
+}
+
+// Check if target is app's own host or local/VPS origin
+export function isSelfHost(host: string): boolean {
+  const clean = host.replace(/^(www\.)+/i, '').toLowerCase();
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+  return (
+    clean === '167.233.41.7' ||
+    clean === 'localhost' ||
+    clean === '127.0.0.1' ||
+    Boolean(currentHost && (clean === currentHost || currentHost.includes(clean) || clean.includes(currentHost)))
+  );
+}
 
 // Resolve original real favicon / logo URL for any domain or IP
 export function getRealLogoUrl(host: string): string {
-  const clean = host.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].trim().toLowerCase();
+  const clean = normalizeHost(host);
 
-  // Known Public DNS / Cloud IPs mapping
+  if (clean.includes('tiktok')) {
+    return 'https://www.google.com/s2/favicons?domain=tiktok.com&sz=128';
+  }
+  if (clean.includes('whatsapp')) {
+    return 'https://www.google.com/s2/favicons?domain=whatsapp.com&sz=128';
+  }
   if (clean === '1.1.1.1' || clean === '1.0.0.1' || clean.includes('cloudflare')) {
     return 'https://www.google.com/s2/favicons?domain=cloudflare.com&sz=128';
   }
@@ -157,7 +215,7 @@ const ServerLogo: React.FC<{ host: string; name: string }> = ({ host, name }) =>
   );
 };
 
-// Custom circular dot matching the reference image (mint green border with crisp white center)
+// Custom circular dot for heartbeat sparkline
 const CustomHeartbeatDot = (props: any) => {
   const { cx, cy, stroke } = props;
   if (cx === undefined || cy === undefined) return null;
@@ -174,7 +232,7 @@ const CustomHeartbeatDot = (props: any) => {
   );
 };
 
-// Custom Tooltip component matching the reference image ("🟢 Running: XX")
+// Custom Tooltip component
 const CustomHeartbeatTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0];
@@ -193,6 +251,325 @@ const CustomHeartbeatTooltip = ({ active, payload, label }: any) => {
   }
   return null;
 };
+
+// Cached endpoint helpers
+function getCachedEndpoint(host: string): string | null {
+  try {
+    const raw = localStorage.getItem(ENDPOINT_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed[host] === 'string') {
+        return parsed[host];
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function setCachedEndpoint(host: string, endpoint: string): void {
+  try {
+    const raw = localStorage.getItem(ENDPOINT_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    parsed[host] = endpoint;
+    localStorage.setItem(ENDPOINT_CACHE_KEY, JSON.stringify(parsed));
+  } catch {}
+}
+
+function clearCachedEndpoint(host: string): void {
+  try {
+    const raw = localStorage.getItem(ENDPOINT_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      delete parsed[host];
+      localStorage.setItem(ENDPOINT_CACHE_KEY, JSON.stringify(parsed));
+    }
+  } catch {}
+}
+
+// Discover candidate endpoint for host
+async function discoverEndpoint(cleanHost: string, forceRefresh = false): Promise<string> {
+  if (isSelfHost(cleanHost)) {
+    return '/api/ping-echo';
+  }
+
+  if (!forceRefresh) {
+    const cached = getCachedEndpoint(cleanHost);
+    if (cached) return cached;
+  }
+
+  const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(cleanHost) || cleanHost.includes(':');
+  const candidateHosts: string[] = [];
+
+  if (isIp) {
+    candidateHosts.push(cleanHost);
+  } else {
+    // Try www. variant first for sites that redirect apex to www
+    if (cleanHost.startsWith('www.')) {
+      candidateHosts.push(cleanHost);
+      candidateHosts.push(cleanHost.replace(/^www\./, ''));
+    } else {
+      candidateHosts.push(`www.${cleanHost}`);
+      candidateHosts.push(cleanHost);
+    }
+  }
+
+  const candidatePaths = ['/generate_204', '/favicon.ico', '/robots.txt', '/'];
+  const candidates: string[] = [];
+
+  for (const path of candidatePaths) {
+    for (const h of candidateHosts) {
+      const u = `https://${h}${path}`;
+      if (!candidates.includes(u)) candidates.push(u);
+    }
+  }
+
+  for (const candUrl of candidates) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    try {
+      await fetch(candUrl, {
+        method: 'HEAD',
+        mode: 'no-cors',
+        cache: 'no-store',
+        redirect: 'manual',
+        credentials: 'omit',
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      setCachedEndpoint(cleanHost, candUrl);
+      return candUrl;
+    } catch {
+      clearTimeout(timer);
+    }
+  }
+
+  const fallback = `https://${candidateHosts[0]}/favicon.ico`;
+  setCachedEndpoint(cleanHost, fallback);
+  return fallback;
+}
+
+// Memoized Server Card Component
+const ServerCard = React.memo<{
+  srv: ServerTarget;
+  state: ServerState;
+  copiedHost: string | null;
+  idx: number;
+  onCopyHost: (host: string) => void;
+  onPing: (srv: ServerTarget) => void;
+  onEdit: (srv: ServerTarget) => void;
+  onDelete: (srv: ServerTarget) => void;
+}>(function ServerCard({
+  srv,
+  state,
+  copiedHost,
+  idx,
+  onCopyHost,
+  onPing,
+  onEdit,
+  onDelete
+}) {
+  const statusColors = {
+    excellent: {
+      bg: 'bg-emerald-50 dark:bg-emerald-500/10',
+      text: 'text-emerald-700 dark:text-emerald-400',
+      border: 'border-emerald-200 dark:border-emerald-500/30',
+      dot: 'bg-emerald-500'
+    },
+    good: {
+      bg: 'bg-teal-50 dark:bg-teal-500/10',
+      text: 'text-teal-700 dark:text-teal-400',
+      border: 'border-teal-200 dark:border-teal-500/30',
+      dot: 'bg-teal-500'
+    },
+    fair: {
+      bg: 'bg-amber-50 dark:bg-amber-500/10',
+      text: 'text-amber-700 dark:text-amber-400',
+      border: 'border-amber-200 dark:border-amber-500/30',
+      dot: 'bg-amber-500'
+    },
+    poor: {
+      bg: 'bg-rose-50 dark:bg-rose-500/10',
+      text: 'text-rose-700 dark:text-rose-400',
+      border: 'border-rose-200 dark:border-rose-500/30',
+      dot: 'bg-rose-500'
+    },
+    offline: {
+      bg: 'bg-slate-100 dark:bg-slate-500/10',
+      text: 'text-slate-600 dark:text-slate-400',
+      border: 'border-slate-200 dark:border-slate-500/30',
+      dot: 'bg-slate-400'
+    }
+  }[state.status] || {
+    bg: 'bg-emerald-50 dark:bg-emerald-500/10',
+    text: 'text-emerald-700 dark:text-emerald-400',
+    border: 'border-emerald-200 dark:border-emerald-500/30',
+    dot: 'bg-emerald-500'
+  };
+
+  const isWarming = state.currentMs === 'warming...';
+  const isViaServer = state.method === 'via-server';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: idx * 0.03 }}
+      className="w-full bg-white dark:bg-slate-900/80 backdrop-blur-md border border-slate-200/90 dark:border-white/10 hover:border-emerald-500/40 rounded-2xl p-4.5 transition-all duration-300 shadow-sm hover:shadow-md group flex flex-col xl:flex-row items-stretch xl:items-center gap-4"
+    >
+      {/* Left Block: Identity & Original Site Favicon */}
+      <div className="flex items-center gap-3.5 min-w-[260px] max-w-[320px] shrink-0">
+        <div className="relative shrink-0">
+          <ServerLogo host={srv.host} name={srv.name} />
+          <span className={cn("absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900", statusColors.dot, "animate-pulse")} />
+        </div>
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-black text-slate-900 dark:text-white truncate tracking-tight uppercase">
+              {srv.name}
+            </h4>
+            {isViaServer && (
+              <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700/40 shrink-0">
+                via server (VPS to target)
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-950/90 px-2 py-0.5 rounded-md border border-slate-200/80 dark:border-white/5 truncate max-w-[200px]">
+              {srv.host}
+            </span>
+            <button
+              onClick={() => onCopyHost(srv.host)}
+              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+              title="Copy Host"
+            >
+              {copiedHost === srv.host ? (
+                <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <Copy size={12} />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Middle Left: Live Fluctuating Real MS Counter */}
+      <div className="flex items-center gap-3 min-w-[170px] shrink-0 bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-white/5 rounded-xl px-3.5 py-2">
+        <div>
+          <div className="flex items-baseline gap-1">
+            {isWarming ? (
+              <span className="text-xs font-black font-mono tracking-tight text-amber-500 animate-pulse">
+                warming...
+              </span>
+            ) : (
+              <>
+                <span className={cn("text-2xl font-black font-mono tracking-tight", statusColors.text)}>
+                  {state.currentMs}
+                </span>
+                {typeof state.currentMs === 'number' && (
+                  <span className="text-[10px] font-black uppercase text-slate-400">ms</span>
+                )}
+              </>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-1 text-[9px] text-slate-400 font-mono font-bold mt-0.5">
+            <span>Min: {state.minMs}</span>
+            <span>•</span>
+            <span>Avg: {state.avgMs}</span>
+            <span>•</span>
+            <span>Max: {state.maxMs}</span>
+            {typeof state.jitter === 'number' && state.jitter > 0 && (
+              <>
+                <span>•</span>
+                <span>Jitter: {state.jitter}ms</span>
+              </>
+            )}
+            {typeof state.packetLoss === 'number' && (
+              <>
+                <span>•</span>
+                <span className={state.packetLoss > 0 ? "text-rose-500 dark:text-rose-400 font-black" : ""}>
+                  Loss: {state.packetLoss}%
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <span
+          className={cn(
+            "ml-auto px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border shrink-0",
+            statusColors.bg,
+            statusColors.text,
+            statusColors.border
+          )}
+        >
+          {state.status}
+        </span>
+      </div>
+
+      {/* Wide Middle-to-Right: Heartbeat Landscape Sparkline Chart */}
+      <div className="flex-1 h-[78px] w-full min-w-[260px] bg-slate-50/70 dark:bg-slate-950/90 border border-slate-200/70 dark:border-white/5 rounded-xl p-1 relative overflow-hidden flex items-center">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={state.history}
+            margin={{ top: 8, right: 10, left: 10, bottom: 4 }}
+          >
+            <defs>
+              <linearGradient id={`gradient-${srv.id}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#10b981" stopOpacity={0.28} />
+                <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid
+              strokeDasharray="2 4"
+              vertical={false}
+              stroke="rgba(0, 0, 0, 0.05)"
+            />
+            <YAxis
+              hide
+              domain={['dataMin - 5', 'dataMax + 10']}
+            />
+            <XAxis dataKey="time" hide />
+            <Tooltip content={<CustomHeartbeatTooltip />} />
+            <Area
+              type="monotone"
+              dataKey="ms"
+              stroke="#10b981"
+              strokeWidth={2.5}
+              fill={`url(#gradient-${srv.id})`}
+              dot={<CustomHeartbeatDot stroke="#10b981" />}
+              activeDot={{ r: 5, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Right Actions: Refresh, Edit and Delete Buttons */}
+      <div className="flex items-center gap-2 shrink-0 self-end xl:self-center">
+        <button
+          onClick={() => onPing(srv)}
+          className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white border border-slate-200/80 dark:border-white/10 transition-all cursor-pointer shadow-sm group/btn"
+          title="Test Latency"
+        >
+          <RefreshCw size={15} className="group-hover/btn:rotate-180 transition-transform text-emerald-600 dark:text-emerald-400" />
+        </button>
+        <button
+          onClick={() => onEdit(srv)}
+          className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white border border-slate-200/80 dark:border-white/10 transition-all cursor-pointer shadow-sm group/btn"
+          title="Edit Server"
+        >
+          <Edit2 size={15} className="group-hover/btn:scale-110 transition-transform text-teal-600 dark:text-teal-400" />
+        </button>
+        <button
+          onClick={() => onDelete(srv)}
+          className="p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 transition-all cursor-pointer shadow-sm group/btn"
+          title="Delete Server"
+        >
+          <Trash2 size={15} className="group-hover/btn:scale-110 transition-transform" />
+        </button>
+      </div>
+    </motion.div>
+  );
+});
 
 export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitorProps) {
   // Target Servers state
@@ -258,111 +635,367 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
   const [serverToDelete, setServerToDelete] = useState<ServerTarget | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Form Fields (Clean & Simple: Only Server Name & Host IP/URL)
+  // Form Fields
   const [formName, setFormName] = useState('');
   const [formHost, setFormHost] = useState('');
 
-  // Measure DIRECT REAL-TIME INTERNET LATENCY from the USER'S OWN BROWSING INTERNET CONNECTION
+  // Per-server runtime statistics & sample history
+  const runtimeMapRef = useRef<Map<string, {
+    endpoint: string | null;
+    consecutiveFailures: number;
+    hasHadFirstSuccess: boolean;
+    lastSampleTime: number;
+    needsWarmup: boolean;
+    recentSamples: { ms: number; failed: boolean; time: string }[];
+    goodSamples: number[];
+    lastJitter: number;
+  }>>(new Map());
+
+  // Performance batching & throttling refs
+  const pendingUpdatesRef = useRef<Map<string, ServerState>>(new Map());
+  const lastRenderedRef = useRef<Map<string, { ms: number | string; lastPushed: number }>>(new Map());
+  const batchRafRef = useRef<number | null>(null);
+  const totalSamplesCounterRef = useRef(0);
+
+  // Global tab visibility warmup handler
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        runtimeMapRef.current.forEach(rt => {
+          rt.needsWarmup = true;
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
+  // Performance batched state updater
+  const scheduleStateUpdate = useCallback((srvId: string, newState: ServerState) => {
+    const now = Date.now();
+    const last = lastRenderedRef.current.get(srvId);
+
+    let shouldUpdate = false;
+    if (!last) {
+      shouldUpdate = true;
+    } else if (typeof newState.currentMs !== typeof last.ms) {
+      shouldUpdate = true;
+    } else if (typeof newState.currentMs === 'number' && typeof last.ms === 'number') {
+      if (Math.abs(newState.currentMs - last.ms) >= 1 || (now - last.lastPushed >= 3000)) {
+        shouldUpdate = true;
+      }
+    } else if (newState.currentMs !== last.ms) {
+      shouldUpdate = true;
+    } else if (now - last.lastPushed >= 3000) {
+      shouldUpdate = true;
+    }
+
+    if (shouldUpdate) {
+      pendingUpdatesRef.current.set(srvId, newState);
+      lastRenderedRef.current.set(srvId, { ms: newState.currentMs, lastPushed: now });
+
+      if (batchRafRef.current === null) {
+        batchRafRef.current = requestAnimationFrame(() => {
+          batchRafRef.current = null;
+          if (pendingUpdatesRef.current.size === 0) return;
+          const updates = new Map<string, ServerState>(pendingUpdatesRef.current);
+          pendingUpdatesRef.current.clear();
+          setLiveStates(prev => {
+            const next = { ...prev };
+            updates.forEach((val: ServerState, key: string) => {
+              next[key] = val;
+            });
+            return next;
+          });
+        });
+      }
+    }
+  }, []);
+
+  // Ping single server with high-precision client timing
   const pingServerReal = useCallback(async (srv: ServerTarget) => {
-    const cleanHost = srv.host.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].trim();
+    const cleanHost = normalizeHost(srv.host);
+    if (!cleanHost) return;
+
+    let rt = runtimeMapRef.current.get(srv.id);
+    if (!rt) {
+      rt = {
+        endpoint: null,
+        consecutiveFailures: 0,
+        hasHadFirstSuccess: false,
+        lastSampleTime: 0,
+        needsWarmup: false,
+        recentSamples: [],
+        goodSamples: [],
+        lastJitter: 0
+      };
+      runtimeMapRef.current.set(srv.id, rt);
+    }
+
+    // Resolve endpoint (or rediscover if 3 consecutive failures occurred)
+    const shouldRediscover = rt.consecutiveFailures >= 3 || !rt.endpoint;
+    if (shouldRediscover) {
+      clearCachedEndpoint(cleanHost);
+    }
+    const endpoint = await discoverEndpoint(cleanHost, shouldRediscover);
+    rt.endpoint = endpoint;
+
     const now = Date.now();
     const timeStr = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const fullUrl = `${endpoint}${endpoint.includes('?') ? '&' : '?'}_t=${now}_${Math.random().toString(36).slice(2, 7)}`;
 
-    let measuredMs: number | 'Error' = 'Error';
-    let status: ServerState['status'] = 'excellent';
-
-    // Step 1: Direct Client Internet RTT Timing via Browser fetch
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
     const t0 = performance.now();
-    try {
-      const url = `https://${cleanHost}/favicon.ico?_t=${now}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
+    let failed = false;
 
-      await fetch(url, {
+    try {
+      await fetch(fullUrl, {
         method: 'HEAD',
         mode: 'no-cors',
         cache: 'no-store',
+        redirect: 'manual',
+        credentials: 'omit',
         signal: controller.signal
-      }).catch(() => {});
+      });
+    } catch {
+      failed = true;
+    } finally {
+      clearTimeout(timer);
+    }
 
-      clearTimeout(timeoutId);
-      const t1 = performance.now();
-      const clientRtt = Math.round(t1 - t0);
+    const t1 = performance.now();
 
-      if (clientRtt > 0 && clientRtt < 2000) {
-        measuredMs = clientRtt;
-      }
-    } catch (e) {}
-
-    // Step 2: Native Ping endpoint fallback if CORS/firewall blocks direct HEAD request
-    if (measuredMs === 'Error') {
+    // Clear resource timings every ~100 samples
+    totalSamplesCounterRef.current++;
+    if (totalSamplesCounterRef.current % 100 === 0) {
       try {
-        const response = await fetch(`/api/network-ping?host=${encodeURIComponent(cleanHost)}`, {
-          signal: AbortSignal.timeout(2500)
+        performance.clearResourceTimings();
+      } catch {}
+    }
+
+    if (failed) {
+      rt.consecutiveFailures++;
+      rt.needsWarmup = true;
+      rt.recentSamples.push({ ms: 0, failed: true, time: timeStr });
+      if (rt.recentSamples.length > 15) rt.recentSamples.shift();
+
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('gts_ping_debug') === '1') {
+        console.log('[ServiceMonitor Ping]', {
+          host: cleanHost,
+          endpoint,
+          method: 'failed',
+          ms: null,
+          warmup: false,
+          failed: true
         });
-        const data = await response.json();
-        if (data && typeof data.ms === 'number' && !isNaN(data.ms) && data.ms > 0) {
-          measuredMs = data.ms;
-        }
-      } catch (e) {}
-    }
-
-    if (typeof measuredMs === 'number') {
-      if (measuredMs > 150) status = 'poor';
-      else if (measuredMs > 80) status = 'fair';
-      else if (measuredMs > 35) status = 'good';
-      else status = 'excellent';
-    } else {
-      status = 'offline';
-    }
-
-    setLiveStates(prev => {
-      const current = prev[srv.id];
-      const oldHistory = current ? current.history : [];
-
-      let newHistory = oldHistory;
-      if (typeof measuredMs === 'number') {
-        newHistory = [...oldHistory.slice(-14), { time: timeStr, ms: measuredMs, label: timeStr }];
       }
 
-      const validPoints = newHistory.map(h => h.ms);
-      const minMs = validPoints.length > 0 ? Math.min(...validPoints) : (typeof measuredMs === 'number' ? measuredMs : 0);
-      const maxMs = validPoints.length > 0 ? Math.max(...validPoints) : (typeof measuredMs === 'number' ? measuredMs : 0);
-      const avgMs = validPoints.length > 0 ? Math.round(validPoints.reduce((a, b) => a + b, 0) / validPoints.length) : (typeof measuredMs === 'number' ? measuredMs : 0);
+      // Fallback to /api/network-ping only after 3 consecutive failures
+      if (rt.consecutiveFailures >= 3) {
+        clearCachedEndpoint(cleanHost);
+        try {
+          const res = await fetch(`/api/network-ping?host=${encodeURIComponent(cleanHost)}`, {
+            signal: AbortSignal.timeout(2500)
+          });
+          const data = await res.json();
+          if (data && typeof data.ms === 'number' && !isNaN(data.ms) && data.ms > 0) {
+            let status: ServerState['status'] = 'excellent';
+            if (data.ms > 150) status = 'poor';
+            else if (data.ms > 80) status = 'fair';
+            else if (data.ms > 35) status = 'good';
 
-      return {
-        ...prev,
-        [srv.id]: {
-          currentMs: measuredMs,
-          status,
-          history: newHistory,
-          minMs,
-          maxMs,
-          avgMs,
-          packetLoss: measuredMs === 'Error' ? 1 : 0,
-          lastUpdated: now,
-          method: 'client-internet-rtt'
-        }
-      };
+            scheduleStateUpdate(srv.id, {
+              currentMs: data.ms,
+              status,
+              history: rt.recentSamples.filter(s => !s.failed).slice(-15),
+              minMs: rt.goodSamples.length > 0 ? Math.min(...rt.goodSamples) : data.ms,
+              maxMs: rt.goodSamples.length > 0 ? Math.max(...rt.goodSamples) : data.ms,
+              avgMs: rt.goodSamples.length > 0 ? Math.round(rt.goodSamples.reduce((a, b) => a + b, 0) / rt.goodSamples.length) : data.ms,
+              jitter: rt.lastJitter,
+              packetLoss: Math.round((rt.recentSamples.filter(s => s.failed).length / rt.recentSamples.length) * 100),
+              lastUpdated: Date.now(),
+              method: 'via-server'
+            });
+            return;
+          }
+        } catch {}
+      }
+
+      // If failed and no fallback response yet
+      const totalAttempts = rt.recentSamples.length;
+      const failedAttempts = rt.recentSamples.filter(s => s.failed).length;
+      const packetLoss = totalAttempts > 0 ? Math.round((failedAttempts / totalAttempts) * 100) : 100;
+
+      scheduleStateUpdate(srv.id, {
+        currentMs: 'Error',
+        status: 'offline',
+        history: rt.recentSamples.filter(s => !s.failed).slice(-15),
+        minMs: rt.goodSamples.length > 0 ? Math.min(...rt.goodSamples) : 0,
+        maxMs: rt.goodSamples.length > 0 ? Math.max(...rt.goodSamples) : 0,
+        avgMs: rt.goodSamples.length > 0 ? Math.round(rt.goodSamples.reduce((a, b) => a + b, 0) / rt.goodSamples.length) : 0,
+        jitter: rt.lastJitter,
+        packetLoss,
+        lastUpdated: Date.now(),
+        method: 'failed'
+      });
+      return;
+    }
+
+    // Success: Extract timing from PerformanceResourceTiming or delta
+    let sampleMs = 0;
+    let timingMethod: 'resource-timing' | 'duration' | 'performance-now' = 'performance-now';
+    const entries = performance.getEntriesByName(fullUrl);
+    const entry = entries && entries.length > 0 ? (entries[entries.length - 1] as PerformanceResourceTiming) : null;
+
+    if (entry && entry.requestStart > 0 && entry.responseStart > 0) {
+      sampleMs = Math.round(entry.responseStart - entry.requestStart);
+      timingMethod = 'resource-timing';
+    } else if (entry && entry.duration > 0) {
+      sampleMs = Math.round(entry.duration);
+      timingMethod = 'duration';
+    } else {
+      sampleMs = Math.round(t1 - t0);
+      timingMethod = 'performance-now';
+    }
+
+    if (sampleMs < 1) sampleMs = 1;
+
+    // Reset failure counter
+    rt.consecutiveFailures = 0;
+
+    // Check warm-up criteria
+    const idleTooLong = rt.lastSampleTime > 0 && (now - rt.lastSampleTime) > 30000;
+    const isWarmup = !rt.hasHadFirstSuccess || rt.needsWarmup || idleTooLong;
+    rt.lastSampleTime = now;
+
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('gts_ping_debug') === '1') {
+      console.log('[ServiceMonitor Ping]', {
+        host: cleanHost,
+        endpoint,
+        method: timingMethod,
+        ms: sampleMs,
+        warmup: isWarmup,
+        failed: false
+      });
+    }
+
+    if (isWarmup) {
+      rt.hasHadFirstSuccess = true;
+      rt.needsWarmup = false;
+      scheduleStateUpdate(srv.id, {
+        currentMs: 'warming...',
+        status: 'good',
+        history: rt.recentSamples.filter(s => !s.failed).slice(-15),
+        minMs: rt.goodSamples.length > 0 ? Math.min(...rt.goodSamples) : 0,
+        maxMs: rt.goodSamples.length > 0 ? Math.max(...rt.goodSamples) : 0,
+        avgMs: rt.goodSamples.length > 0 ? Math.round(rt.goodSamples.reduce((a, b) => a + b, 0) / rt.goodSamples.length) : 0,
+        jitter: rt.lastJitter,
+        packetLoss: rt.recentSamples.length > 0 ? Math.round((rt.recentSamples.filter(s => s.failed).length / rt.recentSamples.length) * 100) : 0,
+        lastUpdated: now,
+        method: timingMethod
+      });
+      return;
+    }
+
+    // Good measured sample
+    rt.recentSamples.push({ ms: sampleMs, failed: false, time: timeStr });
+    if (rt.recentSamples.length > 15) rt.recentSamples.shift();
+
+    rt.goodSamples.push(sampleMs);
+    if (rt.goodSamples.length > 15) rt.goodSamples.shift();
+
+    // Displayed ms = median of last 5 good samples
+    const last5 = rt.goodSamples.slice(-5);
+    const sorted = [...last5].sort((a, b) => a - b);
+    const medianMs = sorted.length % 2 === 1
+      ? sorted[Math.floor(sorted.length / 2)]
+      : Math.round((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2);
+
+    const minMs = Math.min(...rt.goodSamples);
+    const maxMs = Math.max(...rt.goodSamples);
+    const avgMs = Math.round(rt.goodSamples.reduce((a, b) => a + b, 0) / rt.goodSamples.length);
+
+    // Compute Jitter (average absolute difference between consecutive good samples)
+    let jitter = 0;
+    if (rt.goodSamples.length >= 2) {
+      let diffSum = 0;
+      for (let i = 1; i < rt.goodSamples.length; i++) {
+        diffSum += Math.abs(rt.goodSamples[i] - rt.goodSamples[i - 1]);
+      }
+      jitter = Math.round(diffSum / (rt.goodSamples.length - 1));
+    }
+    rt.lastJitter = jitter;
+
+    // Compute Packet Loss over last 15 samples
+    const totalAttempts = rt.recentSamples.length;
+    const failedAttempts = rt.recentSamples.filter(s => s.failed).length;
+    const packetLoss = totalAttempts > 0 ? Math.round((failedAttempts / totalAttempts) * 100) : 0;
+
+    let status: ServerState['status'] = 'excellent';
+    if (medianMs > 150) status = 'poor';
+    else if (medianMs > 80) status = 'fair';
+    else if (medianMs > 35) status = 'good';
+
+    const history = rt.recentSamples
+      .filter(s => !s.failed)
+      .map(s => ({ time: s.time, ms: s.ms, label: s.time }));
+
+    scheduleStateUpdate(srv.id, {
+      currentMs: medianMs,
+      status,
+      history,
+      minMs,
+      maxMs,
+      avgMs,
+      jitter,
+      packetLoss,
+      lastUpdated: now,
+      method: timingMethod
     });
-  }, []);
+  }, [scheduleStateUpdate]);
 
-  // Real-time Periodic Polling Engine (Every 1.5 seconds per server)
+  // Non-overlapping loop per server staggered by ~250ms, paused while hidden
   useEffect(() => {
     if (!isOpen || servers.length === 0) return;
 
-    // Trigger initial pings immediately
-    servers.forEach(srv => {
-      pingServerReal(srv);
+    let isCancelled = false;
+
+    const runServerLoop = async (srv: ServerTarget, initialDelay: number) => {
+      if (initialDelay > 0) {
+        await new Promise(r => setTimeout(r, initialDelay));
+      }
+
+      while (!isCancelled) {
+        if (document.visibilityState === 'hidden') {
+          await new Promise<void>(resolve => {
+            const onVisible = () => {
+              if (document.visibilityState === 'visible') {
+                document.removeEventListener('visibilitychange', onVisible);
+                resolve();
+              }
+            };
+            document.addEventListener('visibilitychange', onVisible);
+          });
+          if (isCancelled) break;
+        }
+
+        await pingServerReal(srv);
+
+        if (isCancelled) break;
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    };
+
+    servers.forEach((srv, idx) => {
+      runServerLoop(srv, idx * 250);
     });
 
-    const interval = setInterval(() => {
-      servers.forEach(srv => {
-        pingServerReal(srv);
-      });
-    }, 1500);
-
-    return () => clearInterval(interval);
+    return () => {
+      isCancelled = true;
+    };
   }, [isOpen, servers, pingServerReal]);
 
   // Filtered servers list
@@ -395,64 +1028,75 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
   }, [servers, liveStates]);
 
   // Open Add Modal
-  const handleOpenAddModal = () => {
+  const handleOpenAddModal = useCallback(() => {
     setEditingServer(null);
     setFormName('');
     setFormHost('');
     setIsAddModalOpen(true);
-  };
+  }, []);
 
   // Open Edit Modal
-  const handleOpenEditModal = (srv: ServerTarget) => {
+  const handleOpenEditModal = useCallback((srv: ServerTarget) => {
     setEditingServer(srv);
     setFormName(srv.name);
     setFormHost(srv.host);
     setIsAddModalOpen(true);
+  }, []);
+
+  // Quick Add selection
+  const handleSelectQuickSite = (site: { name: string; host: string }) => {
+    setFormName(site.name);
+    setFormHost(site.host);
+  };
+
+  // Host input change with automatic normalization & known-site name detection
+  const handleHostInputChange = (val: string) => {
+    setFormHost(val);
+    const clean = normalizeHost(val);
+    const apex = clean.replace(/^(www\.)+/i, '');
+    const detected = KNOWN_SITES[clean] || KNOWN_SITES[apex];
+    if (detected && (!formName.trim() || Object.values(KNOWN_SITES).includes(formName.trim()))) {
+      setFormName(detected);
+    }
   };
 
   // Save Server (Add or Edit) to database
   const handleSaveServer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim()) {
-      toast.error('Please enter a valid Server Name');
-      return;
-    }
-    if (!formHost.trim()) {
-      toast.error('Please enter a Host IP or URL');
+    const cleanHost = normalizeHost(formHost);
+    if (!cleanHost) {
+      toast.error('Please enter a valid Host IP or URL');
       return;
     }
 
-    const cleanHost = formHost.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    const finalName = formName.trim() || KNOWN_SITES[cleanHost] || cleanHost;
 
     setIsSaving(true);
     try {
       const metaJson = JSON.stringify({
-        name: formName.trim()
+        name: finalName
       });
 
       if (editingServer) {
-        // Update in database
         await supabaseService.updateMonitorTarget(editingServer.id, {
           domain: cleanHost,
           label: metaJson
         });
 
-        // Update local state
         setServers(prev =>
           prev.map(s =>
             s.id === editingServer.id
               ? {
                   ...s,
-                  name: formName.trim(),
+                  name: finalName,
                   host: cleanHost
                 }
               : s
           )
         );
-        toast.success(`Server "${formName}" updated in database.`);
+        toast.success(`Server "${finalName}" updated in database.`);
       } else {
-        // Create in database
-        const creator = user || { username: 'Admin', role: 'admin', uid: 'admin-1' } as any;
+        const creator = user || ({ username: 'Admin', role: 'admin', uid: 'admin-1' } as any);
         const newDbTarget = await supabaseService.createMonitorTarget(
           cleanHost,
           creator,
@@ -461,17 +1105,16 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
 
         const newSrv: ServerTarget = {
           id: newDbTarget.id,
-          name: formName.trim(),
+          name: finalName,
           host: cleanHost
         };
 
         setServers(prev => [newSrv, ...prev]);
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify([newSrv, ...servers]));
-        } catch (e) {}
+        } catch (err) {}
 
         toast.success(`Server "${newSrv.name}" saved to database.`);
-        // Trigger immediate live ping
         pingServerReal(newSrv);
       }
 
@@ -494,6 +1137,7 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       } catch (e) {}
+      clearCachedEndpoint(normalizeHost(serverToDelete.host));
       toast.success(`Server "${serverToDelete.name}" removed from database.`);
     } catch (err: any) {
       toast.error(`Failed to delete server: ${err.message || 'Unknown database error'}`);
@@ -503,12 +1147,12 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
   };
 
   // Copy IP to Clipboard
-  const handleCopyHost = (host: string) => {
+  const handleCopyHost = useCallback((host: string) => {
     navigator.clipboard.writeText(host);
     setCopiedHost(host);
     toast.success(`Copied "${host}" to clipboard`);
     setTimeout(() => setCopiedHost(null), 2000);
-  };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -537,11 +1181,11 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
                 </h1>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-                  Your Live Internet MS
+                  Browser HTTP Latency
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                Direct real-time internet latency measured live from your internet connection with synchronized site logos.
+                Measured from your own internet connection. Browsers cannot send ICMP ping, so values can be slightly higher than apps like WiFiman.
               </p>
             </div>
           </div>
@@ -578,11 +1222,13 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
           {/* Card 2: Average Ping */}
           <div className="bg-white dark:bg-slate-900/70 backdrop-blur-md border border-slate-200/80 dark:border-white/10 p-4.5 rounded-2xl shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-400">Your Internet MS (RTT)</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-400">Browser HTTP Latency</p>
               <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-1">
                 {globalStats.total > 0 && globalStats.avgMs > 0 ? `${globalStats.avgMs} ms` : '—'}
               </h3>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-0.5">Actual Connection Latency</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold mt-0.5 truncate" title="Measured from your own internet connection. Browsers cannot send ICMP ping, so values can be slightly higher than apps like WiFiman.">
+                Median Client Response
+              </p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-teal-50 dark:bg-teal-500/10 border border-teal-100 dark:border-teal-500/20 flex items-center justify-center text-teal-600 dark:text-teal-400">
               <Zap size={22} />
@@ -648,7 +1294,7 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
                   No Monitored Servers Found
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium max-w-md mx-auto mt-1">
-                  Abhi koi server add nahi hai. Apne internet connection se kisi bhi website (e.g. <code>google.com</code>) ya IP ka original ms latency check karne ke liye <strong>"Add Server"</strong> button dabayein.
+                  Add any website or IP (e.g. <code>google.com</code>, <code>tiktok.com</code>, <code>1.1.1.1</code>) to measure live HTTP response time from your browser.
                 </p>
               </div>
               <button
@@ -672,175 +1318,18 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
                 lastUpdated: Date.now()
               };
 
-              // Color classes based on status
-              const statusColors = {
-                excellent: {
-                  bg: 'bg-emerald-50 dark:bg-emerald-500/10',
-                  text: 'text-emerald-700 dark:text-emerald-400',
-                  border: 'border-emerald-200 dark:border-emerald-500/30',
-                  dot: 'bg-emerald-500'
-                },
-                good: {
-                  bg: 'bg-teal-50 dark:bg-teal-500/10',
-                  text: 'text-teal-700 dark:text-teal-400',
-                  border: 'border-teal-200 dark:border-teal-500/30',
-                  dot: 'bg-teal-500'
-                },
-                fair: {
-                  bg: 'bg-amber-50 dark:bg-amber-500/10',
-                  text: 'text-amber-700 dark:text-amber-400',
-                  border: 'border-amber-200 dark:border-amber-500/30',
-                  dot: 'bg-amber-500'
-                },
-                poor: {
-                  bg: 'bg-rose-50 dark:bg-rose-500/10',
-                  text: 'text-rose-700 dark:text-rose-400',
-                  border: 'border-rose-200 dark:border-rose-500/30',
-                  dot: 'bg-rose-500'
-                },
-                offline: {
-                  bg: 'bg-slate-100 dark:bg-slate-500/10',
-                  text: 'text-slate-600 dark:text-slate-400',
-                  border: 'border-slate-200 dark:border-slate-500/30',
-                  dot: 'bg-slate-400'
-                }
-              }[state.status] || {
-                bg: 'bg-emerald-50 dark:bg-emerald-500/10',
-                text: 'text-emerald-700 dark:text-emerald-400',
-                border: 'border-emerald-200 dark:border-emerald-500/30',
-                dot: 'bg-emerald-500'
-              };
-
               return (
-                <motion.div
+                <ServerCard
                   key={srv.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.03 }}
-                  className="w-full bg-white dark:bg-slate-900/80 backdrop-blur-md border border-slate-200/90 dark:border-white/10 hover:border-emerald-500/40 rounded-2xl p-4.5 transition-all duration-300 shadow-sm hover:shadow-md group flex flex-col xl:flex-row items-stretch xl:items-center gap-4"
-                >
-                  {/* Left Block: Identity & Original Site Favicon */}
-                  <div className="flex items-center gap-3.5 min-w-[260px] max-w-[320px] shrink-0">
-                    <div className="relative shrink-0">
-                      <ServerLogo host={srv.host} name={srv.name} />
-                      <span className={cn("absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900", statusColors.dot, "animate-pulse")} />
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <h4 className="text-sm font-black text-slate-900 dark:text-white truncate tracking-tight uppercase">
-                        {srv.name}
-                      </h4>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-950/90 px-2 py-0.5 rounded-md border border-slate-200/80 dark:border-white/5">
-                          {srv.host}
-                        </span>
-                        <button
-                          onClick={() => handleCopyHost(srv.host)}
-                          className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
-                          title="Copy IP"
-                        >
-                          {copiedHost === srv.host ? (
-                            <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
-                          ) : (
-                            <Copy size={12} />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Middle Left: Live Fluctuating Real MS Counter */}
-                  <div className="flex items-center gap-3 min-w-[140px] shrink-0 bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-white/5 rounded-xl px-3.5 py-2">
-                    <div>
-                      <div className="flex items-baseline gap-1">
-                        <span className={cn("text-2xl font-black font-mono tracking-tight", statusColors.text)}>
-                          {state.currentMs}
-                        </span>
-                        {typeof state.currentMs === 'number' && (
-                          <span className="text-[10px] font-black uppercase text-slate-400">ms</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 text-[9px] text-slate-400 font-mono font-bold">
-                        <span>Min: {state.minMs}</span>
-                        <span>•</span>
-                        <span>Max: {state.maxMs}</span>
-                      </div>
-                    </div>
-                    <span
-                      className={cn(
-                        "ml-auto px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider border",
-                        statusColors.bg,
-                        statusColors.text,
-                        statusColors.border
-                      )}
-                    >
-                      {state.status}
-                    </span>
-                  </div>
-
-                  {/* Wide Middle-to-Right: Heartbeat Landscape Sparkline Chart (Matching Uploaded Image with Real Fluctuations) */}
-                  <div className="flex-1 h-[78px] w-full min-w-[280px] bg-slate-50/70 dark:bg-slate-950/90 border border-slate-200/70 dark:border-white/5 rounded-xl p-1 relative overflow-hidden flex items-center">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={state.history}
-                        margin={{ top: 8, right: 10, left: 10, bottom: 4 }}
-                      >
-                        <defs>
-                          {/* Soft green gradient fill beneath the line */}
-                          <linearGradient id={`gradient-${srv.id}`} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.28} />
-                            <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid
-                          strokeDasharray="2 4"
-                          vertical={false}
-                          stroke="rgba(0, 0, 0, 0.05)"
-                        />
-                        <YAxis
-                          hide
-                          domain={['dataMin - 5', 'dataMax + 10']}
-                        />
-                        <XAxis dataKey="time" hide />
-                        <Tooltip content={<CustomHeartbeatTooltip />} />
-                        <Area
-                          type="monotone"
-                          dataKey="ms"
-                          stroke="#10b981"
-                          strokeWidth={2.5}
-                          fill={`url(#gradient-${srv.id})`}
-                          dot={<CustomHeartbeatDot stroke="#10b981" />}
-                          activeDot={{ r: 5, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }}
-                          isAnimationActive={false}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Right Actions: Edit and Delete Buttons */}
-                  <div className="flex items-center gap-2 shrink-0 self-end xl:self-center">
-                    <button
-                      onClick={() => pingServerReal(srv)}
-                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white border border-slate-200/80 dark:border-white/10 transition-all cursor-pointer shadow-sm group/btn"
-                      title="Test Real Client Internet Latency"
-                    >
-                      <RefreshCw size={15} className="group-hover/btn:rotate-180 transition-transform text-emerald-600 dark:text-emerald-400" />
-                    </button>
-                    <button
-                      onClick={() => handleOpenEditModal(srv)}
-                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white border border-slate-200/80 dark:border-white/10 transition-all cursor-pointer shadow-sm group/btn"
-                      title="Edit Server"
-                    >
-                      <Edit2 size={15} className="group-hover/btn:scale-110 transition-transform text-teal-600 dark:text-teal-400" />
-                    </button>
-                    <button
-                      onClick={() => setServerToDelete(srv)}
-                      className="p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 transition-all cursor-pointer shadow-sm group/btn"
-                      title="Delete Server"
-                    >
-                      <Trash2 size={15} className="group-hover/btn:scale-110 transition-transform" />
-                    </button>
-                  </div>
-                </motion.div>
+                  srv={srv}
+                  state={state}
+                  copiedHost={copiedHost}
+                  idx={idx}
+                  onCopyHost={handleCopyHost}
+                  onPing={pingServerReal}
+                  onEdit={handleOpenEditModal}
+                  onDelete={setServerToDelete}
+                />
               );
             })
           )}
@@ -874,7 +1363,56 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
                 </button>
               </div>
 
+              {/* Quick Add Chips */}
+              {!editingServer && (
+                <div>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 block mb-2">
+                    Quick Add Popular Sites
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {QUICK_ADD_SITES.map(item => (
+                      <button
+                        key={item.host}
+                        type="button"
+                        onClick={() => handleSelectQuickSite(item)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1.5",
+                          normalizeHost(formHost) === normalizeHost(item.host)
+                            ? "bg-emerald-500 text-white border-emerald-600 shadow-sm"
+                            : "bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/10"
+                        )}
+                      >
+                        <img
+                          src={getRealLogoUrl(item.host)}
+                          alt=""
+                          className="w-3.5 h-3.5 rounded object-contain shrink-0"
+                          onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                        />
+                        <span>{item.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <form onSubmit={handleSaveServer} className="space-y-4">
+                <div>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 block mb-1.5">
+                    Host / URL or IP Address
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. tiktok.com, https://facebook.com, 1.1.1.1, youtube.com"
+                    value={formHost}
+                    onChange={e => handleHostInputChange(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition-all font-mono"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Accepts full URLs, domains, or IP addresses. Automatically normalized.
+                  </p>
+                </div>
+
                 <div>
                   <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 block mb-1.5">
                     Server Name
@@ -882,24 +1420,10 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Google Cloud Primary or Cloudflare Edge"
+                    placeholder="e.g. Google, TikTok, Cloudflare DNS"
                     value={formName}
                     onChange={e => setFormName(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition-all font-sans"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 block mb-1.5">
-                    Host / IP Address or Website URL
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 1.1.1.1 or 8.8.8.8 or google.com or facebook.com"
-                    value={formHost}
-                    onChange={e => setFormHost(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 transition-all font-mono"
                   />
                 </div>
 
@@ -909,10 +1433,10 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
                   </div>
                   <div>
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Direct Internet Latency
+                      Browser HTTP Latency
                     </p>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                      Aapke apne internet connection se direct real-time ms latency calculate hogi.
+                      Measured directly from your browser connection with warm-up filters and median smoothing.
                     </p>
                   </div>
                 </div>
@@ -929,7 +1453,7 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
                   <button
                     type="submit"
                     disabled={isSaving}
-                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-emerald-600/20 hover:opacity-95 flex items-center gap-1.5"
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-emerald-600/20 hover:opacity-95 flex items-center gap-1.5 cursor-pointer"
                   >
                     {isSaving ? <RefreshCw size={14} className="animate-spin" /> : null}
                     <span>{editingServer ? 'Save Changes' : 'Add Server'}</span>
@@ -976,7 +1500,7 @@ export default function ServiceMonitor({ isOpen, onClose, user }: ServiceMonitor
                 <button
                   type="button"
                   onClick={handleConfirmDelete}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase shadow-md shadow-rose-600/30"
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase shadow-md shadow-rose-600/30 cursor-pointer"
                 >
                   Delete Server
                 </button>

@@ -506,6 +506,7 @@ export default function Layout({
   const [expandedCats, setExpandedCats] = useState<string[]>(['ops', 'analytics', 'system']);
 
   const isSubDealerUser = user ? ((user.role === 'dealer' || Boolean(user.dealerId && user.dealerId !== 'main') || Boolean(user.lineCode)) && user.role !== 'admin') : false;
+  const isSubAccount = user && user.role !== 'dealer' && user.dealerId && user.dealerId !== 'main';
   const canAccessLoginProfiles = user?.role === 'super_admin' || user?.role === 'admin' || isSubDealerUser || Boolean(user);
 
   const categories = [
@@ -545,7 +546,7 @@ export default function Layout({
         { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
         { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
         { id: 'chat', label: 'AI Help', icon: Sparkles },
-        { id: 'branding', label: 'CUSTOMIZATION', icon: Palette, roles: ['super_admin', 'editor'] },
+        { id: 'branding', label: 'CUSTOMIZATION', icon: Palette, roles: ['super_admin'] },
       ]
     }
   ];
@@ -663,7 +664,7 @@ export default function Layout({
               if (user.role === 'member' || user.role === 'field_agent') {
                 const order = ['complaints', 'submit', 'nodes', 'billing', 'mypc', 'map', 'settings'];
                 permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
-              } else if (user.role === 'liteadmin') {
+              } else if (user.role === 'liteadmin' || isSubAccount) {
                 const order = ['complaints', 'submit', 'nodes', 'clients', 'billing', 'mypc', 'map', 'settings'];
                 permitted = order.map(id => items.find(i => i.id === id)).filter(Boolean) as typeof items;
               } else {

@@ -300,6 +300,8 @@ export default function MyPCTab(props: MyPCTabProps) {
   } = props;
 
   const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin';
+  const isSubAccount = currentUser?.role !== 'dealer' && currentUser?.dealerId && currentUser?.dealerId !== 'main';
+  const isSuperAdmin = currentUser?.role === 'super_admin';
   const canAccessLoginProfiles = true;
 
   const [mypcSearchQuery, setMypcSearchQuery] = useState('');
@@ -340,8 +342,8 @@ export default function MyPCTab(props: MyPCTabProps) {
     { 
       id: 'login_profiles', 
       icon: ShieldCheck, 
-      title: 'Login Profiles', 
-      desc: isSubDealerUser ? 'Manage Dealer Subaccounts & Operators' : 'Active Credentials and Roles Overview',
+      title: isSubDealerUser ? 'Sub Account' : 'Login Profiles', 
+      desc: isSubDealerUser ? 'Create and manage your sub accounts' : 'Active Credentials and Roles Overview',
       category: 'users' as const
     },
     ...(currentUser?.role === 'super_admin' ? [{ 
@@ -358,20 +360,20 @@ export default function MyPCTab(props: MyPCTabProps) {
       desc: 'Audio Matrix, Voice Protocols, and Security Keys',
       category: 'system' as const
     },
-    { 
+    ...(isSuperAdmin ? [{ 
       id: 'branding_panel', 
       icon: Palette, 
       title: 'Customization', 
       desc: 'Design aesthetics, cards, and app layouts',
       category: 'system' as const
-    },
-    { 
+    }] : []),
+    ...(!isSubDealerUser && !isSubAccount ? [{ 
       id: 'whatsapp_integration', 
       icon: MessageCircle, 
       title: 'WhatsApp', 
       desc: 'Connect and manage automated WhatsApp messaging',
       category: 'tools' as const
-    },
+    }] : []),
     { 
       id: 'integrations', 
       icon: CloudUpload, 
@@ -414,7 +416,7 @@ export default function MyPCTab(props: MyPCTabProps) {
       desc: 'High frequency support identifiers',
       category: 'operations' as const
     }
-  ], [canAccessLoginProfiles, isSubDealerUser, currentUser?.role, branding?.tabNames?.submit]);
+  ], [canAccessLoginProfiles, isSubDealerUser, isSubAccount, isSuperAdmin, currentUser?.role, branding?.tabNames?.submit]);
 
   const filteredTiles = useMemo(() => {
     return mypcTilesList.filter(item => {
@@ -1492,7 +1494,7 @@ export default function MyPCTab(props: MyPCTabProps) {
                   )}
 
                   {/* Subview 5: Branding Customizer */}
-                  {activeFile === 'branding_panel' && (
+                  {activeFile === 'branding_panel' && currentUser?.role === 'super_admin' && (
                     <div className="max-w-7xl mx-auto w-full px-4">
                       <EditorPanel branding={branding} onUpdate={onUpdateBranding} />
                     </div>

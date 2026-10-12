@@ -292,11 +292,16 @@ export default function ConversationTab({
 
   // Determine if logged-in user is a Sub-Dealer (Multi-tenancy isolation)
   const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin';
+  const isSubAccount = currentUser && currentUser.role !== 'dealer' && currentUser.dealerId && currentUser.dealerId !== 'main';
   const subDealerLineCode = (currentUser?.lineCode || '').trim();
   const subDealerDealerId = (currentUser?.role === 'dealer' ? currentUser?.uid : (currentUser?.dealerId || currentUser?.uid || 'main')).trim();
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
-  // List of available VLAN channels for Admin channel switcher
+  // List of available VLAN channels: ONLY built for super_admin. For everyone else, return only 'main' channel.
   const availableVlanChannels = useMemo(() => {
+    if (!isSuperAdmin) {
+      return [{ key: 'main', label: '⚡ MAIN COMPANY GATEWAY', vlan: null, dealerId: 'main', company: 'Main Company' }];
+    }
     const list = [{ key: 'all', label: '🌐 ALL VLANS / GLOBAL GATEWAY', vlan: null, dealerId: 'main', company: 'Global Master' }];
     const dealerUsers = (users || []).filter(u => u.lineCode || u.role === 'dealer');
     dealerUsers.forEach(u => {
@@ -312,11 +317,15 @@ export default function ConversationTab({
       }
     });
     return list;
-  }, [users]);
+  }, [users, isSuperAdmin]);
 
-  // Selected Channel state: Sub-dealers are strictly locked to their own VLAN
+  // Selected Channel state:
+  // - Sub-dealers are strictly locked to their own VLAN
+  // - Non-super-admin, non-sub-dealer users are locked to 'main'
+  // - super_admin defaults to 'all' and can pick any channel
   const [selectedVlanChannel, setSelectedVlanChannel] = useState<string>(() => {
     if (isSubDealerUser) return subDealerLineCode || subDealerDealerId;
+    if (!isSuperAdmin) return 'main';
     return 'all';
   });
 
@@ -325,11 +334,14 @@ export default function ConversationTab({
     if (isSubDealerUser) {
       return subDealerLineCode || subDealerDealerId || 'main';
     }
+    if (!isSuperAdmin) {
+      return 'main';
+    }
     if (selectedVlanChannel && selectedVlanChannel !== 'all') {
       return selectedVlanChannel;
     }
     return 'main';
-  }, [isSubDealerUser, subDealerLineCode, subDealerDealerId, selectedVlanChannel]);
+  }, [isSubDealerUser, subDealerLineCode, subDealerDealerId, isSuperAdmin, selectedVlanChannel]);
 
   // Live WhatsApp device connection status for this active session
   const [whatsAppStatus, setWhatsAppStatus] = useState<{
@@ -409,10 +421,11 @@ export default function ConversationTab({
     return Array.isArray(activeMonthDoc?.rows) ? activeMonthDoc.rows : [];
   }, [activeMonthDoc]);
 
-  // STRICT MULTI-TENANCY: Scope rows strictly to the active VLAN / Sub-Dealer
+  // STRICT MULTI-TENANCY: Scope rows strictly to the active VLAN / Sub-Dealer / Main Company
   const scopedRows = useMemo(() => {
     if (!activeRows || activeRows.length === 0) return [];
 
+    // 1. Sub-dealer: strictly sees only rows matching their lineCode or dealerId
     if (isSubDealerUser) {
       const userLc = subDealerLineCode.toLowerCase();
       const userDId = subDealerDealerId;
@@ -425,6 +438,19 @@ export default function ConversationTab({
       });
     }
 
+    // 2. Non-super-admin, non-sub-dealer (main company admin, liteadmin, member, editor, etc.):
+    // MUST see ONLY main-company rows: lineCode empty AND dealerId empty or 'main'
+    if (!isSuperAdmin) {
+      return activeRows.filter((r: any) => {
+        const rowLc = (r.lineCode || r.line_code || '').trim();
+        const rowDId = (r.dealerId || r.dealer_id || '').trim();
+        const isLineCodeEmpty = !rowLc;
+        const isDealerEmptyOrMain = !rowDId || rowDId.toLowerCase() === 'main';
+        return isLineCodeEmpty && isDealerEmptyOrMain;
+      });
+    }
+
+    // 3. Super Admin: filter by specific VLAN if selected, otherwise 'all' sees everything
     if (selectedVlanChannel && selectedVlanChannel !== 'all') {
       const channel = availableVlanChannels.find(c => c.key === selectedVlanChannel);
       const targetLc = (channel?.vlan || selectedVlanChannel).toLowerCase().trim();
@@ -438,8 +464,9 @@ export default function ConversationTab({
       });
     }
 
+    // Super Admin 'all' channel: see all rows
     return activeRows;
-  }, [activeRows, isSubDealerUser, subDealerLineCode, subDealerDealerId, selectedVlanChannel, availableVlanChannels]);
+  }, [activeRows, isSubDealerUser, subDealerLineCode, subDealerDealerId, isSuperAdmin, selectedVlanChannel, availableVlanChannels]);
 
   // All strictly unpaid clients within this VLAN's scoped data
   const allUnpaidClients = useMemo(() => {
@@ -513,8 +540,9 @@ export default function ConversationTab({
     }
   };
 
-  // STRICT MULTI-TENANCY: Only show campaigns belonging to the active sub-dealer / VLAN
+  // STRICT MULTI-TENANCY: Only show campaigns belonging to the active sub-dealer / VLAN / Main Company
   const scopedLeads = useMemo(() => {
+    // 1. Sub-dealer: strictly sees only campaigns belonging to their lineCode or dealerId
     if (isSubDealerUser) {
       const targetLc = subDealerLineCode.toLowerCase();
       const targetDId = subDealerDealerId;
@@ -527,6 +555,19 @@ export default function ConversationTab({
       });
     }
 
+    // 2. Non-super-admin, non-sub-dealer (main company admin, liteadmin, member, editor, etc.):
+    // MUST see ONLY main-company leads: lineCode empty AND dealerId empty or 'main'
+    if (!isSuperAdmin) {
+      return leads.filter(l => {
+        const leadLc = (l.lineCode || '').trim();
+        const leadDId = (l.dealerId || '').trim();
+        const isLineCodeEmpty = !leadLc;
+        const isDealerEmptyOrMain = !leadDId || leadDId.toLowerCase() === 'main';
+        return isLineCodeEmpty && isDealerEmptyOrMain;
+      });
+    }
+
+    // 3. Super Admin: filter by specific VLAN if selected, otherwise 'all' sees everything
     if (selectedVlanChannel && selectedVlanChannel !== 'all') {
       const channel = availableVlanChannels.find(c => c.key === selectedVlanChannel);
       const targetLc = (channel?.vlan || selectedVlanChannel).toLowerCase().trim();
@@ -540,8 +581,9 @@ export default function ConversationTab({
       });
     }
 
+    // Super Admin 'all' channel: see all leads
     return leads;
-  }, [leads, isSubDealerUser, subDealerLineCode, subDealerDealerId, selectedVlanChannel, availableVlanChannels]);
+  }, [leads, isSubDealerUser, subDealerLineCode, subDealerDealerId, isSuperAdmin, selectedVlanChannel, availableVlanChannels]);
 
   // Top 4 Summary Cards Metrics for Scoped Campaigns
   const summaryMetrics = useMemo(() => {
@@ -673,13 +715,17 @@ export default function ConversationTab({
       });
 
       // Determine target dealerId and lineCode based on active VLAN scoping
-      const targetDealerId = isSubDealerUser
-        ? subDealerDealerId
-        : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.dealerId || selectedVlanChannel) : (dealerId || 'main'));
+      const targetDealerId = !isSuperAdmin && !isSubDealerUser
+        ? 'main'
+        : (isSubDealerUser
+          ? subDealerDealerId
+          : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.dealerId || selectedVlanChannel) : (dealerId || 'main')));
 
-      const targetLineCode = isSubDealerUser
-        ? (subDealerLineCode || undefined)
-        : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.vlan || selectedVlanChannel) : undefined);
+      const targetLineCode = !isSuperAdmin && !isSubDealerUser
+        ? undefined
+        : (isSubDealerUser
+          ? (subDealerLineCode || undefined)
+          : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.vlan || selectedVlanChannel) : undefined));
 
       // 3. Create lead and items in database tagged strictly to this VLAN/dealer
       const newLeadId = await createReminderLead({
@@ -749,13 +795,13 @@ export default function ConversationTab({
 
         {/* Action Controls & Channel Switcher */}
         <div className="flex items-center gap-2.5 flex-wrap ml-auto">
-          {/* Sub-Dealer locked badge OR Admin VLAN Channel Switcher */}
+          {/* Sub-Dealer locked badge, Non-Super-Admin locked badge, OR Super-Admin VLAN Channel Switcher */}
           {isSubDealerUser ? (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 text-xs font-black uppercase tracking-wider shadow-xs">
               <Shield size={13} className="text-blue-500 shrink-0" />
               <span>VLAN: {subDealerLineCode || 'SUB-DEALER'}</span>
             </div>
-          ) : (
+          ) : isSuperAdmin ? (
             <div className="relative flex items-center">
               <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-blue-500">
                 <Layers size={13} />
@@ -774,30 +820,32 @@ export default function ConversationTab({
               </select>
               <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
-          )}
+          ) : null}
 
           {/* Dedicated WhatsApp Device & QR Connection Button */}
-          <button
-            onClick={() => setIsConnectPanelOpen(true)}
-            className={cn(
-              "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all cursor-pointer shadow-xs",
-              whatsAppStatus?.connected
-                ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/60"
-                : "bg-amber-50 dark:bg-amber-950/40 border-amber-500/30 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/60 animate-pulse"
-            )}
-            title={`WhatsApp Device Authentication for session "${activeSessionKey}"`}
-          >
-            <Smartphone size={15} className={whatsAppStatus?.connected ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"} />
-            <span className="font-mono">
-              {whatsAppStatus?.connected
-                ? `Live: +${whatsAppStatus.phoneNumber || 'Active'}`
-                : `Link WhatsApp QR`}
-            </span>
-            <span className={cn(
-              "w-2 h-2 rounded-full shrink-0",
-              whatsAppStatus?.connected ? "bg-emerald-500 animate-ping" : "bg-amber-500"
-            )} />
-          </button>
+          {!isSubDealerUser && !isSubAccount && (
+            <button
+              onClick={() => setIsConnectPanelOpen(true)}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all cursor-pointer shadow-xs",
+                whatsAppStatus?.connected
+                  ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/60"
+                  : "bg-amber-50 dark:bg-amber-950/40 border-amber-500/30 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/60 animate-pulse"
+              )}
+              title={`WhatsApp Device Authentication for session "${activeSessionKey}"`}
+            >
+              <Smartphone size={15} className={whatsAppStatus?.connected ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"} />
+              <span className="font-mono">
+                {whatsAppStatus?.connected
+                  ? `Live: +${whatsAppStatus.phoneNumber || 'Active'}`
+                  : `Link WhatsApp QR`}
+              </span>
+              <span className={cn(
+                "w-2 h-2 rounded-full shrink-0",
+                whatsAppStatus?.connected ? "bg-emerald-500 animate-ping" : "bg-amber-500"
+              )} />
+            </button>
+          )}
 
           {/* Start New Lead Button */}
           <button

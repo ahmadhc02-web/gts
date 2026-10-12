@@ -427,6 +427,12 @@ async function startServer() {
   });
   // -----------------------------------
 
+  // --- Browser High-Precision Echo Ping for Self-Host / Same-Origin ---
+  app.all("/api/ping-echo", (req, res) => {
+    res.set({ "Cache-Control": "no-store", "Timing-Allow-Origin": "*" });
+    res.status(204).end();
+  });
+
   // --- Real Native Network Ping Proxy Engine (Hetzner Cloud POP) ---
   app.get("/api/network-ping", async (req, res) => {
     let host = (req.query.host as string) || "8.8.8.8";
