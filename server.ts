@@ -514,22 +514,7 @@ async function startServer() {
 
         socket80.on("error", () => {
           socket80.destroy();
-          // Real DNS lookup timing
-          const dns = require("dns");
-          const dnsStart = performance.now();
-          dns.lookup(host, (dnsErr: any) => {
-            if (dnsErr) {
-              return res.json({ ms: "Error", status: "offline", host, pop: "Hetzner Cloud Edge" });
-            }
-            const dnsElapsed = Math.max(1, Math.round(performance.now() - dnsStart));
-            return res.json({
-              ms: dnsElapsed,
-              status: "online",
-              host,
-              method: "dns",
-              pop: "Hetzner Cloud Edge"
-            });
-          });
+          return res.json({ ms: "Error", status: "offline", host, pop: "Hetzner Cloud Edge" });
         });
 
         socket80.on("timeout", () => {

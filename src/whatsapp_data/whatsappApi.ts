@@ -315,10 +315,13 @@ export async function sendMessage(phone: string, message: string, sessionKey?: s
 
 export async function createReminderLeadServer(payload: any) {
   try {
+    const cloned = { ...payload };
+    const ws = Number(cloned.waitSeconds || cloned.wait_seconds || 60);
+    cloned.waitSeconds = Math.min(300, Math.max(60, ws));
     const res = await fetch(`${API_URL}/create-lead`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(cloned),
     });
     const data = await res.json();
     if (!res.ok || !data.leadId) {

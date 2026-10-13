@@ -223,6 +223,18 @@ async function initBaileys(rawKey = 'main') {
       } else if (connection === 'open') {
         console.log(`[${session.key}] Opened WhatsApp connection successfully!`);
         session.isConnected = true;
+        if (session.key !== 'main') {
+          const existingLease = sessionLeases.get(session.key);
+          if (existingLease && existingLease.timer) clearTimeout(existingLease.timer);
+          const expiresAt = Date.now() + 5 * 60 * 1000;
+          const timer = setTimeout(async () => {
+            const l = sessionLeases.get(session.key);
+            if (l && !l.leadActive) {
+              await releaseSubDealerSession(session.key);
+            }
+          }, 5 * 60 * 1000);
+          sessionLeases.set(session.key, { expiresAt, timer, leadActive: false });
+        }
         session.consecutiveBadSessionCount = 0;
         session.currentQr = null;
         session.lastConnectionOpenTimestamp = Date.now();
@@ -267,14 +279,68 @@ function handleReconnect(session) {
   }, session.reconnectDelay);
 }
 
+
+const sessionLeases = new Map();
+let supabaseClient = null;
+
+function initBaileysClientDb(sup) {
+  supabaseClient = sup;
+}
+
+function markLeadStarted(rawKey) {
+  const sessionKey = normalizeSessionKey(rawKey);
+  if (sessionKey === 'main') return;
+  const lease = sessionLeases.get(sessionKey);
+  if (lease) {
+    lease.leadActive = true;
+    if (lease.timer) {
+      clearTimeout(lease.timer);
+      lease.timer = null;
+    }
+  } else {
+    sessionLeases.set(sessionKey, { expiresAt: Date.now(), timer: null, leadActive: true });
+  }
+}
+
+async function releaseSubDealerSession(rawKey) {
+  const sessionKey = normalizeSessionKey(rawKey);
+  if (!sessionKey || sessionKey === 'main') return;
+  if (supabaseClient) {
+    try {
+      const { data: runningLeads } = await supabaseClient
+        .from('reminder_leads')
+        .select('id')
+        .eq('status', 'running')
+        .or('line_code.eq.' + sessionKey + ',dealer_id.eq.' + sessionKey);
+      if (runningLeads && runningLeads.length > 0) {
+        console.log('[' + sessionKey + '] releaseSubDealerSession: other running leads exist, skipping auto-disconnect.');
+        return;
+      }
+    } catch (e) {
+      console.warn('[' + sessionKey + '] releaseSubDealerSession running leads check error:', e.message);
+    }
+  }
+  console.log('[' + sessionKey + '] Auto-disconnecting sub-dealer session to free server and generating fresh QR...');
+  const lease = sessionLeases.get(sessionKey);
+  if (lease && lease.timer) {
+    clearTimeout(lease.timer);
+  }
+  sessionLeases.delete(sessionKey);
+  await resetBaileysSession(sessionKey);
+}
+
 function getBaileysStatus(rawKey = 'main') {
-  const session = getSession(rawKey, false);
+  const sessionKey = normalizeSessionKey(rawKey);
+  const session = getSession(sessionKey, false);
+  const lease = sessionLeases.get(sessionKey);
+  const leaseRemainingMs = (sessionKey === 'main' || !lease || lease.leadActive) ? null : Math.max(0, lease.expiresAt - Date.now());
   return {
-    session: normalizeSessionKey(rawKey),
+    session: sessionKey,
     connected: session ? session.isConnected : false,
     phoneNumber: session ? session.userPhoneNumber : null,
     rateLimitReached: false,
-    queuedCount: session ? session.messageQueue.length : 0
+    queuedCount: session ? session.messageQueue.length : 0,
+    leaseRemainingMs
   };
 }
 
@@ -542,4 +608,7 @@ module.exports = {
   registerMessageLogCallback,
   normalizePakistaniPhone,
   normalizeSessionKey,
+  initBaileysClientDb,
+  markLeadStarted,
+  releaseSubDealerSession,
 };

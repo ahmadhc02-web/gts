@@ -7,7 +7,7 @@ const MyPCTab = lazyWithRetry(() => import('./MyPCTab'));
 const BillingTab = lazyWithRetry(() => import('./BillingTab'));
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
+import { ChevronRight, ArrowLeft, Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle } from 'lucide-react';
 import { Complaint, ComplaintStatus, UserProfile, ComplaintPriority, ComplaintCategory, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintList from './ComplaintList';
 import DealerDataViewer from './DealerDataViewer';
@@ -246,6 +246,26 @@ export default function AdminPanel({
   const [isUpdating, setIsUpdating] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
   const [selectedDealerForSubAccounts, setSelectedDealerForSubAccounts] = useState<UserProfile | null>(null);
+  const [selectedSubAccount, setSelectedSubAccount] = useState<any>(null);
+  const [subAccountsSearchQuery, setSubAccountsSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!selectedDealerForSubAccounts) {
+      setSelectedSubAccount(null);
+      setSubAccountsSearchQuery('');
+    }
+  }, [selectedDealerForSubAccounts]);
+
+  useEffect(() => {
+    if (!selectedDealerForSubAccounts) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedDealerForSubAccounts(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedDealerForSubAccounts]);
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -6022,56 +6042,171 @@ export default function AdminPanel({
           </div>
         )}
 
-        {selectedDealerForSubAccounts && (
-          <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedDealerForSubAccounts(null)}
-              className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-2xl bg-[var(--neu-surface)] rounded-3xl shadow-2xl border border-[var(--neu-border)] overflow-hidden flex flex-col max-h-[80vh]"
-            >
-              <div className="p-6 border-b border-[var(--neu-border)] flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                    {selectedDealerForSubAccounts.companyName || selectedDealerForSubAccounts.fullName} Sub Accounts
-                  </h3>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                    VLAN: {selectedDealerForSubAccounts.lineCode || 'N/A'} | Total: {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').length}
-                  </p>
-                </div>
-                <button onClick={() => setSelectedDealerForSubAccounts(null)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-all">
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').length === 0 ? (
-                  <div className="text-center py-12 text-slate-400 text-xs font-bold uppercase tracking-widest">
-                    No sub-accounts found.
+        <AnimatePresence>
+          {selectedDealerForSubAccounts && (
+            <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedDealerForSubAccounts(null)}
+                className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="relative w-full max-w-2xl bg-[var(--neu-surface)] rounded-3xl shadow-2xl border border-[var(--neu-border)] overflow-hidden flex flex-col max-h-[80vh]"
+              >
+                <div className="p-6 border-b border-[var(--neu-border)] flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                      {selectedDealerForSubAccounts.companyName || selectedDealerForSubAccounts.fullName} Sub Accounts
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                      VLAN: {selectedDealerForSubAccounts.lineCode || 'N/A'} | Total: {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').length}
+                    </p>
                   </div>
-                ) : (
-                  users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').map(sub => (
-                    <div key={sub.uid} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)] flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-black text-slate-900 dark:text-white">{sub.fullName || sub.username}</p>
-                        <p className="text-[10px] text-slate-500 uppercase tracking-widest">@{sub.username} • {sub.role}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] text-slate-400">Created: {new Date(sub.createdAt).toLocaleDateString()}</p>
+                  <button onClick={() => setSelectedDealerForSubAccounts(null)} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-all">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                  {selectedSubAccount ? (
+                    <div className="space-y-6">
+                      <button
+                        onClick={() => setSelectedSubAccount(null)}
+                        className="flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                      >
+                        <ArrowLeft size={16} /> Back to Sub-Accounts List
+                      </button>
+                      
+                      <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)] space-y-4">
+                        <div className="flex items-center justify-between border-b border-[var(--neu-border)] pb-4">
+                          <div>
+                            <h4 className="text-base font-black text-slate-900 dark:text-white">
+                              {selectedSubAccount.fullName || selectedSubAccount.username}
+                            </h4>
+                            <p className="text-xs font-mono text-slate-500">@{selectedSubAccount.username}</p>
+                          </div>
+                          <span className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60">
+                            {selectedSubAccount.status || 'Active'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Full Name</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{selectedSubAccount.fullName || 'N/A'}</span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Username</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">@{selectedSubAccount.username}</span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Role</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 uppercase">{selectedSubAccount.role || 'N/A'}</span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Status</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">{selectedSubAccount.status || 'Active'}</span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Created Date</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {selectedSubAccount.createdAt ? new Date(selectedSubAccount.createdAt).toLocaleString() : 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Last Active</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {selectedSubAccount.lastActive ? new Date(selectedSubAccount.lastActive).toLocaleString() : 'Never'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Created By</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {selectedSubAccount.createdBy === 'system' ? 'System' : (selectedSubAccount.createdByName || selectedSubAccount.createdBy || 'System')}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Line Code</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">
+                              {selectedSubAccount.lineCode || selectedDealerForSubAccounts.lineCode || 'N/A'}
+                            </span>
+                          </div>
+                          <div className="col-span-2">
+                            <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Dealer</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              {selectedDealerForSubAccounts.companyName || selectedDealerForSubAccounts.fullName || 'N/A'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-            </motion.div>
-          </div>
-        )}
+                  ) : (
+                    <>
+                      <div className="relative">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                          type="text"
+                          value={subAccountsSearchQuery}
+                          onChange={(e) => setSubAccountsSearchQuery(e.target.value)}
+                          placeholder="Search by username or full name..."
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)] text-xs font-bold text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        />
+                      </div>
+
+                      {users.filter(u => u.dealerId === selectedDealerForSubAccounts.uid && u.role !== 'dealer').length === 0 ? (
+                        <div className="text-center py-12 text-slate-400 text-xs font-bold uppercase tracking-widest">
+                          No sub-accounts found.
+                        </div>
+                      ) : users.filter(u => {
+                          if (u.dealerId !== selectedDealerForSubAccounts.uid || u.role === 'dealer') return false;
+                          const q = subAccountsSearchQuery.toLowerCase().trim();
+                          if (!q) return true;
+                          return (u.username || '').toLowerCase().includes(q) || (u.fullName || '').toLowerCase().includes(q);
+                        }).length === 0 ? (
+                        <div className="text-center py-12 text-slate-400 text-xs font-bold uppercase tracking-widest">
+                          No sub-accounts found.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {users.filter(u => {
+                            if (u.dealerId !== selectedDealerForSubAccounts.uid || u.role === 'dealer') return false;
+                            const q = subAccountsSearchQuery.toLowerCase().trim();
+                            if (!q) return true;
+                            return (u.username || '').toLowerCase().includes(q) || (u.fullName || '').toLowerCase().includes(q);
+                          }).map(sub => (
+                            <div
+                              key={sub.uid}
+                              onClick={() => setSelectedSubAccount(sub)}
+                              className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-[var(--neu-border)] flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-all group"
+                            >
+                              <div>
+                                <p className="text-sm font-black text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                  {sub.fullName || sub.username}
+                                </p>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-widest">@{sub.username} • {sub.role}</p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="text-right">
+                                  <p className="text-[10px] text-slate-400">Created: {new Date(sub.createdAt).toLocaleDateString()}</p>
+                                </div>
+                                <ChevronRight size={16} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {activeTab === 'config' && (currentUser.role === 'super_admin' || currentUser.role === 'admin' || currentUser.role === 'dealer') && (
           <MyPCTab {...stateProps} initialOpenedFile="system_config" />

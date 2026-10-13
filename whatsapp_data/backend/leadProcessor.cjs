@@ -1,4 +1,4 @@
-const { sendMessage, normalizePakistaniPhone } = require('./baileysClient.cjs');
+const { sendMessage, normalizePakistaniPhone, releaseSubDealerSession } = require('./baileysClient.cjs');
 
 let supabase = null;
 const activeLeadIds = new Set();
@@ -76,6 +76,7 @@ async function processReminderLead(leadId) {
       console.error(`[Lead Processor] Lead ${leadId} not found in database:`, leadErr?.message);
       return;
     }
+    leadSessionKey = lead.line_code || lead.dealer_id || 'main';
 
     if (lead.status === 'completed') {
       console.log(`[Lead Processor] Lead ${leadId} is already completed.`);
@@ -97,7 +98,8 @@ async function processReminderLead(leadId) {
 
     let currentSuccessCount = Number(alreadySentCount !== null && alreadySentCount !== undefined ? alreadySentCount : (lead.success_count || 0));
     let currentFailedCount = Number(alreadyFailedCount !== null && alreadyFailedCount !== undefined ? alreadyFailedCount : (lead.failed_count || 0));
-    const waitSeconds = Math.max(1, Number(lead.wait_seconds || 5));
+    let leadSessionKey = lead.line_code || lead.dealer_id || 'main';
+    const waitSeconds = Math.min(300, Math.max(60, Number(lead.wait_seconds || 60)));
 
     // 2. Transition pending -> running
     const { error: runErr } = await supabase
@@ -336,6 +338,11 @@ async function processReminderLead(leadId) {
   } finally {
     activeLeadIds.delete(leadId);
     cancelledLeadIds.delete(leadId);
+    try {
+      if (typeof leadSessionKey !== 'undefined' && leadSessionKey && leadSessionKey !== 'main') {
+        releaseSubDealerSession(leadSessionKey).catch(err => console.error('Release session error in finally:', err));
+      }
+    } catch (e) {}
   }
 }
 

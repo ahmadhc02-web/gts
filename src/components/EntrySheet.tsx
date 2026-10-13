@@ -199,6 +199,14 @@ export default function EntrySheet({
     });
     return map;
   }, [ledgerHistory]);
+
+  const foldersFreshRef = useRef(false);
+  const folderMonthsFreshRef = useRef(false);
+  const [isFoldersFresh, setIsFoldersFresh] = useState(false);
+  const [isFolderMonthsFresh, setIsFolderMonthsFresh] = useState(false);
+  const isDataFresh = Boolean(pocketbaseService.isBillingFresh && isFoldersFresh && isFolderMonthsFresh);
+  const openedUpdatedAtBySheetIdRef = useRef<Map<string, number | string>>(new Map());
+
   const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
   const [folderToDeleteId, setFolderToDeleteId] = useState<string | null>(null);
   const [editFolderName, setEditFolderName] = useState<string>('');
@@ -257,6 +265,11 @@ export default function EntrySheet({
 
   // Scoped folders loading on user change
   useEffect(() => {
+    foldersFreshRef.current = false;
+    folderMonthsFreshRef.current = false;
+    setIsFoldersFresh(false);
+    setIsFolderMonthsFresh(false);
+
     if (!isOpen) return;
 
     // Expose migration to window
@@ -273,6 +286,8 @@ export default function EntrySheet({
     
     // Subscribe to Folders
     const unsubFolders = pocketbaseService.subscribeLedgerFolders((data) => {
+      foldersFreshRef.current = true;
+      setIsFoldersFresh(true);
       if (Array.isArray(data)) {
         setFolders(prev => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
         try {
@@ -284,6 +299,8 @@ export default function EntrySheet({
 
     // Subscribe to Folder Month Map
     const unsubFolderMonths = pocketbaseService.subscribeFolderMonthMap((data) => {
+      folderMonthsFreshRef.current = true;
+      setIsFolderMonthsFresh(true);
       let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
       let didMerge = false;
 
@@ -319,6 +336,10 @@ export default function EntrySheet({
     }, scopeId);
 
     return () => {
+      foldersFreshRef.current = false;
+      folderMonthsFreshRef.current = false;
+      setIsFoldersFresh(false);
+      setIsFolderMonthsFresh(false);
       unsubFolders();
       unsubFolderMonths();
     };
@@ -1497,8 +1518,8 @@ export default function EntrySheet({
   };
 
   const handleSaveSheet = async () => {
-    if (!pocketbaseService.isBillingFresh) {
-      toast.error("Syncing In Progress", { description: "Latest data is still syncing, please wait a few seconds" });
+    if (!pocketbaseService.isBillingFresh || !foldersFreshRef.current || !folderMonthsFreshRef.current) {
+      toast.error("Latest data is still syncing, please wait a few seconds");
       return;
     }
     if (isLocked) {
@@ -1637,6 +1658,7 @@ export default function EntrySheet({
           submittedLabel: s.submittedLabel || 'SUBMITTED',
           footnoteLeft: s.footnoteLeft || 'Enterprise Ledger Dispatch System',
           footnoteRight: s.footnoteRight || 'GENv2.5 // A4 PRINTABLE',
+          openedUpdatedAt: s.openedUpdatedAt || (finalSheetId ? openedUpdatedAtBySheetIdRef.current.get(finalSheetId) : undefined) || s.updatedAt,
           updatedAt: Date.now()
         };
 
@@ -1693,6 +1715,7 @@ export default function EntrySheet({
       }
 
       const accumulatedBillingMonths: Record<string, any[]> = {};
+      const accumulatedBillingBaseRows: Record<string, any[]> = {};
       const accumulatedChangedIndicesMap: Record<string, Set<number>> = {};
       const allSyncedUsersSummary: string[] = [];
       let totalUpdatedBillingCount = 0;
@@ -2121,6 +2144,7 @@ export default function EntrySheet({
           });
 
           accumulatedBillingMonths[targetMonthId] = baseRecalculatedRows;
+          accumulatedBillingBaseRows[targetMonthId] = targetMonthRows;
         } catch (billingErr: any) {
           console.error("Failed to auto-update billing status:", billingErr);
         }
@@ -2174,55 +2198,16 @@ export default function EntrySheet({
         }
       }
 
-      setSheets(prev => {
-        return prev.map((sh, idx) => {
-          const matchingPayload = sheetPayloads[idx];
-          if (matchingPayload) {
-            const savedLocal = savedSheetsToLocal.find(s => s.id === matchingPayload.id);
-            return {
-              ...sh,
-              id: matchingPayload.id,
-              folderId: savedLocal?.folderId || matchingPayload.folderId || sh.folderId || '',
-              table1Rows: matchingPayload.table1Rows,
-              table2Rows: matchingPayload.table2Rows,
-            };
-          }
-          return sh;
-        });
-      });
-
       const activeSavedPayload = sheetPayloads[activeSheetIdx];
       if (activeSavedPayload) {
         setTable1Rows(activeSavedPayload.table1Rows);
         setTable2Rows(activeSavedPayload.table2Rows);
       }
 
-      // Update originalActiveRows to all saved rows across all sheets/pages in current session
-      const activeRowsNow: any[] = [];
-      sheetPayloads.forEach(sp => {
-        const rows = (Array.isArray(sp.table1Rows) ? sp.table1Rows : []).filter((r: any) =>
-          (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status || String(r.amount || '').trim().toUpperCase() === 'PAID'
-        ).map((r: any) => ({
-          name: (r.name || '').trim(),
-          amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
-          comments: (r.comments || '').trim(),
-          cId: r.cId || '',
-          clientId: r.clientId || '',
-          clientUsername: r.clientUsername || '',
-          status: r.status || ''
-        }));
-        if (sp.id) {
-          originalRowsBySheetIdRef.current.set(sp.id, rows);
-        }
-        rows.forEach(r => activeRowsNow.push(r));
-      });
-      setOriginalActiveRows(activeRowsNow);
-      setOriginalActiveSheetId(activeSavedPayload?.id || (sheetPayloads[0]?.id) || null);
-
       // 6. PARALLEL FAST DATABASE SYNC (Save A4 sheets and connected recovery rows concurrently)
       try {
+        const tStartFastSave = performance.now();
         const dbTasks: Promise<any>[] = [];
-
         // A. Batch save A4 sheets to database
         if (sheetPayloads.length > 0) {
           dbTasks.push(pocketbaseService.saveLedgerSheetsBatch(sheetPayloads, tenantId));
@@ -2233,7 +2218,7 @@ export default function EntrySheet({
           const changedIndices = accumulatedChangedIndicesMap[monthId] 
             ? Array.from(accumulatedChangedIndicesMap[monthId]) 
             : undefined;
-
+          const freshBaseRows = accumulatedBillingBaseRows[monthId];
           dbTasks.push(
             pocketbaseService.saveBillingMonth(
               monthId, 
@@ -2243,7 +2228,8 @@ export default function EntrySheet({
               true,
               changedIndices,
               undefined,
-              true
+              true,
+              freshBaseRows
             )
           );
         }
@@ -2261,6 +2247,56 @@ export default function EntrySheet({
         };
 
         await withTimeout(Promise.all(dbTasks), 25000, 'Save is taking too long \u2014');
+        const elapsedFastSave = Math.round(performance.now() - tStartFastSave);
+        console.log(`[Save Timing] Fast save (A4 sheets + billing rows sync) completed in ${elapsedFastSave}ms`);
+
+        // Show success toast immediately as soon as step 2 finishes
+        const primaryOfficerName = currentSyncSheets[0]?.recOfficer || recOfficer || 'Recovery Officer';
+        toast.success("📄 A4 Size Sheet Saved Successfully!", {
+          description: `Sheet for "${primaryOfficerName}" has been securely saved.`,
+          duration: 4000
+        });
+
+        // Update removal baseline and remembered versions ONLY AFTER the database save has succeeded
+        const activeRowsNow: any[] = [];
+        sheetPayloads.forEach(sp => {
+          const rows = (Array.isArray(sp.table1Rows) ? sp.table1Rows : []).filter((r: any) =>
+            (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status || String(r.amount || '').trim().toUpperCase() === 'PAID'
+          ).map((r: any) => ({
+            name: (r.name || '').trim(),
+            amount: isNaN(Number(r.amount)) ? r.amount : (Number(r.amount) || 0),
+            comments: (r.comments || '').trim(),
+            cId: r.cId || '',
+            clientId: r.clientId || '',
+            clientUsername: r.clientUsername || '',
+            status: r.status || ''
+          }));
+          if (sp.id) {
+            originalRowsBySheetIdRef.current.set(sp.id, rows);
+            openedUpdatedAtBySheetIdRef.current.set(sp.id, sp.updatedAt);
+          }
+          rows.forEach(r => activeRowsNow.push(r));
+        });
+        setOriginalActiveRows(activeRowsNow);
+        setOriginalActiveSheetId(activeSavedPayload?.id || (sheetPayloads[0]?.id) || null);
+        setSheets(prev => {
+          return prev.map((sh, idx) => {
+            const matchingPayload = sheetPayloads[idx];
+            if (matchingPayload) {
+              const savedLocal = savedSheetsToLocal.find(s => s.id === matchingPayload.id);
+              return {
+                ...sh,
+                id: matchingPayload.id,
+                folderId: savedLocal?.folderId || matchingPayload.folderId || sh.folderId || '',
+                table1Rows: matchingPayload.table1Rows,
+                table2Rows: matchingPayload.table2Rows,
+                openedUpdatedAt: matchingPayload.updatedAt,
+                updatedAt: matchingPayload.updatedAt,
+              };
+            }
+            return sh;
+          });
+        });
       } catch (dbError: any) {
         console.error("DB persistence failed:", dbError);
         const errMsg = dbError?.message || "Failed to save to database. Please check your network and try again.";
@@ -2270,13 +2306,6 @@ export default function EntrySheet({
         });
         throw new Error(errMsg);
       }
-
-      // 5. SUCCESS NOTIFICATIONS
-      const primaryOfficerName = currentSyncSheets[0]?.recOfficer || recOfficer || 'Recovery Officer';
-      toast.success("📄 A4 Size Sheet Saved Successfully!", {
-        description: `Sheet for "${primaryOfficerName}" has been securely saved.`,
-        duration: 4000
-      });
 
       if (allSyncedUsersSummary.length > 0) {
         const removedEntries = allSyncedUsersSummary.filter(s => s.startsWith("set back to UNPAID:"));
@@ -2397,6 +2426,8 @@ export default function EntrySheet({
       t2Headers: sheet.t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH'],
       t1TotalLabel: sheet.t1TotalLabel || 'TOTAL',
       t2TotalLabel: sheet.t2TotalLabel || 'TOTAL',
+      openedUpdatedAt: sheet.updatedAt || sheet.updated_at || undefined,
+      updatedAt: sheet.updatedAt || sheet.updated_at || undefined
     };
     
     const initialActive = reT1.filter((r: any) => (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status || String(r.amount || '').trim().toUpperCase() === 'PAID');
@@ -2414,6 +2445,10 @@ export default function EntrySheet({
     setOriginalActiveSheetId(targetSheetId);
     if (targetSheetId) {
       originalRowsBySheetIdRef.current.set(targetSheetId, mappedInitialActive);
+      const sheetOpenedUpdatedAt = sheet.updatedAt || sheet.updated_at;
+      if (sheetOpenedUpdatedAt) {
+        openedUpdatedAtBySheetIdRef.current.set(targetSheetId, sheetOpenedUpdatedAt);
+      }
     }
     isSwappingRef.current = true;
     setSheets([restoredSheet]);
@@ -3999,11 +4034,19 @@ export default function EntrySheet({
               <span>History</span>
             </button>
 
+            {/* Syncing status label if not fresh */}
+            {!isDataFresh && (
+              <span className="text-[10px] text-amber-500 font-bold flex items-center gap-1 animate-pulse px-1" title="Syncing fresh data from cloud database...">
+                <RefreshCw size={10} className="animate-spin" />
+                Syncing latest data...
+              </span>
+            )}
+
             {/* Save active sheet */}
             <button
               onClick={handleSaveSheet}
-              disabled={isSavingSheet || !pocketbaseService.isBillingFresh}
-              className={`p-2 rounded-xl text-white text-[9px] font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-1 border-none ${isSavingSheet || !pocketbaseService.isBillingFresh ? 'bg-emerald-600/50 cursor-not-allowed opacity-60' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer active:scale-95'}`}
+              disabled={isSavingSheet || !isDataFresh}
+              className={`p-2 rounded-xl text-white text-[9px] font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-1 border-none ${isSavingSheet || !isDataFresh ? 'bg-emerald-600/50 cursor-not-allowed opacity-60' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer active:scale-95'}`}
               title="Commit active sheet to historical database logs"
             >
               {isSavingSheet ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}

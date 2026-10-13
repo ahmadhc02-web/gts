@@ -267,6 +267,7 @@ export const mappings: Record<string, Record<string, string>> = {
     dealerId: 'dealer_id',
     lineCode: 'line_code',
     createdAt: 'created_at',
+    updatedAt: 'updated_at',
     folderId: 'folder_id',
     sort: 'sort',
     sortFolder: 'sort',
@@ -394,6 +395,11 @@ export function toDb(table: string, obj: any): any {
     // Save active entries inside the sheet_subtext column
     const activeRows = t1Arr.filter((r: any) => (r.cId || '').trim() || (r.name || '').trim() || (Number(r.amount) || 0) > 0);
     result['sheet_subtext'] = JSON.stringify(activeRows);
+
+    if (obj.updatedAt || obj.updated_at) {
+      const uVal = obj.updatedAt || obj.updated_at;
+      result['updated_at'] = typeof uVal === 'string' && uVal.includes('T') ? uVal : new Date(uVal).toISOString();
+    }
   }
 
   if (table === 'branding_config') {
@@ -549,6 +555,11 @@ export function fromDb(table: string, obj: any): any {
     result.table2Rows = Array.isArray(t2) ? t2 : [];
 
     result.sheetSubtext = obj.sheet_subtext || '';
+
+    if (obj.updated_at) {
+      const parsedTime = typeof obj.updated_at === 'number' ? obj.updated_at : new Date(obj.updated_at).getTime();
+      result.updatedAt = !isNaN(parsedTime) ? parsedTime : obj.updated_at;
+    }
   }
   return result;
 }
@@ -2178,10 +2189,86 @@ export const supabaseService = {
   },
 
   _saveBillingMonthTimers: {} as Record<string, any>,
-  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: Set<number>, excludedClientKeys?: string[] }>,
+  _saveBillingMonthLatestRows: {} as Record<string, { rows: any[], updatedBy: string, changedIndices?: Set<number>, excludedClientKeys?: string[], baseRows?: any[] }>,
   _billingMonthSaveCounter: {} as Record<string, number>,
+  _backgroundBlobTimers: {} as Record<string, any>,
+  _backgroundBlobPayloads: {} as Record<string, any>,
+  _backgroundBlobLocks: {} as Record<string, Promise<void>>,
+  _backgroundBlobListenerAdded: false,
 
-  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>, excludedClientKeys?: string[], freshBase = false) {
+  scheduleBackgroundBillingMonthBlob(monthId: string, dealerId: string, payload: any) {
+    const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
+    if (!this._backgroundBlobPayloads) this._backgroundBlobPayloads = {};
+    if (!this._backgroundBlobTimers) this._backgroundBlobTimers = {};
+    if (!this._backgroundBlobLocks) this._backgroundBlobLocks = {};
+
+    // Last write wins for this month key
+    this._backgroundBlobPayloads[syncKey] = payload;
+
+    if (typeof window !== 'undefined' && !this._backgroundBlobListenerAdded) {
+      this._backgroundBlobListenerAdded = true;
+      const flushAll = () => {
+        if (!this._backgroundBlobPayloads) return;
+        Object.keys(this._backgroundBlobPayloads).forEach(key => {
+          this.flushBackgroundBillingMonthBlob(key);
+        });
+      };
+      window.addEventListener('beforeunload', flushAll);
+      window.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+          flushAll();
+        }
+      });
+    }
+
+    if (this._backgroundBlobTimers[syncKey]) {
+      clearTimeout(this._backgroundBlobTimers[syncKey]);
+    }
+
+    this._backgroundBlobTimers[syncKey] = setTimeout(() => {
+      delete this._backgroundBlobTimers[syncKey];
+      this.flushBackgroundBillingMonthBlob(syncKey);
+    }, 2000);
+  },
+
+  flushBackgroundBillingMonthBlob(syncKey: string): Promise<void> {
+    if (this._backgroundBlobTimers && this._backgroundBlobTimers[syncKey]) {
+      clearTimeout(this._backgroundBlobTimers[syncKey]);
+      delete this._backgroundBlobTimers[syncKey];
+    }
+
+    const payload = this._backgroundBlobPayloads ? this._backgroundBlobPayloads[syncKey] : null;
+    if (!payload) return Promise.resolve();
+    delete this._backgroundBlobPayloads[syncKey];
+
+    // Keep the per-month execution lock so two writes of the same month never overlap
+    if (!this._backgroundBlobLocks) this._backgroundBlobLocks = {};
+    const previousLock = this._backgroundBlobLocks[syncKey] || Promise.resolve();
+
+    const currentRun = previousLock.then(async () => {
+      const tStart = performance.now();
+      try {
+        await withTimeout(
+          upsertSupabase('billing_months', 'month_id', payload.month_id, payload, true),
+          25000,
+          'Background billing month blob upsert'
+        );
+        const elapsed = Math.round(performance.now() - tStart);
+        console.log(`[Save Timing] Background blob upsert for month "${payload.month_id}" completed in ${elapsed}ms`);
+      } catch (err: any) {
+        console.error(`[Background Blob] Failed to upsert billing month blob for ${payload.month_id}:`, err);
+        toast.error("Background month archive sync failed", {
+          description: `Recovery rows are saved, but the full monthly backup failed: ${err?.message || 'Database error'}.`,
+          duration: 6000
+        });
+      }
+    });
+
+    this._backgroundBlobLocks[syncKey] = currentRun.catch(() => {});
+    return currentRun;
+  },
+
+  async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>, excludedClientKeys?: string[], freshBase = false, baseRows?: any[]) {
     if (!this.isBillingFresh) {
       throw new Error("Latest data is still syncing, please wait a few seconds");
     }
@@ -2218,11 +2305,11 @@ export const supabaseService = {
       }
     }
 
-    this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices: mergedChangedIndices, excludedClientKeys: finalExcludedKeys };
+    this._saveBillingMonthLatestRows[key] = { rows, updatedBy, changedIndices: mergedChangedIndices, excludedClientKeys: finalExcludedKeys, baseRows };
     const currentCounter = (this._billingMonthSaveCounter[key] || 0) + 1;
     this._billingMonthSaveCounter[key] = currentCounter;
 
-    // Synchronously update globalTableCaches and localStorage for instant UI updates
+    // Synchronously update globalTableCaches and defer localStorage for instant UI updates
     const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
     if (!globalTableCaches[exactKey]) globalTableCaches[exactKey] = [];
     const idx = globalTableCaches[exactKey].findIndex((m: any) => m.id === monthId || m.month_id === monthId);
@@ -2242,10 +2329,12 @@ export const supabaseService = {
       globalTableCaches[exactKey].unshift(updatedObj);
     }
 
-    try {
-      localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(globalTableCaches[exactKey]));
-      localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
-    } catch (e) {}
+    setTimeout(() => {
+      try {
+        localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(globalTableCaches[exactKey]));
+        localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
+      } catch (e) {}
+    }, 0);
     
     if (!this._saveBillingMonthTimers) this._saveBillingMonthTimers = {};
 
@@ -2257,7 +2346,7 @@ export const supabaseService = {
       }
       const latest = this._saveBillingMonthLatestRows[key];
       if (latest) {
-        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys, freshBase);
+        await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys, freshBase, latest.baseRows || baseRows);
         delete this._saveBillingMonthLatestRows[key];
       }
       return;
@@ -2273,7 +2362,7 @@ export const supabaseService = {
         try {
           const latest = this._saveBillingMonthLatestRows[key];
           if (latest) {
-            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys, freshBase);
+            await this._executeSaveBillingMonth(monthId, latest.rows, latest.updatedBy, dealerId, latest.changedIndices, currentCounter, latest.excludedClientKeys, freshBase, latest.baseRows || baseRows);
             delete this._saveBillingMonthLatestRows[key];
           }
           resolve();
@@ -2291,21 +2380,21 @@ export const supabaseService = {
   _billingMonthExecutionLocks: {} as Record<string, Promise<void>>,
   _syncingMonths: new Set<string>(),
 
-  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, executeCounter?: number, excludedClientKeys?: string[], skipDbFetch?: boolean) {
+  async _executeSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, executeCounter?: number, excludedClientKeys?: string[], skipDbFetch?: boolean, baseRows?: any[]) {
     const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
     if (!this._billingMonthExecutionLocks) this._billingMonthExecutionLocks = {};
     
     const previous = this._billingMonthExecutionLocks[syncKey] || Promise.resolve();
     
     const run = previous.then(() => {
-      return this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices, excludedClientKeys, skipDbFetch);
+      return this._doExecuteSaveBillingMonth(monthId, rows, updatedBy, dealerId, changedIndices, excludedClientKeys, skipDbFetch, baseRows);
     });
     
     this._billingMonthExecutionLocks[syncKey] = run.catch(() => {});
     return run;
   },
 
-  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, excludedClientKeys?: string[], skipDbFetch?: boolean) {
+  async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, excludedClientKeys?: string[], skipDbFetch?: boolean, baseRows?: any[]) {
     const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
     if (!this._syncingMonths) this._syncingMonths = new Set<string>();
     this._syncingMonths.add(syncKey);
@@ -2319,53 +2408,63 @@ export const supabaseService = {
       }).length;
     };
 
-    // Fetch existing month data from database before saving to validate data integrity
-    let dbTotal = 0;
-    let dbPaidCount = 0;
-    let existingRowsParsed: any[] = [];
-    if (!skipDbFetch) {
-      try {
-        const { data: dbData } = await supabase
-          .from('billing_months')
-          .select('rows_data')
-          .eq('month_id', monthId)
-          .eq('dealer_id', dealerId)
-          .maybeSingle();
-
-        if (dbData && dbData.rows_data) {
-          let existingRows = dbData.rows_data;
-          if (typeof existingRows === 'string') {
-            try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
-          }
-          if (existingRows && typeof existingRows === 'object' && !Array.isArray(existingRows) && 'rows' in existingRows) {
-            if (Array.isArray(existingRows.rows)) {
-              existingRows = existingRows.rows;
-            }
-          }
-          if (Array.isArray(existingRows)) {
-            existingRowsParsed = existingRows;
-            dbTotal = existingRows.length;
-            dbPaidCount = countRecordedPaymentRows(existingRows);
-          }
-        }
-      } catch (checkErr) {
-        console.warn("Could not fetch previous month data for validation check:", checkErr);
-      }
-    } else {
-      // If skipping DB fetch, assume previous data is what's passed in rows or exists in cache, but for stale-proof logic, this is only used if changedIndices is empty. If changedIndices is provided, it needs DB rows.
-      // This is safe if the caller guarantees data integrity.
-      dbTotal = rows.length;
-      dbPaidCount = countRecordedPaymentRows(rows);
-    }
-
-    // STALE-PROOF SAVES: when changedIndices is provided and non-empty,
-    // build rows to save from the DATABASE rows and replace ONLY the changed rows
     const hasChangedIndices = Boolean(
       changedIndices &&
       ((Array.isArray(changedIndices) && changedIndices.length > 0) ||
        (changedIndices instanceof Set && changedIndices.size > 0))
     );
 
+    // Fetch existing month data from database before saving to validate data integrity
+    let dbTotal = 0;
+    let dbPaidCount = 0;
+    let existingRowsParsed: any[] = [];
+    if (!skipDbFetch) {
+      if (baseRows && Array.isArray(baseRows) && baseRows.length > 0 && hasChangedIndices) {
+        existingRowsParsed = baseRows;
+        dbTotal = baseRows.length;
+        dbPaidCount = countRecordedPaymentRows(baseRows);
+      } else {
+        try {
+          const { data: dbData } = await supabase
+            .from('billing_months')
+            .select('rows_data')
+            .eq('month_id', monthId)
+            .eq('dealer_id', dealerId)
+            .maybeSingle();
+
+          if (dbData && dbData.rows_data) {
+            let existingRows = dbData.rows_data;
+            if (typeof existingRows === 'string') {
+              try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
+            }
+            if (existingRows && typeof existingRows === 'object' && !Array.isArray(existingRows) && 'rows' in existingRows) {
+              if (Array.isArray(existingRows.rows)) {
+                existingRows = existingRows.rows;
+              }
+            }
+            if (Array.isArray(existingRows)) {
+              existingRowsParsed = existingRows;
+              dbTotal = existingRows.length;
+              dbPaidCount = countRecordedPaymentRows(existingRows);
+            }
+          }
+        } catch (checkErr) {
+          console.warn("Could not fetch previous month data for validation check:", checkErr);
+        }
+      }
+    } else {
+      if (baseRows && Array.isArray(baseRows) && baseRows.length > 0 && hasChangedIndices) {
+        existingRowsParsed = baseRows;
+        dbTotal = baseRows.length;
+        dbPaidCount = countRecordedPaymentRows(baseRows);
+      } else {
+        dbTotal = rows.length;
+        dbPaidCount = countRecordedPaymentRows(rows);
+      }
+    }
+
+    // STALE-PROOF SAVES: when changedIndices is provided and non-empty,
+    // build rows to save from the DATABASE rows and replace ONLY the changed rows
     if (hasChangedIndices && existingRowsParsed.length > 0) {
       const changedIndicesSet = changedIndices instanceof Set ? changedIndices : new Set(changedIndices);
       const changedIncomingRows: any[] = [];
@@ -2481,11 +2580,19 @@ export const supabaseService = {
         updated_by: updatedBy
       };
 
-      await withTimeout(upsertSupabase('billing_months', 'month_id', monthId, payload, true), 20000, 'Saving billing month');
+      // 1. Sync billing rows (awaited)
+      const tSyncStart = performance.now();
+      await withTimeout(this.syncBillingRows(monthId, dealerId, rows, changedIndices), 20000, 'Syncing billing rows');
+      const syncDuration = Math.round(performance.now() - tSyncStart);
+      console.log(`[Save Timing] syncBillingRows for month "${monthId}" took ${syncDuration}ms`);
 
+      // 2. Schedule full billing_months blob upsert in background (debounced ~2s per month key, last write wins)
+      this.scheduleBackgroundBillingMonthBlob(monthId, dealerId, payload);
+
+      // 3. Write localStorage billing cache once per save deferred with setTimeout(0)
+      const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
+      const cacheKey = `gts_cache_v3_${exactKey}`;
       try {
-        const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
-        const cacheKey = `gts_cache_v3_${exactKey}`;
         const rawCache = localStorage.getItem(cacheKey);
         let list: any[] = rawCache ? JSON.parse(rawCache) : (globalTableCaches[exactKey] ? [...globalTableCaches[exactKey]] : []);
         const idx = list.findIndex(m => m.id === monthId || m.month_id === monthId);
@@ -2496,11 +2603,14 @@ export const supabaseService = {
           list.unshift(updatedObj);
         }
         globalTableCaches[exactKey] = list;
-        localStorage.setItem(cacheKey, JSON.stringify(list));
-        localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
-      } catch (e) {}
 
-      await withTimeout(this.syncBillingRows(monthId, dealerId, rows, changedIndices), 20000, 'Syncing billing rows');
+        setTimeout(() => {
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify(list));
+            localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
+          } catch (e) {}
+        }, 0);
+      } catch (e) {}
     } catch (e: any) {
       console.error("Failed to save billing month:", e);
       throw e;
@@ -4754,6 +4864,41 @@ export const supabaseService = {
   },
 
   saveLedgerSheet: async (sheet: any, tenantId: string = 'main') => {
+    if (!sheet) return;
+
+    // Optimistic concurrency check: before upserting a sheet that already exists in the database,
+    // read its current updated_at
+    if (sheet.id && supabase) {
+      try {
+        const { data: existingRow, error: checkError } = await supabase
+          .from('ledger_sheets')
+          .select('id, updated_at')
+          .eq('id', sheet.id)
+          .maybeSingle();
+
+        if (!checkError && existingRow && existingRow.updated_at) {
+          const openedAt = sheet.openedUpdatedAt || sheet.initialUpdatedAt;
+          if (openedAt) {
+            const dbTime = typeof existingRow.updated_at === 'number'
+              ? existingRow.updated_at
+              : new Date(existingRow.updated_at).getTime();
+            const clientTime = typeof openedAt === 'number'
+              ? openedAt
+              : new Date(openedAt).getTime();
+
+            if (!isNaN(dbTime) && !isNaN(clientTime) && dbTime > clientTime) {
+              throw new Error("This sheet has been updated elsewhere. Please refresh to load the latest version before saving.");
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err?.message?.includes("updated elsewhere")) {
+          throw err;
+        }
+        console.warn("Optimistic concurrency check query warning in saveLedgerSheet:", err);
+      }
+    }
+
     const sortValue = sheet.sort || sheet.sortFolder || sheet.folderName || '';
     let folderIdValue = sheet.folderId || '';
 
@@ -4776,26 +4921,23 @@ export const supabaseService = {
     const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId, lineCode: sheet.lineCode || activeLineCode || '' };
     const dbRow = toDb('ledger_sheets', itemObj);
 
-    // Update memory caches and notify subscribers immediately
+    // Update memory cache and notify subscribers immediately for the exact key
     const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
-    const lc = activeLineCode || 'nolc';
-    const syncKeys = [syncKey, `ledger_sheets_all_${lc}`, `ledger_sheets_main_${lc}`, `ledger_sheets__${lc}`];
-    syncKeys.forEach(sKey => {
-      if (!globalTableCaches[sKey]) globalTableCaches[sKey] = [];
-      const idx = globalTableCaches[sKey].findIndex(item => item.id === sheet.id);
-      if (idx !== -1) {
-        globalTableCaches[sKey][idx] = { ...globalTableCaches[sKey][idx], ...itemObj };
-      } else {
-        globalTableCaches[sKey].unshift(itemObj);
-      }
-      const subs = globalTableSubscribers[sKey];
-      if (subs) {
-        subs.forEach(cb => { try { cb(globalTableCaches[sKey]); } catch (e) {} });
-      }
-    });
+    if (!globalTableCaches[syncKey]) globalTableCaches[syncKey] = [];
+    const idx = globalTableCaches[syncKey].findIndex(item => item.id === sheet.id);
+    if (idx !== -1) {
+      globalTableCaches[syncKey][idx] = { ...globalTableCaches[syncKey][idx], ...itemObj };
+    } else {
+      globalTableCaches[syncKey].unshift(itemObj);
+    }
+    const subs = globalTableSubscribers[syncKey];
+    if (subs) {
+      subs.forEach(cb => { try { cb(globalTableCaches[syncKey]); } catch (e) {} });
+    }
 
     try {
       localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(globalTableCaches[syncKey] || []));
+      localStorage.setItem(`gts_cache_meta_${syncKey}`, String(Date.now()));
     } catch (e) {}
 
     await upsertSupabase('ledger_sheets', 'id', sheet.id, dbRow);
@@ -4804,23 +4946,72 @@ export const supabaseService = {
   saveLedgerSheetsBatch: async (sheets: any[], tenantId: string = 'main') => {
     if (!sheets || sheets.length === 0) return;
 
+    // Optimistic concurrency check: before upserting sheets that already exist in the database,
+    // read their current updated_at (one lightweight select of id, updated_at for all sheet ids in the batch)
+    const sheetIds = sheets.map(sh => sh.id).filter(Boolean);
+    if (supabase && sheetIds.length > 0) {
+      try {
+        const { data: existingRows, error: checkError } = await supabase
+          .from('ledger_sheets')
+          .select('id, updated_at')
+          .in('id', sheetIds);
+
+        if (!checkError && existingRows && existingRows.length > 0) {
+          for (const existing of existingRows) {
+            if (!existing.updated_at) continue;
+            const matchingSheet = sheets.find(sh => sh.id === existing.id);
+            if (!matchingSheet) continue;
+
+            const openedAt = matchingSheet.openedUpdatedAt || matchingSheet.initialUpdatedAt;
+            if (openedAt) {
+              const dbTime = typeof existing.updated_at === 'number'
+                ? existing.updated_at
+                : new Date(existing.updated_at).getTime();
+              const clientTime = typeof openedAt === 'number'
+                ? openedAt
+                : new Date(openedAt).getTime();
+
+              if (!isNaN(dbTime) && !isNaN(clientTime) && dbTime > clientTime) {
+                throw new Error("This sheet has been updated elsewhere. Please refresh to load the latest version before saving.");
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err?.message?.includes("updated elsewhere")) {
+          throw err;
+        }
+        console.warn("Optimistic concurrency check query warning in saveLedgerSheetsBatch:", err);
+      }
+    }
+
     const folderIds = Array.from(new Set(sheets.map(sh => sh.folderId).filter(Boolean)));
     const validFolderIds = new Set<string>();
-    if (folderIds.length > 0 && supabase) {
+
+    // Skip folder query when folderId is already in cached folders
+    const foldersCache = globalTableCaches[`ledger_folders_${tenantId}`] || globalTableCaches[`ledger_folders_all`] || [];
+    const missingFolderIds: string[] = [];
+    folderIds.forEach(fId => {
+      if (foldersCache.some((f: any) => f.id === fId)) {
+        validFolderIds.add(fId);
+      } else {
+        missingFolderIds.push(fId);
+      }
+    });
+
+    if (missingFolderIds.length > 0 && supabase) {
       try {
-        const { data: existingFolders } = await supabase.from('ledger_folders').select('id').in('id', folderIds);
+        const { data: existingFolders } = await supabase.from('ledger_folders').select('id').in('id', missingFolderIds);
         if (existingFolders) {
           existingFolders.forEach(f => validFolderIds.add(f.id));
         }
       } catch (e) {
-        const foldersCache = globalTableCaches[`ledger_folders_${tenantId}`] || globalTableCaches[`ledger_folders_all`] || [];
-        foldersCache.forEach((f: any) => {
-          if (folderIds.includes(f.id)) {
-            validFolderIds.add(f.id);
-          }
-        });
+        console.warn("Could not query missing folders:", e);
       }
     }
+
+    const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
+    if (!globalTableCaches[syncKey]) globalTableCaches[syncKey] = [];
 
     const dbRows = sheets.map(sheet => {
       const sortValue = sheet.sort || sheet.sortFolder || sheet.folderName || '';
@@ -4828,34 +5019,34 @@ export const supabaseService = {
       if (folderIdValue && !validFolderIds.has(folderIdValue)) {
         folderIdValue = '';
       }
+
       const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId, lineCode: sheet.lineCode || activeLineCode || '' };
 
-      const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
-      const lc = activeLineCode || 'nolc';
-    const syncKeys = [syncKey, `ledger_sheets_all_${lc}`, `ledger_sheets_main_${lc}`, `ledger_sheets__${lc}`];
-      syncKeys.forEach(sKey => {
-        if (!globalTableCaches[sKey]) globalTableCaches[sKey] = [];
-        const idx = globalTableCaches[sKey].findIndex(item => item.id === sheet.id);
-        if (idx !== -1) {
-          globalTableCaches[sKey][idx] = { ...globalTableCaches[sKey][idx], ...itemObj };
-        } else {
-          globalTableCaches[sKey].unshift(itemObj);
-        }
-        const subs = globalTableSubscribers[sKey];
-        if (subs) {
-          subs.forEach(cb => { try { cb(globalTableCaches[sKey]); } catch (e) {} });
-        }
-      });
+      const idx = globalTableCaches[syncKey].findIndex(item => item.id === sheet.id);
+      if (idx !== -1) {
+        globalTableCaches[syncKey][idx] = { ...globalTableCaches[syncKey][idx], ...itemObj };
+      } else {
+        globalTableCaches[syncKey].unshift(itemObj);
+      }
 
       return toDb('ledger_sheets', itemObj);
     });
 
+    const subs = globalTableSubscribers[syncKey];
+    if (subs) {
+      subs.forEach(cb => { try { cb(globalTableCaches[syncKey]); } catch (e) {} });
+    }
+
     try {
-      const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
       localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(globalTableCaches[syncKey] || []));
+      localStorage.setItem(`gts_cache_meta_${syncKey}`, String(Date.now()));
     } catch (e) {}
 
+    const tStartSheets = performance.now();
     const { error } = await supabase.from('ledger_sheets').upsert(dbRows, { onConflict: 'id' });
+    const elapsedSheets = Math.round(performance.now() - tStartSheets);
+    console.log(`[Save Timing] saveLedgerSheetsBatch for ${sheets.length} sheet(s) took ${elapsedSheets}ms`);
+
     if (error) {
       console.warn("saveLedgerSheetsBatch error, falling back to individual upserts:", error.message);
       await Promise.all(sheets.map(sh => supabaseService.saveLedgerSheet(sh, tenantId)));

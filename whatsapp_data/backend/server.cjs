@@ -5,7 +5,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const ws = require('ws');
-const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, autoRestoreAllSessions, logoutBaileys, resetBaileysSession, registerMessageLogCallback, normalizePakistaniPhone } = require('./baileysClient.cjs');
+const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, autoRestoreAllSessions, logoutBaileys, resetBaileysSession, registerMessageLogCallback, normalizePakistaniPhone, initBaileysClientDb, markLeadStarted, releaseSubDealerSession } = require('./baileysClient.cjs');
 const { createClient } = require('@supabase/supabase-js');
 
 let admin = null;
@@ -49,7 +49,8 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 
 // Register Logging Callback to Supabase
 if (supabase) {
-  registerMessageLogCallback(async (recipient, message, status, errorMessage) => {
+  if (supabase) { initBaileysClientDb(supabase); }
+registerMessageLogCallback(async (recipient, message, status, errorMessage) => {
     try {
       console.log(`[Database Log] Recipient: ${recipient}, Status: ${status}`);
       const { error } = await supabase
@@ -180,7 +181,7 @@ app.post('/create-lead', async (req, res) => {
         month_id: monthId,
         due_date_start: dueDateStart,
         due_date_end: dueDateEnd,
-        wait_seconds: waitSeconds || 30,
+        wait_seconds: Math.min(300, Math.max(60, Number(waitSeconds || 60))),
         status: 'pending',
         total_count: Array.isArray(items) ? items.length : 0,
         success_count: 0,
@@ -222,6 +223,13 @@ app.post('/start-lead', async (req, res) => {
   const { leadId } = req.body;
   if (!leadId) return res.status(400).json({ error: 'leadId is required' });
   if (!supabase) return res.status(500).json({ error: 'Supabase not configured on WhatsApp backend' });
+  try {
+    const { data: lead } = await supabase.from('reminder_leads').select('line_code, dealer_id').eq('id', leadId).single();
+    if (lead) {
+      const sessionKey = lead.line_code || lead.dealer_id || 'main';
+      markLeadStarted(sessionKey);
+    }
+  } catch (e) {}
   // Fire-and-forget: respond immediately, keep processing in background
   processReminderLead(leadId).catch(err => console.error('[Server] Lead processing error:', err));
   res.json({ started: true, leadId });
@@ -231,12 +239,22 @@ app.post('/delete-lead', async (req, res) => {
   const { leadId } = req.body;
   if (!leadId) return res.status(400).json({ error: 'leadId is required' });
   try {
+    let sessionKey = 'main';
+    if (supabase) {
+      const { data: leadRow } = await supabase.from('reminder_leads').select('line_code, dealer_id').eq('id', leadId).single();
+      if (leadRow) {
+        sessionKey = leadRow.line_code || leadRow.dealer_id || 'main';
+      }
+    }
     if (typeof cancelReminderLead === 'function') {
       cancelReminderLead(leadId);
     }
     if (supabase) {
       await supabase.from('reminder_lead_items').delete().eq('lead_id', leadId);
       await supabase.from('reminder_leads').delete().eq('id', leadId);
+    }
+    if (sessionKey && sessionKey !== 'main') {
+      releaseSubDealerSession(sessionKey).catch(err => console.error('Release session error:', err));
     }
     res.json({ success: true, deleted: true, leadId });
   } catch (err) {

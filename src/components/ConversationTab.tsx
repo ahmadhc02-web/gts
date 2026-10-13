@@ -1,3 +1,11 @@
+
+function formatMmSs(ms: number | null): string {
+  if (ms === null || ms <= 0 || isNaN(ms)) return '00:00';
+  const totalSecs = Math.floor(ms / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   MessageSquare,
@@ -348,8 +356,12 @@ export default function ConversationTab({
     connected: boolean;
     phoneNumber: string | null;
     session?: string;
+    leaseRemainingMs?: number | null;
   } | null>(null);
   const [isConnectPanelOpen, setIsConnectPanelOpen] = useState(false);
+  const [isQrDropdownOpen, setIsQrDropdownOpen] = useState(false);
+  const [localLeaseMs, setLocalLeaseMs] = useState<number | null>(null);
+  const prevConnectedRef = useRef<boolean | null>(null);
 
   // Poll WhatsApp Status for activeSessionKey
   useEffect(() => {
@@ -360,7 +372,29 @@ export default function ConversationTab({
       try {
         const st = await getStatus(activeSessionKey);
         if (active && st) {
+          const wasConnected = prevConnectedRef.current;
+          const isConnectedNow = st.connected;
+
+          if (wasConnected === true && isConnectedNow === false && isSubDealerUser) {
+            toast.error("WhatsApp disconnected to free the server. Scan the QR again for your next campaign.");
+            setIsQrDropdownOpen(true);
+          }
+          if (wasConnected !== isConnectedNow) {
+            prevConnectedRef.current = isConnectedNow;
+          }
+
           setWhatsAppStatus(st);
+          if (st.leaseRemainingMs !== undefined) {
+            setLocalLeaseMs(st.leaseRemainingMs);
+          }
+
+          if (isSubDealerUser) {
+            if (!isConnectedNow) {
+              setIsQrDropdownOpen(true);
+            } else {
+              setIsQrDropdownOpen(false);
+            }
+          }
         }
       } catch (_) {}
     };
@@ -372,14 +406,26 @@ export default function ConversationTab({
       active = false;
       clearInterval(timer);
     };
-  }, [isOpen, activeSessionKey]);
+  }, [isOpen, activeSessionKey, isSubDealerUser]);
+
+  // Local lease countdown ticker (every 1s)
+  useEffect(() => {
+    if (!whatsAppStatus?.connected) return;
+    const ticker = setInterval(() => {
+      setLocalLeaseMs(prev => {
+        if (prev === null || prev <= 0) return 0;
+        return Math.max(0, prev - 1000);
+      });
+    }, 1000);
+    return () => clearInterval(ticker);
+  }, [whatsAppStatus?.connected]);
 
   // New Lead Form State
   const [leadName, setLeadName] = useState('');
   const [leadMode, setLeadMode] = useState<'automatic' | 'custom'>('automatic');
   const [dueDateStart, setDueDateStart] = useState('1');
   const [dueDateEnd, setDueDateEnd] = useState('10');
-  const [waitSeconds, setWaitSeconds] = useState(30);
+  const [waitSeconds, setWaitSeconds] = useState(60);
   const [customSearchQuery, setCustomSearchQuery] = useState('');
   const [selectedCustomUserIds, setSelectedCustomUserIds] = useState<string[]>([]);
 
@@ -735,7 +781,7 @@ export default function ConversationTab({
         monthId: currentMonthId || activeMonthDoc?.id || 'UNKNOWN',
         dueDateStart,
         dueDateEnd,
-        waitSeconds: Math.max(1, Number(waitSeconds) || 30),
+        waitSeconds: Math.min(300, Math.max(60, Number(waitSeconds) || 60)),
         items
       });
 
@@ -1420,7 +1466,7 @@ export default function ConversationTab({
                   </label>
                   {/* Quick Preset Buttons */}
                   <div className="flex items-center gap-1">
-                    {[15, 30, 45, 60, 90, 120].map((sec) => (
+                    {[60, 90, 120, 180, 240, 300].map((sec) => (
                       <button
                         key={sec}
                         type="button"
@@ -1439,7 +1485,7 @@ export default function ConversationTab({
                 </div>
                 <input
                   type="number"
-                  min={1}
+                  min={60}
                   required
                   value={waitSeconds === 0 ? '' : waitSeconds}
                   onChange={(e) => {
@@ -1449,20 +1495,20 @@ export default function ConversationTab({
                     } else {
                       const parsed = parseInt(val, 10);
                       if (!isNaN(parsed)) {
-                        setWaitSeconds(Math.max(1, parsed));
+                        setWaitSeconds(Math.min(300, Math.max(60, parsed)));
                       }
                     }
                   }}
                   onBlur={() => {
-                    if (!waitSeconds || waitSeconds < 1) {
-                      setWaitSeconds(30);
+                    if (!waitSeconds || waitSeconds < 60) {
+                      setWaitSeconds(60);
                     }
                   }}
-                  placeholder="Enter seconds (e.g. 30, 45, 60...)"
+                  placeholder="Enter seconds (60–300)..."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none font-lexend tabular-nums"
                 />
                 <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-1 block">
-                  Recommended: 30–60 seconds to prevent WhatsApp account rate limits.
+                  Wait time limits: minimum 60 seconds, maximum 300 seconds.
                 </span>
               </div>
 
@@ -1491,6 +1537,11 @@ export default function ConversationTab({
               </div>
 
               {/* Confirm & Cancel Buttons */}
+              {isSubDealerUser && !whatsAppStatus?.connected && (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 text-xs font-bold text-amber-800 dark:text-amber-300 mb-2">
+                  ⚠️ WhatsApp for session "{activeSessionKey}" is not connected. Scan the QR code first to enable campaign start.
+                </div>
+              )}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-white/10 mt-1">
                 <button
                   type="button"
@@ -1501,7 +1552,7 @@ export default function ConversationTab({
                 </button>
                 <button
                   type="submit"
-                  disabled={matchedClients.length === 0 || !leadName.trim() || isSubmitting}
+                  disabled={matchedClients.length === 0 || !leadName.trim() || isSubmitting || (isSubDealerUser && !whatsAppStatus?.connected)}
                   className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   {isSubmitting ? (
