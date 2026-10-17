@@ -92,7 +92,7 @@ function formatDateTime(iso?: string | null): string {
 // Sub-component for individual lead row's expanded items
 function LeadItemsList({
   leadId,
-  defaultWaitSeconds = 30,
+  defaultWaitSeconds = 60,
   isLeadRunning = false
 }: {
   leadId: string;
@@ -137,7 +137,7 @@ function LeadItemsList({
     );
   }
 
-  const waitSec = Math.max(1, Number(defaultWaitSeconds) || 30);
+  const waitSec = Math.min(300, Math.max(60, Number(defaultWaitSeconds) || 60));
   
   // Find index of the most recently processed item (sent or failed)
   const lastProcessedIdx = items.reduce(
@@ -359,7 +359,7 @@ export default function ConversationTab({
     leaseRemainingMs?: number | null;
   } | null>(null);
   const [isConnectPanelOpen, setIsConnectPanelOpen] = useState(false);
-  const [isQrDropdownOpen, setIsQrDropdownOpen] = useState(false);
+  const [isQrDropdownOpen, setIsQrDropdownOpen] = useState(true);
   const [localLeaseMs, setLocalLeaseMs] = useState<number | null>(null);
   const prevConnectedRef = useRef<boolean | null>(null);
 
@@ -375,7 +375,7 @@ export default function ConversationTab({
           const wasConnected = prevConnectedRef.current;
           const isConnectedNow = st.connected;
 
-          if (wasConnected === true && isConnectedNow === false && isSubDealerUser) {
+          if (wasConnected === true && isConnectedNow === false && (isSubDealerUser || isSubAccount)) {
             toast.error("WhatsApp disconnected to free the server. Scan the QR again for your next campaign.");
             setIsQrDropdownOpen(true);
           }
@@ -388,7 +388,7 @@ export default function ConversationTab({
             setLocalLeaseMs(st.leaseRemainingMs);
           }
 
-          if (isSubDealerUser) {
+          if (isSubDealerUser || isSubAccount) {
             if (!isConnectedNow) {
               setIsQrDropdownOpen(true);
             } else {
@@ -406,7 +406,7 @@ export default function ConversationTab({
       active = false;
       clearInterval(timer);
     };
-  }, [isOpen, activeSessionKey, isSubDealerUser]);
+  }, [isOpen, activeSessionKey, isSubDealerUser, isSubAccount]);
 
   // Local lease countdown ticker (every 1s)
   useEffect(() => {
@@ -910,6 +910,109 @@ export default function ConversationTab({
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
+        {/* Sub-Dealer / Sub-Account WhatsApp Connection & Lease Banner */}
+        {(isSubDealerUser || isSubAccount) && (
+          <div className="flex flex-col gap-4">
+            {/* Live Lease Countdown or Campaign Running Banner */}
+            {whatsAppStatus?.connected && (
+              localLeaseMs !== null && localLeaseMs > 0 ? (
+                <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/20 border-2 border-amber-500/40 text-amber-950 dark:text-amber-100 flex items-center justify-between gap-4 shadow-sm">
+                  <div className="flex items-center gap-3.5">
+                    <span className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+                      <Clock size={22} className="animate-pulse" />
+                    </span>
+                    <div className="text-sm sm:text-base font-bold font-lexend">
+                      Create your lead and press Start within{' '}
+                      <span className="font-mono font-black text-amber-700 dark:text-amber-300 text-lg px-2.5 py-0.5 rounded-lg bg-amber-500/20 border border-amber-500/30 tabular-nums">
+                        {formatMmSs(localLeaseMs)}
+                      </span>
+                      , otherwise WhatsApp will disconnect.
+                    </div>
+                  </div>
+                  <div className="hidden sm:flex text-xs font-mono font-black px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 tabular-nums shrink-0">
+                    {formatMmSs(localLeaseMs)}
+                  </div>
+                </div>
+              ) : (whatsAppStatus.leaseRemainingMs === null || localLeaseMs === null) ? (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/20 border-2 border-emerald-500/40 text-emerald-950 dark:text-emerald-100 flex items-center justify-between gap-4 shadow-sm">
+                  <div className="flex items-center gap-3.5">
+                    <span className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0">
+                      <Zap size={22} className="animate-pulse" />
+                    </span>
+                    <div className="text-sm sm:text-base font-black font-lexend flex items-center gap-2">
+                      <span>Campaign running</span>
+                      <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 px-3 py-1 rounded-xl border border-emerald-500/30">
+                    Active Session
+                  </span>
+                </div>
+              ) : null
+            )}
+
+            {/* Collapsible WhatsApp Connection Card */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2xl shadow-sm overflow-hidden transition-all">
+              <div
+                onClick={() => setIsQrDropdownOpen(prev => !prev)}
+                className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer select-none"
+              >
+                <div className="flex items-center gap-3.5">
+                  <span
+                    className={cn(
+                      "p-2.5 rounded-xl transition-colors",
+                      whatsAppStatus?.connected
+                        ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
+                        : "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400"
+                    )}
+                  >
+                    <Smartphone size={20} />
+                  </span>
+                  <div>
+                    <div className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2 font-lexend">
+                      <span>WhatsApp Connection</span>
+                      {whatsAppStatus?.connected ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 flex items-center gap-1 font-mono">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                          Connected {whatsAppStatus.phoneNumber ? `(+${whatsAppStatus.phoneNumber})` : ''}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 font-mono">
+                          Disconnected • Scan QR
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+                      {whatsAppStatus?.connected
+                        ? "WhatsApp session is linked and ready to send messages."
+                        : "Scan the QR code to link your WhatsApp for this session."}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-slate-400 dark:text-slate-500">
+                  <span className="text-xs font-bold uppercase tracking-wider">
+                    {isQrDropdownOpen ? "Hide QR" : "Show QR"}
+                  </span>
+                  <div className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                    {isQrDropdownOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </div>
+                </div>
+              </div>
+
+              {isQrDropdownOpen && (
+                <div className="border-t border-slate-200/80 dark:border-white/10 p-3 sm:p-5 bg-slate-50/50 dark:bg-slate-950/30">
+                  <WhatsAppConnectPanel
+                    onClose={() => setIsQrDropdownOpen(false)}
+                    currentUser={currentUser}
+                    initialSessionKey={activeSessionKey}
+                    users={users}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Top 4 Summary Cards */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1 */}
@@ -1171,17 +1274,26 @@ export default function ConversationTab({
                           <td className="py-3 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5">
                               {/* Start / Resume button for pending or interrupted leads */}
-                              {(isPending || isRunning || (isFailed && processed < totalCount)) && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleStartLead(lead.id)}
-                                  className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase flex items-center gap-1 border border-blue-200 dark:border-blue-900/40 cursor-pointer"
-                                  title="Run or resume lead campaign on server"
-                                >
-                                  <Play size={11} className="fill-current" />
-                                  <span>{isPending ? "Start" : "Resume"}</span>
-                                </button>
-                              )}
+                              {(isPending || isRunning || (isFailed && processed < totalCount)) && (() => {
+                                const isStartDisabled = Boolean((isSubDealerUser || isSubAccount) && !whatsAppStatus?.connected);
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => !isStartDisabled && handleStartLead(lead.id)}
+                                    disabled={isStartDisabled}
+                                    className={cn(
+                                      "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 border transition-all",
+                                      isStartDisabled
+                                        ? "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-white/10 opacity-50 cursor-not-allowed"
+                                        : "bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900/40 cursor-pointer"
+                                    )}
+                                    title={isStartDisabled ? "Scan the QR first" : "Run or resume lead campaign on server"}
+                                  >
+                                    <Play size={11} className="fill-current" />
+                                    <span>{isPending ? "Start" : "Resume"}</span>
+                                  </button>
+                                );
+                              })()}
 
                               {/* Delete Lead Button */}
                               <button
@@ -1215,7 +1327,7 @@ export default function ConversationTab({
                             <td colSpan={10} className="p-4 pt-1 pb-4">
                               <LeadItemsList
                                 leadId={lead.id}
-                                defaultWaitSeconds={Number(lead.waitSeconds) || 30}
+                                defaultWaitSeconds={Math.min(300, Math.max(60, Number(lead.waitSeconds) || 60))}
                                 isLeadRunning={isRunning}
                               />
                             </td>

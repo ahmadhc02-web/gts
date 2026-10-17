@@ -64,6 +64,8 @@ async function processReminderLead(leadId) {
   activeLeadIds.add(leadId);
   console.log(`[Lead Processor] Starting processing for lead ${leadId}`);
 
+  let leadSessionKey = 'main';
+
   try {
     // 1. Fetch lead metadata
     const { data: lead, error: leadErr } = await supabase
@@ -98,7 +100,6 @@ async function processReminderLead(leadId) {
 
     let currentSuccessCount = Number(alreadySentCount !== null && alreadySentCount !== undefined ? alreadySentCount : (lead.success_count || 0));
     let currentFailedCount = Number(alreadyFailedCount !== null && alreadyFailedCount !== undefined ? alreadyFailedCount : (lead.failed_count || 0));
-    let leadSessionKey = lead.line_code || lead.dealer_id || 'main';
     const waitSeconds = Math.min(300, Math.max(60, Number(lead.wait_seconds || 60)));
 
     // 2. Transition pending -> running
@@ -169,8 +170,8 @@ async function processReminderLead(leadId) {
 
         console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${normalizedPhone} for lead ${leadId} via session "${lead.line_code || lead.dealer_id || 'main'}"...`);
         
-        const leadSessionKey = lead.line_code || lead.dealer_id || 'main';
-        const sendResult = await sendMessage(normalizedPhone, messageText, {}, leadSessionKey);
+        const itemSessionKey = lead.line_code || lead.dealer_id || 'main';
+        const sendResult = await sendMessage(normalizedPhone, messageText, {}, itemSessionKey);
         if (!sendResult || sendResult.success === false) {
           throw new Error(sendResult?.error || 'WhatsApp dispatch returned failure');
         }
@@ -328,18 +329,19 @@ async function processReminderLead(leadId) {
 
   } catch (err) {
     console.error(`[Lead Processor] Unexpected error in processReminderLead for ${leadId}:`, err);
-    await supabase
-      .from('reminder_leads')
-      .update({
-        status: 'failed'
-      })
-      .eq('id', leadId)
-      .catch(() => {});
+    try {
+      await supabase
+        .from('reminder_leads')
+        .update({
+          status: 'failed'
+        })
+        .eq('id', leadId);
+    } catch (_) {}
   } finally {
     activeLeadIds.delete(leadId);
     cancelledLeadIds.delete(leadId);
     try {
-      if (typeof leadSessionKey !== 'undefined' && leadSessionKey && leadSessionKey !== 'main') {
+      if (leadSessionKey !== 'main') {
         releaseSubDealerSession(leadSessionKey).catch(err => console.error('Release session error in finally:', err));
       }
     } catch (e) {}

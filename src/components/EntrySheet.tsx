@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabaseService, pocketbaseService, globalTableCaches } from '../lib/supabaseService';
+import { supabaseService, pocketbaseService, globalTableCaches, CACHE_MAX_AGE_MS } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { Client, UserProfile } from '../types';
@@ -60,6 +60,27 @@ const parseRowsArray = (val: any): any[] => {
     } catch (e) {}
   }
   return [];
+};
+
+const getValidCacheItem = (key: string): string | null => {
+  try {
+    const meta = localStorage.getItem(`gts_cache_meta_${key}`);
+    if (!meta) return null;
+    const metaTime = Number(meta);
+    if (!metaTime || isNaN(metaTime) || (Date.now() - metaTime > CACHE_MAX_AGE_MS)) {
+      return null;
+    }
+    return localStorage.getItem(key);
+  } catch (e) {
+    return null;
+  }
+};
+
+const setCachedItemWithMeta = (key: string, value: string): void => {
+  try {
+    localStorage.setItem(key, value);
+    localStorage.setItem(`gts_cache_meta_${key}`, String(Date.now()));
+  } catch (e) {}
 };
 
 const ColumnDragHandle = ({ min, max, value, onChange, onDragEnd }: { min: number, max: number, value: number, onChange: (v: number) => void, onDragEnd: () => void }) => {
@@ -164,9 +185,12 @@ export default function EntrySheet({
     if ((globalTableCaches as any)[syncKey] && Array.isArray((globalTableCaches as any)[syncKey])) {
       return (globalTableCaches as any)[syncKey];
     }
+    const key1 = `gts_cache_v3_ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`;
+    const key2 = `gts_cache_v3_ledger_folders_all_${currentUser?.lineCode || 'nolc'}`;
+    const key3 = `gts_cache_v3_ledger_folders_${originalScopeId}`;
     const saved = isDealerTied
-      ? localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`)
-      : (localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_cache_v3_ledger_folders_all_${currentUser?.lineCode || 'nolc'}`));
+      ? (getValidCacheItem(key1) || getValidCacheItem(key3))
+      : (getValidCacheItem(key1) || getValidCacheItem(key2) || getValidCacheItem(key3));
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -180,7 +204,7 @@ export default function EntrySheet({
   };
   const [folderMonthMap, setFolderMonthMap] = useState<Record<string, string>>(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const saved = localStorage.getItem(`gts_ledger_folder_months_${originalScopeId}`);
+    const saved = getValidCacheItem(`gts_ledger_folder_months_${originalScopeId}`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -290,9 +314,7 @@ export default function EntrySheet({
       setIsFoldersFresh(true);
       if (Array.isArray(data)) {
         setFolders(prev => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
-        try {
-          localStorage.setItem(`gts_cache_v3_ledger_folders_${originalScopeId}`, JSON.stringify(data));
-        } catch (e) {}
+        setCachedItemWithMeta(`gts_cache_v3_ledger_folders_${originalScopeId}`, JSON.stringify(data));
       }
       setIsLoadingFolders(false);
     }, scopeId);
@@ -306,12 +328,13 @@ export default function EntrySheet({
 
       const folderMonthsKey = `gts_ledger_folder_months_${originalScopeId}`;
       const migrationFlag = `migrated_local_folder_months_${scopeId || 'main'}`;
-      if (data && Object.keys(data).length > 0) {
+      const isDbNonEmpty = Boolean(data && Object.keys(data).length > 0);
+      if (isDbNonEmpty) {
         localStorage.setItem(migrationFlag, 'true');
       }
 
-      if (!localStorage.getItem(migrationFlag)) {
-        const savedMap = localStorage.getItem(folderMonthsKey);
+      if (!isDbNonEmpty && !localStorage.getItem(migrationFlag)) {
+        const savedMap = getValidCacheItem(folderMonthsKey);
         if (savedMap) {
           try {
             const parsed = JSON.parse(savedMap);
@@ -355,7 +378,10 @@ export default function EntrySheet({
   const [isSavingSheet, setIsSavingSheet] = useState(false);
   const [isLoadingFolders, setIsLoadingFolders] = useState(() => {
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const hasCache = localStorage.getItem(`gts_cache_v3_ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`) || localStorage.getItem(`gts_ledger_folders_${originalScopeId}`);
+    const key1 = `gts_cache_v3_ledger_folders_${originalScopeId}_${currentUser?.lineCode || 'nolc'}`;
+    const key2 = `gts_ledger_folders_${originalScopeId}`;
+    const key3 = `gts_cache_v3_ledger_folders_${originalScopeId}`;
+    const hasCache = getValidCacheItem(key1) || getValidCacheItem(key2) || getValidCacheItem(key3);
     return !hasCache;
   });
   const [isLoadingSheets, setIsLoadingSheets] = useState(true);
@@ -419,7 +445,7 @@ export default function EntrySheet({
     await pocketbaseService.updateLedgerFolders(newFolders, scopeId);
     
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
   };
 
   const saveMapToDb = async (newMap: Record<string, string>) => {
@@ -438,7 +464,7 @@ export default function EntrySheet({
     }
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    localStorage.setItem(`gts_ledger_folder_months_${originalScopeId}`, JSON.stringify(newMap));
+    setCachedItemWithMeta(`gts_ledger_folder_months_${originalScopeId}`, JSON.stringify(newMap));
   };
 
 
@@ -490,7 +516,7 @@ export default function EntrySheet({
         setFolders(newFolders);
         // Also keep local backup & cloud sync for offline resilience
         const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-        localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+        setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
         pocketbaseService.saveLedgerFolders(newFolders, tenantId).catch(console.warn);
         
         setNewFolderNameInput('');
@@ -548,10 +574,10 @@ export default function EntrySheet({
 
     // 1. Instantly update folders and map in local state & local storage to prevent any race conditions
     setFolders(newFolders);
-    localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
 
     setSheetFolderMap(nextMap);
-    localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(nextMap));
+    setCachedItemWithMeta(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(nextMap));
 
     // 2. Save folder to Recycle Bin first, then update folders in database
     try {
@@ -594,8 +620,8 @@ export default function EntrySheet({
       // Rollback UI state and localStorage upon failure to prevent inconsistent states
       setFolders(previousFolders);
       setSheetFolderMap(previousMap);
-      localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(previousFolders));
-      localStorage.setItem(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(previousMap));
+      setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(previousFolders));
+      setCachedItemWithMeta(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(previousMap));
 
       toast.error(`Database Error: Failed to delete folder. Please check your database connection or permission rules!`, {
         id: `folder-delete-error-${folderId}`,
@@ -1047,10 +1073,8 @@ export default function EntrySheet({
   useEffect(() => {
     if (!isOpen) return;
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    try {
-      localStorage.setItem(`gts_cache_v3_ledger_folders_${originalScopeId}`, JSON.stringify(folders));
-      localStorage.setItem(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(folders));
-    } catch (e) {}
+    setCachedItemWithMeta(`gts_cache_v3_ledger_folders_${originalScopeId}`, JSON.stringify(folders));
+    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(folders));
   }, [folders, activeDealerId, currentUser?.uid, isOpen]);
 
   // Sync internal backup states with custom storage changes
@@ -1599,6 +1623,7 @@ export default function EntrySheet({
 
     try {
       const sheetPayloads: any[] = [];
+      const payloadSourceIdx: number[] = [];
       const savedSheetsToLocal: any[] = [];
       const updatedFolderMap = { ...sheetFolderMap };
 
@@ -1664,6 +1689,7 @@ export default function EntrySheet({
 
         sheetPayloads.push(payload);
         savedSheetsToLocal.push(payload);
+        payloadSourceIdx.push(i);
 
         if (targetFolderId && finalSheetId) {
           updatedFolderMap[finalSheetId] = targetFolderId;
@@ -2198,7 +2224,7 @@ export default function EntrySheet({
         }
       }
 
-      const activeSavedPayload = sheetPayloads[activeSheetIdx];
+      const activeSavedPayload = sheetPayloads.find((_, pIdx) => payloadSourceIdx[pIdx] === activeSheetIdx);
       if (activeSavedPayload) {
         setTable1Rows(activeSavedPayload.table1Rows);
         setTable2Rows(activeSavedPayload.table2Rows);
@@ -2281,7 +2307,7 @@ export default function EntrySheet({
         setOriginalActiveSheetId(activeSavedPayload?.id || (sheetPayloads[0]?.id) || null);
         setSheets(prev => {
           return prev.map((sh, idx) => {
-            const matchingPayload = sheetPayloads[idx];
+            const matchingPayload = sheetPayloads.find((_, pIdx) => payloadSourceIdx[pIdx] === idx);
             if (matchingPayload) {
               const savedLocal = savedSheetsToLocal.find(s => s.id === matchingPayload.id);
               return {
