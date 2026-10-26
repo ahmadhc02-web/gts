@@ -242,7 +242,7 @@ export const billingService = {
       totalDC,
       totalPending,
       totalPaid,
-      activeCustomersCount: rows.length,
+      activeCustomersCount: rows.filter(r => String(r.paymentStatus ?? r.payment_status ?? '').toLowerCase() !== 'dc').length,
       recoveryRate
     };
   }

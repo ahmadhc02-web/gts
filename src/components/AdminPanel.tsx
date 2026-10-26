@@ -2005,6 +2005,105 @@ export default function AdminPanel({
 
   // Manual recheck operation (triggered via Recheck Users button) is fully supported and robust.
 
+  function applyLegacyBackfill(rows: any[], masterClients: any[]): any[] {
+    const masterClientIds = new Set(masterClients.map(c => c.id));
+    const usernameToClient = new Map<string, any>();
+    const mobileToClients = new Map<string, any[]>();
+
+    masterClients.forEach(c => {
+      if (c.username) {
+        usernameToClient.set(String(c.username).toLowerCase().trim(), c);
+      }
+      const mobiles = [c.mobileNumber, c.number, c.phone].filter(Boolean);
+      mobiles.forEach(m => {
+        const cleanM = String(m).replace(/[^0-9]/g, '');
+        if (cleanM.length >= 7) {
+          const list = mobileToClients.get(cleanM) || [];
+          list.push(c);
+          mobileToClients.set(cleanM, list);
+        }
+      });
+    });
+
+    return rows.map(r => {
+      if (r.clientId && masterClientIds.has(r.clientId)) {
+        return r;
+      }
+      let matchedClient: any = null;
+      const rUsername = String(r.username || '').toLowerCase().trim();
+      if (rUsername && usernameToClient.has(rUsername)) {
+        matchedClient = usernameToClient.get(rUsername);
+      } else {
+        const rMobiles = [r.mobileNumber, r.phone, r.number].filter(Boolean);
+        for (const m of rMobiles) {
+          const cleanM = String(m).replace(/[^0-9]/g, '');
+          if (cleanM.length >= 7) {
+            const matchingList = mobileToClients.get(cleanM);
+            if (matchingList && matchingList.length === 1) {
+              matchedClient = matchingList[0];
+              break;
+            }
+          }
+        }
+      }
+
+      if (matchedClient) {
+        const oldUsername = r.username;
+        const newUsername = matchedClient.username;
+        if (oldUsername && oldUsername !== newUsername) {
+          console.log(`[Billing Backfill Rename] ${oldUsername} -> ${newUsername} (clientId: ${matchedClient.id})`);
+        } else {
+          console.log(`[Billing Backfill Link] Linked row (username: ${r.username}, mobile: ${r.mobileNumber}) to client id ${matchedClient.id}`);
+        }
+        return {
+          ...r,
+          clientId: matchedClient.id,
+          username: matchedClient.username || r.username,
+          name: matchedClient.name || r.name,
+          mobileNumber: matchedClient.mobileNumber || matchedClient.number || r.mobileNumber || r.phone,
+          area: matchedClient.area || r.area,
+          pkgDetails: matchedClient.pkgDetails || r.pkgDetails,
+          rt: r.rt || 'BILL',
+          panelDetails: matchedClient.panelDetails || r.panelDetails,
+          billingDay: matchedClient.billingDay || r.billingDay || '5'
+        };
+      } else {
+        console.warn(`[Billing Backfill Unlinked] Row with username="${r.username}", mobile="${r.mobileNumber}" could not be linked to any master client.`);
+        return r;
+      }
+    });
+  }
+
+  function dedupeRowsByClientId(rows: any[]): { rows: any[], mergedCount: number } {
+    const map = new Map<string, any>();
+    let mergedCount = 0;
+    const unassigned: any[] = [];
+
+    for (const r of rows) {
+      if (!r.clientId) {
+        unassigned.push(r);
+        continue;
+      }
+      const existing = map.get(r.clientId);
+      if (!existing) {
+        map.set(r.clientId, r);
+      } else {
+        const existingHasData = (parseFloat(existing.paymentReceived) || 0) > 0 || (existing.paymentStatus && existing.paymentStatus !== 'unpaid') || (parseFloat(existing.cr) || 0) > 0 || Boolean(existing.comments);
+        const currentHasData = (parseFloat(r.paymentReceived) || 0) > 0 || (r.paymentStatus && r.paymentStatus !== 'unpaid') || (parseFloat(r.cr) || 0) > 0 || Boolean(r.comments);
+
+        if (currentHasData && !existingHasData) {
+          console.log(`[Billing Dedupe] Merged duplicate for clientId ${r.clientId}, kept row with payment data.`);
+          map.set(r.clientId, r);
+        } else {
+          console.log(`[Billing Dedupe] Merged duplicate for clientId ${r.clientId}, dropped redundant row.`);
+        }
+        mergedCount++;
+      }
+    }
+
+    return { rows: [...map.values(), ...unassigned], mergedCount };
+  }
+
   const handleAddMonth = async () => {
     if (!isBillingUnlocked) {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to unlock billing sheet creation." });
@@ -2023,43 +2122,21 @@ export default function AdminPanel({
     }
 
     try {
-      // Robust: Fetch master clients list on the fly to avoid race conditions or loading delay of 505 users
       const tenantId = pocketbaseService.getReadTenantId(currentUser);
       const dbClients = await pocketbaseService.getClients(tenantId);
       const currentMasterClients = dbClients.length > 0 ? dbClients : masterClients;
 
       let rows: any[] = [];
+      const masterClientIds = new Set(currentMasterClients.map(c => c.id));
 
       if (billingMonths && billingMonths.length > 0 && billingMonths[0].rows) {
-        // Copy from latest existing sheet
-        const prevRows = billingMonths[0].rows || [];
-        
-        // Filter out clients that are NO LONGER present in currentMasterClients (deleted clients)
-        const masterClientIds = new Set(currentMasterClients.map(c => c.id));
-        const masterUsernames = new Set(currentMasterClients.map(c => c.username).filter(Boolean));
-        
-        const activePrevRows = prevRows.filter((r: any) => 
-          (r.clientId && masterClientIds.has(r.clientId)) || 
-          (r.username && masterUsernames.has(r.username))
-        );
+        const prevRowsRaw = billingMonths[0].rows || [];
+        const backfilledPrevRows = applyLegacyBackfill(prevRowsRaw, currentMasterClients);
+        const { rows: deduplicatedPrevRows } = dedupeRowsByClientId(backfilledPrevRows);
 
-        // Deduplicate
-        const deduplicatedPrevRows = [];
-        const seenKeys = new Set();
-        for (const r of activePrevRows) {
-          const key = r.username ? `u_${r.username}` : (r.clientId ? `i_${r.clientId}` : null);
-          if (!key) {
-            deduplicatedPrevRows.push(r);
-            continue;
-          }
-          if (seenKeys.has(key)) {
-            continue;
-          }
-          seenKeys.add(key);
-          deduplicatedPrevRows.push(r);
-        }
+        const activePrevRows = deduplicatedPrevRows.filter((r: any) => r.clientId && masterClientIds.has(r.clientId));
 
-        rows = deduplicatedPrevRows.map((r: any) => {
+        rows = activePrevRows.map((r: any) => {
           const prevTotal = parseFloat(r.totalAmount) || 0;
           const prevReceived = parseFloat(r.paymentReceived) || 0;
           const isTdcOrDc = r.paymentStatus === 'tdc' || r.paymentStatus === 'dc';
@@ -2075,16 +2152,24 @@ export default function AdminPanel({
           }
           
           const newBase = isTdcOrDc ? 0 : (parseFloat(r.baseAmount) || 0);
-          const matchingClient = currentMasterClients.find(c => c.id === r.clientId || (r.username && c.username && c.username.toLowerCase() === r.username.toLowerCase()));
+          const matchingClient = currentMasterClients.find(c => c.id === r.clientId);
           return {
             ...r,
+            name: matchingClient?.name || r.name,
+            username: matchingClient?.username || r.username,
+            mobileNumber: matchingClient?.mobileNumber || matchingClient?.number || r.mobileNumber || r.phone,
+            phone: matchingClient?.mobileNumber || matchingClient?.number || r.mobileNumber || r.phone,
+            area: matchingClient?.area || r.area,
+            pkgDetails: matchingClient?.pkgDetails || r.pkgDetails,
+            rt: r.rt || matchingClient?.rt || 'BILL',
+            panelDetails: matchingClient?.panelDetails || r.panelDetails || '',
+            billingDay: matchingClient?.billingDay || r.billingDay || '5',
             cr: unpaid,
             baseAmount: newBase,
             totalAmount: newBase + unpaid,
             paymentReceived: 0,
             paymentStatus: isTdcOrDc ? r.paymentStatus : 'unpaid',
             comments: '',
-            panelDetails: r.panelDetails || matchingClient?.panelDetails || '',
             lineCode: r.lineCode || matchingClient?.lineCode || matchingClient?.line_code || currentUser?.lineCode || '',
             line_code: r.line_code || matchingClient?.line_code || matchingClient?.lineCode || currentUser?.lineCode || '',
             lineId: r.lineId || matchingClient?.lineId || matchingClient?.line_id || currentUser?.lineId || null,
@@ -2092,12 +2177,8 @@ export default function AdminPanel({
           };
         });
         
-        // Find any currentMasterClients not in the latest sheet and append them
-        const existingKeys = new Set(rows.map(r => r.username ? `u_${r.username}` : (r.clientId ? `i_${r.clientId}` : null)).filter(Boolean));
-        const missingClients = currentMasterClients.filter(c => {
-          const key = c.username ? `u_${c.username}` : (c.id ? `i_${c.id}` : null);
-          return !key || !existingKeys.has(key);
-        });
+        const existingClientIds = new Set(rows.map(r => r.clientId).filter(Boolean));
+        const missingClients = currentMasterClients.filter(c => c && c.id && !existingClientIds.has(c.id));
         
         const newRows = missingClients.map((c, i) => {
           let cleanBase = 1000;
@@ -2124,7 +2205,7 @@ export default function AdminPanel({
             baseAmount: cleanBase,
             cr: 0,
             totalAmount: cleanBase,
-            billingDay: '5',
+            billingDay: c.billingDay || '5',
             paymentReceived: 0,
             paymentStatus: 'unpaid',
             comments: '',
@@ -2144,7 +2225,6 @@ export default function AdminPanel({
         });
         rows = [...rows, ...newRows];
       } else {
-        // Fallback to building rows from all current master clients if no previous sheets exist
         rows = currentMasterClients.map((c, i) => {
           let cleanBase = 1000;
           if (c.pkgDetails) {
@@ -2164,12 +2244,13 @@ export default function AdminPanel({
             name: c.name || 'Anonymous client',
             username: c.username || `client_${i}`,
             mobileNumber: c.mobileNumber || c.number || '',
+            phone: c.mobileNumber || c.number || '',
             area: c.area || '',
-            rt: 'BILL', // default Route/Type
+            rt: 'BILL',
             baseAmount: cleanBase,
             cr: 0,
             totalAmount: cleanBase,
-            billingDay: '5', // Default 5th of the month
+            billingDay: c.billingDay || '5',
             paymentReceived: 0,
             paymentStatus: 'unpaid',
             comments: '',
@@ -2189,7 +2270,6 @@ export default function AdminPanel({
         });
       }
 
-      // INSTANT UI UPDATE: Add to local state immediately so user sees the new sheet instantly
       const newMonthRecord = {
         id: monthId,
         dealerId: activeDealerId || 'main',
@@ -2197,10 +2277,7 @@ export default function AdminPanel({
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
-      if (monthId) {
-              }
       setBillingMonths(prev => {
-        // Prevent duplicate if somehow triggered twice
         if (prev.some(m => m.id === monthId)) return prev;
         const sorted = [newMonthRecord, ...prev].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         return sorted;
@@ -2213,7 +2290,6 @@ export default function AdminPanel({
         description: `Successfully loaded wifi billing sheet ${monthId} with ${rows.length} master clients.`
       });
 
-      // Background persistence
       pocketbaseService.createBillingMonth(monthId, rows, currentUser.username || 'admin', activeDealerId).catch(err => {
          console.error("Background sync for new month failed:", err);
          toast.error("Cloud Sync Warning", { description: "Some records may not have saved to the cloud. Check connection." });
@@ -2236,44 +2312,25 @@ export default function AdminPanel({
     if (!activeDoc) return;
 
     try {
-      // Robust: Fetch master clients list on the fly
       const tenantId = pocketbaseService.getReadTenantId(currentUser);
       const dbClients = await pocketbaseService.getClients(tenantId);
       const currentMasterClients = dbClients.length > 0 ? dbClients : masterClients;
 
-      // Filter out rows for clients that are no longer in currentMasterClients (deleted clients)
       const masterClientIds = new Set(currentMasterClients.map(c => c.id));
-      const masterUsernames = new Set(currentMasterClients.map(c => c.username).filter(Boolean));
-      
       const originalRows = activeDoc.rows || [];
-      const seenKeys = new Set();
-      const deduplicatedRows = [];
       
-      for (const r of originalRows) {
-        const key = r.username ? `u_${r.username}` : (r.clientId ? `i_${r.clientId}` : null);
-        if (!key) {
-          deduplicatedRows.push(r);
-          continue;
-        }
-        
-        // Skip deleted clients
-        if (r.clientId && !masterClientIds.has(r.clientId)) continue;
-        if (r.username && !masterUsernames.has(r.username)) continue;
-        
-        // Skip duplicates
-        if (seenKeys.has(key)) continue;
-        
-        seenKeys.add(key);
-        deduplicatedRows.push(r);
-      }
+      const backfilledRows = applyLegacyBackfill(originalRows, currentMasterClients);
+      const nonDeletedRows = backfilledRows.filter((r: any) => r.clientId && masterClientIds.has(r.clientId));
+      const deletedCount = backfilledRows.length - nonDeletedRows.length;
 
-      const existingRows = deduplicatedRows;
-      const deletedCount = originalRows.length - existingRows.length;
+      const { rows: dedupedRows, mergedCount } = dedupeRowsByClientId(nonDeletedRows);
+
+      const existingRows = dedupedRows;
       let newCount = 0;
       let updatedCount = 0;
 
       currentMasterClients.forEach((c) => {
-        const existingIdx = existingRows.findIndex(r => r.clientId === c.id || r.username === c.username);
+        const existingIdx = existingRows.findIndex(r => String(r.clientId) === String(c.id));
         
         let targetBase = 1000;
         if (c.pkgDetails) {
@@ -2289,18 +2346,18 @@ export default function AdminPanel({
         }
 
         if (existingIdx === -1) {
-          // Add missing client
           existingRows.push({
             clientId: c.id,
             name: c.name || 'Anonymous client',
             username: c.username,
             mobileNumber: c.mobileNumber || c.number || '',
+            phone: c.mobileNumber || c.number || '',
             area: c.area || '',
             rt: 'BILL',
             baseAmount: targetBase,
             cr: 0,
             totalAmount: targetBase,
-            billingDay: '5',
+            billingDay: c.billingDay || '5',
             paymentReceived: 0,
             paymentStatus: 'unpaid',
             comments: '',
@@ -2311,15 +2368,19 @@ export default function AdminPanel({
             connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
             devicePrice: '0',
             abl: '0',
-            panelDetails: c.panelDetails || ''
+            panelDetails: c.panelDetails || '',
+            lineCode: c.lineCode || c.line_code || currentUser?.lineCode || '',
+            line_code: c.line_code || c.lineCode || currentUser?.lineCode || '',
+            lineId: c.lineId || c.line_id || currentUser?.lineId || null,
+            line_id: c.line_id || c.lineId || currentUser?.lineId || null
           });
           newCount++;
         } else {
-          // Sync client's master profile details
           const row = { ...existingRows[existingIdx] };
           let changed = false;
           if (row.name !== c.name) { row.name = c.name; changed = true; }
-          if (row.mobileNumber !== (c.mobileNumber || c.number || '')) { row.mobileNumber = c.mobileNumber || c.number || ''; changed = true; }
+          const clientPhone = c.mobileNumber || c.number || c.phone || '';
+          if (row.mobileNumber !== clientPhone || row.phone !== clientPhone) { row.mobileNumber = clientPhone; row.phone = clientPhone; changed = true; }
           if (row.area !== c.area) { row.area = c.area; changed = true; }
           if (row.pkgDetails !== c.pkgDetails) { 
             row.pkgDetails = c.pkgDetails; 
@@ -2333,6 +2394,9 @@ export default function AdminPanel({
             row.panelDetails = c.panelDetails || '';
             changed = true;
           }
+          if (row.username !== c.username) { row.username = c.username; changed = true; }
+          if (String(row.billingDay || '') !== String(c.billingDay || '5')) { row.billingDay = String(c.billingDay || '5'); changed = true; }
+
           if (changed) {
             existingRows[existingIdx] = row;
             updatedCount++;
@@ -2340,22 +2404,17 @@ export default function AdminPanel({
         }
       });
 
-      // INSTANT UI UPDATE
-      if (currentMonthId) {
-              }
       setBillingMonths(prev => prev.map(m => m.id === currentMonthId ? { ...m, rows: existingRows } : m));
 
       toast.success("USER LIST RECHECKED PERFECTLY!", {
-        description: `Linked ${newCount} new registered users, updated info for ${updatedCount} profiles, and purged ${deletedCount} deleted records from this recovery sheet.`
+        description: `Linked ${newCount} new registered users, updated info for ${updatedCount} profiles, merged ${mergedCount} duplicates, and purged ${deletedCount} deleted records from this recovery sheet.`
       });
 
-      // Background persist
       saveBillingMonthTracked(currentMonthId, existingRows, currentUser.username || 'admin', activeDealerId)
         .catch(err => {
            console.error("Background sync for recheck failed:", err);
            toast.error("Cloud Sync Warning", { description: "Some records may not have saved to the cloud." });
-        })
-        ;
+        });
     } catch (err: any) {
       console.error(err);
       toast.error("Recheck user list failed", { description: getCleanErrorMessage(err) });
@@ -3551,30 +3610,30 @@ export default function AdminPanel({
     if (!isBillingDataFresh.current) return;
     
     const dbClients = masterClients;
-    const existingRows = activeMonthDoc.rows || [];
-    if (existingRows.length === 0) return;
+    const existingRowsRaw = activeMonthDoc.rows || [];
+    if (existingRowsRaw.length === 0) return;
 
-    // Build existing keys set
-    const existingKeys = new Set(existingRows.map((r: any) => 
-      r.username ? `u_${String(r.username).toLowerCase().trim()}` : (r.clientId ? `i_${String(r.clientId)}` : null)
-    ).filter(Boolean));
+    // 1. One-time legacy backfill
+    const existingRows = applyLegacyBackfill(existingRowsRaw, dbClients);
+
+    // 2. Build existing keys set (clientId only)
+    const existingClientIds = new Set(existingRows.map((r: any) => r.clientId ? String(r.clientId) : null).filter(Boolean));
     
-    // Build excluded keys set for current active month
+    // Build excluded keys set for current active month (i_<clientId>)
     const excludedKeys = new Set(activeMonthDoc.excludedClientKeys || []);
 
-    // Find missing clients (registered clients not in current month sheet and not explicitly excluded)
+    // Find missing clients (registered clients whose id is not in existingClientIds and not excluded)
     const missingClients = dbClients.filter(c => {
-      if (!c) return false;
-      const key = c.username ? `u_${String(c.username).toLowerCase().trim()}` : (c.id ? `i_${String(c.id)}` : null);
-      return key && !existingKeys.has(key) && !excludedKeys.has(key);
+      if (!c || !c.id) return false;
+      const key = `i_${String(c.id)}`;
+      return !existingClientIds.has(String(c.id)) && !excludedKeys.has(key);
     });
     
     let hasUpdates = false;
     const updatedRows = [...existingRows];
     
-    // Check for profile updates in existing rows without deleting ANY row
+    // Check for profile updates in existing rows without deleting ANY row (match by clientId only)
     for (let i = 0; i < updatedRows.length; i++) {
-      // Check if this row has any pending edits in progress
       const hasPendingEdit = Object.keys(cellDebounceTimersRef.current || {}).some(
         key => key.startsWith(`${i}_`)
       );
@@ -3583,10 +3642,13 @@ export default function AdminPanel({
       }
 
       const row = updatedRows[i];
-      const match = dbClients.find(c => String(c.id) === String(row.clientId) || (c.username && String(c.username).toLowerCase().trim() === String(row.username || '').toLowerCase().trim()));
+      if (!row.clientId) continue;
+
+      const match = dbClients.find(c => String(c.id) === String(row.clientId));
       if (match) {
         let changed = false;
         if ((row.name || '') !== (match.name || '')) { row.name = match.name || ''; changed = true; }
+        if ((row.username || '') !== (match.username || '')) { row.username = match.username || ''; changed = true; }
         const clientPhone = match.mobileNumber || match.number || match.phone || '';
         if ((row.mobileNumber || '') !== clientPhone || (row.phone || '') !== clientPhone) {
           row.mobileNumber = clientPhone;
@@ -3599,13 +3661,26 @@ export default function AdminPanel({
           changed = true;
         }
         if ((row.rt || '') !== (match.rt || '')) { row.rt = match.rt || ''; changed = true; }
-        if (match.baseAmount !== undefined && match.baseAmount !== null && Number(match.baseAmount) > 0) {
-          if (row.paymentStatus !== 'tdc' && row.paymentStatus !== 'dc') {
-            if (Number(row.baseAmount || 0) !== Number(match.baseAmount)) {
-              row.baseAmount = Number(match.baseAmount);
-              row.totalAmount = (Number(row.baseAmount) || 0) + (Number(row.cr) || 0);
-              changed = true;
+        let targetBase = 1000;
+        if (match.pkgDetails) {
+          const digitsMatch = match.pkgDetails.match(/\d{3,5}/g);
+          if (digitsMatch && digitsMatch.length > 0) {
+            targetBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
+          } else {
+            const lowDigits = match.pkgDetails.replace(/[^0-9]/g, '');
+            if (lowDigits && lowDigits.length >= 3) {
+              targetBase = parseInt(lowDigits, 10);
             }
+          }
+        }
+        if (match.baseAmount !== undefined && match.baseAmount !== null && Number(match.baseAmount) > 0) {
+          targetBase = Number(match.baseAmount);
+        }
+        if (row.paymentStatus !== 'tdc' && row.paymentStatus !== 'dc') {
+          if (Number(row.baseAmount || 0) !== Number(targetBase)) {
+            row.baseAmount = Number(targetBase);
+            row.totalAmount = (Number(row.baseAmount) || 0) + (Number(row.cr) || 0);
+            changed = true;
           }
         }
         if (match.billingDay && String(row.billingDay || '') !== String(match.billingDay)) {
@@ -3642,11 +3717,12 @@ export default function AdminPanel({
         
         return {
           clientId: c.id,
-          name: c.name,
-          username: c.username,
-          mobileNumber: c.mobileNumber || c.number || '',
+          name: c.name || 'Anonymous client',
+          username: c.username || `client_${c.id}`,
+          mobileNumber: c.mobileNumber || c.number || c.phone || '',
+          phone: c.mobileNumber || c.number || c.phone || '',
           area: c.area || '',
-          rt: c.rt || '',
+          rt: 'BILL',
           baseAmount: cleanBase,
           cr: 0,
           totalAmount: cleanBase,
@@ -3654,14 +3730,18 @@ export default function AdminPanel({
           paymentReceived: 0,
           paymentStatus: 'unpaid',
           comments: '',
-          occ: '',
-          pkgDetails: c.pkgDetails || '',
-          sag: '',
-          lai: '',
-          connectionDate: '',
-          devicePrice: 0,
-          abl: 0,
-          panelDetails: c.panelDetails || ''
+          occ: 'personal',
+          pkgDetails: c.pkgDetails || '8Mb',
+          sag: '0',
+          lai: 'GN',
+          connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
+          devicePrice: '0',
+          abl: '0',
+          panelDetails: c.panelDetails || '',
+          lineCode: c.lineCode || c.line_code || currentUser?.lineCode || '',
+          line_code: c.line_code || c.lineCode || currentUser?.lineCode || '',
+          lineId: c.lineId || c.line_id || currentUser?.lineId || null,
+          line_id: c.line_id || c.lineId || currentUser?.lineId || null
         };
       });
       
@@ -3757,25 +3837,40 @@ export default function AdminPanel({
     }
     
     // Visually deduplicate
-    const seenKeys = new Set();
-    const deduplicatedRows = [];
-    
+    const rowMap = new Map<string, any>();
+    const noKeyRows: any[] = [];
+
+    const hasPaymentData = (r: any) => {
+      const status = (r.paymentStatus || r.payment_status || '').toLowerCase();
+      const isPaidOrPartial = status === 'paid' || status === 'partial';
+      const rec = Number(r.paymentReceived ?? r.payment_received) || 0;
+      const cr = Number(r.cr) || 0;
+      const comments = String(r.comments || '').trim();
+      return isPaidOrPartial || rec > 0 || cr > 0 || comments.length > 0;
+    };
+
     for (const r of allowedRows) {
-      const key = r.username ? `u_${r.username}` : (r.clientId ? `i_${r.clientId}` : null);
+      const key = r.clientId ? `i_${String(r.clientId)}` : (r.username ? `u_${String(r.username).toLowerCase().trim()}` : null);
       if (!key) {
-        deduplicatedRows.push(r);
-        continue;
-      }
-      
-      if (seenKeys.has(key)) {
+        noKeyRows.push(r);
         continue;
       }
 
-      seenKeys.add(key);
-      deduplicatedRows.push(r);
+      if (!rowMap.has(key)) {
+        rowMap.set(key, r);
+      } else {
+        const existing = rowMap.get(key)!;
+        const existingHasData = hasPaymentData(existing);
+        const currentHasData = hasPaymentData(r);
+
+        if (currentHasData && !existingHasData) {
+          rowMap.set(key, r);
+        }
+        // If equal (both have data or neither has data), keep the first (existing)
+      }
     }
-    
-    return deduplicatedRows;
+
+    return [...noKeyRows, ...Array.from(rowMap.values())];
   }, [activeMonthDoc, masterClients, currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, currentUser?.lineId, billingLineFilter]);
 
   const [billingStatusVisibility, setBillingStatusVisibility] = useState<BillingStatusVisibilityMap>(getBillingStatusVisibility);
@@ -4996,9 +5091,9 @@ export default function AdminPanel({
           <Suspense fallback={<RouteLoadingFallback />}>
           <motion.div
             key={activeTab}
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.15 }}
+            initial={activeTab === 'billing' ? { opacity: 0 } : { opacity: 0, y: 5 }}
+            animate={activeTab === 'billing' ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            transition={{ duration: activeTab === 'billing' ? 0.12 : 0.15 }}
           >
             {activeTab === 'dealers_data' && currentUser.role === 'super_admin' && (
           <div className="space-y-8">
@@ -7665,6 +7760,7 @@ export default function AdminPanel({
             currentMonthId={currentMonthId}
             billingMonths={billingMonths}
             currentUser={currentUser}
+            billingMonthsList={mergedBillingMonthsList}
           />
         </Suspense>
       )}

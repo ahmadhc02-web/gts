@@ -10,11 +10,92 @@ import exec from "child_process";
 import { GoogleGenAI, Type } from "@google/genai";
 import cors from "cors";
 import { createProxyMiddleware } from "http-proxy-middleware";
+import dns from "dns";
+import { Agent, fetch as undiciFetch } from "undici";
+
+function maskUserOrEmail(val: string): string {
+  if (!val || typeof val !== 'string') return '***';
+  const trimmed = val.trim();
+  if (trimmed.length <= 2) return trimmed + '***';
+  return trimmed.substring(0, 2) + '***';
+}
+
+interface OtpAttemptTracker {
+  wrongAttempts: number;
+  invalidatedCount: number;
+  lockUntil: number;
+}
+const otpAttemptTrackers = new Map<string, OtpAttemptTracker>();
+const sendOtpRateLimitMap = new Map<string, number[]>();
+const geminiIpRateMap = new Map<string, number[]>();
+
+function checkSendOtpRateLimit(key: string, maxReqs: number, windowMs: number): boolean {
+  const now = Date.now();
+  let timestamps = sendOtpRateLimitMap.get(key) || [];
+  timestamps = timestamps.filter(t => now - t < windowMs);
+  if (timestamps.length >= maxReqs) {
+    sendOtpRateLimitMap.set(key, timestamps);
+    return false;
+  }
+  timestamps.push(now);
+  sendOtpRateLimitMap.set(key, timestamps);
+  return true;
+}
+
+function checkGeminiIpLimit(ip: string): boolean {
+  const now = Date.now();
+  let ts = geminiIpRateMap.get(ip) || [];
+  ts = ts.filter(t => now - t < 60000);
+  if (ts.length >= 30) {
+    geminiIpRateMap.set(ip, ts);
+    return false;
+  }
+  ts.push(now);
+  geminiIpRateMap.set(ip, ts);
+  return true;
+}
+
+function checkAndRecordOtpFailure(key: string): { locked: boolean; invalidated: boolean; message?: string } {
+  const now = Date.now();
+  let tracker = otpAttemptTrackers.get(key);
+  if (!tracker) {
+    tracker = { wrongAttempts: 0, invalidatedCount: 0, lockUntil: 0 };
+    otpAttemptTrackers.set(key, tracker);
+  }
+  if (tracker.lockUntil > now) {
+    return { locked: true, invalidated: false, message: "Account is temporarily locked due to multiple failed verification attempts. Please try again after 15 minutes." };
+  }
+
+  tracker.wrongAttempts += 1;
+  if (tracker.wrongAttempts >= 5) {
+    localOtpStore.delete(key);
+    tracker.wrongAttempts = 0;
+    tracker.invalidatedCount += 1;
+    if (tracker.invalidatedCount >= 3) {
+      tracker.lockUntil = now + 15 * 60 * 1000;
+      return { locked: true, invalidated: true, message: "Too many incorrect attempts. OTP invalidated and account locked for 15 minutes." };
+    }
+    return { locked: false, invalidated: true, message: "Too many incorrect attempts. OTP has been invalidated. Please request a new code." };
+  }
+  return { locked: false, invalidated: false, message: `Incorrect passcode. ${5 - tracker.wrongAttempts} attempts remaining.` };
+}
+
+function resetOtpSuccess(key: string) {
+  const tracker = otpAttemptTrackers.get(key);
+  if (tracker) {
+    tracker.wrongAttempts = 0;
+  }
+}
 
 dotenv.config();
 
-// Allow self-signed certificates when proxying or fetching from self-hosted servers
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+// --- Security Hardening ---
+// New Environment Variables:
+// - ALLOW_INSECURE_TLS: Set to '1' to allow insecure TLS connections (NODE_TLS_REJECT_UNAUTHORIZED = "0")
+if (process.env.ALLOW_INSECURE_TLS === '1') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  console.warn('[SECURITY WARNING] ALLOW_INSECURE_TLS is enabled. TLS certificate verification is disabled (NODE_TLS_REJECT_UNAUTHORIZED = 0).');
+}
 
 // Handle socket reset and aborted request errors globally to prevent Node server crashes
 process.on("uncaughtException", (err: any) => {
@@ -150,8 +231,12 @@ async function startServer() {
     })
   );
 
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.raw({ limit: "50mb", type: "application/octet-stream" }));
+  const json20mb = express.json({ limit: "20mb" });
+  app.use("/api/drive/backup", json20mb);
+  app.use("/api/sheets/bulk-export", json20mb);
+
+  app.use(express.json({ limit: "2mb" }));
+  app.use(express.raw({ limit: "2mb", type: "application/octet-stream" }));
 
   // --- Health Check Endpoint for Nginx / Upstream Load Balancers ---
   app.get(["/health", "/api/health"], (req, res) => {
@@ -164,46 +249,135 @@ async function startServer() {
   });
 
   // --- Secure Iframe Proxy Tunnel Bypass Endpoint ---
+  function isPrivateOrRestrictedIP(ip: string): boolean {
+    if (!ip) return true;
+    const trimmed = ip.trim().toLowerCase();
+    
+    // Check IPv4-mapped IPv6
+    if (trimmed.startsWith("::ffff:")) {
+      let mapped = trimmed.substring(7);
+      if (mapped.includes(".")) {
+        return isPrivateOrRestrictedIP(mapped);
+      } else if (mapped.includes(":")) {
+        try {
+          const parts = mapped.split(":");
+          if (parts.length === 2) {
+            const high = parseInt(parts[0], 16);
+            const low = parseInt(parts[1], 16);
+            const v4 = `${(high >> 8) & 255}.${high & 255}.${(low >> 8) & 255}.${low & 255}`;
+            return isPrivateOrRestrictedIP(v4);
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (trimmed === "0.0.0.0" || trimmed === "::1" || trimmed === "localhost" || trimmed === "::" || trimmed === "255.255.255.255") {
+      return true;
+    }
+
+    if (trimmed.includes(".")) {
+      const parts = trimmed.split(".");
+      if (parts.length !== 4) return true;
+      const octets = parts.map(p => parseInt(p, 10));
+      if (octets.some(o => isNaN(o) || o < 0 || o > 255)) return true;
+
+      const [o0, o1, o2, o3] = octets;
+
+      if (o0 === 0) return true; // 0.0.0.0/8
+      if (o0 === 10) return true; // 10.0.0.0/8
+      if (o0 === 100 && o1 >= 64 && o1 <= 127) return true; // 100.64.0.0/10
+      if (o0 === 127) return true; // 127.0.0.0/8
+      if (o0 === 169 && o1 === 254) return true; // 169.254.0.0/16
+      if (o0 === 172 && o1 >= 16 && o1 <= 31) return true; // 172.16.0.0/12
+      if (o0 === 192 && o1 === 0 && o2 === 0) return true; // 192.0.0.0/24
+      if (o0 === 192 && o1 === 168) return true; // 192.168.0.0/16
+      if (o0 === 198 && (o1 === 18 || o1 === 19)) return true; // 198.18.0.0/15
+      if (o0 >= 224) return true;
+
+      return false;
+    }
+
+    if (trimmed.startsWith("fc") || trimmed.startsWith("fd") || trimmed.startsWith("fe80:") || trimmed.startsWith("fec0:") || trimmed.startsWith("ff") || trimmed.startsWith("2001:db8:")) {
+      return true;
+    }
+
+    return false;
+  }
+
+  async function validateAndFetchUrl(urlString: string, hopCount = 0): Promise<any> {
+    if (hopCount > 3) {
+      throw new Error("Too many redirects (max 3 hops)");
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(urlString);
+    } catch (e) {
+      throw new Error("Invalid URL");
+    }
+
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("Invalid scheme. Must be http:// or https://");
+    }
+
+    const portStr = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+    const port = parseInt(portStr, 10);
+    const allowedPorts = [80, 443, 8080, 8443];
+    if (!allowedPorts.includes(port)) {
+      throw new Error(`Port ${port} is not allowed.`);
+    }
+
+    const addresses = await dns.promises.lookup(parsed.hostname, { all: true });
+    if (!addresses || addresses.length === 0) {
+      throw new Error("Host resolution failed");
+    }
+    for (const addr of addresses) {
+      if (isPrivateOrRestrictedIP(addr.address)) {
+        throw new Error(`Blocked request to private/restricted IP: ${addr.address}`);
+      }
+    }
+    const validatedIp = addresses[0].address;
+    const family = validatedIp.includes(':') ? 6 : 4;
+
+    const agent = new Agent({
+      connect: {
+        lookup: (_h: string, _o: any, cb: Function) => {
+          cb(null, validatedIp, family);
+        }
+      }
+    });
+
+    const response = await undiciFetch(urlString, {
+      method: "GET",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Host": parsed.host,
+      },
+      dispatcher: agent,
+      redirect: "manual",
+      signal: AbortSignal.timeout(25000),
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (location) {
+        const nextUrl = new URL(location, urlString).toString();
+        return validateAndFetchUrl(nextUrl, hopCount + 1);
+      }
+    }
+
+    return response;
+  }
+
   app.get("/api/proxy-tunnel", async (req, res) => {
     const targetUrl = req.query.url as string;
     try {
       if (!targetUrl) {
-        return res
-          .status(400)
-          .send("Proxy Tunnel Error: No URL parameter provided.");
+        return res.status(400).send("Proxy Tunnel Error: No URL parameter provided.");
       }
-
-      // Ensure URL is valid and HTTP/HTTPS
-      if (
-        !targetUrl.startsWith("http://") &&
-        !targetUrl.startsWith("https://")
-      ) {
-        return res
-          .status(400)
-          .send(
-            "Proxy Tunnel Error: Invalid scheme. Must be http:// or https://",
-          );
-      }
-
-      const clientHeaders: Record<string, string> = {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      };
-
-      // Perform request with a generous 25-second timeout list to cater for slow routing configs
-      const response = await fetch(targetUrl, {
-        method: "GET",
-        headers: clientHeaders,
-        redirect: "follow",
-        signal: AbortSignal.timeout(25000),
-      });
-
+      const response = await validateAndFetchUrl(targetUrl);
       const contentType = response.headers.get("content-type") || "";
 
-      // If it is not HTML text, we can either redirect to avoid overhead or serve binary
       if (
         !contentType.includes("text/html") &&
         !contentType.includes("application/xhtml+xml")
@@ -213,60 +387,39 @@ async function startServer() {
 
       let htmlText = await response.text();
 
-      // Parse the primary source origin url to construct absolute URL fallbacks
       const parsedTarget = new URL(targetUrl);
       const origin = parsedTarget.origin;
       const baseUrlStr =
         targetUrl.substring(0, targetUrl.lastIndexOf("/") + 1) || origin + "/";
 
-      // Helper function to resolve relative paths
       const makeAbsolute = (urlAttr: string, match: string) => {
         const val = match.trim();
         if (
-          val.startsWith("http://") ||
-          val.startsWith("https://") ||
+          !val ||
           val.startsWith("data:") ||
-          val.startsWith("#") ||
+          val.startsWith("blob:") ||
           val.startsWith("javascript:")
         ) {
-          return `${urlAttr}="${val}"`;
+          return match;
         }
-        if (val.startsWith("//")) {
-          return `${urlAttr}="https:${val}"`;
+        try {
+          const absolute = new URL(val, baseUrlStr).toString();
+          return `${urlAttr}="/api/proxy-tunnel?url=${encodeURIComponent(absolute)}"`;
+        } catch (e) {
+          return match;
         }
-        if (val.startsWith("/")) {
-          return `${urlAttr}="${origin}${val}"`;
-        }
-        return `${urlAttr}="${baseUrlStr}${val}"`;
       };
 
-      // Rewrites
       htmlText = htmlText.replace(
-        /(href|src|action)\s*=\s*["']([^"']*)["']/gi,
-        (fullMatch, attr, val) => {
-          return makeAbsolute(attr, val);
-        },
+        /(src)=["']([^"']+)["']/gi,
+        (m, attr, val) => makeAbsolute(attr, val)
+      );
+      htmlText = htmlText.replace(
+        /(href)=["']([^"']+)["']/gi,
+        (m, attr, val) => makeAbsolute(attr, val)
       );
 
-      // Inject a base tag is highly helpful
-      if (htmlText.includes("<head>")) {
-        htmlText = htmlText.replace(
-          "<head>",
-          `<head><base href="${targetUrl}">`,
-        );
-      } else if (htmlText.includes("<HEAD>")) {
-        htmlText = htmlText.replace(
-          "<HEAD>",
-          `<HEAD><base href="${targetUrl}">`,
-        );
-      }
-
-      // Explicitly relax frame control headers
-      res.setHeader("X-Frame-Options", "ALLOWALL");
-      res.setHeader("Content-Security-Policy", "frame-ancestors *;");
-      res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-
       return res.send(htmlText);
     } catch (err: any) {
       const isTimeout =
@@ -282,7 +435,6 @@ async function startServer() {
         console.error(`[Proxy Tunnel Error] loading ${targetUrl}:`, err);
       }
 
-      // Send a high-end, responsive, beautiful fallback page directly to render inside the iframe
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       return res.status(200).send(`
         <!DOCTYPE html>
@@ -402,7 +554,7 @@ async function startServer() {
                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
               </svg>
             </div>
-            <h1>Gateway Offline or Slow</h1>
+            <h1>Gateway Connection Timeout</h1>
             <p>
               The destination web server took too long to send data back. Either the network link is offline, or security protocols are limiting traffic. You can try reloading or opening directly to sync session credentials.
             </p>
@@ -536,10 +688,41 @@ async function startServer() {
     template: 'Dear {{name}}, this is a reminder that your internet bill of Rs. {{amount}} is due. Please clear it at your earliest convenience. Thank you.',
     complaintRegisteredTemplate: 'Dear {{name}}, your complaint (#{{complaintId}}) regarding "{{category}}" has been registered. Our team will contact you soon. Thank you for your patience.',
     complaintCompletedTemplate: 'Dear {{name}}, your complaint (#{{complaintId}}) has been resolved. Thank you for choosing us. Please contact us if the issue persists.',
-    completedStatusValue: 'Resolved'
+    completedStatusValue: 'Resolved',
+    updated_at: new Date(0).toISOString()
   };
 
-  const inMemoryWhatsAppSettings = { ...defaultWhatsAppTemplates };
+  const TEMPLATES_BACKUP_FILE = path.join(process.cwd(), "whatsapp_templates.json");
+  const readServerTemplatesBackup = () => {
+    try {
+      if (fs.existsSync(TEMPLATES_BACKUP_FILE)) {
+        return JSON.parse(fs.readFileSync(TEMPLATES_BACKUP_FILE, "utf-8"));
+      }
+    } catch (e) {
+      console.warn("Failed to read server templates backup:", e);
+    }
+    return null;
+  };
+  const writeServerTemplatesBackup = (data: any) => {
+    try {
+      fs.writeFileSync(TEMPLATES_BACKUP_FILE, JSON.stringify(data, null, 2), "utf-8");
+    } catch (e) {
+      console.warn("Failed to write server templates backup:", e);
+    }
+  };
+
+  // On server start, load the in-memory settings from the backup file if it exists
+  const initialBackup = readServerTemplatesBackup();
+  const inMemoryWhatsAppSettings: {
+    template: string;
+    complaintRegisteredTemplate: string;
+    complaintCompletedTemplate: string;
+    completedStatusValue: string;
+    updated_at: string;
+  } = {
+    ...defaultWhatsAppTemplates,
+    ...(initialBackup || {})
+  };
 
   const WHATSAPP_SERVICE_BACKEND_URL = process.env.WHATSAPP_SERVICE_URL || process.env.VITE_WHATSAPP_SERVICE_URL || "";
 
@@ -549,7 +732,10 @@ async function startServer() {
   const startWhatsAppBackendIfDown = async () => {
     if (process.env.WHATSAPP_AUTOSTART !== 'true') return;
     try {
-      const testRes = await fetch("http://127.0.0.1:3001/status", { signal: AbortSignal.timeout(1000) });
+      const testRes = await fetch("http://127.0.0.1:3001/status", {
+        headers: { "x-internal-key": process.env.WA_INTERNAL_KEY || "" },
+        signal: AbortSignal.timeout(1000)
+      });
       if (testRes.ok) return; // already active on port 3001
     } catch (_) {
       const backendDir = path.join(process.cwd(), "whatsapp_data", "backend");
@@ -566,17 +752,24 @@ async function startServer() {
           const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://167.233.41.7.sslip.io";
           const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
 
+          const childEnv = { ...process.env };
+          delete childEnv.NODE_TLS_REJECT_UNAUTHORIZED;
+          if (process.env.ALLOW_INSECURE_TLS === '1') {
+            childEnv.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+            console.warn('[SECURITY WARNING] ALLOW_INSECURE_TLS is enabled for WhatsApp backend spawn. TLS certificate verification is disabled.');
+          }
+
           whatsappBackendProcess = spawn("node", [backendScript], {
             cwd: backendDir,
             env: {
-              ...process.env,
+              ...childEnv,
               PORT: "3001",
               NODE_PATH: nodePath,
               SUPABASE_URL: supabaseUrl,
               VITE_SUPABASE_URL: supabaseUrl,
               SUPABASE_ANON_KEY: supabaseKey,
               VITE_SUPABASE_ANON_KEY: supabaseKey,
-              NODE_TLS_REJECT_UNAUTHORIZED: "0",
+              WA_INTERNAL_KEY: process.env.WA_INTERNAL_KEY || "",
             },
             stdio: "pipe"
           });
@@ -617,8 +810,43 @@ async function startServer() {
   // Trigger check on server start
   startWhatsAppBackendIfDown();
 
+  const SESSION_KEY_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+  const isValidSessionKey = (key: any): boolean => typeof key === "string" && SESSION_KEY_REGEX.test(key);
+
+  // In-memory rate limiter: max 30 requests per minute per IP on WhatsApp endpoints
+  const whatsappRateLimitMap = new Map<string, { count: number; resetTime: number }>();
+  const WA_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+  const WA_RATE_LIMIT_MAX = 30;
+
+  const checkWhatsAppRateLimit = (ip: string): boolean => {
+    const now = Date.now();
+    const record = whatsappRateLimitMap.get(ip);
+    if (!record || now > record.resetTime) {
+      whatsappRateLimitMap.set(ip, { count: 1, resetTime: now + WA_RATE_LIMIT_WINDOW_MS });
+      return true;
+    }
+    if (record.count >= WA_RATE_LIMIT_MAX) {
+      return false;
+    }
+    record.count += 1;
+    return true;
+  };
+
+  const whatsappRateLimitMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const forwarded = req.headers["x-forwarded-for"];
+    const ip = (typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "") || req.socket.remoteAddress || req.ip || "unknown";
+    if (!checkWhatsAppRateLimit(ip)) {
+      return res.status(429).json({ success: false, error: "Too many requests. Rate limit is 30 requests per minute per IP." });
+    }
+    next();
+  };
+
   app.get(["/api/whatsapp/status", "/whatsapp-api/status"], async (req, res) => {
-    const sessionKey = (req.query.session || req.query.dealerId || req.query.vlan || "") as string;
+    const rawSession = (req.query.session || req.query.dealerId || req.query.vlan) as string | undefined;
+    if (rawSession && !isValidSessionKey(rawSession)) {
+      return res.status(400).json({ error: "Invalid session key format" });
+    }
+    const sessionKey = rawSession || "";
     const qStr = sessionKey ? `?session=${encodeURIComponent(sessionKey)}` : "";
 
     const candidateUrls = [
@@ -629,7 +857,10 @@ async function startServer() {
 
     for (const target of candidateUrls) {
       try {
-        const response = await fetch(`${target}/status${qStr}`, { signal: AbortSignal.timeout(2500) });
+        const response = await fetch(`${target}/status${qStr}`, {
+          headers: { "x-internal-key": process.env.WA_INTERNAL_KEY || "" },
+          signal: AbortSignal.timeout(2500)
+        });
         if (response.ok) {
           const data = await response.json();
           lastWhatsAppBackendError = null;
@@ -652,7 +883,11 @@ async function startServer() {
   });
 
   app.get(["/api/whatsapp/qr", "/whatsapp-api/qr"], async (req, res) => {
-    const sessionKey = (req.query.session || req.query.dealerId || req.query.vlan || "") as string;
+    const rawSession = (req.query.session || req.query.dealerId || req.query.vlan) as string | undefined;
+    if (rawSession && !isValidSessionKey(rawSession)) {
+      return res.status(400).json({ error: "Invalid session key format" });
+    }
+    const sessionKey = rawSession || "";
     const qStr = sessionKey ? `?session=${encodeURIComponent(sessionKey)}` : "";
 
     const candidateUrls = [
@@ -663,7 +898,10 @@ async function startServer() {
 
     for (const target of candidateUrls) {
       try {
-        const response = await fetch(`${target}/qr${qStr}`, { signal: AbortSignal.timeout(2500) });
+        const response = await fetch(`${target}/qr${qStr}`, {
+          headers: { "x-internal-key": process.env.WA_INTERNAL_KEY || "" },
+          signal: AbortSignal.timeout(2500)
+        });
         if (response.ok) {
           const data = await response.json();
           if (data && data.qr) {
@@ -677,7 +915,10 @@ async function startServer() {
     startWhatsAppBackendIfDown();
     try {
       await new Promise(r => setTimeout(r, 1200));
-      const retryRes = await fetch(`http://127.0.0.1:3001/qr${qStr}`, { signal: AbortSignal.timeout(2000) });
+      const retryRes = await fetch(`http://127.0.0.1:3001/qr${qStr}`, {
+        headers: { "x-internal-key": process.env.WA_INTERNAL_KEY || "" },
+        signal: AbortSignal.timeout(2000)
+      });
       if (retryRes.ok) {
         const data = await retryRes.json();
         if (data && data.qr) return res.json(data);
@@ -688,6 +929,11 @@ async function startServer() {
   });
 
   app.post(["/api/whatsapp/disconnect", "/whatsapp-api/disconnect"], async (req, res) => {
+    const rawSession = req.body?.session || req.body?.dealerId || req.body?.vlan || req.query?.session;
+    if (rawSession && !isValidSessionKey(String(rawSession))) {
+      return res.status(400).json({ error: "Invalid session key format" });
+    }
+
     const candidateUrls = [
       "http://127.0.0.1:3001",
       WHATSAPP_SERVICE_BACKEND_URL,
@@ -698,7 +944,10 @@ async function startServer() {
       try {
         await fetch(`${target}/disconnect`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-key": process.env.WA_INTERNAL_KEY || "",
+          },
           body: JSON.stringify(req.body || {}),
           signal: AbortSignal.timeout(2500)
         });
@@ -709,6 +958,11 @@ async function startServer() {
   });
 
   app.post(["/api/whatsapp/reset-session", "/whatsapp-api/reset-session"], async (req, res) => {
+    const rawSession = req.body?.session || req.body?.dealerId || req.body?.vlan || req.query?.session;
+    if (rawSession && !isValidSessionKey(String(rawSession))) {
+      return res.status(400).json({ error: "Invalid session key format" });
+    }
+
     const candidateUrls = [
       "http://127.0.0.1:3001",
       WHATSAPP_SERVICE_BACKEND_URL,
@@ -719,7 +973,10 @@ async function startServer() {
       try {
         const response = await fetch(`${target}/reset-session`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-key": process.env.WA_INTERNAL_KEY || "",
+          },
           body: JSON.stringify(req.body || {}),
           signal: AbortSignal.timeout(6000)
         });
@@ -745,7 +1002,10 @@ async function startServer() {
       }
       await startWhatsAppBackendIfDown();
       await new Promise(r => setTimeout(r, 2500));
-      const retryRes = await fetch("http://127.0.0.1:3001/qr", { signal: AbortSignal.timeout(3000) });
+      const retryRes = await fetch("http://127.0.0.1:3001/qr", {
+        headers: { "x-internal-key": process.env.WA_INTERNAL_KEY || "" },
+        signal: AbortSignal.timeout(3000)
+      });
       if (retryRes.ok) {
         const data = await retryRes.json();
         return res.json({ success: true, qr: data.qr });
@@ -757,37 +1017,59 @@ async function startServer() {
     return res.json({ success: true, qr: null });
   });
 
-  const TEMPLATES_BACKUP_FILE = path.join(process.cwd(), "whatsapp_templates.json");
-  const readServerTemplatesBackup = () => {
-    try {
-      if (fs.existsSync(TEMPLATES_BACKUP_FILE)) {
-        return JSON.parse(fs.readFileSync(TEMPLATES_BACKUP_FILE, "utf-8"));
-      }
-    } catch (e) {
-      console.warn("Failed to read server templates backup:", e);
-    }
-    return null;
-  };
-  const writeServerTemplatesBackup = (data: any) => {
-    try {
-      fs.writeFileSync(TEMPLATES_BACKUP_FILE, JSON.stringify(data, null, 2), "utf-8");
-    } catch (e) {
-      console.warn("Failed to write server templates backup:", e);
-    }
-  };
-
   app.get(["/api/whatsapp/template", "/whatsapp-api/template"], async (req, res) => {
-    const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const rawKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
-    const SUPABASE_ANON_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+    res.setHeader("Cache-Control", "no-store");
 
-    try {
-      if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    // 1. In-memory candidate
+    const memTime = inMemoryWhatsAppSettings.updated_at ? new Date(inMemoryWhatsAppSettings.updated_at).getTime() : 0;
+    let freshest: {
+      template: string;
+      complaintRegisteredTemplate: string;
+      complaintCompletedTemplate: string;
+      completedStatusValue: string;
+      updated_at: string;
+      source: 'database' | 'backup' | 'memory';
+      time: number;
+    } = {
+      template: inMemoryWhatsAppSettings.template || defaultWhatsAppTemplates.template,
+      complaintRegisteredTemplate: inMemoryWhatsAppSettings.complaintRegisteredTemplate || defaultWhatsAppTemplates.complaintRegisteredTemplate,
+      complaintCompletedTemplate: inMemoryWhatsAppSettings.complaintCompletedTemplate || defaultWhatsAppTemplates.complaintCompletedTemplate,
+      completedStatusValue: inMemoryWhatsAppSettings.completedStatusValue || defaultWhatsAppTemplates.completedStatusValue,
+      updated_at: inMemoryWhatsAppSettings.updated_at || new Date(0).toISOString(),
+      source: 'memory',
+      time: isNaN(memTime) ? 0 : memTime,
+    };
+
+    // 2. Backup file candidate
+    const backup = readServerTemplatesBackup();
+    if (backup) {
+      const backupTime = backup.updated_at ? new Date(backup.updated_at).getTime() : 0;
+      const bTime = isNaN(backupTime) ? 0 : backupTime;
+      if (bTime > freshest.time) {
+        freshest = {
+          template: backup.template || freshest.template,
+          complaintRegisteredTemplate: backup.complaintRegisteredTemplate || freshest.complaintRegisteredTemplate,
+          complaintCompletedTemplate: backup.complaintCompletedTemplate || freshest.complaintCompletedTemplate,
+          completedStatusValue: backup.completedStatusValue || freshest.completedStatusValue,
+          updated_at: backup.updated_at || new Date(bTime).toISOString(),
+          source: 'backup',
+          time: bTime,
+        };
+      }
+    }
+
+    // 3. Supabase row candidate
+    const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+    const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
+    const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      try {
         const suRes = await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_settings?id=eq.main`, {
           headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
           },
           signal: AbortSignal.timeout(4000),
         });
@@ -795,17 +1077,25 @@ async function startServer() {
           const rows = await suRes.json();
           if (Array.isArray(rows) && rows.length > 0) {
             const data = rows[0];
-            return res.json({
-              template: data.message_template || inMemoryWhatsAppSettings.template,
-              complaintRegisteredTemplate: data.complaint_registered_template || inMemoryWhatsAppSettings.complaintRegisteredTemplate,
-              complaintCompletedTemplate: data.complaint_completed_template || inMemoryWhatsAppSettings.complaintCompletedTemplate,
-              completedStatusValue: data.complaint_completed_status_value || inMemoryWhatsAppSettings.completedStatusValue,
-            });
+            const rowTime = data.updated_at ? new Date(data.updated_at).getTime() : 0;
+            const dbTime = isNaN(rowTime) ? 0 : rowTime;
+            // Database row must be newer than or equal to memory/backup; newer in-memory/backup never overridden
+            if (dbTime >= freshest.time && dbTime > 0) {
+              freshest = {
+                template: data.message_template || freshest.template,
+                complaintRegisteredTemplate: data.complaint_registered_template || freshest.complaintRegisteredTemplate,
+                complaintCompletedTemplate: data.complaint_completed_template || freshest.complaintCompletedTemplate,
+                completedStatusValue: data.complaint_completed_status_value || freshest.completedStatusValue,
+                updated_at: data.updated_at || new Date(dbTime).toISOString(),
+                source: 'database',
+                time: dbTime,
+              };
+            }
           }
         }
+      } catch (err) {
+        console.warn("Supabase fetch for whatsapp_settings failed, checking fallback:", err);
       }
-    } catch (err) {
-      console.warn("Supabase fetch for whatsapp_settings failed, checking fallback:", err);
     }
 
     const db = await getFirestoreOnServer();
@@ -816,55 +1106,73 @@ async function startServer() {
         const snap = await serverGetDoc(docRef);
         if (snap.exists()) {
           const data = snap.data();
-          return res.json({
-            template: data.message_template || data.template || inMemoryWhatsAppSettings.template,
-            complaintRegisteredTemplate: data.complaint_registered_template || data.complaintRegisteredTemplate || inMemoryWhatsAppSettings.complaintRegisteredTemplate,
-            complaintCompletedTemplate: data.complaint_completed_template || data.complaintCompletedTemplate || inMemoryWhatsAppSettings.complaintCompletedTemplate,
-            completedStatusValue: data.complaint_completed_status_value || data.completedStatusValue || inMemoryWhatsAppSettings.completedStatusValue,
-          });
+          const fbTime = data.updatedAt ? (typeof data.updatedAt === 'number' ? data.updatedAt : new Date(data.updatedAt).getTime()) : 0;
+          if (fbTime > freshest.time) {
+            freshest = {
+              template: data.message_template || data.template || freshest.template,
+              complaintRegisteredTemplate: data.complaint_registered_template || data.complaintRegisteredTemplate || freshest.complaintRegisteredTemplate,
+              complaintCompletedTemplate: data.complaint_completed_template || data.complaintCompletedTemplate || freshest.complaintCompletedTemplate,
+              completedStatusValue: data.complaint_completed_status_value || data.completedStatusValue || freshest.completedStatusValue,
+              updated_at: new Date(fbTime).toISOString(),
+              source: 'database',
+              time: fbTime,
+            };
+          }
         }
       } catch (fbErr) {
         console.warn("Firestore fetch for whatsapp_settings fallback:", fbErr);
       }
     }
 
-    const backup = readServerTemplatesBackup();
-    if (backup) {
-      return res.json({
-        template: backup.template || inMemoryWhatsAppSettings.template,
-        complaintRegisteredTemplate: backup.complaintRegisteredTemplate || inMemoryWhatsAppSettings.complaintRegisteredTemplate,
-        complaintCompletedTemplate: backup.complaintCompletedTemplate || inMemoryWhatsAppSettings.complaintCompletedTemplate,
-        completedStatusValue: backup.completedStatusValue || inMemoryWhatsAppSettings.completedStatusValue,
-      });
+    // Keep inMemoryWhatsAppSettings in sync with freshest
+    if (freshest.time > memTime) {
+      inMemoryWhatsAppSettings.template = freshest.template;
+      inMemoryWhatsAppSettings.complaintRegisteredTemplate = freshest.complaintRegisteredTemplate;
+      inMemoryWhatsAppSettings.complaintCompletedTemplate = freshest.complaintCompletedTemplate;
+      inMemoryWhatsAppSettings.completedStatusValue = freshest.completedStatusValue;
+      inMemoryWhatsAppSettings.updated_at = freshest.updated_at;
     }
 
-    return res.json(inMemoryWhatsAppSettings);
+    return res.json({
+      template: freshest.template,
+      complaintRegisteredTemplate: freshest.complaintRegisteredTemplate,
+      complaintCompletedTemplate: freshest.complaintCompletedTemplate,
+      completedStatusValue: freshest.completedStatusValue,
+      updated_at: freshest.updated_at,
+      source: freshest.source,
+    });
   });
 
   app.post(["/api/whatsapp/template", "/whatsapp-api/template"], async (req, res) => {
     const { template, complaintRegisteredTemplate, complaintCompletedTemplate, completedStatusValue } = req.body;
 
+    const nowIso = new Date().toISOString();
     if (template !== undefined) inMemoryWhatsAppSettings.template = template;
     if (complaintRegisteredTemplate !== undefined) inMemoryWhatsAppSettings.complaintRegisteredTemplate = complaintRegisteredTemplate;
     if (complaintCompletedTemplate !== undefined) inMemoryWhatsAppSettings.complaintCompletedTemplate = complaintCompletedTemplate;
     if (completedStatusValue !== undefined) inMemoryWhatsAppSettings.completedStatusValue = completedStatusValue;
+    inMemoryWhatsAppSettings.updated_at = nowIso;
 
+    // 1. Update inMemoryWhatsAppSettings and backup file first
     writeServerTemplatesBackup(inMemoryWhatsAppSettings);
 
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const rawKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
     const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
-    const SUPABASE_ANON_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+    const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+
+    let savedInDatabase = false;
+    let dbErrorMessage = "";
 
     try {
-      if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-        await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_settings`, {
+      if (SUPABASE_URL && SUPABASE_KEY) {
+        const suRes = await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_settings?on_conflict=id`, {
           method: "POST",
           headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
             "Content-Type": "application/json",
-            Prefer: "resolution=merge-duplicates",
+            Prefer: "resolution=merge-duplicates,return=minimal",
           },
           body: JSON.stringify({
             id: "main",
@@ -872,13 +1180,27 @@ async function startServer() {
             complaint_registered_template: inMemoryWhatsAppSettings.complaintRegisteredTemplate,
             complaint_completed_template: inMemoryWhatsAppSettings.complaintCompletedTemplate,
             complaint_completed_status_value: inMemoryWhatsAppSettings.completedStatusValue,
-            updated_at: new Date().toISOString(),
+            updated_at: nowIso,
           }),
           signal: AbortSignal.timeout(4000),
         });
+
+        if (suRes.ok) {
+          savedInDatabase = true;
+        } else {
+          const errText = await suRes.text();
+          console.error("Supabase upsert for whatsapp_settings rejected:", suRes.status, errText);
+          savedInDatabase = false;
+          dbErrorMessage = errText || `HTTP ${suRes.status}`;
+        }
+      } else {
+        dbErrorMessage = "Supabase URL or Key not configured";
+        console.error("Supabase upsert for whatsapp_settings rejected: missing credentials");
       }
-    } catch (err) {
-      console.warn("Supabase upsert for whatsapp_settings failed:", err);
+    } catch (err: any) {
+      console.error("Supabase upsert for whatsapp_settings error:", err);
+      savedInDatabase = false;
+      dbErrorMessage = err?.message || String(err);
     }
 
     const db = await getFirestoreOnServer();
@@ -895,14 +1217,37 @@ async function startServer() {
       }
     }
 
-    return res.json({ success: true, ...inMemoryWhatsAppSettings });
+    if (!savedInDatabase) {
+      return res.json({
+        success: true,
+        savedInDatabase: false,
+        error: dbErrorMessage || "Database rejected upsert",
+        ...inMemoryWhatsAppSettings,
+        source: 'memory'
+      });
+    }
+
+    return res.json({
+      success: true,
+      savedInDatabase: true,
+      ...inMemoryWhatsAppSettings,
+      source: 'database'
+    });
   });
 
-  app.post(["/api/whatsapp/send-message", "/whatsapp-api/send-message"], async (req, res) => {
+  app.post(["/api/whatsapp/send-message", "/whatsapp-api/send-message"], whatsappRateLimitMiddleware, async (req, res) => {
     try {
-      const { phone, message } = req.body;
+      const { phone, message, session, dealerId, vlan } = req.body;
       if (!phone || !message) {
         return res.status(400).json({ success: false, error: "Phone and message are required" });
+      }
+      if (typeof message !== "string" || message.length > 4096) {
+        return res.status(400).json({ success: false, error: "Message must not exceed 4096 characters" });
+      }
+
+      const rawSession = session || dealerId || vlan;
+      if (rawSession && !isValidSessionKey(String(rawSession))) {
+        return res.status(400).json({ success: false, error: "Invalid session key format" });
       }
 
       const candidateUrls = [
@@ -915,8 +1260,12 @@ async function startServer() {
         try {
           const response = await fetch(`${target}/send-message`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ phone, message }),
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-key": process.env.WA_INTERNAL_KEY || "",
+              "x-forwarded-for": (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || req.ip || "",
+            },
+            body: JSON.stringify(req.body),
             signal: AbortSignal.timeout(15000),
           });
           const data = await response.json();
@@ -934,11 +1283,14 @@ async function startServer() {
     }
   });
 
-  app.post(["/api/whatsapp/send-push", "/whatsapp-api/send-push"], async (req, res) => {
+  app.post(["/api/whatsapp/send-push", "/whatsapp-api/send-push"], whatsappRateLimitMiddleware, async (req, res) => {
     try {
-      const { tokens } = req.body;
+      const { tokens, body } = req.body;
       if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
         return res.status(400).json({ success: false, error: "Missing or invalid tokens" });
+      }
+      if (typeof body === "string" && body.length > 4096) {
+        return res.status(400).json({ success: false, error: "Message body must not exceed 4096 characters" });
       }
       return res.json({ success: true, count: tokens.length });
     } catch (err: any) {
@@ -946,13 +1298,39 @@ async function startServer() {
     }
   });
 
-  app.post(["/api/whatsapp/create-lead", "/whatsapp-api/create-lead"], async (req, res) => {
+  app.post(["/api/whatsapp/create-lead", "/whatsapp-api/create-lead"], whatsappRateLimitMiddleware, async (req, res) => {
     try {
+      const { name, dealerId, lineCode, monthId, dueDateStart, dueDateEnd, waitSeconds, items } = req.body;
+      if (dealerId && !isValidSessionKey(String(dealerId))) {
+        return res.status(400).json({ success: false, error: "Invalid dealerId format" });
+      }
+      if (lineCode && !isValidSessionKey(String(lineCode))) {
+        return res.status(400).json({ success: false, error: "Invalid lineCode format" });
+      }
+      const rawWait = waitSeconds !== undefined ? waitSeconds : req.body.wait_seconds;
+      if (rawWait !== undefined && rawWait !== null && rawWait !== "") {
+        const parsedWait = Number(rawWait);
+        if (typeof rawWait === "boolean" || isNaN(parsedWait) || !Number.isFinite(parsedWait)) {
+          return res.status(400).json({ success: false, error: "wait_seconds must be numeric" });
+        }
+      }
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          if (item && typeof item.message === "string" && item.message.length > 4096) {
+            return res.status(400).json({ success: false, error: "Lead item message must not exceed 4096 characters" });
+          }
+        }
+      }
+
       if (WHATSAPP_SERVICE_BACKEND_URL && WHATSAPP_SERVICE_BACKEND_URL.startsWith("http") && !WHATSAPP_SERVICE_BACKEND_URL.includes("localhost:3001")) {
         try {
           const response = await fetch(`${WHATSAPP_SERVICE_BACKEND_URL}/create-lead`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-key": process.env.WA_INTERNAL_KEY || "",
+              "x-forwarded-for": (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || req.ip || "",
+            },
             body: JSON.stringify(req.body),
             signal: AbortSignal.timeout(15000),
           });
@@ -971,8 +1349,6 @@ async function startServer() {
       const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
       const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
 
-      const { name, dealerId, lineCode, monthId, dueDateStart, dueDateEnd, waitSeconds, items } = req.body;
-
       const leadRes = await fetch(`${SUPABASE_URL}/rest/v1/reminder_leads`, {
         method: "POST",
         headers: {
@@ -988,7 +1364,7 @@ async function startServer() {
           month_id: monthId,
           due_date_start: dueDateStart,
           due_date_end: dueDateEnd,
-          wait_seconds: waitSeconds || 30,
+          wait_seconds: Math.min(300, Math.max(60, Number(rawWait || 60))),
           status: 'pending',
           total_count: Array.isArray(items) ? items.length : 0,
           success_count: 0,
@@ -1049,7 +1425,10 @@ async function startServer() {
         try {
           const response = await fetch(`${target}/start-lead`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-key": process.env.WA_INTERNAL_KEY || "",
+            },
             body: JSON.stringify({ leadId }),
             signal: AbortSignal.timeout(10000),
           });
@@ -1108,7 +1487,10 @@ async function startServer() {
         try {
           const response = await fetch(`${target}/delete-lead`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-internal-key": process.env.WA_INTERNAL_KEY || "",
+            },
             body: JSON.stringify({ leadId }),
             signal: AbortSignal.timeout(6000),
           });
@@ -2141,6 +2523,10 @@ Optical power values are decaying beyond boundaries (typical target: **-18dBm to
   }
 
   app.get("/api/gemini/analyze-trends", async (req, res) => {
+    const ip = (req.headers["x-forwarded-for"] ? String(req.headers["x-forwarded-for"]).split(",")[0].trim() : "") || req.socket.remoteAddress || "127.0.0.1";
+    if (!checkGeminiIpLimit(ip)) {
+      return res.status(429).json({ error: "Too many requests. Rate limit is 30 requests per minute per IP." });
+    }
     let complaints: any[] = [];
     try {
       complaints = await fetchComplaintsOnServer();
@@ -2258,6 +2644,14 @@ Only return a valid, parsable JSON block. Absolutely no other text or explanatio
   });
 
   app.post("/api/gemini/ask", async (req, res) => {
+    const ip = (req.headers["x-forwarded-for"] ? String(req.headers["x-forwarded-for"]).split(",")[0].trim() : "") || req.socket.remoteAddress || "127.0.0.1";
+    if (!checkGeminiIpLimit(ip)) {
+      return res.status(429).json({ error: "Too many requests. Rate limit is 30 requests per minute per IP." });
+    }
+    const bodyStr = JSON.stringify(req.body || '');
+    if (bodyStr.length > 8000 || (req.body?.question && String(req.body.question).length > 8000) || (req.body?.prompt && String(req.body.prompt).length > 8000)) {
+      return res.status(400).json({ error: "Request payload or prompt exceeds maximum allowed length of 8000 characters." });
+    }
     const { question, history, searchGrounding } = req.body;
     try {
       const gemini = getGeminiClient();
@@ -3699,17 +4093,7 @@ System instructions:
     );
   });
 
-  // Temporary endpoint to safely download the uncorrupted AdminPanel.tsx directly to user's server
-  app.get("/api/download-clean-admin-panel", (req, res) => {
-    const filePath = path.join(process.cwd(), "src/components/AdminPanel.tsx");
-    if (fs.existsSync(filePath)) {
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      res.setHeader("Content-Disposition", "attachment; filename=AdminPanel.tsx");
-      fs.createReadStream(filePath).pipe(res);
-    } else {
-      res.status(404).send("File not found");
-    }
-  });
+
 
   // --- End Google Drive & Sheets Integration ---
 

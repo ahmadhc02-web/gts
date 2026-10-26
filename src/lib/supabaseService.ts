@@ -19,6 +19,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 let activeLineCode: string | undefined = undefined;
 let activeLineId: string | undefined = undefined;
 
+function checkWarnEmptyLineCode(type: 'folder' | 'sheet', itemId: string, itemLineCode?: string) {
+  try {
+    let userLineCode = activeLineCode || '';
+    let userId = 'unknown';
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem('complaint_app_user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u) {
+          userId = u.uid || u.id || u.username || 'unknown';
+          if (!userLineCode) {
+            userLineCode = u.lineCode || u.line_code || '';
+          }
+        }
+      }
+    }
+    if (userLineCode && (!itemLineCode || !String(itemLineCode).trim())) {
+      console.warn(`[VLAN Warning] ${type === 'folder' ? 'Folder' : 'Sheet'} saved with empty line_code while user has lineCode (User ID: ${userId}, ${type === 'folder' ? 'Folder' : 'Sheet'} ID: ${itemId})`);
+    }
+  } catch (e) {}
+}
+
 import { sendMessage, getTemplate, getStatus , sendPushNotification } from '../whatsapp_data/whatsappApi';
 
 const isExcludedFromRecovery = (name?: string, username?: string) => {
@@ -556,6 +578,9 @@ export function fromDb(table: string, obj: any): any {
 
     result.sheetSubtext = obj.sheet_subtext || '';
 
+    if (obj.updated !== undefined && obj.updated !== null) {
+      result.updated = String(obj.updated);
+    }
     if (obj.updated_at) {
       const parsedTime = typeof obj.updated_at === 'number' ? obj.updated_at : new Date(obj.updated_at).getTime();
       result.updatedAt = !isNaN(parsedTime) ? parsedTime : obj.updated_at;
@@ -581,6 +606,9 @@ async function upsertSupabase(collectionName: string, idField: string, idValue: 
   delete cleanData.updated_at;
   delete cleanData.updated_by;
   delete cleanData.author_name;
+  if (targetTable === 'ledger_sheets') {
+    delete cleanData.updated;
+  }
 
   if (targetTable === 'branding_config') {
     delete cleanData.border_radius;
@@ -636,6 +664,168 @@ function sanitize<T>(obj: T): T {
 
 export const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
 
+// --- Race Protection, Bad Fetch Retry, Realtime Health, and Window Wake Helpers ---
+const fetchSeqCounter: Record<string, number> = {};
+const lastRealtimeAppliedAt: Record<string, number> = {};
+const lastSafetyRefetchAt: Record<string, number> = {};
+const retryFetchTimers: Record<string, NodeJS.Timeout> = {};
+const channelReconnectTimers: Record<string, NodeJS.Timeout> = {};
+const reconnectBackoff: Record<string, number> = {};
+const hasSubscribedOnce: Record<string, boolean> = {};
+const badFetchRetryCount: Record<string, number> = {};
+
+const activeFetchInitialFunctions: Record<string, () => void> = {};
+const lastWindowRefetchAt: Record<string, number> = {};
+let windowRefetchDebounceTimer: NodeJS.Timeout | null = null;
+
+function triggerGlobalRefetch(): void {
+  if (windowRefetchDebounceTimer) {
+    clearTimeout(windowRefetchDebounceTimer);
+  }
+  windowRefetchDebounceTimer = setTimeout(() => {
+    windowRefetchDebounceTimer = null;
+    const now = Date.now();
+    for (const [key, fetchFn] of Object.entries(activeFetchInitialFunctions)) {
+      if (!globalTableSubscribers[key] || globalTableSubscribers[key].size === 0) continue;
+      if (now - (lastWindowRefetchAt[key] || 0) >= 30000) {
+        lastWindowRefetchAt[key] = now;
+        badFetchRetryCount[key] = 0;
+        try {
+          fetchFn();
+        } catch (e) {
+          console.warn(`[triggerGlobalRefetch] Error refetching ${key}:`, e);
+        }
+      }
+    }
+  }, 2000);
+}
+
+if (typeof window !== 'undefined' && !(window as any).__gtsRealtimeListenersAttached) {
+  (window as any).__gtsRealtimeListenersAttached = true;
+  const onWakeOrOnline = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    triggerGlobalRefetch();
+  };
+  window.addEventListener('online', onWakeOrOnline);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onWakeOrOnline);
+  }
+}
+
+// Helper: Extract unique row key across table schemas
+function getRowKey(r: any): string | null {
+  if (!r) return null;
+  const k = r.id ?? r.month_id ?? r.sheet_id ?? r.folder_id ?? r.uid ?? r.config_type;
+  return k !== undefined && k !== null ? String(k) : null;
+}
+
+// Helper: Extract valid timestamp from row
+function getRowTimestamp(r: any): number {
+  if (!r) return 0;
+  const val = r.updatedAt ?? r.updated_at ?? r.createdAt ?? r.created_at;
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  const t = new Date(val).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+// Helper: Merge fetched rows by ID with current cache (retaining rows with newer updatedAt/updated_at)
+function mergeWithCache(fetchedRows: any[], cacheRows: any[]): any[] {
+  if (!cacheRows || cacheRows.length === 0) return fetchedRows;
+  
+  const cacheMap = new Map<string, any>();
+  for (const row of cacheRows) {
+    const key = getRowKey(row);
+    if (key !== null) {
+      cacheMap.set(key, row);
+    }
+  }
+
+  return fetchedRows.map(fetchedRow => {
+    const key = getRowKey(fetchedRow);
+    if (key === null) return fetchedRow;
+    const cached = cacheMap.get(key);
+    if (!cached) return fetchedRow;
+
+    const cachedTime = getRowTimestamp(cached);
+    const fetchedTime = getRowTimestamp(fetchedRow);
+    if (cachedTime > fetchedTime) {
+      return { ...fetchedRow, ...cached };
+    }
+    return fetchedRow;
+  });
+}
+
+// Requirement 1: Helper fetchAllPages(buildQuery) fetching all rows in pages of 1000
+async function fetchAllPages(
+  buildQuery: () => any
+): Promise<{ data: any[]; error: any; pageCount: number }> {
+  const PAGE_SIZE = 1000;
+  const MAX_PAGES = 50;
+  let allRecords: any[] = [];
+  let pageIndex = 0;
+  let orderStrategy: 'created_at_desc_id' | 'created_at_only' | 'id_only' | 'none' = 'created_at_desc_id';
+
+  while (pageIndex < MAX_PAGES) {
+    const from = allRecords.length;
+    const to = from + PAGE_SIZE - 1;
+
+    let q = buildQuery();
+    if (orderStrategy === 'created_at_desc_id') {
+      q = q.order('created_at', { ascending: false }).order('id', { ascending: true });
+    } else if (orderStrategy === 'created_at_only') {
+      q = q.order('created_at', { ascending: false });
+    } else if (orderStrategy === 'id_only') {
+      q = q.order('id', { ascending: true });
+    }
+    q = q.range(from, to);
+
+    let { data, error } = await q;
+
+    // Verify which created-at / id column the table really has on page 0
+    if (error && pageIndex === 0 && orderStrategy === 'created_at_desc_id') {
+      const errMsg = String(error.message || '').toLowerCase();
+      if (error.code === '42703' || errMsg.includes('column') || errMsg.includes('order')) {
+        if (errMsg.includes('id') && !errMsg.includes('created_at')) {
+          // Has created_at but not id column
+          orderStrategy = 'created_at_only';
+          const r1 = await buildQuery().order('created_at', { ascending: false }).range(from, to);
+          data = r1.data;
+          error = r1.error;
+        } else {
+          // Fall back to id ordering
+          orderStrategy = 'id_only';
+          const r2 = await buildQuery().order('id', { ascending: true }).range(from, to);
+          if (r2.error && (r2.error.code === '42703' || String(r2.error.message || '').toLowerCase().includes('id'))) {
+            // Neither created_at nor id exists
+            orderStrategy = 'none';
+            const r3 = await buildQuery().range(from, to);
+            data = r3.data;
+            error = r3.error;
+          } else {
+            data = r2.data;
+            error = r2.error;
+          }
+        }
+      }
+    }
+
+    if (error) {
+      return { data: allRecords, error, pageCount: pageIndex + 1 };
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    if (rows.length === 0) {
+      break;
+    }
+
+    allRecords.push(...rows);
+    pageIndex++;
+  }
+
+  return { data: allRecords, error: null, pageCount: Math.max(1, pageIndex) };
+}
+
 function subscribeTable(
   tableName: string,
   callback: (data: any[], isFresh?: boolean) => void,
@@ -670,9 +860,14 @@ function subscribeTable(
   }
 
   const fetchInitial = async () => {
+    // Requirement 3: Race protection sequence counter and start timestamp
+    const currentSeq = (fetchSeqCounter[syncKey] = (fetchSeqCounter[syncKey] || 0) + 1);
+    const fetchStartedAt = Date.now();
+
     try {
       let mapped: any[] = [];
       let error = null;
+      let pageCount = 1;
 
       if (tableName === 'billing_months') {
         try {
@@ -688,56 +883,65 @@ function subscribeTable(
         }
       } else {
         const targetTable = tableName === 'users' ? 'users_data' : tableName;
-        let query = supabase.from(targetTable).select('*');
-        
-        
-        if (!['branding_config', 'categories_config', 'priority_config', 'statuses_config', 'zone_config'].includes(tableName)) {
-          const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
-          const cleanActive = String(activeLineCode || '').trim();
-          if (bypassLineCodeFilter === true) {
-            // no filter
-          } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
-            query = query.or('line_code.is.null,line_code.eq.');
-          } else if (cleanBypass) {
-            query = query.eq('line_code', cleanBypass);
-          } else if (cleanActive) {
-            query = query.eq('line_code', cleanActive);
-          } else if (tableName === 'users' && (!dealerId || dealerId === 'all' || dealerId === 'main')) {
-            query = query.or('line_code.is.null,line_code.eq.,role.eq.dealer');
-          } else {
-            // No active line code: strictly isolate to the without line room!
-            query = query.or('line_code.is.null,line_code.eq.');
-          }
-        }
-        if (dealerId && dealerId !== 'all') {
-          // When activeLineCode is set, records are already strictly isolated to that line_code.
-          // Avoid restricting by dealer_id so subaccounts with line_code see their dealer's data.
-          if (!activeLineCode) {
-            if (tableName === 'ledger_folders') {
-              query = dealerId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null') : query.eq('tenant_id', dealerId);
-            } else if (tableName === 'ledger_sheets') {
-              query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
-            } else if (tableName === 'reminder_leads') {
-              query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
-            } else if (!['branding_config'].includes(tableName)) {
-              query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+
+        // Build base query with exact line-code & dealer scoping filters
+        const buildQuery = () => {
+          let query = supabase.from(targetTable).select('*');
+          
+          if (!['branding_config', 'categories_config', 'priority_config', 'statuses_config', 'zone_config'].includes(tableName)) {
+            const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+            const cleanActive = String(activeLineCode || '').trim();
+            if (bypassLineCodeFilter === true) {
+              // no filter
+            } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+              query = query.or('line_code.is.null,line_code.eq.');
+            } else if (cleanBypass) {
+              query = query.eq('line_code', cleanBypass);
+            } else if (cleanActive) {
+              query = query.eq('line_code', cleanActive);
+            } else if (tableName === 'users' && (!dealerId || dealerId === 'all' || dealerId === 'main')) {
+              query = query.or('line_code.is.null,line_code.eq.,role.eq.dealer');
+            } else {
+              // No active line code: strictly isolate to the without line room!
+              query = query.or('line_code.is.null,line_code.eq.');
             }
           }
-        }
-        const { data: records, error: fetchErr } = await query;
+          if (dealerId && dealerId !== 'all') {
+            if (!activeLineCode) {
+              if (tableName === 'ledger_folders') {
+                query = dealerId === 'main' ? query.or('tenant_id.eq.main,tenant_id.is.null') : query.eq('tenant_id', dealerId);
+              } else if (tableName === 'ledger_sheets') {
+                query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+              } else if (tableName === 'reminder_leads') {
+                query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+              } else if (!['branding_config'].includes(tableName)) {
+                query = dealerId === 'main' ? query.or('dealer_id.eq.main,dealer_id.is.null') : query.eq('dealer_id', dealerId);
+              }
+            }
+          }
+          return query;
+        };
+
+        // Requirement 1: Fetch ALL rows in pages of 1000 via fetchAllPages helper
+        const { data: records, error: fetchErr, pageCount: pages } = await fetchAllPages(buildQuery);
         error = fetchErr;
+        pageCount = pages;
         if (!error && records) {
           mapped = records.map(mapRow);
         }
       }
 
+      // Requirement 6: Console timing log for every fetchInitial
+      const fetchDuration = Date.now() - fetchStartedAt;
+      console.log(`[Load Timing] ${tableName} ${mapped.length} rows in ${fetchDuration}ms (${pageCount} pages)`);
+
+      // Special ledger_folders fallback logic
       if (tableName === 'ledger_folders' && (error || mapped.length === 0)) {
         const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
         const currentCache = globalTableCaches[syncKey];
         if (currentCache && currentCache.length > 0) {
           mapped = currentCache;
         } else if (!isSpecificDealer) {
-          // Check Supabase branding_config backup
           const docId = `ledger_folders_data_${dealerId || 'main'}`;
           try {
             const { data: bData } = await supabase.from('branding_config').select('*').eq('config_type', docId).limit(1);
@@ -785,6 +989,63 @@ function subscribeTable(
         mapped.sort((a: any, b: any) => (b.createdAt || b.created_at || 0) - (a.createdAt || a.created_at || 0));
       }
 
+      const currentCache = globalTableCaches[syncKey];
+      const hasExistingRows = Array.isArray(currentCache) && currentCache.length > 0;
+
+      // Requirement 3: Bad-fetch retry logic (limit to 3 retries)
+      if ((error || mapped.length === 0) && hasExistingRows) {
+        const currentRetries = badFetchRetryCount[syncKey] || 0;
+        if (currentRetries < 3) {
+          badFetchRetryCount[syncKey] = currentRetries + 1;
+          console.warn(`[subscribeTable] Retaining current cache for ${syncKey} after bad fetch (retry ${badFetchRetryCount[syncKey]}/3) (error: ${error ? (error.message || error) : '0 rows returned while cache has ' + currentCache.length + ' rows'}). Scheduling retry in 5s.`);
+          if (retryFetchTimers[syncKey]) {
+            clearTimeout(retryFetchTimers[syncKey]);
+          }
+          retryFetchTimers[syncKey] = setTimeout(() => {
+            delete retryFetchTimers[syncKey];
+            fetchInitial();
+          }, 5000);
+          return;
+        } else {
+          // 3rd retry finished
+          if (!error && mapped.length === 0) {
+            console.warn(`[subscribeTable] 3 consecutive retries returned 0 rows without error for ${syncKey}. Accepting empty result and updating cache.`);
+            badFetchRetryCount[syncKey] = 0;
+            // Proceed below to update cache and notify subscribers with empty result
+          } else {
+            console.warn(`[subscribeTable] 3 consecutive retries failed with error for ${syncKey}. Keeping cache and stopping retries until next event.`);
+            return;
+          }
+        }
+      } else if (!error && mapped.length > 0) {
+        badFetchRetryCount[syncKey] = 0;
+      }
+
+      // Requirement 3: Race protection checks
+      // Discard if a newer fetch started
+      if (currentSeq !== fetchSeqCounter[syncKey]) {
+        console.log(`[Race Protection] Discarding stale fetch result for ${syncKey} (seq ${currentSeq} vs latest ${fetchSeqCounter[syncKey]}).`);
+        return;
+      }
+
+      // Discard and re-run if a realtime event was applied after this fetch started
+      if (lastRealtimeAppliedAt[syncKey] && lastRealtimeAppliedAt[syncKey] > fetchStartedAt) {
+        console.log(`[Race Protection] Realtime event was applied during fetch for ${syncKey}. Discarding stale fetch and re-running fetchInitial.`);
+        if (retryFetchTimers[syncKey]) {
+          clearTimeout(retryFetchTimers[syncKey]);
+        }
+        retryFetchTimers[syncKey] = setTimeout(() => {
+          delete retryFetchTimers[syncKey];
+          fetchInitial();
+        }, 200);
+        return;
+      }
+
+      // Requirement 3: Merge by ID with current cache (retaining rows with newer updatedAt/updated_at)
+      if (hasExistingRows && mapped.length > 0) {
+        mapped = mergeWithCache(mapped, currentCache);
+      }
+
       if (mapped.length > 0 || !error) {
         if (tableName === 'billing_months') {
           supabaseService.isBillingFresh = true;
@@ -815,8 +1076,28 @@ function subscribeTable(
       }
     } catch (err) {
       console.warn(`Exception loading table ${tableName} from Supabase:`, err);
+      const currentCache = globalTableCaches[syncKey];
+      if (Array.isArray(currentCache) && currentCache.length > 0) {
+        const currentRetries = badFetchRetryCount[syncKey] || 0;
+        if (currentRetries < 3) {
+          badFetchRetryCount[syncKey] = currentRetries + 1;
+          console.warn(`[subscribeTable] Retaining current cache for ${syncKey} after exception (retry ${badFetchRetryCount[syncKey]}/3). Scheduling retry in 5s.`);
+          if (retryFetchTimers[syncKey]) {
+            clearTimeout(retryFetchTimers[syncKey]);
+          }
+          retryFetchTimers[syncKey] = setTimeout(() => {
+            delete retryFetchTimers[syncKey];
+            fetchInitial();
+          }, 5000);
+        } else {
+          console.warn(`[subscribeTable] 3 consecutive retries failed with error for ${syncKey}. Keeping cache and stopping retries until next event.`);
+        }
+      }
     }
   };
+
+  // Register fetchInitial for global window wake/online refetch
+  activeFetchInitialFunctions[syncKey] = fetchInitial;
 
   const isFirstSubscriber = !globalTableSubscribers[syncKey] || globalTableSubscribers[syncKey].size === 0;
 
@@ -834,7 +1115,8 @@ function subscribeTable(
     fetchInitial();
   }
 
-  if (!globalTableChannels[syncKey]) {
+  // Requirement 5: Channel setup with health management, exponential backoff, and re-subscribe
+  const setupChannel = () => {
     try {
       const targetTable = tableName === 'users' ? 'users_data' : tableName;
       const channelName = `rt_${tableName}_${dealerId || 'all'}_${Math.random().toString(36).substring(2, 7)}`;
@@ -854,6 +1136,10 @@ function subscribeTable(
           console.log('[REALTIME] Change event received for table', targetTable, ':', payload);
           let billingMonthResolved = false;
           
+          // Requirement 3: Record timestamp whenever realtime change is applied and reset bad fetch retries
+          lastRealtimeAppliedAt[syncKey] = Date.now();
+          badFetchRetryCount[syncKey] = 0;
+
           if (payload && payload.eventType === 'DELETE' && payload.old) {
             try {
               const oldId = payload.old.id || payload.old.month_id || payload.old.sheet_id;
@@ -908,46 +1194,91 @@ function subscribeTable(
             } catch (e) {}
           } else if (payload && payload.new) {
             try {
+              const incomingId = payload.new.id || payload.new.month_id || payload.new.sheet_id || payload.new.folder_id;
+
+              const removeRowFromCache = () => {
+                if (incomingId === undefined || incomingId === null) return;
+                let cache = globalTableCaches[syncKey] || [];
+                const originalLength = cache.length;
+                cache = cache.filter((item: any) => {
+                  const itemId = item.id || item.month_id || item.sheet_id || item.folder_id;
+                  const dbIdMatch = item.dbId !== undefined && payload.new.id !== undefined && String(item.dbId) === String(payload.new.id);
+                  return String(itemId) !== String(incomingId) && !dbIdMatch;
+                });
+                if (cache.length !== originalLength) {
+                  globalTableCaches[syncKey] = cache;
+                  try {
+                    localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
+                    localStorage.setItem(`gts_cache_meta_${syncKey}`, String(Date.now()));
+                  } catch (e) {}
+
+                  const subscribers = globalTableSubscribers[syncKey];
+                  if (subscribers) {
+                    subscribers.forEach((cb) => {
+                      try { cb(cache, true); } catch (err) {}
+                    });
+                  }
+                }
+              };
+
               const isSpecificDealer = Boolean(dealerId && dealerId !== 'all' && dealerId !== 'main');
               if (activeLineCode) {
                 const rowLineCode = payload.new.line_code;
                 if (rowLineCode && rowLineCode !== activeLineCode) {
+                  removeRowFromCache();
                   return; // Skip updates not belonging to this dealer's line code
                 }
               } else if (isSpecificDealer) {
                 const rowDealer = payload.new.dealer_id || payload.new.tenant_id;
                 if (tableName === 'billing_months') {
                   if (rowDealer && rowDealer !== dealerId) {
+                    removeRowFromCache();
                     return; // Skip billing month updates not belonging to this dealer
                   }
                 } else {
                   if (rowDealer && rowDealer !== dealerId && rowDealer !== 'main') {
+                    removeRowFromCache();
                     return; // Skip updates not belonging to this dealer (or main for ledger fallback logic)
                   }
                 }
               }
               
               if (!['branding_config', 'categories_config', 'priority_config', 'statuses_config', 'zone_config'].includes(tableName)) {
+                let matchesRoom = true;
+                const rowLineCode = payload.new.line_code ? String(payload.new.line_code).trim() : '';
+                const cleanActive = String(activeLineCode || '').trim();
+                const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+
                 if (bypassLineCodeFilter === true) {
-                  // no filter
-                } else if (typeof bypassLineCodeFilter === 'string') {
-                  if (payload.new.line_code && payload.new.line_code !== bypassLineCodeFilter) return;
-                  if (!payload.new.line_code && bypassLineCodeFilter) return;
-                } else if (activeLineCode) {
-                  if (payload.new.line_code && payload.new.line_code !== activeLineCode) return;
+                  matchesRoom = true;
+                } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+                  matchesRoom = !rowLineCode;
+                } else if (cleanBypass) {
+                  matchesRoom = rowLineCode === cleanBypass;
+                } else if (cleanActive) {
+                  matchesRoom = rowLineCode === cleanActive;
                 } else {
+                  // Room has no active line code ("without line" room)
                   const isDealerProfile = tableName === 'users' && payload.new.role === 'dealer';
-                  if (payload.new.line_code && !isDealerProfile) return; // For non-dealers, only allow empty line_code
+                  if (isDealerProfile) {
+                    matchesRoom = true;
+                  } else {
+                    matchesRoom = !rowLineCode;
+                  }
+                }
+
+                if (!matchesRoom) {
+                  removeRowFromCache();
+                  return;
                 }
               }
 
-
               const mappedRow = mapRow(payload.new);
               if (mappedRow) {
-                const rowId = mappedRow.id || mappedRow.month_id || mappedRow.sheet_id;
+                const rowId = mappedRow.id || mappedRow.month_id || mappedRow.sheet_id || mappedRow.folder_id;
                 let cache = globalTableCaches[syncKey] || [];
                 if (rowId) {
-                  const idx = cache.findIndex((item: any) => (item.id || item.month_id || item.sheet_id) === rowId);
+                  const idx = cache.findIndex((item: any) => (item.id || item.month_id || item.sheet_id || item.folder_id) === rowId);
                   if (idx !== -1) {
                     cache = [...cache];
                     cache[idx] = { ...cache[idx], ...mappedRow };
@@ -957,6 +1288,29 @@ function subscribeTable(
                   if (tableName === 'billing_months') {
                     billingMonthResolved = true;
                     supabaseService.isBillingFresh = true;
+                    const mId = mappedRow.id || mappedRow.month_id;
+                    const dId = mappedRow.dealerId || dealerId || 'main';
+                    if (mId) {
+                      supabaseService.getBillingMonthRowsDirect(mId, dId).then(dbRows => {
+                        if (dbRows && dbRows.length > 0) {
+                          const currentCachedList = globalTableCaches[syncKey];
+                          if (Array.isArray(currentCachedList)) {
+                            const cIdx = currentCachedList.findIndex((item: any) => (item.id || item.month_id) === mId);
+                            if (cIdx !== -1) {
+                              const corrected = supabaseService.overlayBillingRows(mId, currentCachedList[cIdx].rows || [], dbRows);
+                              currentCachedList[cIdx] = { ...currentCachedList[cIdx], rows: corrected };
+                              try {
+                                localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(currentCachedList));
+                              } catch (e) {}
+                              const subs = globalTableSubscribers[syncKey];
+                              if (subs) {
+                                subs.forEach(cb => { try { cb(currentCachedList, true); } catch (e) {} });
+                              }
+                            }
+                          }
+                        }
+                      }).catch(() => {});
+                    }
                   }
                   globalTableCaches[syncKey] = cache;
                   try {
@@ -982,25 +1336,40 @@ function subscribeTable(
             return;
           }
 
-          // Debounce safety fetchInitial to avoid constant heavy queries on rapid-fire updates
-          if (realtimeFetchTimers[syncKey]) {
-            clearTimeout(realtimeFetchTimers[syncKey]);
+          // Requirement 4: Less refetching for complaints and clients (safety refetch at most once per 60s)
+          if (tableName === 'complaints' || tableName === 'clients') {
+            const now = Date.now();
+            const lastRefetch = lastSafetyRefetchAt[syncKey] || 0;
+            if (now - lastRefetch >= 60000) {
+              if (realtimeFetchTimers[syncKey]) {
+                clearTimeout(realtimeFetchTimers[syncKey]);
+                delete realtimeFetchTimers[syncKey];
+              }
+              lastSafetyRefetchAt[syncKey] = now;
+              realtimeFetchTimers[syncKey] = setTimeout(() => {
+                fetchInitial();
+                delete realtimeFetchTimers[syncKey];
+              }, 2000);
+            }
+          } else {
+            // Existing behavior for all other tables
+            if (realtimeFetchTimers[syncKey]) {
+              clearTimeout(realtimeFetchTimers[syncKey]);
+            }
+            realtimeFetchTimers[syncKey] = setTimeout(() => {
+              fetchInitial();
+              delete realtimeFetchTimers[syncKey];
+            }, 3000);
           }
-          realtimeFetchTimers[syncKey] = setTimeout(() => {
-            fetchInitial();
-            delete realtimeFetchTimers[syncKey];
-          }, 3000);
-        })
-        .subscribe();
+        });
       
-      // Hook up a dedicated, reliable broadcast channel for notifications to ensure 0-latency instant real-time sync across all clients on delete or clear action
+      // Hook up dedicated broadcast channel for notifications
       if (tableName === 'notifications') {
         const globalBroadcastChannel = supabase.channel('gts_notifications_global_broadcast');
         globalBroadcastChannel
           .on('broadcast', { event: 'clear_all' }, (payload: any) => {
             console.log('[GLOBAL BROADCAST] Received clear_all event:', payload);
             const targetDealerId = payload.payload?.dealerId;
-            // Clear only if it is a general clear (super_admin) or if it targeted our specific dealer scope
             if (!targetDealerId || targetDealerId === 'main' || targetDealerId === dealerId) {
               globalTableCaches[syncKey] = [];
               try {
@@ -1085,8 +1454,57 @@ function subscribeTable(
         (channel as any)._globalBroadcastChannel = globalBroadcastChannel;
       }
 
+      // Requirement 5: subscribe with status handling and exponential backoff recovery
+      channel.subscribe((status: string, err?: any) => {
+        console.log(`[Realtime Channel] ${channelName} status: ${status}`, err || '');
+        if (status === 'SUBSCRIBED') {
+          reconnectBackoff[syncKey] = 2000;
+          if (hasSubscribedOnce[syncKey]) {
+            fetchInitial();
+          }
+          hasSubscribedOnce[syncKey] = true;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          // Requirement 2: return immediately if stale channel or closing by us
+          if (globalTableChannels[syncKey] !== channel || (channel as any)._closingByUs) {
+            return;
+          }
+
+          console.warn(`[Realtime Channel] Health issue on ${channelName}: ${status}. Recreating channel with backoff...`);
+
+          // Mark closingByUs before our own channel.unsubscribe()/removeChannel() call
+          (channel as any)._closingByUs = true;
+          try {
+            if ((channel as any)._globalBroadcastChannel) {
+              (channel as any)._globalBroadcastChannel._closingByUs = true;
+              try { (channel as any)._globalBroadcastChannel.unsubscribe(); supabase.removeChannel((channel as any)._globalBroadcastChannel); } catch (e) {}
+            }
+            channel.unsubscribe();
+            supabase.removeChannel(channel);
+          } catch (e) {}
+          delete globalTableChannels[syncKey];
+
+          // Advance backoff only once for this failure (do not double backoff for one failure)
+          const currentDelay = reconnectBackoff[syncKey] || 2000;
+          reconnectBackoff[syncKey] = Math.min(30000, currentDelay * 2);
+
+          if (channelReconnectTimers[syncKey]) {
+            clearTimeout(channelReconnectTimers[syncKey]);
+          }
+          channelReconnectTimers[syncKey] = setTimeout(() => {
+            delete channelReconnectTimers[syncKey];
+            if (globalTableSubscribers[syncKey] && globalTableSubscribers[syncKey].size > 0) {
+              setupChannel();
+            }
+          }, currentDelay);
+        }
+      });
+
       globalTableChannels[syncKey] = channel;
     } catch (e) {}
+  };
+
+  if (!globalTableChannels[syncKey]) {
+    setupChannel();
   }
 
   return () => {
@@ -1094,6 +1512,15 @@ function subscribeTable(
     if (subscribers) {
       subscribers.delete(callback);
       if (subscribers.size === 0) {
+        delete activeFetchInitialFunctions[syncKey];
+        if (retryFetchTimers[syncKey]) {
+          clearTimeout(retryFetchTimers[syncKey]);
+          delete retryFetchTimers[syncKey];
+        }
+        if (channelReconnectTimers[syncKey]) {
+          clearTimeout(channelReconnectTimers[syncKey]);
+          delete channelReconnectTimers[syncKey];
+        }
         if (globalTableIntervals[syncKey]) {
           clearInterval(globalTableIntervals[syncKey]);
           delete globalTableIntervals[syncKey];
@@ -1104,12 +1531,15 @@ function subscribeTable(
         }
         if (globalTableChannels[syncKey]) {
           const chan = globalTableChannels[syncKey];
+          (chan as any)._closingByUs = true;
           if (chan._globalBroadcastChannel) {
+            (chan._globalBroadcastChannel as any)._closingByUs = true;
             try { chan._globalBroadcastChannel.unsubscribe(); supabase.removeChannel(chan._globalBroadcastChannel); } catch (e) {}
           }
           try { supabase.removeChannel(chan); } catch (e) {}
           delete globalTableChannels[syncKey];
         }
+        delete badFetchRetryCount[syncKey];
         delete globalTableSubscribers[syncKey];
       }
     }
@@ -1668,125 +2098,100 @@ export const supabaseService = {
         console.warn("billing_months fetch error:", err);
       }
 
-      // Check if all months returned already have complete authoritative rows data
-      const allMonthsHaveRows = monthMap.size > 0 && Array.from(monthMap.values()).every(m => m.rows && m.rows.length > 0);
-      const monthsMissingRows = Array.from(monthMap.values()).filter(m => !m.rows || m.rows.length === 0).map(m => m.id);
+      // Requirement 1: billing_rows is the source of truth. ALWAYS read billing_rows and overlay on blob rows
+      try {
+        let query = supabase.from('billing_rows').select('*');
+        if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+          query = query.eq('dealer_id', dealerId);
+        }
+        const cleanBypass = typeof effectiveBypass === 'string' ? String(effectiveBypass || '').trim() : '';
+        const cleanActive = String(activeLineCode || '').trim();
+        if (effectiveBypass === true || effectiveBypass === 'all') {
+          // Explicitly query all lines across network
+        } else if (cleanBypass === '__without_line__' || effectiveBypass === null) {
+          query = query.or('line_code.is.null,line_code.eq.');
+        } else if (cleanBypass) {
+          query = query.eq('line_code', cleanBypass);
+        } else if (cleanActive) {
+          query = query.eq('line_code', cleanActive);
+        } else {
+          query = query.or('line_code.is.null,line_code.eq.');
+        }
 
-      // Only query billing_rows if monthMap is empty or some month is missing rows_data
-      if (!allMonthsHaveRows) {
-        try {
-          let query = supabase.from('billing_rows').select('*');
-          if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
-            query = query.eq('dealer_id', dealerId);
-          }
-          const cleanBypass = typeof effectiveBypass === 'string' ? String(effectiveBypass || '').trim() : '';
-          const cleanActive = String(activeLineCode || '').trim();
-          if (effectiveBypass === true || effectiveBypass === 'all') {
-            // Explicitly query all lines across network
-          } else if (cleanBypass === '__without_line__' || effectiveBypass === null) {
-            query = query.or('line_code.is.null,line_code.eq.');
-          } else if (cleanBypass) {
-            query = query.eq('line_code', cleanBypass);
-          } else if (cleanActive) {
-            query = query.eq('line_code', cleanActive);
-          } else {
-            query = query.or('line_code.is.null,line_code.eq.');
+        const candidateMonthIds = Array.from(monthMap.keys());
+        if (candidateMonthIds.length > 0) {
+          query = query.in('month_id', candidateMonthIds);
+        } else {
+          query = query.order('created', { ascending: false }).limit(2000);
+        }
+
+        const { data: rowRecords } = await query;
+        if (rowRecords && rowRecords.length > 0) {
+          const rowsByMonth = new Map<string, any[]>();
+          for (const r of rowRecords) {
+            const mId = r.month_id || 'UNKNOWN';
+            if (isExcludedFromRecovery(r.name, r.username)) continue;
+            if (activeLineCode && r.line_code && r.line_code.trim().toLowerCase() !== activeLineCode.trim().toLowerCase()) continue;
+            if (!activeLineCode && (r.line_code || (r.dealer_id && r.dealer_id !== 'main'))) continue;
+            if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
+            rowsByMonth.get(mId)!.push({
+              id: r.client_id || r.id,
+              clientId: r.client_id || r.id,
+              name: r.name || '',
+              username: r.username || '',
+              mobileNumber: r.mobile_number || '',
+              area: r.area || '',
+              rt: r.rt || '',
+              baseAmount: Number(r.base_amount ?? r.amount ?? 0),
+              cr: Number(r.cr ?? 0),
+              totalAmount: Number(r.total_amount ?? 0),
+              billingDay: r.billing_day || '5',
+              paymentReceived: Number(r.payment_received ?? 0),
+              paymentStatus: r.payment_status || 'unpaid',
+              comments: r.comments || '',
+              occ: r.occ || '',
+              panelDetails: r.panel_details || '',
+              pkgDetails: r.pkg_details || '',
+              sag: r.sag || '',
+              lai: r.lai || '',
+              connectionDate: r.connection_date || '',
+              devicePrice: r.device_price || '',
+              abl: r.abl || '',
+              lineCode: r.line_code || '',
+              lineId: r.line_id || null,
+              reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
+              reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
+              line_code: r.line_code || '',
+              line_id: r.line_id || null
+            });
           }
 
-          if (monthsMissingRows.length > 0) {
-            query = query.in('month_id', monthsMissingRows);
-          } else {
-            query = query.order('created', { ascending: false }).limit(2000);
+          // Overlay billing_rows onto blob rows for each candidate month
+          for (const [mId, monthObj] of monthMap.entries()) {
+            const dbRowsForMonth = rowsByMonth.get(mId) || [];
+            monthObj.rows = supabaseService.overlayBillingRows(mId, monthObj.rows || [], dbRowsForMonth);
+            supabaseService._checkAndRepairDirtyBlob(mId, monthObj.dealerId || dealerId, monthObj.rows, monthObj.excludedClientKeys);
           }
 
-          const { data: rowRecords } = await query;
-          if (rowRecords && rowRecords.length > 0) {
-            const rowsByMonth = new Map<string, any[]>();
-            for (const r of rowRecords) {
-              const mId = r.month_id || 'UNKNOWN';
-              if (isExcludedFromRecovery(r.name, r.username)) continue;
-              if (activeLineCode && r.line_code && r.line_code.trim().toLowerCase() !== activeLineCode.trim().toLowerCase()) continue;
-              if (!activeLineCode && (r.line_code || (r.dealer_id && r.dealer_id !== 'main'))) continue;
-              if (!rowsByMonth.has(mId)) rowsByMonth.set(mId, []);
-              rowsByMonth.get(mId)!.push({
-                id: r.client_id || r.id,
-                clientId: r.client_id || r.id,
-                name: r.name || '',
-                username: r.username || '',
-                mobileNumber: r.mobile_number || '',
-                area: r.area || '',
-                rt: r.rt || '',
-                baseAmount: Number(r.base_amount ?? r.amount ?? 0),
-                cr: Number(r.cr ?? 0),
-                totalAmount: Number(r.total_amount ?? 0),
-                billingDay: r.billing_day || '5',
-                paymentReceived: Number(r.payment_received ?? 0),
-                paymentStatus: r.payment_status || 'unpaid',
-                comments: r.comments || '',
-                occ: r.occ || '',
-                panelDetails: r.panel_details || '',
-                pkgDetails: r.pkg_details || '',
-                sag: r.sag || '',
-                lai: r.lai || '',
-                connectionDate: r.connection_date || '',
-                devicePrice: r.device_price || '',
-                abl: r.abl || '',
-                lineCode: r.line_code || '',
-                lineId: r.line_id || null,
-                reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
-                reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
-                line_code: r.line_code || '',
-                line_id: r.line_id || null
+          // Months present only in billing_rows are added to monthMap
+          for (const [mId, rowList] of rowsByMonth.entries()) {
+            if (!monthMap.has(mId)) {
+              if (dealerId && dealerId !== 'main' && (!rowList || rowList.length === 0)) continue;
+              monthMap.set(mId, {
+                id: mId,
+                dealerId: dealerId || 'main',
+                lineCode: activeLineCode || '',
+                rows: rowList,
+                excludedClientKeys: [],
+                hasAuthoritativeRowsData: true,
+                updatedAt: Date.now(),
+                createdAt: Date.now()
               });
             }
-
-            for (const [mId, rowList] of rowsByMonth.entries()) {
-              if (!monthMap.has(mId)) {
-                if (dealerId && dealerId !== 'main' && (!rowList || rowList.length === 0)) continue;
-                monthMap.set(mId, {
-                  id: mId,
-                  dealerId: dealerId || 'main',
-                  lineCode: activeLineCode || '',
-                  rows: rowList,
-                  hasAuthoritativeRowsData: false,
-                  updatedAt: Date.now(),
-                  createdAt: Date.now()
-                });
-              } else {
-                const existingMonth = monthMap.get(mId)!;
-                if (!existingMonth.rows || existingMonth.rows.length === 0) {
-                  existingMonth.rows = rowList;
-                } else if (!existingMonth.hasAuthoritativeRowsData) {
-                  const rowByClientId = new Map<string, any>();
-                  const rowByUsername = new Map<string, any>();
-                  for (const r of rowList) {
-                    if (r.clientId) rowByClientId.set(String(r.clientId).toLowerCase(), r);
-                    if (r.username) rowByUsername.set(String(r.username).toLowerCase(), r);
-                  }
-                  existingMonth.rows = existingMonth.rows.map((r: any) => {
-                    const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
-                                  (r.username && rowByUsername.get(String(r.username).toLowerCase()));
-                    if (dbRow) {
-                      return {
-                        ...r,
-                        ...dbRow,
-                        comments: (dbRow.comments && dbRow.comments.trim() !== '') ? dbRow.comments : (r.comments || ''),
-                        baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
-                        cr: dbRow.cr ?? r.cr ?? 0,
-                        totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
-                        paymentReceived: dbRow.paymentReceived ?? r.paymentReceived ?? 0,
-                        paymentStatus: dbRow.paymentStatus ?? r.paymentStatus ?? 'unpaid'
-                      };
-                    }
-                    return r;
-                  });
-                }
-              }
-            }
           }
-        } catch (err) {
-          console.warn("billing_rows fetch error:", err);
         }
+      } catch (err) {
+        console.warn("billing_rows fetch error:", err);
       }
 
       const sortedList = Array.from(monthMap.values()).sort((a, b) => b.createdAt - a.createdAt);
@@ -1899,11 +2304,6 @@ export const supabaseService = {
           }
         } catch (err) {}
 
-        const resolved = monthMap.get(monthId);
-        if (resolved && resolved.rows && resolved.rows.length > 0) {
-          return resolved;
-        }
-
         try {
           let query = supabase.from('billing_rows').select('*').eq('month_id', monthId);
           if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
@@ -1972,40 +2372,22 @@ export const supabaseService = {
                   dealerId: dealerId || 'main',
                   lineCode: activeLineCode || '',
                   rows: rowList,
-                  hasAuthoritativeRowsData: false,
+                  hasAuthoritativeRowsData: true,
                   updatedAt: Date.now(),
                   createdAt: Date.now()
                 });
               } else {
-                const existingMonth = monthMap.get(mId)!;
-                if (!existingMonth.rows || existingMonth.rows.length === 0) {
-                  existingMonth.rows = rowList;
-                } else if (!existingMonth.hasAuthoritativeRowsData) {
-                  const rowByClientId = new Map<string, any>();
-                  const rowByUsername = new Map<string, any>();
-                  for (const r of rowList) {
-                    if (r.clientId) rowByClientId.set(String(r.clientId).toLowerCase(), r);
-                    if (r.username) rowByUsername.set(String(r.username).toLowerCase(), r);
-                  }
-                  existingMonth.rows = existingMonth.rows.map((r: any) => {
-                    const dbRow = (r.clientId && rowByClientId.get(String(r.clientId).toLowerCase())) ||
-                                  (r.username && rowByUsername.get(String(r.username).toLowerCase()));
-                    if (dbRow) {
-                      return {
-                        ...r,
-                        ...dbRow,
-                        comments: (dbRow.comments && dbRow.comments.trim() !== '') ? dbRow.comments : (r.comments || ''),
-                        baseAmount: dbRow.baseAmount ?? r.baseAmount ?? 0,
-                        cr: dbRow.cr ?? r.cr ?? 0,
-                        totalAmount: dbRow.totalAmount ?? r.totalAmount ?? 0,
-                        paymentReceived: dbRow.paymentReceived ?? r.paymentReceived ?? 0,
-                        paymentStatus: dbRow.paymentStatus ?? r.paymentStatus ?? 'unpaid'
-                      };
-                    }
-                    return r;
-                  });
+                const existingMonth = monthMap.get(mId);
+                if (existingMonth) {
+                  existingMonth.rows = supabaseService.overlayBillingRows(mId, existingMonth.rows || [], rowList);
+                  supabaseService._checkAndRepairDirtyBlob(mId, existingMonth.dealerId || dealerId, existingMonth.rows, existingMonth.excludedClientKeys);
                 }
               }
+            }
+          } else if (monthMap.has(monthId)) {
+            const existingMonth = monthMap.get(monthId);
+            if (existingMonth) {
+              supabaseService._checkAndRepairDirtyBlob(monthId, existingMonth.dealerId || dealerId, existingMonth.rows, existingMonth.excludedClientKeys);
             }
           }
         } catch (err) {}
@@ -2137,6 +2519,125 @@ export const supabaseService = {
     }
   },
 
+  overlayBillingRows(monthId: string, blobRows: any[], dbRows: any[]): any[] {
+    if (!Array.isArray(dbRows) || dbRows.length === 0) {
+      return Array.isArray(blobRows) ? blobRows : [];
+    }
+    const safeBlobRows = Array.isArray(blobRows) ? blobRows : [];
+
+    const dbByClientId = new Map<string, any>();
+    const dbByUsername = new Map<string, any>();
+
+    dbRows.forEach(dr => {
+      const cid = dr.clientId || dr.client_id || dr.id;
+      if (cid !== undefined && cid !== null && String(cid).trim() !== '') {
+        dbByClientId.set(String(cid).trim().toLowerCase(), dr);
+      }
+      if (dr.username && String(dr.username).trim() !== '') {
+        dbByUsername.set(String(dr.username).trim().toLowerCase(), dr);
+      }
+    });
+
+    const matchedDbRows = new Set<any>();
+    let changesCount = 0;
+
+    const mergedRows = safeBlobRows.map((bRow) => {
+      const cloned = { ...bRow };
+      const bCid = cloned.clientId || cloned.client_id || cloned.id;
+      const bNormCid = bCid !== undefined && bCid !== null ? String(bCid).trim().toLowerCase() : '';
+      const bUname = cloned.username ? String(cloned.username).trim().toLowerCase() : '';
+
+      let dbMatch: any = null;
+      if (bNormCid && dbByClientId.has(bNormCid)) {
+        dbMatch = dbByClientId.get(bNormCid);
+      } else if (bUname && dbByUsername.has(bUname)) {
+        dbMatch = dbByUsername.get(bUname);
+      }
+
+      if (dbMatch) {
+        matchedDbRows.add(dbMatch);
+        const clientIdForLog = bCid || dbMatch.clientId || dbMatch.client_id || cloned.username || 'unknown';
+
+        const updateField = (camelField: string, snakeField: string, isNumeric = false) => {
+          const oldVal = cloned[camelField] !== undefined ? cloned[camelField] : cloned[snakeField];
+          const rawNewVal = dbMatch[camelField] !== undefined ? dbMatch[camelField] : dbMatch[snakeField];
+          if (rawNewVal === undefined) return;
+
+          const newVal = isNumeric ? (Number(rawNewVal) || 0) : String(rawNewVal ?? '');
+          const isDiff = isNumeric
+            ? (Number(oldVal || 0) !== Number(newVal || 0))
+            : (String(oldVal ?? '').trim() !== String(newVal ?? '').trim());
+
+          if (isDiff) {
+            console.log(`[Billing Overlay] Stale blob corrected (month: ${monthId}, client: ${clientIdForLog}, field: ${camelField}, old: "${oldVal}", new: "${newVal}")`);
+            changesCount++;
+            cloned[camelField] = newVal;
+            cloned[snakeField] = newVal;
+          }
+        };
+
+        // Payment and subscriber fields specified in Requirement 1:
+        // payment_received, payment_status, cr, total_amount, comments, username, name, mobile_number, area, pkg_details, rt, panel_details, billing_day, base_amount
+        updateField('paymentReceived', 'payment_received', true);
+        updateField('paymentStatus', 'payment_status', false);
+        updateField('cr', 'cr', true);
+        updateField('totalAmount', 'total_amount', true);
+        updateField('baseAmount', 'base_amount', true);
+        updateField('comments', 'comments', false);
+        updateField('username', 'username', false);
+        updateField('name', 'name', false);
+        updateField('mobileNumber', 'mobile_number', false);
+        updateField('area', 'area', false);
+        updateField('pkgDetails', 'pkg_details', false);
+        updateField('rt', 'rt', false);
+        updateField('panelDetails', 'panel_details', false);
+        updateField('billingDay', 'billing_day', false);
+
+        // Advance fields if present in billing_rows
+        if (dbMatch.occ !== undefined) cloned.occ = dbMatch.occ;
+        if (dbMatch.devicePrice !== undefined) cloned.devicePrice = dbMatch.devicePrice;
+        if (dbMatch.abl !== undefined) cloned.abl = dbMatch.abl;
+        if (dbMatch.connectionDate !== undefined) cloned.connectionDate = dbMatch.connectionDate;
+      }
+
+      return cloned;
+    });
+
+    // Rows present only in billing_rows are appended
+    for (const dr of dbRows) {
+      if (!matchedDbRows.has(dr)) {
+        mergedRows.push({ ...dr });
+        console.log(`[Billing Overlay] Appended row present only in billing_rows (month: ${monthId}, client: ${dr.clientId || dr.client_id || dr.username})`);
+        changesCount++;
+      }
+    }
+
+    if (changesCount > 0) {
+      console.log(`[Billing Overlay] Month "${monthId}": overlaid ${changesCount} changes from billing_rows onto blob rows`);
+    }
+
+    return mergedRows;
+  },
+
+  _checkAndRepairDirtyBlob(monthId: string, dealerId: string = 'main', mergedRows: any[], excludedClientKeys?: string[]) {
+    try {
+      const markerKey = `gts_blob_dirty_${monthId}_${dealerId || 'main'}`;
+      if (typeof window !== 'undefined' && localStorage.getItem(markerKey) === '1') {
+        localStorage.removeItem(markerKey);
+        const payload: any = {
+          month_id: monthId,
+          dealer_id: dealerId || 'main',
+          line_code: activeLineCode || '',
+          line_id: activeLineId || null,
+          rows_data: { rows: mergedRows, excludedClientKeys: excludedClientKeys || [] },
+          updated_by: 'system_repair'
+        };
+        console.log(`[Billing Stale-Proof] Found dirty blob marker "${markerKey}". Scheduling fresh blob write from merged rows.`);
+        this.scheduleBackgroundBillingMonthBlob(monthId, dealerId || 'main', payload);
+      }
+    } catch (e) {}
+  },
+
   getBillingMonthDirect: async (monthId: string, dealerId: string = 'main') => {
     try {
       if (!supabase) return null;
@@ -2147,33 +2648,45 @@ export const supabaseService = {
         .eq('dealer_id', dealerId)
         .maybeSingle();
 
-      if (data && data.rows_data) {
-        let rows = data.rows_data;
-        if (typeof rows === 'string') {
-          try { rows = JSON.parse(rows); } catch (e) { rows = []; }
-        }
-        if (rows && typeof rows === 'object' && !Array.isArray(rows) && 'rows' in rows) {
-          if (Array.isArray(rows.rows)) {
-            rows = rows.rows;
+      let blobRows: any[] = [];
+      let excludedClientKeys: string[] = [];
+      let updatedAt = Date.now();
+
+      if (data) {
+        if (data.rows_data) {
+          let rows = data.rows_data;
+          if (typeof rows === 'string') {
+            try { rows = JSON.parse(rows); } catch (e) { rows = []; }
+          }
+          if (rows && typeof rows === 'object' && !Array.isArray(rows) && 'rows' in rows) {
+            if (Array.isArray(rows.rows)) {
+              rows = rows.rows;
+            }
+          }
+          if (Array.isArray(rows)) {
+            blobRows = rows;
           }
         }
-        const excludedClientKeys = parseExcludedKeys(data);
-        if (Array.isArray(rows) && rows.length > 0) {
-          return {
-            id: data.month_id,
-            rows,
-            excludedClientKeys,
-            updatedAt: data.updated ? new Date(data.updated).getTime() : Date.now()
-          };
+        excludedClientKeys = parseExcludedKeys(data);
+        if (data.updated) {
+          updatedAt = new Date(data.updated).getTime();
         }
       }
 
+      // ALWAYS also read billing_rows for that month_id and dealer_id (source of truth)
       const singleRows = await supabaseService.getBillingMonthRowsDirect(monthId, dealerId);
-      if (singleRows && singleRows.length > 0) {
+
+      // Overlay billing_rows onto blob rows
+      const mergedRows = supabaseService.overlayBillingRows(monthId, blobRows, singleRows || []);
+
+      if (mergedRows.length > 0) {
+        supabaseService._checkAndRepairDirtyBlob(monthId, dealerId, mergedRows, excludedClientKeys);
+
         return {
           id: monthId,
-          rows: singleRows,
-          updatedAt: Date.now()
+          rows: mergedRows,
+          excludedClientKeys,
+          updatedAt
         };
       }
 
@@ -2201,6 +2714,11 @@ export const supabaseService = {
     if (!this._backgroundBlobPayloads) this._backgroundBlobPayloads = {};
     if (!this._backgroundBlobTimers) this._backgroundBlobTimers = {};
     if (!this._backgroundBlobLocks) this._backgroundBlobLocks = {};
+
+    // Requirement 3: Mark dirty in localStorage while background blob write is pending
+    try {
+      localStorage.setItem(`gts_blob_dirty_${monthId}_${dealerId || 'main'}`, '1');
+    } catch (e) {}
 
     // Last write wins for this month key
     this._backgroundBlobPayloads[syncKey] = payload;
@@ -2241,6 +2759,9 @@ export const supabaseService = {
     if (!payload) return Promise.resolve();
     delete this._backgroundBlobPayloads[syncKey];
 
+    const monthId = payload.month_id;
+    const dealerId = payload.dealer_id || 'main';
+
     // Keep the per-month execution lock so two writes of the same month never overlap
     if (!this._backgroundBlobLocks) this._backgroundBlobLocks = {};
     const previousLock = this._backgroundBlobLocks[syncKey] || Promise.resolve();
@@ -2255,7 +2776,15 @@ export const supabaseService = {
         );
         const elapsed = Math.round(performance.now() - tStart);
         console.log(`[Save Timing] Background blob upsert for month "${payload.month_id}" completed in ${elapsed}ms`);
+        // Successfully flushed: clear the dirty marker
+        try {
+          localStorage.removeItem(`gts_blob_dirty_${monthId}_${dealerId}`);
+        } catch (e) {}
       } catch (err: any) {
+        // Failed flush: keep dirty marker in localStorage for recovery on next load
+        try {
+          localStorage.setItem(`gts_blob_dirty_${monthId}_${dealerId}`, '1');
+        } catch (e) {}
         console.error(`[Background Blob] Failed to upsert billing month blob for ${payload.month_id}:`, err);
         toast.error("Background month archive sync failed", {
           description: `Recovery rows are saved, but the full monthly backup failed: ${err?.message || 'Database error'}.`,
@@ -2586,8 +3115,37 @@ export const supabaseService = {
       const syncDuration = Math.round(performance.now() - tSyncStart);
       console.log(`[Save Timing] syncBillingRows for month "${monthId}" took ${syncDuration}ms`);
 
-      // 2. Schedule full billing_months blob upsert in background (debounced ~2s per month key, last write wins)
-      this.scheduleBackgroundBillingMonthBlob(monthId, dealerId, payload);
+      const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
+
+      // 2. Requirement 2: Full syncs (without changedIndices: month creation, Recheck Users, deletes)
+      // must write the blob synchronously (awaited), never through background debounce, so deleted rows
+      // cannot be resurrected by an old blob.
+      if (!hasChangedIndices) {
+        if (this._backgroundBlobTimers && this._backgroundBlobTimers[syncKey]) {
+          clearTimeout(this._backgroundBlobTimers[syncKey]);
+          delete this._backgroundBlobTimers[syncKey];
+        }
+        if (this._backgroundBlobPayloads) {
+          delete this._backgroundBlobPayloads[syncKey];
+        }
+
+        const tBlobStart = performance.now();
+        await withTimeout(
+          upsertSupabase('billing_months', 'month_id', payload.month_id, payload, true),
+          25000,
+          'Full sync billing month blob upsert'
+        );
+        const blobDuration = Math.round(performance.now() - tBlobStart);
+        console.log(`[Save Timing] Synchronous blob upsert for month "${monthId}" took ${blobDuration}ms`);
+
+        // Clear dirty marker
+        try {
+          localStorage.removeItem(`gts_blob_dirty_${monthId}_${dealerId}`);
+        } catch (e) {}
+      } else {
+        // Partial updates: schedule full billing_months blob upsert in background (debounced ~2s per month key, last write wins)
+        this.scheduleBackgroundBillingMonthBlob(monthId, dealerId, payload);
+      }
 
       // 3. Write localStorage billing cache once per save deferred with setTimeout(0)
       const exactKey = `billing_months_${dealerId || 'all'}_${activeLineCode || 'nolc'}`;
@@ -2685,27 +3243,16 @@ export const supabaseService = {
       return isNaN(num) ? 0 : num;
     };
 
-    const mapRowToDb = (r: any, actualIdx: number) => {
-      let rowId = r.clientId || r.id;
-      if (!rowId || !String(rowId).trim()) {
-        if (r.username && String(r.username).trim()) {
-          rowId = `usr_${String(r.username).trim().toLowerCase()}`;
-        } else if (r.name && String(r.name).trim()) {
-          // Make name fallback more unique by appending actualIdx to avoid collisions for same-named clients
-          rowId = `name_${String(r.name).trim().toLowerCase().replace(/\s+/g, '_')}_${actualIdx}`;
-        } else {
-          rowId = `row_${actualIdx}_${monthId}`;
-        }
-      }
-      // Ensure clientId is set in the raw object if it was missing, so it stabilizes
-      if (!r.clientId) {
-        r.clientId = rowId;
+    const mapRowToDb = (r: any) => {
+      const clientId = r.clientId;
+      if (!clientId || !String(clientId).trim()) {
+        return null;
       }
       return {
-        id: `${monthId}_${rowId}`,
+        id: `${monthId}_${clientId}`,
         month_id: String(monthId || ''),
         dealer_id: String(dealerId || 'main'),
-        client_id: String(rowId),
+        client_id: String(clientId),
         name: String(r.name || ''),
         username: String(r.username || ''),
         mobile_number: String(r.mobileNumber || r.mobile || ''),
@@ -2731,6 +3278,32 @@ export const supabaseService = {
       };
     };
 
+    const getPaymentScore = (row: any) => {
+      const status = String(row.payment_status || '').toLowerCase();
+      const rec = Number(row.payment_received || 0);
+      let statusScore = 1;
+      if (status === 'paid' || rec > 0) statusScore = 4;
+      else if (status === 'partial') statusScore = 3;
+      else if (status === 'tdc' || status === 'dc') statusScore = 2;
+      return {
+        statusScore,
+        paymentReceived: rec,
+        commentsLength: String(row.comments || '').trim().length
+      };
+    };
+
+    const isBetterScore = (candidate: any, existing: any) => {
+      const sCand = getPaymentScore(candidate);
+      const sEx = getPaymentScore(existing);
+      if (sCand.statusScore !== sEx.statusScore) {
+        return sCand.statusScore > sEx.statusScore;
+      }
+      if (sCand.paymentReceived !== sEx.paymentReceived) {
+        return sCand.paymentReceived > sEx.paymentReceived;
+      }
+      return sCand.commentsLength >= sEx.commentsLength;
+    };
+
     let itemsToSync: { r: any; actualIndex: number }[];
     const hasChangedIndices = changedIndices && (Array.isArray(changedIndices) ? changedIndices.length > 0 : changedIndices.size > 0);
     if (hasChangedIndices) {
@@ -2740,29 +3313,62 @@ export const supabaseService = {
       itemsToSync = rows.map((r: any, idx: number) => ({ r, actualIndex: idx }));
     }
 
-    const allDbRows = rows.map((r: any, idx: number) => mapRowToDb(r, idx));
+    const mappedRows = rows.map(r => mapRowToDb(r)).filter(Boolean);
+    const allDbRows = mappedRows;
 
-    if (itemsToSync.length > 0) {
-      let dbRows = itemsToSync.map(({ r, actualIndex }) => mapRowToDb(r, actualIndex));
-      
-      // LAYER 1: Deduplicate before sending to Supabase to prevent 'ON CONFLICT' errors
-      const dedupedRowsMap = new Map();
-      dbRows.forEach(row => {
-        if (dedupedRowsMap.has(row.id)) {
-          console.warn(`[syncBillingRows] Duplicate ID detected during upsert: ${row.id}`, {
-            previous: dedupedRowsMap.get(row.id),
-            current: row
+    let dbRowsToUpsert = itemsToSync.map(({ r }) => mapRowToDb(r)).filter(Boolean);
+
+    // If full sync (!hasChangedIndices), fetch existing billing_rows from Supabase to protect paid / higher payment rows
+    if (!hasChangedIndices && supabase) {
+      try {
+        const { data: existingDbRows } = await supabase.from('billing_rows').select('*').eq('month_id', monthId);
+        if (existingDbRows && existingDbRows.length > 0) {
+          const existingMap = new Map(existingDbRows.map(row => [row.id, row]));
+          dbRowsToUpsert = dbRowsToUpsert.map(candidate => {
+            const existing = existingMap.get(candidate.id);
+            if (existing) {
+              if (isBetterScore(existing, candidate)) {
+                return {
+                  ...candidate,
+                  payment_status: existing.payment_status,
+                  payment_received: Math.max(existing.payment_received || 0, candidate.payment_received || 0),
+                  cr: Math.max(existing.cr || 0, candidate.cr || 0),
+                  comments: existing.comments || candidate.comments
+                };
+              }
+            }
+            return candidate;
           });
         }
-        dedupedRowsMap.set(row.id, row);
-      });
-      dbRows = Array.from(dedupedRowsMap.values());
+      } catch (fetchErr) {
+        console.warn("Error fetching existing billing_rows for protection check:", fetchErr);
+      }
+    }
 
+    // Deduplicate dbRowsToUpsert by id with payment score comparison and console.warn
+    const dedupedMap = new Map<string, any>();
+    dbRowsToUpsert.forEach(row => {
+      if (dedupedMap.has(row.id)) {
+        const existing = dedupedMap.get(row.id);
+        if (isBetterScore(row, existing)) {
+          console.warn(`[syncBillingRows] Duplicate ID detected: ${row.id}. Dropped duplicate username "${existing.username}" in favor of "${row.username}" (better score).`);
+          dedupedMap.set(row.id, row);
+        } else {
+          console.warn(`[syncBillingRows] Duplicate ID detected: ${row.id}. Dropped duplicate username "${row.username}" in favor of existing "${existing.username}" (better score).`);
+        }
+      } else {
+        dedupedMap.set(row.id, row);
+      }
+    });
+
+    const finalDbRows = Array.from(dedupedMap.values());
+
+    if (finalDbRows.length > 0) {
       try {
-        const { error } = await supabase.from('billing_rows').upsert(dbRows, { onConflict: 'id' });
+        const { error } = await supabase.from('billing_rows').upsert(finalDbRows, { onConflict: 'id' });
         if (error) {
           if (error.message?.includes('panel_details') || error.message?.includes('column')) {
-            let fallbackRows = dbRows.map(row => {
+            let fallbackRows = finalDbRows.map(row => {
               const { panel_details, ...rest } = row as any;
               return rest;
             });
@@ -3382,7 +3988,11 @@ export const supabaseService = {
                   .replace(/\{\{category\}\}/gi, complaint.category || '')
                   .replace(/\{\{area\}\}/gi, complaint.area || '')
                   .replace(/\{\{description\}\}/gi, complaint.description || '');
-                await sendMessage(complaint.number, msg);
+                await sendMessage(complaint.number, msg, undefined, {
+                  kind: 'complaint',
+                  clientName: complaint.customerName,
+                  clientUsername: complaint.customerUsername
+                });
               }
             }
           } catch (e) {
@@ -3509,32 +4119,76 @@ export const supabaseService = {
       }
       
       // WhatsApp notification (fire-and-forget)
-      if (compNumber) {
-        (async () => {
-          try {
-            const templates = await getTemplate();
-            const completedValue = templates.completedStatusValue || 'Resolved';
-            
-            // Check if this status counts as completed (case-insensitive)
-            if (status.toLowerCase() === completedValue.toLowerCase()) {
-              const statusRes = await getStatus();
-              if (statusRes.connected) {
-                const tmpl = templates.complaintCompletedTemplate;
-                if (tmpl) {
-                  const msg = tmpl
-                    .replace(/\{\{name\}\}/gi, customerName || '')
-                    .replace(/\{\{complaintId\}\}/gi, id);
-                  await sendMessage(compNumber, msg);
-                }
-              }
-            } else {
-              console.warn('WhatsApp completed-message skipped: complaint status "' + status + '" does not match configured completed value "' + completedValue + '"');
-            }
-          } catch (e) {
-            console.warn('Failed to send WhatsApp completed notification', e);
+      (async () => {
+        try {
+          const templates = await getTemplate();
+          const configuredCompletedVal = templates?.completedStatusValue || '';
+
+          const normalizeStr = (s: string) => (s || '').toLowerCase().trim().replace(/[\s_\-]+/g, '');
+          const normStatus = normalizeStr(status);
+          const normConfigured = normalizeStr(configuredCompletedVal);
+
+          let isMatch = false;
+          if (normConfigured) {
+            isMatch = normStatus === normConfigured;
+          } else {
+            const defaultCompleted = ['complete', 'completed', 'resolved', 'done', 'closed'].map(normalizeStr);
+            isMatch = defaultCompleted.includes(normStatus);
           }
-        })();
-      }
+
+          if (!isMatch) {
+            console.warn(
+              `WhatsApp completed-message skipped: status mismatch (current status: "${status}", configured completed value: "${configuredCompletedVal || '[empty - defaults: complete, completed, resolved, done, closed]'}")`
+            );
+            return;
+          }
+
+          // Status matches - check customer phone number
+          let phone = (compNumber || '').trim();
+          let category = '';
+          try {
+            const { data: cRow } = await supabase.from('complaints').select('number, category').eq('id', id).single();
+            if (cRow?.number && !phone) phone = cRow.number.trim();
+            if (cRow?.category) category = cRow.category.trim();
+          } catch (_) {}
+
+          if (!phone) {
+            console.warn(`WhatsApp completed-message skipped: no customer phone number available for complaint "${id}"`);
+            return;
+          }
+
+          // Require WhatsApp connection
+          const statusRes = await getStatus();
+          if (!statusRes?.connected) {
+            console.warn('WhatsApp completed-message skipped: WhatsApp is not connected');
+            toast.warning("Complaint marked complete but the WhatsApp message was not sent: WhatsApp is not connected");
+            return;
+          }
+
+          const rawTmpl = templates?.complaintCompletedTemplate;
+          if (!rawTmpl) {
+            console.warn('WhatsApp completed-message skipped: complaintCompletedTemplate is empty');
+            return;
+          }
+
+          let msg = rawTmpl
+            .replace(/\{\{name\}\}/gi, customerName || '')
+            .replace(/\{\{complaintId\}\}/gi, id);
+
+          if (category) {
+            msg = msg.replace(/\{\{category\}\}/gi, category);
+          } else {
+            msg = msg.replace(/\{\{category\}\}/gi, '');
+          }
+
+          await sendMessage(phone, msg, undefined, {
+            kind: 'complaint',
+            clientName: customerName
+          });
+        } catch (e) {
+          console.warn('Failed to send WhatsApp completed notification:', e);
+        }
+      })();
 
       // Push Notification for status update
       try {
@@ -3950,6 +4604,71 @@ export const supabaseService = {
       payload.line_id = null;
     }
     await upsertSupabase('clients', 'id', id, toDb('clients', payload), true);
+  },
+
+  propagateClientToBilling: async (clientId: string, fields: { username?: string, name?: string, mobileNumber?: string, area?: string, pkgDetails?: string, rt?: string, panelDetails?: string, billingDay?: string }) => {
+    try {
+      const updatePayload: any = {};
+      if (fields.username !== undefined) updatePayload.username = fields.username;
+      if (fields.name !== undefined) updatePayload.name = fields.name;
+      if (fields.mobileNumber !== undefined) {
+        updatePayload.mobile_number = fields.mobileNumber;
+        updatePayload.phone = fields.mobileNumber;
+      }
+      if (fields.area !== undefined) updatePayload.area = fields.area;
+      if (fields.pkgDetails !== undefined) updatePayload.pkg_details = fields.pkgDetails;
+      if (fields.rt !== undefined) updatePayload.rt = fields.rt;
+      if (fields.panelDetails !== undefined) updatePayload.panel_details = fields.panelDetails;
+      if (fields.billingDay !== undefined) updatePayload.billing_day = fields.billingDay;
+
+      const { error } = await supabase
+        .from('billing_rows')
+        .update(updatePayload)
+        .eq('client_id', clientId);
+
+      if (error) {
+        toast.error("Failed to update billing records for client");
+        console.error("propagateClientToBilling billing_rows error:", error);
+      }
+
+      const monthsList = await supabaseService.getBillingMonthsList('all', true);
+      const sortedMonths = [...(monthsList || [])].sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)).slice(0, 12);
+
+      for (const m of sortedMonths) {
+        if (!m || !m.id) continue;
+        try {
+          const monthDoc = await supabaseService.getBillingMonthDirect(m.id, m.dealerId || 'main');
+          if (monthDoc && Array.isArray(monthDoc.rows)) {
+            let changed = false;
+            const newRows = monthDoc.rows.map((row: any) => {
+              if (row && String(row.clientId) === String(clientId)) {
+                changed = true;
+                return {
+                  ...row,
+                  ...(fields.username !== undefined ? { username: fields.username } : {}),
+                  ...(fields.name !== undefined ? { name: fields.name } : {}),
+                  ...(fields.mobileNumber !== undefined ? { mobileNumber: fields.mobileNumber, phone: fields.mobileNumber } : {}),
+                  ...(fields.area !== undefined ? { area: fields.area } : {}),
+                  ...(fields.pkgDetails !== undefined ? { pkgDetails: fields.pkgDetails } : {}),
+                  ...(fields.rt !== undefined ? { rt: fields.rt } : {}),
+                  ...(fields.panelDetails !== undefined ? { panelDetails: fields.panelDetails } : {}),
+                  ...(fields.billingDay !== undefined ? { billingDay: fields.billingDay } : {})
+                };
+              }
+              return row;
+            });
+            if (changed) {
+              await supabaseService.saveBillingMonth(m.id, newRows, 'system_sync', m.dealerId || 'main', true);
+            }
+          }
+        } catch (monthErr) {
+          console.warn(`Failed to propagate client to billing month ${m.id}:`, monthErr);
+        }
+      }
+    } catch (err) {
+      console.error("propagateClientToBilling error:", err);
+      toast.error("Failed to propagate client updates to billing records.");
+    }
   },
 
   saveClientsBatch: async (clientsList: Client[], dealerId: string = 'main') => {
@@ -4413,6 +5132,7 @@ export const supabaseService = {
         name: f.name || '',
         parentId: f.parentId || f.parent_id || '',
         tenantId: f.tenantId || f.tenant_id || 'main',
+        lineCode: f.lineCode || r.line_code || '',
         createdAt: parsedCreated
       };
     }, dealerId);
@@ -4596,30 +5316,29 @@ export const supabaseService = {
 
   deleteLedgerFolder: async (folderId: string, tenantId: string = 'main') => {
     try {
-      const lc = activeLineCode || 'nolc';
-      const syncKeys = [`ledger_folders_${tenantId || 'all'}_${lc}`, `ledger_folders_all_${lc}`, `ledger_folders_main_${lc}`, `ledger_folders__${lc}`];
-      syncKeys.forEach(sKey => {
-        if (globalTableCaches[sKey]) {
-          globalTableCaches[sKey] = globalTableCaches[sKey].filter(f => f.id !== folderId);
+      const folderPrimaryKey = `ledger_folders_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
+      if (globalTableCaches[folderPrimaryKey]) {
+        globalTableCaches[folderPrimaryKey] = globalTableCaches[folderPrimaryKey].filter((f: any) => f.id !== folderId);
+        const subs = globalTableSubscribers[folderPrimaryKey];
+        if (subs) {
+          subs.forEach((cb: any) => { try { cb(globalTableCaches[folderPrimaryKey]); } catch(e) {} });
         }
-      });
+      }
 
       // Instantly unmap the sheets from global cache
-      const sheetSyncKeys = [`ledger_sheets_${tenantId || 'all'}_${lc}`, `ledger_sheets_all_${lc}`, `ledger_sheets_${tenantId || 'all'}`, 'ledger_sheets_all', 'ledger_sheets_main', 'ledger_sheets_'];
-      sheetSyncKeys.forEach(sKey => {
-        if (globalTableCaches[sKey]) {
-          globalTableCaches[sKey] = globalTableCaches[sKey].map(sh => {
-            if (sh.folderId === folderId) {
-              return { ...sh, folderId: '', sort: '', sortFolder: '' };
-            }
-            return sh;
-          });
-          const subs = globalTableSubscribers[sKey];
-          if (subs) {
-            subs.forEach(cb => { try { cb(globalTableCaches[sKey]); } catch(e) {} });
+      const sheetPrimaryKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
+      if (globalTableCaches[sheetPrimaryKey]) {
+        globalTableCaches[sheetPrimaryKey] = globalTableCaches[sheetPrimaryKey].map((sh: any) => {
+          if (sh.folderId === folderId) {
+            return { ...sh, folderId: '', sort: '', sortFolder: '' };
           }
+          return sh;
+        });
+        const subs = globalTableSubscribers[sheetPrimaryKey];
+        if (subs) {
+          subs.forEach((cb: any) => { try { cb(globalTableCaches[sheetPrimaryKey]); } catch(e) {} });
         }
-      });
+      }
 
       // Update backup in branding_config if present
       const docId = activeLineCode ? `ledger_folders_data_${activeLineCode}` : `ledger_folders_data_${tenantId || 'main'}`;
@@ -4653,25 +5372,33 @@ export const supabaseService = {
 
   saveLedgerFolders: async (folders: any[], tenantId: string = 'main') => {
     try {
-      // 1. Instantly update global table cache and subscribers so UI never loses newly created folders
       const primaryKey = `ledger_folders_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
-      const lc = activeLineCode || 'nolc';
-      const syncKeys = [primaryKey, `ledger_folders_all_${lc}`, `ledger_folders_main_${lc}`, `ledger_folders__${lc}`];
-      
-      syncKeys.forEach(sKey => {
-        globalTableCaches[sKey] = folders;
-        const subs = globalTableSubscribers[sKey];
-        if (subs) {
-          subs.forEach(cb => {
-            try { cb(folders); } catch (cbErr) {}
-          });
-        }
-      });
+      const previousFolders = globalTableCaches[primaryKey] || [];
+      const prevMap = new Map<string, any>();
+      if (Array.isArray(previousFolders)) {
+        previousFolders.forEach((pf: any) => {
+          if (pf && pf.id) prevMap.set(String(pf.id), pf);
+        });
+      }
+
+      // 1. Stamp lineCode on each folder: an existing folder's VLAN is never overwritten by current user's VLAN
+      for (const f of folders) {
+        if (!f) continue;
+        f.lineCode = f.lineCode !== undefined && f.lineCode !== '' ? f.lineCode : (activeLineCode || '');
+      }
+
+      // Instantly update exact primary key in global table cache and subscribers
+      globalTableCaches[primaryKey] = folders;
+      const subs = globalTableSubscribers[primaryKey];
+      if (subs) {
+        subs.forEach(cb => {
+          try { cb(folders); } catch (cbErr) {}
+        });
+      }
 
       try {
-        const exactKey = `ledger_folders_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
-        localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(folders));
-        localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
+        localStorage.setItem(`gts_cache_v3_${primaryKey}`, JSON.stringify(folders));
+        localStorage.setItem(`gts_cache_meta_${primaryKey}`, String(Date.now()));
       } catch (e) {}
 
       if (!supabase) return;
@@ -4695,9 +5422,24 @@ export const supabaseService = {
         } catch (e) {}
       }
 
-      // 3. Persist directly to Supabase ledger_folders table
+      // 3. Persist directly to Supabase ledger_folders table - only folders that are new or changed
       for (const f of folders) {
         if (!f.id) continue;
+        const prev = prevMap.get(String(f.id));
+        const isNew = !prev;
+        const isChanged = prev && (
+          String(prev.name || '') !== String(f.name || '') ||
+          String(prev.parentId || prev.parent_id || '') !== String(f.parentId || f.parent_id || '') ||
+          String(prev.tenantId || prev.tenant_id || '') !== String(tenantId || 'main') ||
+          String(prev.lineCode || prev.line_code || '') !== String(f.lineCode || '')
+        );
+
+        if (!isNew && !isChanged && prevMap.size > 0) {
+          continue; // Skip unchanged folders
+        }
+
+        checkWarnEmptyLineCode('folder', String(f.id), f.lineCode);
+
         const createdVal = f.createdAt || f.created_at;
         let createdIso = new Date().toISOString();
         if (typeof createdVal === 'number') {
@@ -4714,7 +5456,7 @@ export const supabaseService = {
           name: String(f.name || ''),
           parentId: String(f.parentId || f.parent_id || ''),
           tenantId: String(tenantId || 'main'),
-          lineCode: String(f.lineCode || activeLineCode || ''),
+          lineCode: String(f.lineCode || ''),
           createdAt: createdIso
         });
 
@@ -4749,6 +5491,7 @@ export const supabaseService = {
       }
     } catch (e) {
       console.warn("saveLedgerFolders error:", e);
+      throw e;
     }
   },
 
@@ -4808,8 +5551,15 @@ export const supabaseService = {
 
       if (cleanCode) {
         query = query.eq('line_code', cleanCode);
+      } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+        query = query.or('line_code.is.null,line_code.eq.');
       } else if (cleanBypass) {
         query = query.eq('line_code', cleanBypass);
+      } else if (bypassLineCodeFilter === true) {
+        // no filter
+      } else {
+        // when activeLineCode is empty and no bypass is given, add the strict filter
+        query = query.or('line_code.is.null,line_code.eq.');
       }
 
       if (tenantId && tenantId !== 'all') {
@@ -4864,40 +5614,13 @@ export const supabaseService = {
   },
 
   saveLedgerSheet: async (sheet: any, tenantId: string = 'main') => {
-    if (!sheet) return;
+    if (!sheet) return {};
 
-    // Optimistic concurrency check: before upserting a sheet that already exists in the database,
-    // read its current updated_at
-    if (sheet.id && supabase) {
-      try {
-        const { data: existingRow, error: checkError } = await supabase
-          .from('ledger_sheets')
-          .select('id, updated_at')
-          .eq('id', sheet.id)
-          .maybeSingle();
-
-        if (!checkError && existingRow && existingRow.updated_at) {
-          const openedAt = sheet.openedUpdatedAt || sheet.initialUpdatedAt;
-          if (openedAt) {
-            const dbTime = typeof existingRow.updated_at === 'number'
-              ? existingRow.updated_at
-              : new Date(existingRow.updated_at).getTime();
-            const clientTime = typeof openedAt === 'number'
-              ? openedAt
-              : new Date(openedAt).getTime();
-
-            if (!isNaN(dbTime) && !isNaN(clientTime) && dbTime > clientTime) {
-              throw new Error("This sheet has been updated elsewhere. Please refresh to load the latest version before saving.");
-            }
-          }
-        }
-      } catch (err: any) {
-        if (err?.message?.includes("updated elsewhere")) {
-          throw err;
-        }
-        console.warn("Optimistic concurrency check query warning in saveLedgerSheet:", err);
-      }
-    }
+    const openedAt = sheet.openedUpdatedAt || sheet.initialUpdatedAt || sheet.openedUpdatedAtAsStoredInDb || sheet.updated_at;
+    const openedAtNum = openedAt ? (typeof openedAt === 'number' ? openedAt : new Date(openedAt).getTime()) : 0;
+    const currentSheetUpdatedAt = sheet.updatedAt ? (typeof sheet.updatedAt === 'number' ? sheet.updatedAt : new Date(sheet.updatedAt).getTime()) : Date.now();
+    const finalUpdatedAt = Math.max(currentSheetUpdatedAt, (openedAtNum || 0) + 1);
+    sheet.updatedAt = finalUpdatedAt;
 
     const sortValue = sheet.sort || sheet.sortFolder || sheet.folderName || '';
     let folderIdValue = sheet.folderId || '';
@@ -4919,16 +5642,155 @@ export const supabaseService = {
     }
 
     const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId, lineCode: sheet.lineCode || activeLineCode || '' };
+    checkWarnEmptyLineCode('sheet', String(sheet.id), itemObj.lineCode);
     const dbRow = toDb('ledger_sheets', itemObj);
+    delete dbRow.updated;
+    delete dbRow.updated_at;
 
-    // Update memory cache and notify subscribers immediately for the exact key
+    let returnedUpdatedString: string | undefined = undefined;
+
+    if (supabase && sheet.id) {
+      // Check if sheet already exists in database
+      let existingRow: any = null;
+      try {
+        const { data } = await supabase
+          .from('ledger_sheets')
+          .select('id, updated')
+          .eq('id', sheet.id)
+          .maybeSingle();
+        existingRow = data;
+      } catch (checkErr) {
+        console.warn("Check existing sheet warning in saveLedgerSheet:", checkErr);
+      }
+
+      if (existingRow) {
+        // Compare-and-swap update for existing sheets:
+        // The opened version string is sheet.openedUpdatedAtAsStoredInDb (raw string from the DB updated column); do not rebuild it from Date/ISO/number and never fall back to updated_at.
+        let openedVersionString = (typeof sheet.openedUpdatedAtAsStoredInDb === 'string' && sheet.openedUpdatedAtAsStoredInDb.trim())
+          ? sheet.openedUpdatedAtAsStoredInDb.trim()
+          : (typeof sheet.updated === 'string' && sheet.updated.trim() ? sheet.updated.trim() : undefined);
+
+        if (!openedVersionString && existingRow.updated) {
+          console.warn(`[CAS Warning] Sheet ${sheet.id} missing opened version string. Using current database updated value as compare value.`);
+          openedVersionString = String(existingRow.updated);
+        }
+
+        let updateError: any = null;
+        let updatedRows: any[] | null = null;
+        try {
+          const res = await supabase
+            .from('ledger_sheets')
+            .update(dbRow)
+            .eq('id', sheet.id)
+            .eq('updated', openedVersionString)
+            .select('id, updated');
+          updateError = res.error;
+          updatedRows = res.data;
+        } catch (err: any) {
+          updateError = err;
+        }
+
+        if (updateError || !updatedRows || updatedRows.length === 0) {
+          // If zero rows come back, read the row's current updated once
+          try {
+            const { data: verifyRow } = await supabase
+              .from('ledger_sheets')
+              .select('id, updated, table1_rows, table2_rows')
+              .eq('id', sheet.id)
+              .maybeSingle();
+
+            if (verifyRow && verifyRow.updated) {
+              const currentDbUpdated = String(verifyRow.updated);
+              const dbMs = new Date(currentDbUpdated).getTime();
+              const openedMs = openedVersionString ? new Date(openedVersionString).getTime() : 0;
+              const diffMs = Math.abs(dbMs - openedMs);
+
+              if (diffMs <= 1) {
+                // Same instant (parse both to ms, difference <= 1 ms, because of microsecond formatting) retry ONCE using the database's raw current string
+                const resRetry = await supabase
+                  .from('ledger_sheets')
+                  .update(dbRow)
+                  .eq('id', sheet.id)
+                  .eq('updated', currentDbUpdated)
+                  .select('id, updated');
+                if (!resRetry.error && resRetry.data && resRetry.data.length > 0) {
+                  updateError = null;
+                  updatedRows = resRetry.data;
+                }
+              }
+
+              if (updateError || !updatedRows || updatedRows.length === 0) {
+                if (dbMs > openedMs + 1) {
+                  console.warn(`[CAS Conflict] Sheet ${sheet.id} opened version: ${openedVersionString}, database updated: ${currentDbUpdated}, diff: ${dbMs - openedMs}ms`);
+                  // Check if content equals payload's (ambiguous timeout where write succeeded)
+                  const payloadT1 = typeof dbRow.table1_rows === 'string' ? dbRow.table1_rows : JSON.stringify(dbRow.table1_rows || []);
+                  const payloadT2 = typeof dbRow.table2_rows === 'string' ? dbRow.table2_rows : JSON.stringify(dbRow.table2_rows || []);
+                  const dbT1 = typeof verifyRow.table1_rows === 'string' ? verifyRow.table1_rows : JSON.stringify(verifyRow.table1_rows || []);
+                  const dbT2 = typeof verifyRow.table2_rows === 'string' ? verifyRow.table2_rows : JSON.stringify(verifyRow.table2_rows || []);
+
+                  if (payloadT1 === dbT1 && payloadT2 === dbT2) {
+                    updatedRows = [{ id: sheet.id, updated: currentDbUpdated }];
+                    updateError = null;
+                  } else {
+                    throw new Error("This sheet was changed on another device. Please reload it and try again.");
+                  }
+                } else if (updateError) {
+                  const payloadT1 = typeof dbRow.table1_rows === 'string' ? dbRow.table1_rows : JSON.stringify(dbRow.table1_rows || []);
+                  const payloadT2 = typeof dbRow.table2_rows === 'string' ? dbRow.table2_rows : JSON.stringify(dbRow.table2_rows || []);
+                  const dbT1 = typeof verifyRow.table1_rows === 'string' ? verifyRow.table1_rows : JSON.stringify(verifyRow.table1_rows || []);
+                  const dbT2 = typeof verifyRow.table2_rows === 'string' ? verifyRow.table2_rows : JSON.stringify(verifyRow.table2_rows || []);
+
+                  if (payloadT1 === dbT1 && payloadT2 === dbT2) {
+                    updatedRows = [{ id: sheet.id, updated: currentDbUpdated }];
+                    updateError = null;
+                  } else {
+                    throw updateError;
+                  }
+                }
+              }
+            }
+          } catch (verifyEx: any) {
+            if (verifyEx.message && verifyEx.message.includes("changed on another device")) {
+              throw verifyEx;
+            }
+          }
+        }
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        if (!updatedRows || updatedRows.length === 0) {
+          throw new Error("This sheet was changed on another device. Please reload it and try again.");
+        }
+
+        returnedUpdatedString = updatedRows[0]?.updated;
+      } else {
+        // New sheets: .insert([dbRow]).select('id, updated')
+        let res = await supabase.from('ledger_sheets').insert([dbRow]).select('id, updated');
+        if (res.error) {
+          throw res.error;
+        }
+        returnedUpdatedString = res.data?.[0]?.updated;
+      }
+    } else {
+      await upsertSupabase('ledger_sheets', 'id', sheet.id, dbRow, true);
+    }
+
+    if (returnedUpdatedString) {
+      sheet.updated = returnedUpdatedString;
+      sheet.openedUpdatedAtAsStoredInDb = returnedUpdatedString;
+    }
+
+    // Write globalTableCaches, notify subscribers, and write localStorage ONLY AFTER database save has succeeded
     const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
     if (!globalTableCaches[syncKey]) globalTableCaches[syncKey] = [];
+    const cachedItemObj = { ...itemObj, updated: returnedUpdatedString || itemObj.updated };
     const idx = globalTableCaches[syncKey].findIndex(item => item.id === sheet.id);
     if (idx !== -1) {
-      globalTableCaches[syncKey][idx] = { ...globalTableCaches[syncKey][idx], ...itemObj };
+      globalTableCaches[syncKey][idx] = { ...globalTableCaches[syncKey][idx], ...cachedItemObj };
     } else {
-      globalTableCaches[syncKey].unshift(itemObj);
+      globalTableCaches[syncKey].unshift(cachedItemObj);
     }
     const subs = globalTableSubscribers[syncKey];
     if (subs) {
@@ -4940,47 +5802,26 @@ export const supabaseService = {
       localStorage.setItem(`gts_cache_meta_${syncKey}`, String(Date.now()));
     } catch (e) {}
 
-    await upsertSupabase('ledger_sheets', 'id', sheet.id, dbRow);
+    return returnedUpdatedString ? { [sheet.id]: returnedUpdatedString } : {};
   },
 
   saveLedgerSheetsBatch: async (sheets: any[], tenantId: string = 'main') => {
-    if (!sheets || sheets.length === 0) return;
+    if (!sheets || sheets.length === 0) return {};
 
-    // Optimistic concurrency check: before upserting sheets that already exist in the database,
-    // read their current updated_at (one lightweight select of id, updated_at for all sheet ids in the batch)
     const sheetIds = sheets.map(sh => sh.id).filter(Boolean);
+    const existingRowsMap = new Map<string, any>();
+
     if (supabase && sheetIds.length > 0) {
       try {
         const { data: existingRows, error: checkError } = await supabase
           .from('ledger_sheets')
-          .select('id, updated_at')
+          .select('id, updated')
           .in('id', sheetIds);
 
-        if (!checkError && existingRows && existingRows.length > 0) {
-          for (const existing of existingRows) {
-            if (!existing.updated_at) continue;
-            const matchingSheet = sheets.find(sh => sh.id === existing.id);
-            if (!matchingSheet) continue;
-
-            const openedAt = matchingSheet.openedUpdatedAt || matchingSheet.initialUpdatedAt;
-            if (openedAt) {
-              const dbTime = typeof existing.updated_at === 'number'
-                ? existing.updated_at
-                : new Date(existing.updated_at).getTime();
-              const clientTime = typeof openedAt === 'number'
-                ? openedAt
-                : new Date(openedAt).getTime();
-
-              if (!isNaN(dbTime) && !isNaN(clientTime) && dbTime > clientTime) {
-                throw new Error("This sheet has been updated elsewhere. Please refresh to load the latest version before saving.");
-              }
-            }
-          }
+        if (!checkError && existingRows) {
+          existingRows.forEach(r => existingRowsMap.set(r.id, r));
         }
       } catch (err: any) {
-        if (err?.message?.includes("updated elsewhere")) {
-          throw err;
-        }
         console.warn("Optimistic concurrency check query warning in saveLedgerSheetsBatch:", err);
       }
     }
@@ -5010,10 +5851,12 @@ export const supabaseService = {
       }
     }
 
-    const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
-    if (!globalTableCaches[syncKey]) globalTableCaches[syncKey] = [];
+    const tStartSheets = performance.now();
+    const itemObjs: any[] = [];
+    const updatedStringMap: Record<string, string> = {};
 
-    const dbRows = sheets.map(sheet => {
+    // Save each sheet using compare-and-swap for existing sheets and insert for new sheets
+    await Promise.all(sheets.map(async (sheet) => {
       const sortValue = sheet.sort || sheet.sortFolder || sheet.folderName || '';
       let folderIdValue = sheet.folderId || '';
       if (folderIdValue && !validFolderIds.has(folderIdValue)) {
@@ -5021,15 +5864,153 @@ export const supabaseService = {
       }
 
       const itemObj = { ...sheet, sort: folderIdValue ? sortValue : '', folderId: folderIdValue, dealerId: tenantId, lineCode: sheet.lineCode || activeLineCode || '' };
+      checkWarnEmptyLineCode('sheet', String(sheet.id), itemObj.lineCode);
+      itemObjs.push(itemObj);
+      const dbRow = toDb('ledger_sheets', itemObj);
+      delete dbRow.updated;
+      delete dbRow.updated_at;
 
-      const idx = globalTableCaches[syncKey].findIndex(item => item.id === sheet.id);
-      if (idx !== -1) {
-        globalTableCaches[syncKey][idx] = { ...globalTableCaches[syncKey][idx], ...itemObj };
+      let sheetUpdatedString: string | undefined = undefined;
+
+      if (supabase && sheet.id) {
+        const existingRow = existingRowsMap.get(sheet.id);
+
+        if (existingRow) {
+          // Compare-and-swap update for existing sheets:
+          // The opened version string is sheet.openedUpdatedAtAsStoredInDb (raw string from the DB updated column); do not rebuild it from Date/ISO/number and never fall back to updated_at.
+          let openedVersionString = (typeof sheet.openedUpdatedAtAsStoredInDb === 'string' && sheet.openedUpdatedAtAsStoredInDb.trim())
+            ? sheet.openedUpdatedAtAsStoredInDb.trim()
+            : (typeof sheet.updated === 'string' && sheet.updated.trim() ? sheet.updated.trim() : undefined);
+
+          if (!openedVersionString && existingRow.updated) {
+            console.warn(`[CAS Warning] Sheet ${sheet.id} missing opened version string. Using current database updated value as compare value.`);
+            openedVersionString = String(existingRow.updated);
+          }
+
+          let updateError: any = null;
+          let updatedRows: any[] | null = null;
+          try {
+            const res = await supabase
+              .from('ledger_sheets')
+              .update(dbRow)
+              .eq('id', sheet.id)
+              .eq('updated', openedVersionString)
+              .select('id, updated');
+            updateError = res.error;
+            updatedRows = res.data;
+          } catch (err: any) {
+            updateError = err;
+          }
+
+          if (updateError || !updatedRows || updatedRows.length === 0) {
+            // Re-read current row to check if conflict or timeout/ambiguous error
+            try {
+              const { data: verifyRow } = await supabase
+                .from('ledger_sheets')
+                .select('id, updated, table1_rows, table2_rows')
+                .eq('id', sheet.id)
+                .maybeSingle();
+
+              if (verifyRow && verifyRow.updated) {
+                const currentDbUpdated = String(verifyRow.updated);
+                const dbMs = new Date(currentDbUpdated).getTime();
+                const openedMs = openedVersionString ? new Date(openedVersionString).getTime() : 0;
+                const diffMs = Math.abs(dbMs - openedMs);
+
+                if (diffMs <= 1) {
+                  // Same instant -> retry once
+                  const resRetry = await supabase
+                    .from('ledger_sheets')
+                    .update(dbRow)
+                    .eq('id', sheet.id)
+                    .eq('updated', currentDbUpdated)
+                    .select('id, updated');
+                  if (!resRetry.error && resRetry.data && resRetry.data.length > 0) {
+                    updateError = null;
+                    updatedRows = resRetry.data;
+                  }
+                }
+
+                if (updateError || !updatedRows || updatedRows.length === 0) {
+                  if (dbMs > openedMs + 1) {
+                    console.warn(`[CAS Conflict] Sheet ${sheet.id} opened version: ${openedVersionString}, database updated: ${currentDbUpdated}, diff: ${dbMs - openedMs}ms`);
+                    const payloadT1 = typeof dbRow.table1_rows === 'string' ? dbRow.table1_rows : JSON.stringify(dbRow.table1_rows || []);
+                    const payloadT2 = typeof dbRow.table2_rows === 'string' ? dbRow.table2_rows : JSON.stringify(dbRow.table2_rows || []);
+                    const dbT1 = typeof verifyRow.table1_rows === 'string' ? verifyRow.table1_rows : JSON.stringify(verifyRow.table1_rows || []);
+                    const dbT2 = typeof verifyRow.table2_rows === 'string' ? verifyRow.table2_rows : JSON.stringify(verifyRow.table2_rows || []);
+
+                    if (payloadT1 === dbT1 && payloadT2 === dbT2) {
+                      updatedRows = [{ id: sheet.id, updated: currentDbUpdated }];
+                      updateError = null;
+                    } else {
+                      throw new Error("This sheet was changed on another device. Please reload it and try again.");
+                    }
+                  } else if (updateError) {
+                    const payloadT1 = typeof dbRow.table1_rows === 'string' ? dbRow.table1_rows : JSON.stringify(dbRow.table1_rows || []);
+                    const payloadT2 = typeof dbRow.table2_rows === 'string' ? dbRow.table2_rows : JSON.stringify(dbRow.table2_rows || []);
+                    const dbT1 = typeof verifyRow.table1_rows === 'string' ? verifyRow.table1_rows : JSON.stringify(verifyRow.table1_rows || []);
+                    const dbT2 = typeof verifyRow.table2_rows === 'string' ? verifyRow.table2_rows : JSON.stringify(verifyRow.table2_rows || []);
+
+                    if (payloadT1 === dbT1 && payloadT2 === dbT2) {
+                      updatedRows = [{ id: sheet.id, updated: currentDbUpdated }];
+                      updateError = null;
+                    } else {
+                      throw updateError;
+                    }
+                  }
+                }
+              }
+            } catch (verifyEx: any) {
+              if (verifyEx.message && verifyEx.message.includes("changed on another device")) {
+                throw verifyEx;
+              }
+            }
+          }
+
+          if (updateError) {
+            throw updateError;
+          }
+
+          if (!updatedRows || updatedRows.length === 0) {
+            throw new Error("This sheet was changed on another device. Please reload it and try again.");
+          }
+
+          sheetUpdatedString = updatedRows[0]?.updated;
+        } else {
+          // New sheets are inserted: .insert([dbRow]).select('id, updated')
+          let res = await supabase.from('ledger_sheets').insert([dbRow]).select('id, updated');
+          if (res.error) {
+            throw res.error;
+          }
+          sheetUpdatedString = res.data?.[0]?.updated;
+        }
       } else {
-        globalTableCaches[syncKey].unshift(itemObj);
+        await upsertSupabase('ledger_sheets', 'id', sheet.id, dbRow, true);
       }
 
-      return toDb('ledger_sheets', itemObj);
+      if (sheetUpdatedString) {
+        sheet.updated = sheetUpdatedString;
+        sheet.openedUpdatedAtAsStoredInDb = sheetUpdatedString;
+        updatedStringMap[sheet.id] = sheetUpdatedString;
+      }
+    }));
+
+    const elapsedSheets = Math.round(performance.now() - tStartSheets);
+    console.log(`[Save Timing] saveLedgerSheetsBatch for ${sheets.length} sheet(s) took ${elapsedSheets}ms`);
+
+    // Write globalTableCaches, notify subscribers, and write localStorage ONLY AFTER database save has succeeded
+    const syncKey = `ledger_sheets_${tenantId || 'all'}_${activeLineCode || 'nolc'}`;
+    if (!globalTableCaches[syncKey]) globalTableCaches[syncKey] = [];
+
+    itemObjs.forEach(itemObj => {
+      const returnedUpdated = updatedStringMap[itemObj.id];
+      const cachedItem = { ...itemObj, updated: returnedUpdated || itemObj.updated };
+      const idx = globalTableCaches[syncKey].findIndex(item => item.id === itemObj.id);
+      if (idx !== -1) {
+        globalTableCaches[syncKey][idx] = { ...globalTableCaches[syncKey][idx], ...cachedItem };
+      } else {
+        globalTableCaches[syncKey].unshift(cachedItem);
+      }
     });
 
     const subs = globalTableSubscribers[syncKey];
@@ -5042,15 +6023,7 @@ export const supabaseService = {
       localStorage.setItem(`gts_cache_meta_${syncKey}`, String(Date.now()));
     } catch (e) {}
 
-    const tStartSheets = performance.now();
-    const { error } = await supabase.from('ledger_sheets').upsert(dbRows, { onConflict: 'id' });
-    const elapsedSheets = Math.round(performance.now() - tStartSheets);
-    console.log(`[Save Timing] saveLedgerSheetsBatch for ${sheets.length} sheet(s) took ${elapsedSheets}ms`);
-
-    if (error) {
-      console.warn("saveLedgerSheetsBatch error, falling back to individual upserts:", error.message);
-      await Promise.all(sheets.map(sh => supabaseService.saveLedgerSheet(sh, tenantId)));
-    }
+    return updatedStringMap;
   },
 
   terminateAllLedgerSheets: async (tenantId: string = 'main', authorName: string = 'admin') => {

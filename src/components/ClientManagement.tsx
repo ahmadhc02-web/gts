@@ -343,6 +343,29 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         };
         await pocketbaseService.updateClient(editingId, updatedData, trimmedName, currentUserName, currentUser);
         
+        const fieldsChanged = 
+          (originalClient?.username || '') !== trimmedUsername ||
+          (originalClient?.name || '') !== trimmedName ||
+          (originalClient?.mobileNumber || originalClient?.number || '') !== ((number || '').trim()) ||
+          (originalClient?.area || '') !== (area || '') ||
+          (originalClient?.pkgDetails || '') !== ((pkgDetails || '').trim()) ||
+          (originalClient?.rt || '') !== ((rt || '').trim()) ||
+          (originalClient?.panelDetails || '') !== ((panelDetails || '').trim()) ||
+          (originalClient?.billingDay || '5') !== String(billingDay || '5');
+
+        if (fieldsChanged) {
+          pocketbaseService.propagateClientToBilling(editingId, {
+            username: trimmedUsername,
+            name: trimmedName,
+            mobileNumber: (number || '').trim(),
+            area: area || '',
+            pkgDetails: (pkgDetails || '').trim(),
+            rt: (rt || '').trim(),
+            panelDetails: (panelDetails || '').trim(),
+            billingDay: String(billingDay || '5')
+          });
+        }
+
         // Optimistic UI update
         const updatedClient = {
           ...(originalClient || {}),

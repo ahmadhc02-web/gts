@@ -1,6 +1,6 @@
 import { useTheme } from "../hooks/useTheme";
 import { getAvatarUrl } from '../utils/avatar';
-import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, startTransition, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Phone, UserPlus, Settings, Users, ClipboardList, Key, Shield, Trash2, FileSpreadsheet, ExternalLink, HardDriveDownload, Layers, ShieldAlert, CheckCircle, Ban, XCircle, X, Pencil, Check, Info, Copy, PlusSquare, CloudUpload, Zap, MapPin, Bell, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, BarChart3, Mic, Activity, MessageSquare, Flame, Palette, AlertTriangle, AlertCircle, Globe, Printer, Coins, Percent, ArrowUpRight, Wallet, CreditCard, ChevronDown, ChevronUp, Monitor, Plus, FolderOpen, BarChart2, ShieldCheck, Cloud, Lock, Unlock, RotateCcw, CheckSquare, Square, RefreshCw, Database, Search, Server, CloudSun, Save, Loader2, Building2, User, Eye, EyeOff, UserCheck, UserX, MessageCircle, SlidersHorizontal } from 'lucide-react';
@@ -26,6 +26,38 @@ import {
   BillingColumnVisibilityMap 
 } from '../utils/billingColumnsConfig';
 
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.matchMedia('(min-width: 768px)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(min-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => {
+      setIsDesktop(e.matches);
+    };
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
+  return isDesktop;
+}
+
+function RowsSkeleton() {
+  return (
+    <div className="w-full min-h-[520px] border border-[var(--neu-border)] rounded-xl bg-slate-50/50 dark:bg-slate-950/20 p-6 flex flex-col justify-between space-y-4 animate-pulse">
+      <div className="h-10 bg-slate-200/60 dark:bg-slate-800/60 rounded-lg w-full" />
+      <div className="space-y-3 flex-1 py-4">
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="h-8 bg-slate-200/40 dark:bg-slate-800/40 rounded w-full" />
+        ))}
+      </div>
+      <div className="h-10 bg-slate-200/50 dark:bg-slate-800/50 rounded-lg w-full" />
+    </div>
+  );
+}
 
 interface BillingTabProps {
   forceViewOnly?: boolean;
@@ -285,6 +317,28 @@ export default function BillingTab(props: BillingTabProps) {
 
   const effectiveBillingUnlocked = (forceViewOnly || !isBillingFresh) ? false : isBillingUnlocked;
 
+  const isDesktop = useIsDesktop();
+  const [areRowsDeferred, setAreRowsDeferred] = useState(false);
+
+  // Skip animation completely when data is already available from cache on mount
+  const isCachedOnMountRef = useRef(!props.isLoading && Boolean(props.activeRows && props.activeRows.length > 0));
+  const hasAnimatedRef = useRef(isCachedOnMountRef.current);
+
+  useEffect(() => {
+    if (!props.isLoading) {
+      hasAnimatedRef.current = true;
+    }
+  }, [props.isLoading]);
+
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      startTransition(() => {
+        setAreRowsDeferred(true);
+      });
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
   // Only Sub-Dealer and Super Admin can delete recovery/billing rows
   const isSubDealerUser = (currentUser?.role === 'dealer' || Boolean(currentUser?.dealerId && currentUser?.dealerId !== 'main') || Boolean(currentUser?.lineCode)) && currentUser?.role !== 'admin';
   const canDeleteBillingRows = props.canDeleteBillingRows !== undefined 
@@ -293,6 +347,7 @@ export default function BillingTab(props: BillingTabProps) {
 
   const [columnVisibility, setColumnVisibility] = useState<BillingColumnVisibilityMap>(getBillingColumnVisibility);
   const [isColumnSettingModalOpen, setIsColumnSettingModalOpen] = useState(false);
+  const [isWhatsAppLogOpen, setIsWhatsAppLogOpen] = useState(false);
 
   useEffect(() => {
     setColumnVisibility(getBillingColumnVisibility());
@@ -315,6 +370,10 @@ export default function BillingTab(props: BillingTabProps) {
     ].filter(id => columnVisibility[id] !== false).length;
   }, [columnVisibility, isAdvanceMode]);
 
+  // Exclude DC (disconnected) subscribers from the total customer count
+  const nonDcCustomersCount = useMemo(() => {
+    return (activeRows || []).filter((r: any) => (r.paymentStatus || '').toLowerCase() !== 'dc').length;
+  }, [activeRows]);
 
   return (
 
@@ -389,12 +448,12 @@ export default function BillingTab(props: BillingTabProps) {
             {!forceViewOnly && (
             <div className="fixed bottom-6 left-4 lg:left-[88px] z-[90] flex items-end">
               <motion.div 
-                layout
-                initial={{ borderRadius: 9999 }}
+                initial={false}
                 animate={{ 
-                  width: isSecurityWidgetExpanded ? 'auto' : '48px',
-                  borderRadius: isSecurityWidgetExpanded ? 20 : 9999
+                  width: isSecurityWidgetExpanded ? 'auto' : '48px'
                 }}
+                transition={{ type: 'tween', duration: 0.2 }}
+                style={{ borderRadius: isSecurityWidgetExpanded ? 20 : 9999 }}
                 className={cn(
                   "overflow-hidden shadow-[var(--neu-shadow-raised-lg)] border transition-colors flex items-center h-12",
                   effectiveBillingUnlocked 
@@ -536,7 +595,7 @@ export default function BillingTab(props: BillingTabProps) {
             </div>
             )}
 
-            {isLoading && (!activeRows || activeRows.length === 0) ? (
+            {isLoading ? (
               <div className="p-12 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-[var(--neu-surface)] flex flex-col items-center justify-center gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
                 <p className="text-slate-400 font-bold uppercase text-xs tracking-wider">
@@ -575,22 +634,16 @@ export default function BillingTab(props: BillingTabProps) {
                     },
                     {
                       label: "Subscribers Active",
-                      val: `${activeRows.length} Customers`,
+                      val: `${nonDcCustomersCount} Customers`,
                       desc: `TDC: ${totalTDC} | DC: ${totalDC} | Unpaid: ${totalPending}`
                     }
                   ].map((card, i) => (
                     <motion.div
                       key={`billing-summary-tile-${card.label}-${i}`}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      whileHover={{ y: -2, scale: 1.01 }}
-                      transition={{ 
-                        type: "spring",
-                        stiffness: 260,
-                        damping: 20,
-                        delay: i * 0.05
-                      }}
-                      className="group relative p-3 sm:p-4 bg-[var(--neu-surface)]/90 rounded-xl border border-[var(--neu-border)] border-l-4 border-l-slate-800 dark:border-l-slate-400 flex flex-col justify-between overflow-hidden shadow-[var(--neu-shadow-raised-sm)] hover:border-slate-400 dark:hover:border-slate-500 transition-all duration-300 cursor-default"
+                      initial={!hasAnimatedRef.current ? { opacity: 0 } : false}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.18 }}
+                      className="group relative p-3 sm:p-4 bg-[var(--neu-surface)]/90 rounded-xl border border-[var(--neu-border)] border-l-4 border-l-slate-800 dark:border-l-slate-400 flex flex-col justify-between overflow-hidden shadow-[var(--neu-shadow-raised-sm)] hover:border-slate-400 dark:hover:border-slate-500 hover:-translate-y-0.5 transition-transform duration-200 cursor-default"
                     >
                       <div className="space-y-2 relative z-10">
                         <div className="flex items-center justify-between gap-2">
@@ -672,6 +725,16 @@ export default function BillingTab(props: BillingTabProps) {
                         className="px-4 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-[var(--neu-border)] rounded-xl focus:border-blue-500 w-full sm:w-64"
                       />
 
+                      {/* WhatsApp Center Button */}
+                      <button
+                        onClick={() => navigate('/whatsappcenter')}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/60 font-black text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
+                        title="Open WhatsApp Center"
+                      >
+                        <MessageCircle size={15} />
+                        <span>WhatsApp Center</span>
+                      </button>
+
                       {/* Status selector */}
                       <select
                         value={billingStatusFilter}
@@ -741,7 +804,10 @@ export default function BillingTab(props: BillingTabProps) {
                   </div>
 
                   {/* Absolute Google Sheets Spreadsheet Emulator Layout (Horizontal Scroll single row grid) */}
-                  <div className="border border-[var(--neu-border)] rounded-xl bg-slate-50 dark:bg-slate-950 overflow-hidden shadow-inner hidden md:block">
+                  {!areRowsDeferred ? (
+                    <RowsSkeleton />
+                  ) : isDesktop ? (
+                    <div className="border border-[var(--neu-border)] rounded-xl bg-slate-50 dark:bg-slate-950 overflow-hidden shadow-inner hidden md:block">
                     <div 
                       ref={billingScrollContainerRef}
                       onMouseMove={handleBillingMouseMove}
@@ -1636,8 +1702,7 @@ export default function BillingTab(props: BillingTabProps) {
                       </div>
                     )}
                   </div>
-
-                  {/* Compact ultra-premium responsive Mobile Frames view for Android/mobile screens */}
+                ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
                     {paginatedRows.map((rowRef, localIdx) => {
                       const globalRowIdx = rowRef._originalIndex;
@@ -1907,6 +1972,7 @@ export default function BillingTab(props: BillingTabProps) {
                       </div>
                     )}
                   </div>
+                  )}
 
                   {/* DC Users Toggle Button */}
                   <div className="flex justify-center mt-6 mb-2">
@@ -1928,7 +1994,8 @@ export default function BillingTab(props: BillingTabProps) {
                       </div>
                       
                       {/* Desktop DC Table */}
-                      <div className="hidden md:block overflow-x-auto relative">
+                      {isDesktop ? (
+                        <div className="hidden md:block overflow-x-auto relative">
                         <table className="w-full text-left table-fixed whitespace-nowrap">
                           {/* We don't have thead easily accessible, let's copy it from earlier */}
                           <thead className="bg-[var(--neu-surface)] shadow-[0_2px_4px_-1px_rgba(0,0,0,0.05)] border-b-2 border-slate-300 dark:border-slate-700">
@@ -2293,10 +2360,9 @@ export default function BillingTab(props: BillingTabProps) {
                             })}
                           </tbody>
                         </table>
-                      </div>
-
-                      {/* Mobile DC Grid */}
-                      <div className="p-4 md:hidden bg-slate-50/50 dark:bg-slate-950/20">
+                        </div>
+                      ) : (
+                        <div className="p-4 md:hidden bg-slate-50/50 dark:bg-slate-950/20">
                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
                   {/* Compact ultra-premium responsive Mobile Frames view for Android/mobile screens */}
@@ -2569,8 +2635,10 @@ export default function BillingTab(props: BillingTabProps) {
                       </div>
                     )}
                   </div>
-</div></div>
-                  )}
+                </div>
+              )}
+            </div>
+          )}
 
                   <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-[var(--neu-border)]">
                     <div>
@@ -2733,8 +2801,6 @@ export default function BillingTab(props: BillingTabProps) {
               )}
             </AnimatePresence>
             </div>
-
-
   );
 }
 

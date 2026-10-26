@@ -77,6 +77,7 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
   const [isStatusesLoading, setIsStatusesLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [lastSaved, setLastSaved] = useState<{ time: string, source: string } | null>(null);
   const [copiedPreview, setCopiedPreview] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -84,7 +85,7 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
   useEffect(() => {
     if (propsStatuses && propsStatuses.length > 0) {
       setConfiguredStatuses(propsStatuses);
-      setCompletedStatusValue(prev => findBestCompletedStatus(propsStatuses, prev));
+      setCompletedStatusValue(prev => prev ? prev : findBestCompletedStatus(propsStatuses, prev));
       setIsStatusesLoading(false);
       return;
     }
@@ -93,7 +94,7 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
       .then(statuses => {
         if (statuses && statuses.length > 0) {
           setConfiguredStatuses(statuses);
-          setCompletedStatusValue(prev => findBestCompletedStatus(statuses, prev));
+          setCompletedStatusValue(prev => prev ? prev : findBestCompletedStatus(statuses, prev));
         }
       })
       .catch(err => {
@@ -114,6 +115,12 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
           if (data.completedStatusValue) {
             setCompletedStatusValue(data.completedStatusValue);
           }
+          if (data.updated_at) {
+            setLastSaved({
+              time: new Date(data.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+              source: data.source || 'server'
+            });
+          }
         }
       })
       .catch((err) => {
@@ -125,15 +132,28 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
     setIsSaving(true);
     setIsSaved(false);
     try {
-      await saveTemplate({ 
+      const res = await saveTemplate({ 
         template,
         complaintRegisteredTemplate,
         complaintCompletedTemplate,
         completedStatusValue
       });
-      setIsSaved(true);
-      toast.success('Message templates permanently saved!');
-      setTimeout(() => setIsSaved(false), 3000);
+      if (res.savedInDatabase) {
+        setIsSaved(true);
+        toast.success("Saved");
+        setTimeout(() => setIsSaved(false), 3000);
+      } else if (res.savedOnServer) {
+        toast.warning(`Saved on the server, but the database rejected it: ${res.error || 'Database rejected row'}`);
+      } else {
+        toast.error(res.error || 'Failed to save template');
+      }
+
+      if (res.updated_at) {
+        setLastSaved({
+          time: new Date(res.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          source: res.savedInDatabase ? 'database' : (res.savedOnServer ? 'memory' : 'local')
+        });
+      }
     } catch (error: any) {
       toast.error(error.message || 'Failed to save template');
     } finally {
@@ -197,9 +217,8 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
     setTimeout(() => setCopiedPreview(false), 2000);
   };
 
-  const selectValue = findBestCompletedStatus(configuredStatuses, completedStatusValue);
   const isValueInStatuses = configuredStatuses.some(
-    s => s.trim().toLowerCase() === (selectValue || '').trim().toLowerCase()
+    s => s === completedStatusValue
   );
 
   const currentPlaceholders = activeTab === 'billing'
@@ -228,14 +247,21 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
         </div>
 
         {/* Action Save Button */}
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-98 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/20"
-        >
-          {isSaved ? <CheckCircle size={15} /> : isSaving ? <Sparkles size={15} className="animate-spin" /> : <Save size={15} />}
-          <span>{isSaving ? 'Saving...' : isSaved ? 'Saved!' : 'Save Templates'}</span>
-        </button>
+        <div className="flex flex-col items-end">
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-98 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 cursor-pointer shadow-md shadow-emerald-500/20"
+          >
+            {isSaved ? <CheckCircle size={15} /> : isSaving ? <Sparkles size={15} className="animate-spin" /> : <Save size={15} />}
+            <span>{isSaving ? 'Saving...' : isSaved ? 'Saved!' : 'Save Templates'}</span>
+          </button>
+          {lastSaved && (
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
+              Last saved: {lastSaved.time} ({lastSaved.source})
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Landscape Segmented Tabs Control */}
@@ -312,7 +338,7 @@ export default function WhatsAppMessageTemplateBox({ statuses: propsStatuses }: 
                     <span>Status value that triggers 'Resolved' message:</span>
                   </label>
                   <select
-                    value={selectValue}
+                    value={completedStatusValue}
                     onChange={(e) => setCompletedStatusValue(e.target.value)}
                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-purple-500/30 outline-none transition-all cursor-pointer"
                   >

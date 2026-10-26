@@ -171,7 +171,19 @@ async function processReminderLead(leadId) {
         console.log(`[Lead Processor] [${i + 1}/${items.length}] Sending to ${normalizedPhone} for lead ${leadId} via session "${lead.line_code || lead.dealer_id || 'main'}"...`);
         
         const itemSessionKey = lead.line_code || lead.dealer_id || 'main';
-        const sendResult = await sendMessage(normalizedPhone, messageText, {}, itemSessionKey);
+        const sendResult = await sendMessage(
+          normalizedPhone,
+          messageText,
+          {
+            meta: {
+              kind: 'campaign',
+              leadId,
+              clientName: item.name,
+              clientUsername: item.client_id
+            }
+          },
+          itemSessionKey
+        );
         if (!sendResult || sendResult.success === false) {
           throw new Error(sendResult?.error || 'WhatsApp dispatch returned failure');
         }

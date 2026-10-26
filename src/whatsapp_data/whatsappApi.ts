@@ -131,79 +131,83 @@ export function getSynchronousCachedTemplates(): typeof DEFAULT_WHATSAPP_TEMPLAT
   return DEFAULT_WHATSAPP_TEMPLATES;
 }
 
-export async function getTemplate(): Promise<{ template: string, complaintRegisteredTemplate: string, complaintCompletedTemplate: string, completedStatusValue: string }> {
-  // 0. Instant baseline from local persistent storage
+export interface WhatsAppTemplatesData {
+  template: string;
+  complaintRegisteredTemplate: string;
+  complaintCompletedTemplate: string;
+  completedStatusValue: string;
+  updated_at?: string;
+  source?: string;
+}
+
+export interface SaveTemplateResult extends WhatsAppTemplatesData {
+  success: boolean;
+  savedOnServer: boolean;
+  savedInDatabase: boolean;
+  error?: string;
+}
+
+export async function getTemplate(): Promise<WhatsAppTemplatesData> {
   const cachedBaseline = getSynchronousCachedTemplates();
 
-  // 1. Try querying Supabase branding_config table directly
+  // 1. Fetch server endpoint with cache: 'no-store' and cache-buster timestamp
   try {
-    const { data: bRows, error: bErr } = await supabase
-      .from('branding_config')
-      .select('*')
-      .eq('config_type', 'whatsapp_templates')
-      .limit(1);
-
-    if (!bErr && bRows && bRows.length > 0 && bRows[0].branding_data) {
-      const parsed = typeof bRows[0].branding_data === 'string' 
-        ? JSON.parse(bRows[0].branding_data) 
-        : bRows[0].branding_data;
-
-      if (parsed && (parsed.template || parsed.message_template)) {
-        const merged = {
-          template: parsed.template || parsed.message_template || cachedBaseline.template,
-          complaintRegisteredTemplate: parsed.complaintRegisteredTemplate || parsed.complaint_registered_template || cachedBaseline.complaintRegisteredTemplate,
-          complaintCompletedTemplate: parsed.complaintCompletedTemplate || parsed.complaint_completed_template || cachedBaseline.complaintCompletedTemplate,
-          completedStatusValue: parsed.completedStatusValue || parsed.complaint_completed_status_value || cachedBaseline.completedStatusValue
-        };
-        safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-        return merged;
-      }
-    }
-  } catch (_) {}
-
-  // 2. Try primary API
-  try {
-    const res = await fetch(`${API_URL}/template`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`/api/whatsapp/template?_=${Date.now()}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3000)
+    });
     if (res.ok) {
       const data = await res.json();
-      if (data && (data.template || data.complaintRegisteredTemplate)) {
-        const merged = {
+      if (data && (data.template || data.complaintRegisteredTemplate || data.complaintCompletedTemplate)) {
+        const serverData: WhatsAppTemplatesData = {
           template: data.template || cachedBaseline.template,
           complaintRegisteredTemplate: data.complaintRegisteredTemplate || cachedBaseline.complaintRegisteredTemplate,
           complaintCompletedTemplate: data.complaintCompletedTemplate || cachedBaseline.complaintCompletedTemplate,
-          completedStatusValue: data.completedStatusValue || cachedBaseline.completedStatusValue
+          completedStatusValue: data.completedStatusValue || cachedBaseline.completedStatusValue,
+          updated_at: data.updated_at,
+          source: data.source || 'server'
         };
-        safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-        return merged;
+        safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(serverData));
+        return serverData;
       }
     }
   } catch (_) {}
 
-  // 3. Try same-origin fallback if API_URL was external
-  if (API_URL !== '/api/whatsapp') {
+  // 2. Try API_URL fallback if external
+  if (API_URL && API_URL !== '/api/whatsapp') {
     try {
-      const res2 = await fetch('/api/whatsapp/template', { signal: AbortSignal.timeout(3000) });
-      if (res2.ok) {
-        const data = await res2.json();
-        if (data && (data.template || data.complaintRegisteredTemplate)) {
-          const merged = {
+      const resFallback = await fetch(`${API_URL}/template?_=${Date.now()}`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(3000)
+      });
+      if (resFallback.ok) {
+        const data = await resFallback.json();
+        if (data && (data.template || data.complaintRegisteredTemplate || data.complaintCompletedTemplate)) {
+          const serverData: WhatsAppTemplatesData = {
             template: data.template || cachedBaseline.template,
             complaintRegisteredTemplate: data.complaintRegisteredTemplate || cachedBaseline.complaintRegisteredTemplate,
             complaintCompletedTemplate: data.complaintCompletedTemplate || cachedBaseline.complaintCompletedTemplate,
-            completedStatusValue: data.completedStatusValue || cachedBaseline.completedStatusValue
+            completedStatusValue: data.completedStatusValue || cachedBaseline.completedStatusValue,
+            updated_at: data.updated_at,
+            source: data.source || 'server'
           };
-          safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-          return merged;
+          safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(serverData));
+          return serverData;
         }
       }
     } catch (_) {}
   }
 
+  // Use localStorage only when the request fails
   return cachedBaseline;
 }
 
-export async function saveTemplate(data: { template?: string, complaintRegisteredTemplate?: string, complaintCompletedTemplate?: string, completedStatusValue?: string }) {
-  // 1. Instantly merge & save into client storage so user changes are NEVER lost
+export async function saveTemplate(data: {
+  template?: string;
+  complaintRegisteredTemplate?: string;
+  complaintCompletedTemplate?: string;
+  completedStatusValue?: string;
+}): Promise<SaveTemplateResult> {
   const currentCached = getSynchronousCachedTemplates();
 
   const merged = {
@@ -214,65 +218,76 @@ export async function saveTemplate(data: { template?: string, complaintRegistere
     updated_at: new Date().toISOString()
   };
 
-  // Immediate storage update
-  safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-
-  // 2. Direct Supabase universal persistence in branding_config (config_type: 'whatsapp_templates')
-  try {
-    await supabase
-      .from('branding_config')
-      .upsert({
-        config_type: 'whatsapp_templates',
-        branding_data: JSON.stringify(merged),
-        updated_at: merged.updated_at
-      }, { onConflict: 'config_type' });
-  } catch (supErr) {
-    console.warn('Supabase branding_config direct save warning:', supErr);
-  }
-
-  // Also try whatsapp_settings table
-  try {
-    await supabase
-      .from('whatsapp_settings')
-      .upsert({
-        id: 'main',
-        message_template: merged.template,
-        complaint_registered_template: merged.complaintRegisteredTemplate,
-        complaint_completed_template: merged.complaintCompletedTemplate,
-        complaint_completed_status_value: merged.completedStatusValue,
-        updated_at: merged.updated_at
-      });
-  } catch (_) {}
-
-  // 3. Post to API servers (primary + same-origin)
   let savedOnServer = false;
+  let savedInDatabase = false;
+  let serverError: string | undefined = undefined;
+  let serverResultData: any = null;
+
+  // POST the merged data once to /api/whatsapp/template (same origin; keep existing API_URL fallback)
   try {
-    const res = await fetch(`${API_URL}/template`, {
+    const res = await fetch('/api/whatsapp/template', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(merged),
       signal: AbortSignal.timeout(4000)
     });
     if (res.ok) {
+      serverResultData = await res.json();
       savedOnServer = true;
+      savedInDatabase = Boolean(serverResultData.savedInDatabase);
+      if (serverResultData.error) serverError = serverResultData.error;
+    } else {
+      serverError = `Server returned HTTP ${res.status}`;
     }
-  } catch (err) {
-    console.warn('Primary template save failed, trying same-origin proxy:', err);
+  } catch (err: any) {
+    if (API_URL && API_URL !== '/api/whatsapp') {
+      try {
+        const resFallback = await fetch(`${API_URL}/template`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(merged),
+          signal: AbortSignal.timeout(4000)
+        });
+        if (resFallback.ok) {
+          serverResultData = await resFallback.json();
+          savedOnServer = true;
+          savedInDatabase = Boolean(serverResultData.savedInDatabase);
+          if (serverResultData.error) serverError = serverResultData.error;
+        } else {
+          serverError = `Server returned HTTP ${resFallback.status}`;
+        }
+      } catch (fbErr: any) {
+        serverError = fbErr?.message || 'Server unreachable';
+      }
+    } else {
+      serverError = err?.message || 'Server unreachable';
+    }
   }
 
-  if (!savedOnServer && API_URL !== '/api/whatsapp') {
-    try {
-      const res2 = await fetch('/api/whatsapp/template', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(merged),
-        signal: AbortSignal.timeout(4000)
-      });
-      if (res2.ok) savedOnServer = true;
-    } catch (_) {}
-  }
+  // Only write localStorage after the server answered (and still write it if the server is unreachable, but then return savedOnServer: false)
+  const finalResult: SaveTemplateResult = {
+    success: true,
+    savedOnServer,
+    savedInDatabase,
+    error: serverError,
+    template: serverResultData?.template || merged.template,
+    complaintRegisteredTemplate: serverResultData?.complaintRegisteredTemplate || merged.complaintRegisteredTemplate,
+    complaintCompletedTemplate: serverResultData?.complaintCompletedTemplate || merged.complaintCompletedTemplate,
+    completedStatusValue: serverResultData?.completedStatusValue || merged.completedStatusValue,
+    updated_at: serverResultData?.updated_at || merged.updated_at,
+    source: serverResultData?.source || (savedOnServer ? (savedInDatabase ? 'database' : 'memory') : 'local')
+  };
 
-  return { success: true, savedOnServer, ...merged };
+  safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify({
+    template: finalResult.template,
+    complaintRegisteredTemplate: finalResult.complaintRegisteredTemplate,
+    complaintCompletedTemplate: finalResult.complaintCompletedTemplate,
+    completedStatusValue: finalResult.completedStatusValue,
+    updated_at: finalResult.updated_at,
+    source: finalResult.source
+  }));
+
+  return finalResult;
 }
 
 export async function disconnectWhatsApp(sessionKey?: string) {
@@ -289,12 +304,22 @@ export async function disconnectWhatsApp(sessionKey?: string) {
   }
 }
 
-export async function sendMessage(phone: string, message: string, sessionKey?: string) {
+export async function sendMessage(
+  phone: string,
+  message: string,
+  sessionKey?: string,
+  meta?: { kind?: string; clientName?: string; clientUsername?: string; [key: string]: any }
+) {
   try {
     const res = await fetch(`${API_URL}/send-message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, message, session: sessionKey || 'main' })
+      body: JSON.stringify({
+        phone,
+        message,
+        session: sessionKey || 'main',
+        ...(meta !== undefined ? { meta } : {})
+      })
     });
     
     let data;
@@ -393,5 +418,47 @@ export async function sendPushNotification(tokens: string[], title: string, body
     return await res.json();
   } catch (err) {
     return null;
+  }
+}
+
+export async function getCampaignMonthPreference(scopeKey: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('campaign_preferences')
+    .select('month_id')
+    .eq('id', scopeKey)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  return data?.month_id || null;
+}
+
+export async function saveCampaignMonthPreference(scopeKey: string, monthId: string, updatedBy?: string): Promise<void> {
+  const { error } = await supabase
+    .from('campaign_preferences')
+    .upsert({
+      id: scopeKey,
+      month_id: monthId,
+      updated_by: updatedBy || 'admin',
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function clearCampaignMonthPreference(scopeKey: string): Promise<void> {
+  const { error } = await supabase
+    .from('campaign_preferences')
+    .upsert({
+      id: scopeKey,
+      month_id: null,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+  if (error) {
+    throw error;
   }
 }

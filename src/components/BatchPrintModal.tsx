@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { dedupeBillingRowsByClient, getEffectiveBillingStatus } from '../utils/billingStatus';
 
 interface BatchPrintModalProps {
   isOpen: boolean;
@@ -322,9 +323,25 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
               Printers Live Simulation Grid (A4 Portrait)
             </span>
-            <span className="text-[11px] font-black text-brand-accent bg-brand-accent/10 px-2.5 py-1 rounded-full uppercase tracking-wider">
-              {selectedMonthIds.length === 0 ? "Select Sheets to preview" : `${selectedMonthIds.length} Page(s) Spooled`}
-            </span>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const totalDedupeRemoved = selectedSheets.reduce((sum, doc) => {
+                  const { removedCount } = dedupeBillingRowsByClient(doc.rows || []);
+                  return sum + removedCount;
+                }, 0);
+                if (totalDedupeRemoved > 0) {
+                  return (
+                    <span className="text-[10px] font-black text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      {totalDedupeRemoved} duplicate rows hidden
+                    </span>
+                  );
+                }
+                return null;
+              })()}
+              <span className="text-[11px] font-black text-brand-accent bg-brand-accent/10 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                {selectedMonthIds.length === 0 ? "Select Sheets to preview" : `${selectedMonthIds.length} Page(s) Spooled`}
+              </span>
+            </div>
           </div>
 
           {/* Target Container for Print Spooling */}
@@ -342,13 +359,21 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
               </div>
             ) : (
               selectedSheets.map((monthDoc) => {
-                let rows = monthDoc.rows || [];
+                // Deduplicate rows per client before applying payment filters
+                const { rows: dedupedRows } = dedupeBillingRowsByClient(monthDoc.rows || []);
+                let rows = dedupedRows;
 
                 // Apply advanced filters
                 if (filterPaymentStatus === 'paid') {
-                  rows = rows.filter((r: any) => r.paymentStatus === 'paid' || r.paymentStatus === 'partial');
+                  rows = rows.filter((r: any) => {
+                    const eff = getEffectiveBillingStatus(r);
+                    return eff === 'paid' || eff === 'partial';
+                  });
                 } else if (filterPaymentStatus === 'unpaid') {
-                  rows = rows.filter((r: any) => r.paymentStatus === 'unpaid' || r.paymentStatus === 'tdc' || !r.paymentStatus);
+                  rows = rows.filter((r: any) => {
+                    const eff = getEffectiveBillingStatus(r);
+                    return eff === 'unpaid' || eff === 'tdc';
+                  });
                 }
 
                 if (filterRt !== 'all') {

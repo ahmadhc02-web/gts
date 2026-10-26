@@ -7,6 +7,7 @@ function formatMmSs(ms: number | null): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   MessageSquare,
   Users,
@@ -35,7 +36,9 @@ import {
   Smartphone,
   Shield,
   QrCode,
-  Radio
+  Radio,
+  MessageCircle,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -46,11 +49,37 @@ import {
   createReminderLead,
   updateReminderLead,
   deleteReminderLead,
-  getReminderLeads
+  getReminderLeads,
+  pocketbaseService
 } from '../lib/supabaseService';
+import { supabase } from '../lib/supabase';
 import { getTemplate, startReminderLead, buildReminderMessage, WhatsAppConnectPanel } from '../whatsapp_data';
-import { getStatus } from '../whatsapp_data/whatsappApi';
+import { getStatus, getCampaignMonthPreference, saveCampaignMonthPreference, clearCampaignMonthPreference } from '../whatsapp_data/whatsappApi';
 import { cn } from '../lib/utils';
+import { getEffectiveBillingStatus, dedupeBillingRowsByClient } from '../utils/billingStatus';
+
+export function getLatestMonthId(months: any[]): string {
+  if (!months || months.length === 0) return '';
+  const withDates = months.filter(m => m && typeof m === 'object' && m.createdAt);
+  if (withDates.length > 0) {
+    const sorted = [...months].sort((a, b) => {
+      const aTime = (a && typeof a === 'object' && a.createdAt) ? Number(a.createdAt) : 0;
+      const bTime = (b && typeof b === 'object' && b.createdAt) ? Number(b.createdAt) : 0;
+      return bTime - aTime;
+    });
+    return sorted[0]?.id || sorted[0]?.month_id || (typeof sorted[0] === 'string' ? sorted[0] : '');
+  }
+  const first = months[0];
+  if (!first) return '';
+  if (typeof first === 'string') return first;
+  return first.id || first.month_id || '';
+}
+
+export function formatMonthLabel(m: any): string {
+  if (!m) return '';
+  if (typeof m === 'string') return m;
+  return m.id || m.month_id || '';
+}
 
 interface ConversationTabProps {
   isOpen: boolean;
@@ -61,6 +90,7 @@ interface ConversationTabProps {
   currentUser?: UserProfile;
   users?: UserProfile[];
   masterClients?: any[];
+  billingMonthsList?: any[];
 }
 
 function formatDuration(ms: number): string {
@@ -289,8 +319,10 @@ export default function ConversationTab({
   billingMonths = [],
   currentUser,
   users = [],
-  masterClients = []
+  masterClients = [],
+  billingMonthsList = []
 }: ConversationTabProps) {
+  const navigate = useNavigate();
   const [leads, setLeads] = useState<ReminderLead[]>([]);
   const [expandedLeadIds, setExpandedLeadIds] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -359,6 +391,7 @@ export default function ConversationTab({
     leaseRemainingMs?: number | null;
   } | null>(null);
   const [isConnectPanelOpen, setIsConnectPanelOpen] = useState(false);
+  const [isWhatsAppLogOpen, setIsWhatsAppLogOpen] = useState(false);
   const [isQrDropdownOpen, setIsQrDropdownOpen] = useState(true);
   const [localLeaseMs, setLocalLeaseMs] = useState<number | null>(null);
   const prevConnectedRef = useRef<boolean | null>(null);
@@ -457,11 +490,224 @@ export default function ConversationTab({
     };
   }, [isOpen, dealerId]);
 
-  // Find active rows from billingMonths for live matching preview
+  // --- Recovery Month State & Preferences ---
+  const [savedMonthId, setSavedMonthId] = useState<string | null>(null);
+  const [pendingMonthId, setPendingMonthId] = useState<string | null>(null);
+  const [isSavingMonth, setIsSavingMonth] = useState<boolean>(false);
+  const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState<boolean>(false);
+  const monthDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Available months list merged from billingMonthsList and billingMonths
+  const availableMonths = useMemo(() => {
+    const map = new Map<string, { id: string; createdAt?: number }>();
+    (billingMonthsList || []).forEach((m: any) => {
+      const id = typeof m === 'string' ? m : (m?.id || m?.month_id);
+      if (id) {
+        const cTime = (typeof m === 'object' && m?.createdAt) ? Number(m.createdAt) : undefined;
+        map.set(id, { id, createdAt: cTime });
+      }
+    });
+    (billingMonths || []).forEach((m: any) => {
+      const id = typeof m === 'string' ? m : (m?.id || m?.month_id);
+      if (id) {
+        const cTime = (typeof m === 'object' && m?.createdAt) ? Number(m.createdAt) : undefined;
+        const existing = map.get(id);
+        map.set(id, { id, createdAt: cTime || existing?.createdAt });
+      }
+    });
+    const list = Array.from(map.values());
+    if (list.some(m => m.createdAt)) {
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    }
+    return list;
+  }, [billingMonthsList, billingMonths]);
+
+  const latestMonthId = useMemo(() => getLatestMonthId(availableMonths), [availableMonths]);
+
+  const isSavedMonthInList = useMemo(() => {
+    if (!savedMonthId) return false;
+    return availableMonths.some(m => m.id === savedMonthId);
+  }, [savedMonthId, availableMonths]);
+
+  const isSavedMonthMissing = Boolean(savedMonthId && availableMonths.length > 0 && !isSavedMonthInList);
+
+  // campaignMonthId = savedMonthId if it exists in the month list, otherwise getLatestMonthId(...) (default = latest)
+  const campaignMonthId = useMemo(() => {
+    if (savedMonthId && isSavedMonthInList) {
+      return savedMonthId;
+    }
+    return latestMonthId;
+  }, [savedMonthId, isSavedMonthInList, latestMonthId]);
+
+  const displayMonthId = pendingMonthId || campaignMonthId || 'Select';
+
+  const hasUnsavedMonth = Boolean(pendingMonthId && pendingMonthId !== (savedMonthId || (isSavedMonthInList ? '' : latestMonthId)));
+  const canSaveMonthPreference = Boolean(pendingMonthId && pendingMonthId !== (savedMonthId || (isSavedMonthInList ? '' : latestMonthId)));
+
+  // Load preference on mount & on activeSessionKey change, subscribe to realtime updates
+  useEffect(() => {
+    if (!isOpen || !activeSessionKey) return;
+    setPendingMonthId(null);
+    let isMounted = true;
+
+    getCampaignMonthPreference(activeSessionKey)
+      .then((pref) => {
+        if (!isMounted) return;
+        setSavedMonthId(pref);
+      })
+      .catch((err) => {
+        console.warn("Failed to load campaign month preference:", err);
+      });
+
+    const channelName = `campaign_pref_${activeSessionKey}_${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'campaign_preferences',
+          filter: `id=eq.${activeSessionKey}`
+        },
+        (payload) => {
+          if (!isMounted) return;
+          const newRow = payload.new as any;
+          if (newRow) {
+            setSavedMonthId(newRow.month_id || null);
+          } else if (payload.eventType === 'DELETE') {
+            setSavedMonthId(null);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      channel.unsubscribe();
+    };
+  }, [isOpen, activeSessionKey]);
+
+  // Handle outside click and Escape for month dropdown
+  useEffect(() => {
+    if (!isMonthDropdownOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMonthDropdownOpen(false);
+      }
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (monthDropdownRef.current && !monthDropdownRef.current.contains(e.target as Node)) {
+        setIsMonthDropdownOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMonthDropdownOpen]);
+
+  const handleSaveMonthPreference = async () => {
+    if (!pendingMonthId) return;
+    setIsSavingMonth(true);
+    try {
+      await saveCampaignMonthPreference(activeSessionKey, pendingMonthId, currentUser?.username || 'admin');
+      setSavedMonthId(pendingMonthId);
+      setPendingMonthId(null);
+      toast.success(`Campaign month saved: ${formatMonthLabel(pendingMonthId)}`);
+      setIsMonthDropdownOpen(false);
+    } catch (err: any) {
+      toast.error(`Failed to save month: ${err?.message || 'Database error'}`);
+    } finally {
+      setIsSavingMonth(false);
+    }
+  };
+
+  const handleResetToLatest = async () => {
+    if (!confirm("Reset campaign target to automatically follow the latest month?")) return;
+    setIsSavingMonth(true);
+    try {
+      await clearCampaignMonthPreference(activeSessionKey);
+      setSavedMonthId(null);
+      setPendingMonthId(null);
+      toast.success("Campaign month preference cleared, using latest month");
+      setIsMonthDropdownOpen(false);
+    } catch (err: any) {
+      toast.error(`Failed to clear preference: ${err?.message || 'Database error'}`);
+    } finally {
+      setIsSavingMonth(false);
+    }
+  };
+
+  // On-demand fetch of campaignMonthId rows if not in billingMonths prop
+  const [loadedDirectMonths, setLoadedDirectMonths] = useState<Record<string, any>>({});
+  const [isLoadingMonthDirect, setIsLoadingMonthDirect] = useState<boolean>(false);
+  const [monthLoadError, setMonthLoadError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!isOpen || !campaignMonthId) return;
+
+    // Check if rows are already in billingMonths prop
+    const propMonth = (billingMonths || []).find((m: any) => (m?.id || m?.month_id) === campaignMonthId);
+    if (propMonth && Array.isArray(propMonth.rows) && propMonth.rows.length > 0) {
+      setMonthLoadError(null);
+      setIsLoadingMonthDirect(false);
+      return;
+    }
+
+    // Check if already in loadedDirectMonths
+    if (loadedDirectMonths[campaignMonthId]?.rows) {
+      setMonthLoadError(null);
+      setIsLoadingMonthDirect(false);
+      return;
+    }
+
+    let active = true;
+    setIsLoadingMonthDirect(true);
+    setMonthLoadError(null);
+
+    const targetDealerId = !isSuperAdmin && !isSubDealerUser
+      ? 'main'
+      : (isSubDealerUser
+        ? subDealerDealerId
+        : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.dealerId || selectedVlanChannel) : (dealerId || 'main')));
+
+    pocketbaseService.getBillingMonthDirect(campaignMonthId, targetDealerId || 'main')
+      .then((res: any) => {
+        if (!active) return;
+        if (res && res.rows) {
+          setLoadedDirectMonths(prev => ({ ...prev, [campaignMonthId]: res }));
+          setMonthLoadError(null);
+        } else {
+          setMonthLoadError(`Could not find recovery sheet data for ${campaignMonthId}`);
+        }
+      })
+      .catch((err: any) => {
+        if (!active) return;
+        console.error("Failed to load billing month on demand:", err);
+        setMonthLoadError(err?.message || `Failed to load data for ${campaignMonthId}`);
+      })
+      .finally(() => {
+        if (active) setIsLoadingMonthDirect(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen, campaignMonthId, billingMonths, isSuperAdmin, isSubDealerUser, subDealerDealerId, selectedVlanChannel, availableVlanChannels, dealerId, retryCount]);
+
+  // Find active rows from billingMonths or loadedDirectMonths for campaignMonthId (never falls back to another month)
   const activeMonthDoc = useMemo(() => {
-    if (!currentMonthId || !billingMonths) return billingMonths?.[0] || null;
-    return billingMonths.find(m => m.id === currentMonthId) || billingMonths?.[0] || null;
-  }, [currentMonthId, billingMonths]);
+    if (!campaignMonthId) return null;
+    const propMonth = (billingMonths || []).find((m: any) => (m?.id || m?.month_id) === campaignMonthId);
+    if (propMonth && Array.isArray(propMonth.rows) && propMonth.rows.length > 0) {
+      return propMonth;
+    }
+    return loadedDirectMonths[campaignMonthId] || null;
+  }, [campaignMonthId, billingMonths, loadedDirectMonths]);
 
   const activeRows = useMemo(() => {
     return Array.isArray(activeMonthDoc?.rows) ? activeMonthDoc.rows : [];
@@ -517,11 +763,46 @@ export default function ConversationTab({
   // All strictly unpaid clients within this VLAN's scoped data
   const allUnpaidClients = useMemo(() => {
     if (!scopedRows || scopedRows.length === 0) return [];
-    return scopedRows.filter((r: any) => {
-      const phone = (r.mobileNumber || r.phone || r.number || '').trim();
-      if (!phone) return false;
-      const pStatus = String(r.paymentStatus || r.status || '').toLowerCase().trim();
-      return pStatus === 'unpaid';
+
+    // Helper to get last 10 digits of phone
+    const getLast10 = (phoneRaw: any): string => {
+      if (!phoneRaw) return '';
+      const digits = String(phoneRaw).replace(/\D/g, '');
+      return digits.length >= 10 ? digits.slice(-10) : digits;
+    };
+
+    // First deduplicate rows per client
+    const { rows: deduped } = dedupeBillingRowsByClient(scopedRows);
+
+    // Track clientIds and phones that have an effective 'paid' status in ANY row of the scoped month
+    const paidClientIds = new Set<string>();
+    const paidPhones = new Set<string>();
+
+    scopedRows.forEach((r: any) => {
+      const eff = getEffectiveBillingStatus(r);
+      if (eff === 'paid') {
+        const cid = String(r.clientId || r.client_id || '').trim().toLowerCase();
+        if (cid) paidClientIds.add(cid);
+        const phone = getLast10(r.mobileNumber || r.phone || r.number);
+        if (phone) paidPhones.add(phone);
+      }
+    });
+
+    return deduped.filter((r: any) => {
+      const phoneRaw = (r.mobileNumber || r.phone || r.number || '').trim();
+      if (!phoneRaw) return false;
+
+      const eff = getEffectiveBillingStatus(r);
+      if (eff !== 'unpaid') return false;
+
+      // Exclude a client if ANY row of the same client in the month is effective 'paid'
+      const cid = String(r.clientId || r.client_id || '').trim().toLowerCase();
+      if (cid && paidClientIds.has(cid)) return false;
+
+      const phone10 = getLast10(phoneRaw);
+      if (phone10 && paidPhones.has(phone10)) return false;
+
+      return true;
     });
   }, [scopedRows]);
 
@@ -531,17 +812,15 @@ export default function ConversationTab({
     const startNum = parseInt(dueDateStart, 10);
     const endNum = parseInt(dueDateEnd, 10);
 
+    if (isNaN(startNum) || isNaN(endNum)) return [];
+
     return allUnpaidClients.filter((r: any) => {
       const bDayStr = String(r.billingDay || r.dueDate || '').trim();
+      if (!bDayStr) return false;
       const bDayNum = parseInt(bDayStr, 10);
+      if (isNaN(bDayNum)) return false;
 
-      if (!isNaN(startNum) && !isNaN(endNum) && !isNaN(bDayNum)) {
-        return bDayNum >= startNum && bDayNum <= endNum;
-      }
-      if (dueDateStart && dueDateEnd) {
-        return bDayStr >= dueDateStart && bDayStr <= dueDateEnd;
-      }
-      return true;
+      return bDayNum >= startNum && bDayNum <= endNum;
     });
   }, [allUnpaidClients, dueDateStart, dueDateEnd]);
 
@@ -671,6 +950,10 @@ export default function ConversationTab({
   };
 
   const handleStartLead = async (leadId: string) => {
+    if (hasUnsavedMonth) {
+      toast.warning("You have an unsaved month change. Save or discard it first");
+      return;
+    }
     // Optimistically show as running
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: 'running', startedAt: l.startedAt || new Date().toISOString() } : l));
     toast.info("Starting reminder lead campaign on server...");
@@ -715,6 +998,10 @@ export default function ConversationTab({
 
   const handleCreateAndRunLead = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (hasUnsavedMonth) {
+      toast.warning("You have an unsaved month change. Save or discard it first");
+      return;
+    }
     if (!leadName.trim()) {
       toast.error("Please enter a name for this Reminder Lead.");
       return;
@@ -726,6 +1013,88 @@ export default function ConversationTab({
 
     setIsSubmitting(true);
     try {
+      // Re-validate the selected clients against the freshest database data before creating the lead
+      const targetMonthId = campaignMonthId;
+      if (!targetMonthId) {
+        toast.error("No billing month selected.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const targetDealerId = !isSuperAdmin && !isSubDealerUser
+        ? 'main'
+        : (isSubDealerUser
+          ? subDealerDealerId
+          : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.dealerId || selectedVlanChannel) : (dealerId || 'main')));
+
+      const targetLineCode = !isSuperAdmin && !isSubDealerUser
+        ? undefined
+        : (isSubDealerUser
+          ? (subDealerLineCode || undefined)
+          : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.vlan || selectedVlanChannel) : undefined));
+
+      let freshMonthDoc: any = null;
+      try {
+        freshMonthDoc = await pocketbaseService.getBillingMonthDirect(targetMonthId, targetDealerId || 'main');
+      } catch (e) {
+        freshMonthDoc = null;
+      }
+
+      if (!freshMonthDoc || !freshMonthDoc.rows) {
+        toast.error("Could not verify latest payments, please try again");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Dedupe and evaluate effective status on fresh rows
+      const { rows: freshDedupedRows } = dedupeBillingRowsByClient(freshMonthDoc.rows || []);
+      const getLast10 = (pRaw: any) => {
+        if (!pRaw) return '';
+        const digits = String(pRaw).replace(/\D/g, '');
+        return digits.length >= 10 ? digits.slice(-10) : digits;
+      };
+
+      // Filter matched clients: drop clients who are now 'paid' or 'partial'
+      let droppedCount = 0;
+      const validClients: any[] = [];
+
+      matchedClients.forEach(c => {
+        const cId = String(c.clientId || c.client_id || '').trim().toLowerCase();
+        const cPhone10 = getLast10(c.mobileNumber || c.phone || c.number);
+        const cUname = String(c.username || c.clientUsername || c.id || '').trim().toLowerCase();
+
+        // Find corresponding fresh row in freshMonthDoc.rows or freshDedupedRows
+        const matchingFresh = freshMonthDoc.rows.find((fr: any) => {
+          const frId = String(fr.clientId || fr.client_id || '').trim().toLowerCase();
+          if (cId && frId && cId === frId) return true;
+          const frPhone10 = getLast10(fr.mobileNumber || fr.phone || fr.number);
+          if (cPhone10 && frPhone10 && cPhone10 === frPhone10) return true;
+          const frUname = String(fr.username || fr.clientUsername || fr.id || '').trim().toLowerCase();
+          if (cUname && frUname && cUname === frUname) return true;
+          return false;
+        });
+
+        if (matchingFresh) {
+          const eff = getEffectiveBillingStatus(matchingFresh);
+          if (eff === 'paid' || eff === 'partial') {
+            droppedCount++;
+            return;
+          }
+        }
+
+        validClients.push(c);
+      });
+
+      if (droppedCount > 0) {
+        toast.warning(`${droppedCount} customers were removed because they are already paid`);
+      }
+
+      if (validClients.length === 0) {
+        toast.error("All selected customers are already paid. No reminder lead created.");
+        setIsSubmitting(false);
+        return;
+      }
+
       // 1. Fetch template to precompute message for each client
       let templateText = '';
       try {
@@ -735,8 +1104,8 @@ export default function ConversationTab({
         templateText = 'Dear {{name}}, this is a reminder that your internet bill of Rs. {{amount}} is due. Please clear it at your earliest convenience. Thank you.';
       }
 
-      // 2. Precompute message for each matched client
-      const items = matchedClients.map(c => {
+      // 2. Precompute message for each verified matched client
+      const items = validClients.map(c => {
         const pkg = (c as any).package || (c as any).pkgDetails || (c as any).pkg || (c as any).packageDetails || '';
         const builtMessage = buildReminderMessage(templateText, {
           name: c.name,
@@ -760,32 +1129,19 @@ export default function ConversationTab({
         };
       });
 
-      // Determine target dealerId and lineCode based on active VLAN scoping
-      const targetDealerId = !isSuperAdmin && !isSubDealerUser
-        ? 'main'
-        : (isSubDealerUser
-          ? subDealerDealerId
-          : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.dealerId || selectedVlanChannel) : (dealerId || 'main')));
-
-      const targetLineCode = !isSuperAdmin && !isSubDealerUser
-        ? undefined
-        : (isSubDealerUser
-          ? (subDealerLineCode || undefined)
-          : (selectedVlanChannel !== 'all' ? (availableVlanChannels.find(c => c.key === selectedVlanChannel)?.vlan || selectedVlanChannel) : undefined));
-
       // 3. Create lead and items in database tagged strictly to this VLAN/dealer
       const newLeadId = await createReminderLead({
         name: leadName.trim(),
         dealerId: targetDealerId || 'main',
         lineCode: targetLineCode || undefined,
-        monthId: currentMonthId || activeMonthDoc?.id || 'UNKNOWN',
+        monthId: targetMonthId,
         dueDateStart,
         dueDateEnd,
         waitSeconds: Math.min(300, Math.max(60, Number(waitSeconds) || 60)),
         items
       });
 
-      toast.success(`Created lead "${leadName}" with ${matchedClients.length} customers!`);
+      toast.success(`Created lead "${leadName}" with ${validClients.length} customers!`);
       setIsModalOpen(false);
 
       if (!whatsAppStatus?.connected) {
@@ -868,6 +1224,173 @@ export default function ConversationTab({
             </div>
           ) : null}
 
+          {/* Recovery Month Target Selector Dropdown */}
+          <div className="relative" ref={monthDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsMonthDropdownOpen(prev => !prev)}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all cursor-pointer shadow-xs select-none",
+                hasUnsavedMonth
+                  ? "bg-amber-50 dark:bg-amber-950/40 border-amber-500/50 text-amber-800 dark:text-amber-200"
+                  : "bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 hover:bg-slate-200/70 dark:hover:bg-slate-700/60"
+              )}
+              title={`Target Recovery Month for WhatsApp campaigns (${activeSessionKey})`}
+            >
+              <Calendar size={13} className={hasUnsavedMonth ? "text-amber-500" : "text-blue-500"} />
+              <span className="font-mono">
+                Recovery month: <span className="font-bold underline decoration-blue-500/40">{formatMonthLabel(displayMonthId)}</span>
+              </span>
+              {hasUnsavedMonth && (
+                <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                  <span className="hidden sm:inline">Unsaved</span>
+                </span>
+              )}
+              <ChevronDown size={13} className={cn("text-slate-400 transition-transform duration-200", isMonthDropdownOpen ? "rotate-180" : "")} />
+            </button>
+
+            {/* Dropdown Panel */}
+            <AnimatePresence>
+              {isMonthDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                  transition={{ duration: 0.15 }}
+                  className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-auto mt-2 sm:w-80 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 shadow-2xl py-2 z-50 overflow-hidden font-lexend"
+                >
+                  <div className="px-4 py-2 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar size={13} className="text-blue-500" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        Recovery Month Target
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-mono text-slate-400">
+                      Scope: {activeSessionKey}
+                    </span>
+                  </div>
+
+                  {isSavedMonthMissing && (
+                    <div className="mx-3 mt-2 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/40 text-amber-800 dark:text-amber-200 text-[11px] font-bold flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span>Saved month not found, using latest</span>
+                    </div>
+                  )}
+
+                  <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-white/5 py-1">
+                    {availableMonths.length === 0 ? (
+                      <div className="px-4 py-4 text-center text-xs text-slate-400">
+                        No recovery sheets found
+                      </div>
+                    ) : (
+                      availableMonths.map((m) => {
+                        const isLatest = m.id === latestMonthId;
+                        const isSaved = m.id === savedMonthId;
+                        const isPending = m.id === pendingMonthId;
+                        const isCurrent = m.id === (pendingMonthId || campaignMonthId);
+
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setPendingMonthId(m.id)}
+                            className={cn(
+                              "w-full px-4 py-2 text-left flex items-center justify-between text-xs transition-colors cursor-pointer select-none",
+                              isCurrent
+                                ? "bg-blue-50/70 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-black"
+                                : "hover:bg-slate-50 dark:hover:bg-slate-800/50 text-slate-700 dark:text-slate-300 font-bold"
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={cn(
+                                "w-1.5 h-1.5 rounded-full shrink-0",
+                                isCurrent ? "bg-blue-500" : "bg-slate-300 dark:bg-slate-700"
+                              )} />
+                              <span className="font-mono text-xs">{formatMonthLabel(m.id)}</span>
+                              {isLatest && (
+                                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 font-mono">
+                                  Latest
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {isSaved && (
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400" title="Saved preference in database">
+                                  <Check size={14} className="text-emerald-500 stroke-[3]" />
+                                  <span className="text-[9px] font-black uppercase">Saved</span>
+                                </span>
+                              )}
+                              {isPending && !isSaved && (
+                                <span className="text-[9px] font-black uppercase text-amber-600 dark:text-amber-400 px-1 rounded bg-amber-500/10 border border-amber-500/20">
+                                  Selected
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="px-3 pt-2.5 pb-1 border-t border-slate-100 dark:border-white/10 flex flex-col gap-2 bg-slate-50/50 dark:bg-slate-950/30">
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPendingMonthId(null);
+                          setIsMonthDropdownOpen(false);
+                        }}
+                        className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-bold transition-colors cursor-pointer px-2 py-1"
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveMonthPreference}
+                        disabled={!canSaveMonthPreference || isSavingMonth}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs cursor-pointer",
+                          canSaveMonthPreference && !isSavingMonth
+                            ? "bg-blue-600 hover:bg-blue-700 text-white"
+                            : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60"
+                        )}
+                      >
+                        {isSavingMonth ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" />
+                            <span>Saving...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check size={13} />
+                            <span>Save</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {savedMonthId && (
+                      <div className="flex justify-center pt-1 border-t border-slate-100 dark:border-white/5">
+                        <button
+                          type="button"
+                          onClick={handleResetToLatest}
+                          disabled={isSavingMonth}
+                          className="text-[11px] text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors font-bold cursor-pointer underline decoration-dotted"
+                        >
+                          Reset to latest
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* Dedicated WhatsApp Device & QR Connection Button */}
           {!isSubDealerUser && !isSubAccount && (
             <button
@@ -893,14 +1416,41 @@ export default function ConversationTab({
             </button>
           )}
 
+          {/* WhatsApp Center Button */}
+          <button
+            onClick={() => navigate('/whatsappcenter')}
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950/60 font-black text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer shrink-0"
+            title="Open WhatsApp Center"
+          >
+            <MessageCircle size={15} />
+            <span>WhatsApp Center</span>
+          </button>
+
           {/* Start New Lead Button */}
           <button
+            disabled={isLoadingMonthDirect || Boolean(monthLoadError)}
+            title={
+              isLoadingMonthDirect
+                ? "Recovery month data is loading..."
+                : monthLoadError
+                ? "Target recovery month failed to load"
+                : undefined
+            }
             onClick={() => {
+              if (hasUnsavedMonth) {
+                toast.warning("You have an unsaved month change. Save or discard it first");
+                return;
+              }
               const channelLabel = isSubDealerUser ? `VLAN ${subDealerLineCode || 'Dealer'}` : (selectedVlanChannel !== 'all' ? `VLAN ${selectedVlanChannel}` : 'Global');
               setLeadName(`${channelLabel} Reminder - ${new Date().toLocaleDateString()}`);
               setIsModalOpen(true);
             }}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            className={cn(
+              "px-3.5 py-1.5 rounded-xl font-black text-xs transition-all flex items-center gap-1.5 shrink-0",
+              isLoadingMonthDirect || Boolean(monthLoadError)
+                ? "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60"
+                : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md hover:shadow-lg cursor-pointer"
+            )}
           >
             <Plus size={15} />
             <span>Start New Lead</span>
@@ -1180,6 +1730,11 @@ export default function ConversationTab({
                                 </span>
                               )}
                               <span>{lead.name}</span>
+                              {(lead.month_id || (lead as any).monthId) && (
+                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 font-mono">
+                                  📅 {formatMonthLabel(lead.month_id || (lead as any).monthId)}
+                                </span>
+                              )}
                               {lead.lineCode && (
                                 <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono">
                                   ⚡ VLAN {lead.lineCode}
@@ -1275,7 +1830,7 @@ export default function ConversationTab({
                             <div className="flex items-center justify-end gap-1.5">
                               {/* Start / Resume button for pending or interrupted leads */}
                               {(isPending || isRunning || (isFailed && processed < totalCount)) && (() => {
-                                const isStartDisabled = Boolean((isSubDealerUser || isSubAccount) && !whatsAppStatus?.connected);
+                                const isStartDisabled = Boolean(((isSubDealerUser || isSubAccount) && !whatsAppStatus?.connected) || isLoadingMonthDirect || Boolean(monthLoadError));
                                 return (
                                   <button
                                     type="button"
@@ -1287,7 +1842,15 @@ export default function ConversationTab({
                                         ? "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-white/10 opacity-50 cursor-not-allowed"
                                         : "bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-900/40 cursor-pointer"
                                     )}
-                                    title={isStartDisabled ? "Scan the QR first" : "Run or resume lead campaign on server"}
+                                    title={
+                                      (isSubDealerUser || isSubAccount) && !whatsAppStatus?.connected
+                                        ? "Scan the QR first"
+                                        : isLoadingMonthDirect
+                                        ? "Recovery month data is loading..."
+                                        : monthLoadError
+                                        ? "Target recovery month failed to load"
+                                        : "Run or resume lead campaign on server"
+                                    }
                                   >
                                     <Play size={11} className="fill-current" />
                                     <span>{isPending ? "Start" : "Resume"}</span>
@@ -1360,9 +1923,14 @@ export default function ConversationTab({
                   <Zap size={18} />
                 </span>
                 <div>
-                  <h3 className="text-base font-black text-slate-900 dark:text-white">
-                    Create WhatsApp Reminder Lead
-                  </h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-black text-slate-900 dark:text-white">
+                      Create WhatsApp Reminder Lead
+                    </h3>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-mono">
+                      Targeting: {formatMonthLabel(campaignMonthId)}
+                    </span>
+                  </div>
                   <p className="text-[11px] text-slate-400">
                     Target subscribers by due date and launch sequential reminders.
                   </p>
@@ -1376,21 +1944,56 @@ export default function ConversationTab({
               </button>
             </div>
 
-            {/* Scoped VLAN & WhatsApp Gateway Banner */}
-            <div className="p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-950/80 border border-slate-200/80 dark:border-white/10 flex flex-wrap items-center justify-between gap-2.5 mb-3">
-              <div className="flex items-center gap-2">
-                <Shield size={14} className="text-blue-500 shrink-0" />
-                <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  Target Gateway:
-                </span>
-                <span className="px-2 py-0.5 rounded-lg text-xs font-black uppercase bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30">
-                  {isSubDealerUser ? `⚡ VLAN ${subDealerLineCode || 'DEALER'}` : (selectedVlanChannel === 'all' ? '🌐 ALL VLANS' : `⚡ VLAN ${selectedVlanChannel}`)}
-                </span>
+            {/* Selected Month Status / Scoped VLAN & WhatsApp Gateway Banner */}
+            {isLoadingMonthDirect ? (
+              <div className="p-3.5 rounded-2xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 flex items-center gap-2.5 mb-3 text-xs font-bold text-blue-800 dark:text-blue-200 animate-pulse">
+                <Loader2 size={16} className="animate-spin text-blue-600 shrink-0" />
+                <span>Loading recovery sheet for {formatMonthLabel(campaignMonthId)}...</span>
               </div>
-              <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                {scopedRows.length} clients in scope ({allUnpaidClients.length} unpaid)
+            ) : monthLoadError ? (
+              <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/40 flex items-center justify-between gap-2.5 mb-3 text-xs font-bold text-rose-800 dark:text-rose-200">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle size={16} className="text-rose-600 dark:text-rose-400 shrink-0" />
+                  <span className="truncate">{monthLoadError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRetryCount(c => c + 1)}
+                  className="px-2.5 py-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shrink-0 cursor-pointer shadow-xs"
+                >
+                  Retry
+                </button>
               </div>
-            </div>
+            ) : campaignMonthId && !activeMonthDoc ? (
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 flex items-center justify-between gap-2.5 mb-3 text-xs font-bold text-amber-800 dark:text-amber-200">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>Selected month ({formatMonthLabel(campaignMonthId)}) is not loaded yet</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRetryCount(c => c + 1)}
+                  className="px-2.5 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shrink-0 cursor-pointer shadow-xs"
+                >
+                  Load Data
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-950/80 border border-slate-200/80 dark:border-white/10 flex flex-wrap items-center justify-between gap-2.5 mb-3">
+                <div className="flex items-center gap-2">
+                  <Shield size={14} className="text-blue-500 shrink-0" />
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Target Gateway:
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg text-xs font-black uppercase bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30">
+                    {isSubDealerUser ? `⚡ VLAN ${subDealerLineCode || 'DEALER'}` : (selectedVlanChannel === 'all' ? '🌐 ALL VLANS' : `⚡ VLAN ${selectedVlanChannel}`)}
+                  </span>
+                </div>
+                <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  {scopedRows.length} clients in scope ({allUnpaidClients.length} unpaid)
+                </div>
+              </div>
+            )}
 
             {/* Offline warning if this session is not linked */}
             {!whatsAppStatus?.connected && (

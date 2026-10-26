@@ -3,6 +3,7 @@ import { MessageCircle, Loader2, Check, X, Clock } from 'lucide-react';
 import { getStatus, getTemplate, sendMessage } from './whatsappApi';
 import { buildReminderMessage } from './messageBuilder';
 import { useReminderCooldown, startReminderCooldown, REMINDER_COOLDOWN_SECONDS } from './reminderCooldown';
+import ReminderPreviewModal from './ReminderPreviewModal';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -48,6 +49,7 @@ export default function WhatsAppSendButton({
   const [isSending, setIsSending] = useState(false);
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [isReady, setIsReady] = useState(cachedStatus === true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Unique trigger key for this specific row button
   const buttonKey = `${username || ''}_${mobileNumber || ''}_${name || ''}`;
@@ -125,7 +127,22 @@ export default function WhatsAppSendButton({
     };
   }, []);
 
-  const handleSend = async (e: React.MouseEvent) => {
+  const buildCurrentMessage = (tmpl?: string) => {
+    const templateToUse = tmpl || cachedTemplate || '';
+    const clientPkg = packageProp || pkg || pkgDetails || packageDetails;
+    return buildReminderMessage(templateToUse, {
+      name,
+      totalAmount,
+      baseAmount,
+      username,
+      paymentStatus,
+      area,
+      package: clientPkg,
+      pkg: clientPkg
+    });
+  };
+
+  const handleOpenModal = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isCooldownActive) {
       toast.warning(`Please wait ${remainingSec}s before sending another reminder.`);
@@ -135,13 +152,30 @@ export default function WhatsAppSendButton({
       toast.error('No mobile number available for this client');
       return;
     }
-    if (!cachedStatus) {
+    if (!cachedStatus || !isReady) {
       toast.error('WhatsApp is not connected. Please connect it from the top menu first.');
       return;
     }
 
+    // Ensure latest template is fetched fresh at the moment of opening
+    try {
+      const data = await getTemplate();
+      if (data?.template) {
+        cachedTemplate = data.template;
+      }
+    } catch (_) {}
+
+    setIsModalOpen(true);
+  };
+
+  const handleConfirmSend = async (editedMessage: string) => {
     setIsSending(true);
     setStatus('idle');
+
+    // Retain previous markers for rollback in case send fails
+    const prevSentAt = localSentAt;
+    const prevCount = localCount;
+
     // Start global 60-second cooldown immediately across all rows
     startReminderCooldown(buttonKey, REMINDER_COOLDOWN_SECONDS);
 
@@ -156,34 +190,36 @@ export default function WhatsAppSendButton({
     setLocalCount(newCount);
 
     try {
-      // Ensure we have the template
-      if (!cachedTemplate) {
-        const data = await getTemplate();
-        cachedTemplate = data.template;
-      }
-
-      // Build message using shared helper
-      const clientPkg = packageProp || pkg || pkgDetails || packageDetails;
-      const message = buildReminderMessage(cachedTemplate || '', {
-        name,
-        totalAmount,
-        baseAmount,
-        username,
-        paymentStatus,
-        area,
-        package: clientPkg,
-        pkg: clientPkg
+      await sendMessage(mobileNumber, editedMessage, undefined, {
+        kind: 'reminder',
+        clientName: name,
+        clientUsername: username
       });
-
-      await sendMessage(mobileNumber, message);
       
       const nowIso = new Date(nowMs).toISOString();
       setStatus('success');
       toast.success(`Message sent to ${name} (Reminder button permanently marked blue)`);
       onReminderSent?.(newCount, nowIso);
       onSent?.();
+      setIsModalOpen(false);
     } catch (err: any) {
       console.error('Failed to send WhatsApp message', err);
+      // Rollback markers
+      try {
+        if (prevSentAt) {
+          localStorage.setItem(localSentKey, prevSentAt.toString());
+        } else {
+          localStorage.removeItem(localSentKey);
+        }
+        if (prevCount > 0) {
+          localStorage.setItem(localCountKey, prevCount.toString());
+        } else {
+          localStorage.removeItem(localCountKey);
+        }
+      } catch (_) {}
+      setLocalSentAt(prevSentAt);
+      setLocalCount(prevCount);
+
       setStatus('error');
       toast.error(`Failed: ${err.message || 'Unknown error'}`);
     } finally {
@@ -192,111 +228,138 @@ export default function WhatsAppSendButton({
     }
   };
 
+  const renderPreviewModal = () => (
+    <ReminderPreviewModal
+      isOpen={isModalOpen}
+      onClose={() => setIsModalOpen(false)}
+      clientName={name}
+      clientUsername={username}
+      mobileNumber={mobileNumber}
+      defaultMessage={buildCurrentMessage()}
+      onResetToDefault={() => buildCurrentMessage()}
+      onSend={handleConfirmSend}
+      isSending={isSending}
+    />
+  );
+
   // Cooldown active on a different row: Blur this row's send button completely
   if (isCooldownActive && !isCurrentTrigger) {
     return (
-      <div
-        className="relative inline-flex items-center justify-center cursor-not-allowed select-none"
-        title={`Cooldown active: Please wait ${remainingSec}s before sending next WhatsApp reminder.`}
-      >
-        <button
-          type="button"
-          disabled={true}
-          tabIndex={-1}
-          className={cn(
-            "p-1 rounded filter blur-[1.5px] opacity-30 pointer-events-none select-none transition-all duration-300 relative flex items-center justify-center border",
-            isReminded
-              ? "text-blue-600 dark:text-blue-400 bg-blue-100/90 dark:bg-blue-950/70 border-blue-400/80 dark:border-blue-600/80"
-              : "text-slate-400 dark:text-slate-600 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800"
-          )}
+      <>
+        <div
+          className="relative inline-flex items-center justify-center cursor-not-allowed select-none"
+          title={`Cooldown active: Please wait ${remainingSec}s before sending next WhatsApp reminder.`}
         >
-          <MessageCircle size={14} />
-          {displayCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[13px] h-[13px] px-0.5 text-[8.5px] font-black leading-none flex items-center justify-center rounded-full text-white shadow-xs pointer-events-none select-none bg-blue-600">
-              {displayCount}
-            </span>
-          )}
-        </button>
-      </div>
+          <button
+            type="button"
+            disabled={true}
+            tabIndex={-1}
+            className={cn(
+              "p-1 rounded filter blur-[1.5px] opacity-30 pointer-events-none select-none transition-all duration-300 relative flex items-center justify-center border",
+              isReminded
+                ? "text-blue-600 dark:text-blue-400 bg-blue-100/90 dark:bg-blue-950/70 border-blue-400/80 dark:border-blue-600/80"
+                : "text-slate-400 dark:text-slate-600 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+            )}
+          >
+            <MessageCircle size={14} />
+            {displayCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[13px] h-[13px] px-0.5 text-[8.5px] font-black leading-none flex items-center justify-center rounded-full text-white shadow-xs pointer-events-none select-none bg-blue-600">
+                {displayCount}
+              </span>
+            )}
+          </button>
+        </div>
+        {renderPreviewModal()}
+      </>
     );
   }
 
   // Cooldown active on THIS row: show active countdown timer & status
   if (isCurrentTrigger && remainingSec > 0) {
     return (
-      <button
-        type="button"
-        disabled={true}
-        className="px-1.5 py-0.5 rounded-md transition-all relative flex items-center justify-center gap-1 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/80 border border-blue-400 dark:border-blue-600 shadow-xs cursor-wait select-none ring-1 ring-blue-500/30"
-        title={`Reminder dispatched. Cooldown active: ${remainingSec}s remaining before next send.`}
-      >
-        {isSending ? (
-          <Loader2 size={12} className="animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
-        ) : status === 'success' ? (
-          <Check size={12} className="text-emerald-500 shrink-0" />
-        ) : status === 'error' ? (
-          <X size={12} className="text-rose-500 shrink-0" />
-        ) : (
-          <Clock size={11} className="animate-spin text-blue-500 shrink-0" style={{ animationDuration: '4s' }} />
-        )}
-        <span className="text-[9.5px] font-black font-mono leading-none tracking-tight">
-          {remainingSec}s
-        </span>
-      </button>
+      <>
+        <button
+          type="button"
+          disabled={true}
+          className="px-1.5 py-0.5 rounded-md transition-all relative flex items-center justify-center gap-1 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/80 border border-blue-400 dark:border-blue-600 shadow-xs cursor-wait select-none ring-1 ring-blue-500/30"
+          title={`Reminder dispatched. Cooldown active: ${remainingSec}s remaining before next send.`}
+        >
+          {isSending ? (
+            <Loader2 size={12} className="animate-spin text-blue-600 dark:text-blue-400 shrink-0" />
+          ) : status === 'success' ? (
+            <Check size={12} className="text-emerald-500 shrink-0" />
+          ) : status === 'error' ? (
+            <X size={12} className="text-rose-500 shrink-0" />
+          ) : (
+            <Clock size={11} className="animate-spin text-blue-500 shrink-0" style={{ animationDuration: '4s' }} />
+          )}
+          <span className="text-[9.5px] font-black font-mono leading-none tracking-tight">
+            {remainingSec}s
+          </span>
+        </button>
+        {renderPreviewModal()}
+      </>
     );
   }
 
   if (!isReady && status === 'idle') {
     return (
-      <button
-        type="button"
-        title="WhatsApp not connected"
-        onClick={(e) => {
-          e.stopPropagation();
-          toast.info('Please connect WhatsApp from the top menu first.');
-        }}
-        className={cn(
-          "p-1 rounded cursor-not-allowed transition-colors relative border",
-          isReminded
-            ? "text-blue-400 dark:text-blue-600 bg-blue-50/50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900"
-            : "text-slate-300 dark:text-slate-600 border-transparent"
-        )}
-      >
-        <MessageCircle size={14} />
-      </button>
+      <>
+        <button
+          type="button"
+          title="WhatsApp not connected"
+          onClick={(e) => {
+            e.stopPropagation();
+            toast.error('WhatsApp is not connected. Please connect it from the top menu first.');
+          }}
+          className={cn(
+            "p-1 rounded cursor-not-allowed transition-colors relative border",
+            isReminded
+              ? "text-blue-400 dark:text-blue-600 bg-blue-50/50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900"
+              : "text-slate-300 dark:text-slate-600 border-transparent"
+          )}
+        >
+          <MessageCircle size={14} />
+        </button>
+        {renderPreviewModal()}
+      </>
     );
   }
 
   return (
-    <button
-      type="button"
-      disabled={isSending || status !== 'idle'}
-      onClick={handleSend}
-      className={cn(
-        "p-1 rounded transition-all duration-300 disabled:opacity-80 relative flex items-center justify-center border",
-        status === 'success' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-700' :
-        status === 'error' ? 'text-rose-500 bg-rose-50 dark:bg-rose-500/10 border-rose-300 dark:border-rose-700' :
-        isReminded
-          ? 'text-blue-600 dark:text-blue-300 bg-blue-100/90 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-800/60 border-blue-400 dark:border-blue-600 shadow-xs ring-1 ring-blue-500/30'
-          : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/80 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 border-emerald-200/80 dark:border-emerald-800/60'
-      )}
-      title={isReminded ? `Reminder sent (${displayCount} times)` : "Send WhatsApp Reminder"}
-    >
-      {isSending ? (
-        <Loader2 size={14} className="animate-spin" />
-      ) : status === 'success' ? (
-        <Check size={14} />
-      ) : status === 'error' ? (
-        <X size={14} />
-      ) : (
-        <MessageCircle size={14} />
-      )}
+    <>
+      <button
+        type="button"
+        disabled={isSending || status !== 'idle'}
+        onClick={handleOpenModal}
+        className={cn(
+          "p-1 rounded transition-all duration-300 disabled:opacity-80 relative flex items-center justify-center border",
+          status === 'success' ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-700' :
+          status === 'error' ? 'text-rose-500 bg-rose-50 dark:bg-rose-500/10 border-rose-300 dark:border-rose-700' :
+          isReminded
+            ? 'text-blue-600 dark:text-blue-300 bg-blue-100/90 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-800/60 border-blue-400 dark:border-blue-600 shadow-xs ring-1 ring-blue-500/30'
+            : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/80 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 border-emerald-200/80 dark:border-emerald-800/60'
+        )}
+        title={isReminded ? `Reminder sent (${displayCount} times)` : "Send WhatsApp Reminder"}
+      >
+        {isSending ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : status === 'success' ? (
+          <Check size={14} />
+        ) : status === 'error' ? (
+          <X size={14} />
+        ) : (
+          <MessageCircle size={14} />
+        )}
 
-      {displayCount > 0 && (
-        <span className="absolute -top-1 -right-1 min-w-[13px] h-[13px] px-0.5 text-[8.5px] font-black leading-none flex items-center justify-center rounded-full text-white shadow-xs ring-1 ring-white dark:ring-slate-900 pointer-events-none select-none bg-blue-600">
-          {displayCount}
-        </span>
-      )}
-    </button>
+        {displayCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[13px] h-[13px] px-0.5 text-[8.5px] font-black leading-none flex items-center justify-center rounded-full text-white shadow-xs ring-1 ring-white dark:ring-slate-900 pointer-events-none select-none bg-blue-600">
+            {displayCount}
+          </span>
+        )}
+      </button>
+
+      {renderPreviewModal()}
+    </>
   );
 }

@@ -26,6 +26,7 @@ import { lazyWithRetry } from './lib/lazyWithRetry';
 const LoginForm = lazyWithRetry(() => import('./components/LoginForm'));
 const AdminPanel = lazyWithRetry(() => import('./components/AdminPanel'));
 const MemberPanel = lazyWithRetry(() => import('./components/MemberPanel'));
+const WhatsAppCenter = lazyWithRetry(() => import('./whatsapp_data/WhatsAppCenter'));
 
 export default function App() {
   const isOnline = useOnlineStatus();
@@ -175,6 +176,12 @@ export default function App() {
       navigate(targetPath);
     }
   }, [location.pathname, navigate]);
+
+  useEffect(() => {
+    if (location.pathname === '/whatsapplogs' || location.pathname.startsWith('/whatsapplogs')) {
+      navigate('/whatsappcenter', { replace: true });
+    }
+  }, [location.pathname, navigate]);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [isComplaintsInitialLoaded, setIsComplaintsInitialLoaded] = useState(false);
   const processedComplaints = useMemo(() => {
@@ -314,9 +321,12 @@ export default function App() {
     chatAudio.muted = isAudioMuted;
   }, [notificationAudio, chatAudio, isAudioMuted]);
 
-  // --- Inactivity Auto-Logout Mechanism (2 Hours) ---
-  const LOGOUT_INACTIVITY_MS = 2 * 60 * 60 * 1000; // 2 hours
+  // --- Inactivity Auto-Logout Mechanism (8 Hours) ---
+  const LOGOUT_INACTIVITY_MS = 8 * 60 * 60 * 1000; // 8 hours; keep it easy to change in one place
+  const INACTIVITY_WARNING_MS = 5 * 60 * 1000; // 5 minutes warning before logout
   const ACTIVITY_STORAGE_KEY = 'gts_last_activity_ts';
+  const WARNING_TOAST_ID = 'inactivity-warning-toast';
+  const warningShownRef = useRef(false);
 
   const updateLastActivity = React.useCallback(() => {
     try {
@@ -326,17 +336,41 @@ export default function App() {
 
   const forceLogoutForInactivity = React.useCallback(() => {
     try {
-      pocketbaseService.clearAllLocalCaches();
-      // Clear all app-specific cached data on this device so no stale
-      // snapshot can ever be reused after a long gap.
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('gts_cache_v3_') || key.startsWith('gts_cache_meta_') || key.startsWith('gts_app_config') || key === ACTIVITY_STORAGE_KEY) {
-          localStorage.removeItem(key);
+      toast.dismiss(WARNING_TOAST_ID);
+      warningShownRef.current = false;
+
+      // Remove complaint_app_user so refresh does not silently log the user back in
+      safeLocalStorage.removeItem('complaint_app_user');
+      try {
+        localStorage.removeItem('complaint_app_user');
+      } catch (e) {}
+
+      // On inactivity logout do not wipe every cache: remove only billing/ledger/entry-sheet caches
+      // (keys starting with gts_cache_v3_billing_months, gts_cache_v3_ledger_, gts_cache_meta_ for those keys, gts_ledger_)
+      // and the activity key. Keep everything else because those caches already expire after 12 hours.
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (
+          key.startsWith('gts_cache_v3_billing_months') ||
+          key.startsWith('gts_cache_v3_ledger_') ||
+          key.startsWith('gts_cache_meta_billing_months') ||
+          key.startsWith('gts_cache_meta_ledger_') ||
+          key.startsWith('gts_ledger_') ||
+          key === ACTIVITY_STORAGE_KEY
+        ) {
+          keysToRemove.push(key);
         }
+      }
+      keysToRemove.forEach(k => {
+        try {
+          localStorage.removeItem(k);
+        } catch (e) {}
       });
     } catch (e) {}
     setUser(null);
-    toast.info('You were logged out due to 2 hours of inactivity. Please log in again.');
+    toast.info('You were logged out due to 8 hours of inactivity. Please log in again.');
     navigate('/login');
   }, [navigate]);
 
@@ -348,9 +382,35 @@ export default function App() {
         const lastTsRaw = localStorage.getItem(ACTIVITY_STORAGE_KEY);
         const lastTs = lastTsRaw ? parseInt(lastTsRaw, 10) : Date.now();
         const elapsed = Date.now() - lastTs;
+
+        // If limit reached, log out immediately
         if (elapsed >= LOGOUT_INACTIVITY_MS) {
+          if (warningShownRef.current) {
+            toast.dismiss(WARNING_TOAST_ID);
+            warningShownRef.current = false;
+          }
           forceLogoutForInactivity();
           return true;
+        }
+
+        // If within warning window (5 minutes before limit), show persistent warning
+        if (elapsed >= LOGOUT_INACTIVITY_MS - INACTIVITY_WARNING_MS) {
+          if (!warningShownRef.current) {
+            warningShownRef.current = true;
+            toast.warning(
+              'You will be logged out in 5 minutes due to inactivity. Move the mouse or press a key to stay signed in.',
+              {
+                id: WARNING_TOAST_ID,
+                duration: Infinity,
+              }
+            );
+          }
+        } else {
+          // If elapsed is below warning threshold (e.g. updated from another tab or fresh activity)
+          if (warningShownRef.current) {
+            toast.dismiss(WARNING_TOAST_ID);
+            warningShownRef.current = false;
+          }
         }
       } catch (e) {}
       return false;
@@ -371,30 +431,61 @@ export default function App() {
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
 
-    // Periodic check every 60 seconds while the tab stays open (catches
-    // someone leaving it open and idle at the desk without closing it).
+    // Periodic check every 15 seconds while the tab stays open (catches
+    // someone leaving it open and idle at the desk, and triggers the 5-min warning promptly).
     const intervalId = setInterval(() => {
       checkInactivity();
-    }, 60000);
+    }, 15000);
 
     // Track real user activity, throttled to avoid excessive writes.
+    // Count real activity: mousedown, mousemove, pointerdown, wheel, keydown, touchstart, click, scroll with capture: true.
     let throttleTimer: any = null;
     const handleUserActivity = () => {
+      // Dismiss persistent warning immediately upon detecting real activity
+      if (warningShownRef.current) {
+        toast.dismiss(WARNING_TOAST_ID);
+        warningShownRef.current = false;
+        updateLastActivity();
+        if (throttleTimer) {
+          clearTimeout(throttleTimer);
+          throttleTimer = null;
+        }
+        return;
+      }
+
       if (throttleTimer) return;
       throttleTimer = setTimeout(() => {
         updateLastActivity();
         throttleTimer = null;
       }, 10000); // update at most once every 10 seconds
     };
-    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll'];
-    activityEvents.forEach(evt => window.addEventListener(evt, handleUserActivity, { passive: true }));
+
+    const activityEvents = [
+      'mousedown',
+      'mousemove',
+      'pointerdown',
+      'wheel',
+      'keydown',
+      'touchstart',
+      'click',
+      'scroll'
+    ];
+    activityEvents.forEach(evt =>
+      window.addEventListener(evt, handleUserActivity, { capture: true, passive: true })
+    );
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       clearInterval(intervalId);
-      activityEvents.forEach(evt => window.removeEventListener(evt, handleUserActivity));
+      activityEvents.forEach(evt =>
+        window.removeEventListener(evt, handleUserActivity, { capture: true })
+      );
       if (throttleTimer) clearTimeout(throttleTimer);
+      if (warningShownRef.current) {
+        toast.dismiss(WARNING_TOAST_ID);
+        warningShownRef.current = false;
+      }
     };
   }, [user, forceLogoutForInactivity, updateLastActivity]);
 
@@ -2446,125 +2537,141 @@ export default function App() {
           />
         )}
       </AnimatePresence>
-      <Layout 
-        user={user} 
-        users={users}
-        notifications={notifications}
-        onLogout={handleLogout} 
-        onRefresh={handleRefresh} 
-        isLoading={isLoading}
-        alertAuthorized={alertAuthorized}
-        isAudioMuted={isAudioMuted}
-        onToggleAudio={handleToggleAudio}
-        onResetBanner={handleResetBanner}
-        onUpdateUser={handleUpdateUser}
-        branding={branding}
-        onUpdateBranding={handleUpdateBranding}
-        activeTab={activeTab}
-        onNavigate={handleNavigate}
-        appConfig={appConfig}
-        onRegisterComplaint={handleRegisterComplaint}
-      >
+      {user && (location.pathname === '/whatsappcenter' || location.pathname.startsWith('/whatsappcenter') || location.pathname === '/whatsapplogs' || location.pathname.startsWith('/whatsapplogs')) ? (
         <Suspense fallback={<RouteLoadingFallback />}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={!user ? 'login-view' : user.status === 'pending' ? 'pending-view' : `app-view-${user.uid || user.username || user.role}`}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-            >
-              {!user ? (
-                <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
-              ) : user.status === 'pending' ? (
-                <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
-                  <div className="absolute inset-0 bg-amber-500/5 dark:bg-amber-500/10" />
-                  <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-amber-200/50 dark:border-amber-800/50 shadow-2xl">
-                    <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <Clock size={40} className="animate-pulse" />
-                    </div>
-                    <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Registration Pending</h1>
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                      Your network node registration is currently under review by the core administration team. Please wait for clearance.
-                    </p>
-                    <button 
-                      onClick={handleLogout} 
-                      className="mt-8 px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform uppercase text-xs tracking-widest shadow-xl cursor-pointer"
-                    >
-                      Logout
-                    </button>
-                  </div>
-                </div>
-              ) : lineCodeReady ? (
-                (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor' || user.role === 'liteadmin' || user.role === 'member' || user.role === 'field_agent') ? (
-                  <AdminPanel
-                    complaints={processedComplaints}
-                    users={users}
-                    currentUser={user}
-                    isSuspended={isSuspended}
-                    onDeleteComplaint={handleDeleteComplaint}
-                    onUpdateComplaintStatus={handleUpdateComplaintStatus}
-                    onUpdateRemarks={handleUpdateRemarks}
-                    onUpdateComplaint={handleUpdateComplaint}
-                    onCreateUser={handleCreateUser}
-                    onDeleteUser={handleDeleteUser}
-                    onUpdateUser={handleUpdateUser}
-                    onRegisterComplaint={handleRegisterComplaint}
-                    onChangeAdminPass={handleChangeAdminPass}
-                    appConfig={appConfig}
-                    onUpdateConfig={handleUpdateConfig}
-                    onUpdateUserStatus={handleUpdateUserStatus}
-                    isLoading={isLoading}
-                    isComplaintsInitialLoaded={isComplaintsInitialLoaded}
-                    alertAuthorized={alertAuthorized}
-                    onAuthorizeAlerts={handleAuthorizeAlerts}
-                    onSoundTest={handleSoundTest}
-                    isAudioMuted={isAudioMuted}
-                    onToggleAudio={handleToggleAudio}
-                    onLogout={handleLogout}
-                    micAuthorized={micAuthorized}
-                    onAuthorizeMic={handleAuthorizeMic}
-                    isMicMuted={isMicMuted}
-                    onToggleMic={handleToggleMic}
-                    branding={branding}
-                    onUpdateBranding={handleUpdateBranding}
-                    activeTab={activeTab}
-                    onNavigate={handleNavigate}
-                  />
-                ) : (
-                  <MemberPanel
-                    complaints={processedComplaints}
-                    users={users}
-                    currentUser={user}
-                    isSuspended={isSuspended}
-                    onRegisterComplaint={handleRegisterComplaint}
-                    onUpdateComplaintStatus={handleUpdateComplaintStatus}
-                    onUpdateRemarks={handleUpdateRemarks}
-                    onUpdateComplaint={handleUpdateComplaint}
-                    onUpdateUser={handleUpdateUser}
-                    appConfig={appConfig}
-                    isLoading={isLoading}
-                    isComplaintsInitialLoaded={isComplaintsInitialLoaded}
-                    alertAuthorized={alertAuthorized}
-                    onAuthorizeAlerts={handleAuthorizeAlerts}
-                    onSoundTest={handleSoundTest}
-                    isAudioMuted={isAudioMuted}
-                    onToggleAudio={handleToggleAudio}
-                    onLogout={handleLogout}
-                    micAuthorized={micAuthorized}
-                    onAuthorizeMic={handleAuthorizeMic}
-                    isMicMuted={isMicMuted}
-                    onToggleMic={handleToggleMic}
-                    branding={branding}
-                    activeTab={activeTab}
-                    onNavigate={handleNavigate}
-                  />
-                )
-              ) : null}
-            </motion.div>
-          </AnimatePresence>
+          <WhatsAppCenter
+            standalone={true}
+            onClose={() => {
+              if (window.history.length > 1) {
+                navigate(-1);
+              } else {
+                navigate('/billingmod');
+              }
+            }}
+            currentUser={user}
+          />
         </Suspense>
-    </Layout>
+      ) : (
+        <Layout 
+          user={user} 
+          users={users}
+          notifications={notifications}
+          onLogout={handleLogout} 
+          onRefresh={handleRefresh} 
+          isLoading={isLoading}
+          alertAuthorized={alertAuthorized}
+          isAudioMuted={isAudioMuted}
+          onToggleAudio={handleToggleAudio}
+          onResetBanner={handleResetBanner}
+          onUpdateUser={handleUpdateUser}
+          branding={branding}
+          onUpdateBranding={handleUpdateBranding}
+          activeTab={activeTab}
+          onNavigate={handleNavigate}
+          appConfig={appConfig}
+          onRegisterComplaint={handleRegisterComplaint}
+        >
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={!user ? 'login-view' : user.status === 'pending' ? 'pending-view' : `app-view-${user.uid || user.username || user.role}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              >
+                {!user ? (
+                  <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
+                ) : user.status === 'pending' ? (
+                  <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-amber-500/5 dark:bg-amber-500/10" />
+                    <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-amber-200/50 dark:border-amber-800/50 shadow-2xl">
+                      <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Clock size={40} className="animate-pulse" />
+                      </div>
+                      <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Registration Pending</h1>
+                      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                        Your network node registration is currently under review by the core administration team. Please wait for clearance.
+                      </p>
+                      <button 
+                        onClick={handleLogout} 
+                        className="mt-8 px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform uppercase text-xs tracking-widest shadow-xl cursor-pointer"
+                      >
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                ) : lineCodeReady ? (
+                  (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor' || user.role === 'liteadmin' || user.role === 'member' || user.role === 'field_agent') ? (
+                    <AdminPanel
+                      complaints={processedComplaints}
+                      users={users}
+                      currentUser={user}
+                      isSuspended={isSuspended}
+                      onDeleteComplaint={handleDeleteComplaint}
+                      onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                      onUpdateRemarks={handleUpdateRemarks}
+                      onUpdateComplaint={handleUpdateComplaint}
+                      onCreateUser={handleCreateUser}
+                      onDeleteUser={handleDeleteUser}
+                      onUpdateUser={handleUpdateUser}
+                      onRegisterComplaint={handleRegisterComplaint}
+                      onChangeAdminPass={handleChangeAdminPass}
+                      appConfig={appConfig}
+                      onUpdateConfig={handleUpdateConfig}
+                      onUpdateUserStatus={handleUpdateUserStatus}
+                      isLoading={isLoading}
+                      isComplaintsInitialLoaded={isComplaintsInitialLoaded}
+                      alertAuthorized={alertAuthorized}
+                      onAuthorizeAlerts={handleAuthorizeAlerts}
+                      onSoundTest={handleSoundTest}
+                      isAudioMuted={isAudioMuted}
+                      onToggleAudio={handleToggleAudio}
+                      onLogout={handleLogout}
+                      micAuthorized={micAuthorized}
+                      onAuthorizeMic={handleAuthorizeMic}
+                      isMicMuted={isMicMuted}
+                      onToggleMic={handleToggleMic}
+                      branding={branding}
+                      onUpdateBranding={handleUpdateBranding}
+                      activeTab={activeTab}
+                      onNavigate={handleNavigate}
+                    />
+                  ) : (
+                    <MemberPanel
+                      complaints={processedComplaints}
+                      users={users}
+                      currentUser={user}
+                      isSuspended={isSuspended}
+                      onRegisterComplaint={handleRegisterComplaint}
+                      onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                      onUpdateRemarks={handleUpdateRemarks}
+                      onUpdateComplaint={handleUpdateComplaint}
+                      onUpdateUser={handleUpdateUser}
+                      appConfig={appConfig}
+                      isLoading={isLoading}
+                      isComplaintsInitialLoaded={isComplaintsInitialLoaded}
+                      alertAuthorized={alertAuthorized}
+                      onAuthorizeAlerts={handleAuthorizeAlerts}
+                      onSoundTest={handleSoundTest}
+                      isAudioMuted={isAudioMuted}
+                      onToggleAudio={handleToggleAudio}
+                      onLogout={handleLogout}
+                      micAuthorized={micAuthorized}
+                      onAuthorizeMic={handleAuthorizeMic}
+                      isMicMuted={isMicMuted}
+                      onToggleMic={handleToggleMic}
+                      branding={branding}
+                      activeTab={activeTab}
+                      onNavigate={handleNavigate}
+                    />
+                  )
+                ) : null}
+              </motion.div>
+            </AnimatePresence>
+          </Suspense>
+        </Layout>
+      )}
     </>
   );
 }

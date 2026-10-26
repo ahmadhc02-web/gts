@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
@@ -147,6 +147,441 @@ const ColumnDragHandle = ({ min, max, value, onChange, onDragEnd }: { min: numbe
     />
   );
 };
+
+interface Table1RowItemProps {
+  row: Table1Row;
+  index: number;
+  rowPadding: number;
+  tableFontSize: number;
+  t1WidthSr: number;
+  t1WidthId: number;
+  t1WidthName: number;
+  t1WidthComments: number;
+  t1WidthAmount: number;
+  t1WidthCh: number;
+  isFocusedRow: boolean;
+  focusedField: 'cId' | 'name' | 'amount' | null;
+  isSearchResultMatch: boolean;
+  isLocked: boolean;
+  onCommitChange: (index: number, field: keyof Table1Row, value: any) => void;
+  onFocusField: (index: number, field: 'name' | 'amount', currentVal: string, element: HTMLInputElement) => void;
+  onBlurField: () => void;
+  onSearchQueryChange: (val: string) => void;
+  logPerf: (label: string, startMs: number) => void;
+}
+
+const Table1RowItem = React.memo(({
+  row,
+  index,
+  rowPadding,
+  tableFontSize,
+  t1WidthSr,
+  t1WidthId,
+  t1WidthName,
+  t1WidthComments,
+  t1WidthAmount,
+  t1WidthCh,
+  isFocusedRow,
+  focusedField,
+  isSearchResultMatch,
+  isLocked,
+  onCommitChange,
+  onFocusField,
+  onBlurField,
+  onSearchQueryChange,
+  logPerf
+}: Table1RowItemProps) => {
+  const [localRow, setLocalRow] = useState(row);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingRef = useRef<Partial<Table1Row>>({});
+
+  useEffect(() => {
+    setLocalRow(row);
+    pendingRef.current = {};
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  }, [row.sr, row.cId, row.name, row.comments, row.amount, row.ch, row.clientUsername, row.status]);
+
+  const flushCommit = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const pending = pendingRef.current;
+    if (Object.keys(pending).length > 0) {
+      for (const [k, v] of Object.entries(pending)) {
+        onCommitChange(index, k as keyof Table1Row, v);
+      }
+      pendingRef.current = {};
+    }
+  }, [index, onCommitChange]);
+
+  const handleFieldChange = (field: keyof Table1Row, val: any) => {
+    if (isLocked) return;
+    const start = performance.now();
+    setLocalRow(prev => ({ ...prev, [field]: val }));
+    pendingRef.current[field] = val;
+
+    if (field === 'name') {
+      onSearchQueryChange(val);
+    }
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      flushCommit();
+    }, 250);
+
+    logPerf(`typing (${field})`, start);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      flushCommit();
+    }
+  };
+
+  return (
+    <tr 
+      className={`border-b border-slate-405 font-mono colRow transition-all duration-250 relative ${
+        isFocusedRow ? 'z-[99999]' : 'z-0'
+      } ${
+        isSearchResultMatch 
+          ? 'bg-brand-accent/20 dark:bg-brand-accent/30 font-bold border-l-4 border-l-brand-accent' 
+          : ''
+      }`}
+    >
+      {/* Sr */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
+        className="px-1 border-r-2 border-black text-center font-bold font-sans text-slate-600 bg-slate-50/50"
+      >
+        <input
+          type="text"
+          value={localRow.sr}
+          onChange={(e) => handleFieldChange('sr', e.target.value)}
+          onBlur={flushCommit}
+          onKeyDown={handleKeyDown}
+          style={{ fontSize: `${tableFontSize - 0.5}px` }}
+          className="w-full min-w-0 border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
+          title="Double-click/type to edit Serial"
+        />
+      </td>
+
+      {/* C. ID */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
+        className="px-1 border-r border-black relative group/cell"
+      >
+        <input
+          type="text"
+          value={localRow.cId}
+          onChange={(e) => handleFieldChange('cId', e.target.value)}
+          onBlur={flushCommit}
+          onKeyDown={handleKeyDown}
+          style={{ fontSize: `${tableFontSize - 0.5}px` }}
+          className="w-full min-w-0 border-none p-0 text-center text-slate-900 bg-transparent focus:bg-slate-100 font-bold tracking-tight outline-none"
+        />
+      </td>
+
+      {/* Name */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
+        className={`px-2 border-r border-black font-sans relative group/cell ${isFocusedRow && focusedField === 'name' ? 'z-[99999]' : ''}`}
+      >
+        <div className="flex items-center justify-between gap-1 w-full">
+          <input
+            type="text"
+            value={localRow.name}
+            onChange={(e) => {
+              handleFieldChange('name', e.target.value);
+              onFocusField(index, 'name', e.target.value, e.currentTarget);
+            }}
+            onFocus={(e) => {
+              onFocusField(index, 'name', localRow.name, e.currentTarget);
+            }}
+            onBlur={() => {
+              flushCommit();
+              onBlurField();
+            }}
+            onKeyDown={handleKeyDown}
+            style={{ fontSize: `${tableFontSize}px` }}
+            className="flex-1 min-w-0 border-none p-0 text-slate-900 bg-transparent font-black tracking-tight focus:bg-slate-100 outline-none"
+          />
+          {(localRow.clientUsername || (localRow.cId && localRow.name)) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const textToCopy = (localRow.clientUsername || localRow.cId || '').trim();
+                if (textToCopy) {
+                  navigator.clipboard.writeText(textToCopy);
+                  toast.success(`Copied: ${textToCopy}`, { duration: 2500, icon: '📋' });
+                }
+              }}
+              title="Click to copy User ID"
+              className="print:hidden text-[9px] font-black text-slate-500 hover:text-indigo-600 bg-slate-100/80 hover:bg-indigo-50 active:scale-95 dark:text-slate-400 dark:bg-slate-800 dark:hover:bg-indigo-900/40 px-1.5 py-0.5 rounded leading-none shrink-0 border border-slate-200/60 hover:border-indigo-200 dark:border-slate-700 dark:hover:border-indigo-800/60 cursor-pointer transition-all duration-200 flex items-center gap-1 select-none group/copy overflow-hidden"
+            >
+              <span className="truncate max-w-[60px] group-hover/copy:max-w-none transition-all duration-300">@{localRow.clientUsername || localRow.cId}</span>
+              <Copy size={9} className="opacity-0 w-0 -ml-1 group-hover/copy:w-auto group-hover/copy:opacity-100 group-hover/copy:ml-0 transition-all duration-300 ease-out text-indigo-500" />
+            </button>
+          )}
+        </div>
+      </td>
+
+      {/* Comments */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
+        className="px-2 border-r border-black font-sans"
+      >
+        <input
+          type="text"
+          value={localRow.comments}
+          onChange={(e) => handleFieldChange('comments', e.target.value)}
+          onBlur={flushCommit}
+          onKeyDown={handleKeyDown}
+          style={{ fontSize: `${tableFontSize - 0.5}px` }}
+          className="w-full min-w-0 border-none p-0 text-slate-600 dark:text-slate-600 bg-transparent font-semibold focus:bg-slate-100 outline-none"
+        />
+      </td>
+
+      {/* Amount */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
+        className={`px-2 border-r border-black text-right relative ${isFocusedRow && focusedField === 'amount' ? 'z-[99999]' : ''}`}
+      >
+        <input
+          type="text"
+          value={localRow.amount === 0 ? '' : localRow.amount}
+          placeholder="0"
+          onChange={(e) => handleFieldChange('amount', e.target.value)}
+          onFocus={(e) => {
+            onFocusField(index, 'amount', String(localRow.amount || ''), e.currentTarget);
+          }}
+          onBlur={() => {
+            flushCommit();
+            onBlurField();
+          }}
+          onKeyDown={handleKeyDown}
+          style={{ fontSize: `${tableFontSize}px` }}
+          className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono uppercase"
+        />
+        
+        {isFocusedRow && focusedField === 'amount' && (
+          <div className="absolute top-[105%] right-0 w-[120px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-white/10 shadow-2xl rounded-xl p-1 z-[99999] print:hidden font-sans pointer-events-auto">
+            <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1 text-left">
+              Set Status
+            </div>
+            {['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].map(st => (
+              <button
+                key={st}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (debounceTimerRef.current) {
+                    clearTimeout(debounceTimerRef.current);
+                    debounceTimerRef.current = null;
+                  }
+                  pendingRef.current = {};
+                  onCommitChange(index, 'amount', st);
+                  onCommitChange(index, 'status', st.toLowerCase());
+                  onBlurField();
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  if (debounceTimerRef.current) {
+                    clearTimeout(debounceTimerRef.current);
+                    debounceTimerRef.current = null;
+                  }
+                  pendingRef.current = {};
+                  onCommitChange(index, 'amount', st);
+                  onCommitChange(index, 'status', st.toLowerCase());
+                  onBlurField();
+                }}
+                className="w-full text-right px-2 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 transition-colors uppercase tracking-widest cursor-pointer"
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+        )}
+      </td>
+
+      {/* Ch (Tick checkbox) */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px` }}
+        className="px-1 text-center select-none"
+      >
+        <div className="flex items-center justify-center">
+          <input
+            type="checkbox"
+            checked={!!localRow.ch}
+            onChange={(e) => {
+              if (isLocked) return;
+              setLocalRow(prev => ({ ...prev, ch: e.target.checked }));
+              onCommitChange(index, 'ch', e.target.checked);
+            }}
+            className="w-3.5 h-3.5 rounded border-slate-400 text-brand-accent focus:ring-brand-accent cursor-pointer"
+          />
+        </div>
+      </td>
+    </tr>
+  );
+});
+Table1RowItem.displayName = 'Table1RowItem';
+
+interface Table2RowItemProps {
+  row: Table2Row;
+  index: number;
+  rowPadding: number;
+  tableFontSize: number;
+  t2WidthSr: number;
+  t2WidthName: number;
+  t2WidthAmount: number;
+  isLocked: boolean;
+  onCommitChange: (index: number, field: keyof Table2Row, value: any) => void;
+  logPerf: (label: string, startMs: number) => void;
+}
+
+const Table2RowItem = React.memo(({
+  row,
+  index,
+  rowPadding,
+  tableFontSize,
+  t2WidthSr,
+  t2WidthName,
+  t2WidthAmount,
+  isLocked,
+  onCommitChange,
+  logPerf
+}: Table2RowItemProps) => {
+  const [localRow, setLocalRow] = useState(row);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingRef = useRef<Partial<Table2Row>>({});
+
+  useEffect(() => {
+    setLocalRow(row);
+    pendingRef.current = {};
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+  }, [row.sr, row.name, row.amount, row.ch]);
+
+  const flushCommit = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const pending = pendingRef.current;
+    if (Object.keys(pending).length > 0) {
+      for (const [k, v] of Object.entries(pending)) {
+        onCommitChange(index, k as keyof Table2Row, v);
+      }
+      pendingRef.current = {};
+    }
+  }, [index, onCommitChange]);
+
+  const handleFieldChange = (field: keyof Table2Row, val: any) => {
+    if (isLocked) return;
+    const start = performance.now();
+    setLocalRow(prev => ({ ...prev, [field]: val }));
+    pendingRef.current[field] = val;
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      flushCommit();
+    }, 250);
+
+    logPerf(`typing table2 (${field})`, start);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      flushCommit();
+    }
+  };
+
+  return (
+    <tr className="border-b border-slate-400 font-mono">
+      {/* Sr */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
+        className="px-1 border-r-2 border-black text-center font-bold font-sans text-slate-600 bg-slate-50/50"
+      >
+        <input
+          type="text"
+          value={localRow.sr}
+          onChange={(e) => handleFieldChange('sr', e.target.value)}
+          onBlur={flushCommit}
+          onKeyDown={handleKeyDown}
+          style={{ fontSize: `${tableFontSize - 0.5}px` }}
+          className="w-full min-w-0 border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
+          title="Double-click/type to edit Serial"
+        />
+      </td>
+
+      {/* Name */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
+        className="px-3 border-r border-black font-sans text-slate-800 font-extrabold uppercase select-text"
+      >
+        <input
+          type="text"
+          value={localRow.name}
+          onChange={(e) => handleFieldChange('name', e.target.value)}
+          onBlur={flushCommit}
+          onKeyDown={handleKeyDown}
+          style={{ fontSize: `${tableFontSize}px` }}
+          className="w-full min-w-0 border-none p-0 text-slate-900 font-black tracking-wide bg-transparent focus:bg-slate-100 outline-none uppercase font-mono"
+        />
+      </td>
+
+      {/* Amount */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
+        className="px-2 border-r border-black text-right"
+      >
+        <input
+          type="number"
+          value={localRow.amount === 0 ? '' : localRow.amount}
+          placeholder="0"
+          onChange={(e) => handleFieldChange('amount', parseFloat(e.target.value) || 0)}
+          onBlur={flushCommit}
+          onKeyDown={handleKeyDown}
+          style={{ fontSize: `${tableFontSize}px` }}
+          className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
+        />
+      </td>
+
+      {/* Ch checkbox */}
+      <td 
+        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px` }}
+        className="px-1 text-center select-none"
+      >
+        <div className="flex items-center justify-center">
+          <input
+            type="checkbox"
+            checked={!!localRow.ch}
+            onChange={(e) => {
+              if (isLocked) return;
+              setLocalRow(prev => ({ ...prev, ch: e.target.checked }));
+              onCommitChange(index, 'ch', e.target.checked);
+            }}
+            className="w-3.5 h-3.5 rounded border-slate-400 text-brand-accent focus:ring-brand-accent cursor-pointer"
+          />
+        </div>
+      </td>
+    </tr>
+  );
+});
+Table2RowItem.displayName = 'Table2RowItem';
 
 export default function EntrySheet({ 
   isOpen, 
@@ -483,11 +918,13 @@ export default function EntrySheet({
     const tenantId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : 'main');
     const nowIso = new Date().toISOString();
     const nowTs = Date.now();
+    const activeLineCode = pocketbaseService.getActiveLineCode() || '';
 
     try {
       const { data, error } = await supabase.from('ledger_folders').insert({
         name: cleanName,
         tenant_id: tenantId,
+        line_code: activeLineCode,
         created_at: nowIso
       }).select().single();
 
@@ -508,16 +945,26 @@ export default function EntrySheet({
           name: data.name,
           createdAt: createdTimestamp,
           created_at: createdTimestamp,
-          tenantId: tenantId
+          tenantId: tenantId,
+          lineCode: activeLineCode
         };
         
         // Ensure new folder is placed at the top-left 1st position (prepended)
+        const previousFolders = folders;
         const newFolders = [nFolder, ...folders.filter(f => f.id !== nFolder.id)];
         setFolders(newFolders);
         // Also keep local backup & cloud sync for offline resilience
         const originalScopeId = activeDealerId || currentUser?.uid || 'main';
         setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
-        pocketbaseService.saveLedgerFolders(newFolders, tenantId).catch(console.warn);
+        try {
+          await pocketbaseService.saveLedgerFolders(newFolders, tenantId);
+        } catch (saveErr: any) {
+          console.error("Failed to save ledger folders after creation:", saveErr);
+          setFolders(previousFolders);
+          setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(previousFolders));
+          toast.error("Failed to save folder: " + (saveErr?.message || String(saveErr)));
+          return;
+        }
         
         setNewFolderNameInput('');
         setIsCreatingFolder(false);
@@ -907,61 +1354,135 @@ export default function EntrySheet({
     toast.success(`Table 2 sorted by ${key.toUpperCase()} (${direction === 'asc' ? 'A-Z' : 'Z-A'})`);
   };
 
+  // Dev-only perf measurement timer (controlled via localStorage 'gts_perf' === '1')
+  const logPerf = useCallback((label: string, startMs: number) => {
+    if (typeof window !== 'undefined' && localStorage.getItem('gts_perf') === '1') {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const ms = (performance.now() - startMs).toFixed(1);
+          console.log(`[EntrySheet perf] ${label} ${ms}ms`);
+        });
+      });
+    }
+  }, []);
+
   // Autocomplete suggestions states
   const [clients, setClients] = useState<any[]>([]);
 
-  const findClientForEntry = (item: any): any | null => {
+  // Fast client lookup maps built once whenever clients change
+  const clientMaps = useMemo(() => {
+    const byId = new Map<string, any>();
+    const byIdExact = new Map<string, any>();
+    const byUsername = new Map<string, any>();
+    const nameCount = new Map<string, number>();
+    const nameToClient = new Map<string, any>();
+
+    for (let i = 0; i < clients.length; i++) {
+      const c = clients[i];
+      if (!c) continue;
+      if (c.id) {
+        byIdExact.set(String(c.id), c);
+        byId.set(String(c.id).toLowerCase(), c);
+      }
+      if (c.username) {
+        byUsername.set(String(c.username).toLowerCase(), c);
+      }
+      if (c.name) {
+        const normName = String(c.name).trim().toLowerCase();
+        if (normName) {
+          const count = (nameCount.get(normName) || 0) + 1;
+          nameCount.set(normName, count);
+          if (count === 1) {
+            nameToClient.set(normName, c);
+          } else {
+            nameToClient.delete(normName);
+          }
+        }
+      }
+    }
+
+    return { byId, byIdExact, byUsername, nameCount, nameToClient };
+  }, [clients]);
+
+  const loggedAmbiguousNamesRef = useRef<Set<string>>(new Set());
+
+  const findClientForEntry = useCallback((item: any): any | null => {
     if (!item) return null;
-    
+    const { byId, byIdExact, byUsername, nameCount, nameToClient } = clientMaps;
+
     // 1. Try reliable ID-based matches
     // Match by clientId / clientUsername / cId (ID-based, reliable)
-    const matchedById = clients.find((c: any) => {
-      const clientIdMatch = item.clientId && c.id === item.clientId;
-      const clientUsernameMatch = item.clientUsername && c.username?.toLowerCase() === String(item.clientUsername).toLowerCase();
-      const cIdMatch = item.cId && (c.id?.toLowerCase() === String(item.cId).toLowerCase() || c.username?.toLowerCase() === String(item.cId).toLowerCase());
-      return clientIdMatch || clientUsernameMatch || cIdMatch;
-    });
-
-    if (matchedById) {
-      return matchedById;
+    if (item.clientId) {
+      const match = byIdExact.get(String(item.clientId)) || byId.get(String(item.clientId).toLowerCase());
+      if (match) return match;
+    }
+    if (item.clientUsername) {
+      const match = byUsername.get(String(item.clientUsername).toLowerCase());
+      if (match) return match;
+    }
+    if (item.cId) {
+      const cIdStr = String(item.cId).toLowerCase();
+      const match = byId.get(cIdStr) || byUsername.get(cIdStr);
+      if (match) return match;
     }
 
     // 2. Fallback: match by name, ONLY if the name is unique among all clients
     const nameToSearch = item.name ? String(item.name).trim().toLowerCase() : '';
     if (nameToSearch) {
-      const sameNamedClients = clients.filter((c: any) => c.name && String(c.name).trim().toLowerCase() === nameToSearch);
-      if (sameNamedClients.length === 1) {
-        return sameNamedClients[0];
-      } else if (sameNamedClients.length > 1) {
-        console.warn(`Ambiguous same-name case for "${item.name}" in clients list. Found ${sameNamedClients.length} clients with this name. Leaving unmatched.`);
+      const count = nameCount.get(nameToSearch) || 0;
+      if (count === 1) {
+        return nameToClient.get(nameToSearch) || null;
+      } else if (count > 1) {
+        if (!loggedAmbiguousNamesRef.current.has(nameToSearch)) {
+          loggedAmbiguousNamesRef.current.add(nameToSearch);
+          console.warn(`Ambiguous same-name case for "${item.name}" in clients list. Found ${count} clients with this name. Leaving unmatched.`);
+        }
       }
     }
 
     return null;
-  };
+  }, [clientMaps]);
 
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
-  const [focusedField, setFocusedField] = useState<'cId' | 'name' | null>(null);
+  const [focusedField, setFocusedField] = useState<'cId' | 'name' | 'amount' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
   const [activeInputElement, setActiveInputElement] = useState<HTMLInputElement | null>(null);
-  const [scrollTick, setScrollTick] = useState(0);
 
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
+
+  const updateDropdownPosition = useCallback(() => {
+    if (!activeInputElement || !dropdownContainerRef.current) return;
+    const rect = activeInputElement.getBoundingClientRect();
+    const desiredWidth = Math.max(370, rect.width);
+    const maxLeft = typeof window !== 'undefined' ? window.innerWidth - desiredWidth - 12 : rect.left;
+    const finalLeft = Math.max(8, Math.min(rect.left, maxLeft));
+    dropdownContainerRef.current.style.top = `${rect.bottom + 4}px`;
+    dropdownContainerRef.current.style.left = `${finalLeft}px`;
+    dropdownContainerRef.current.style.width = `${desiredWidth}px`;
+  }, [activeInputElement]);
+
+  // RequestAnimationFrame throttled repositioning of suggestions dropdown (no state update per scroll)
   useEffect(() => {
     if (!activeInputElement) return;
-    
-    const handleScroll = () => {
-      setScrollTick(prev => prev + 1);
+    let rafId: number | null = null;
+    const handleScrollOrResize = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        updateDropdownPosition();
+        rafId = null;
+      });
     };
 
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('resize', handleScroll);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
 
     return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('resize', handleScroll);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
     };
-  }, [activeInputElement]);
+  }, [activeInputElement, updateDropdownPosition]);
 
   const getDropdownStyle = () => {
     if (!activeInputElement) return {};
@@ -991,6 +1512,43 @@ export default function EntrySheet({
   const [originalActiveRows, setOriginalActiveRows] = useState<{ name: string; amount: number; comments?: string; cId?: string; clientId?: string; clientUsername?: string; status?: string }[]>([]);
   const [originalActiveSheetId, setOriginalActiveSheetId] = useState<string | null>(null);
   const originalRowsBySheetIdRef = useRef<Map<string, { name: string; amount: any; comments?: string; cId?: string; clientId?: string; clientUsername?: string; status?: string }[]>>(new Map());
+
+  // Memoized receipt preview items with client resolution
+  const previewItemsData = useMemo(() => {
+    const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
+    const rawItems = isMulti ? multiSavedEntries.slice(0, 4) : (lastSavedEntry ? [lastSavedEntry] : []);
+    const actualCount = rawItems.filter(item => item && (item?.name || '').trim() !== '').length;
+    const items: any[] = [...rawItems];
+    while (items.length < 4) {
+      items.push({
+        name: '',
+        amount: ''
+      });
+    }
+
+    return items.map((entry) => {
+      const client = (entry && entry.name) ? findClientForEntry(entry) : null;
+      return { entry, client, actualCount };
+    });
+  }, [multiSavedEntries, lastSavedEntry, findClientForEntry]);
+
+  // Outstanding payment map for fast O(1) receipt lookups
+  const activeRowsCrMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!activeRows) return map;
+    for (let i = 0; i < activeRows.length; i++) {
+      const r = activeRows[i];
+      if (r && r.name) {
+        map.set(String(r.name).trim().toLowerCase(), parseFloat(r.cr) || 0);
+      }
+    }
+    return map;
+  }, [activeRows]);
+
+  const getOutstandingPaymentForEntry = useCallback((entryName?: string) => {
+    if (!entryName) return 0;
+    return activeRowsCrMap.get(String(entryName).trim().toLowerCase()) || 0;
+  }, [activeRowsCrMap]);
 
   // New states for manual receipt selection
   const [showReceiptSelectionPopup, setShowReceiptSelectionPopup] = useState(false);
@@ -1208,8 +1766,13 @@ export default function EntrySheet({
     }, 150);
   };
 
+  const [receiptPanelReady, setReceiptPanelReady] = useState(false);
+  const currentScaleRef = useRef(1);
+
   useEffect(() => {
-    const handleResize = () => {
+    let rafId: number | null = null;
+
+    const computeScale = () => {
       let baseScale = 1;
       
       if (zoomOption !== 'fit') {
@@ -1235,7 +1798,9 @@ export default function EntrySheet({
 
         const paperEl = paperContainerRef.current;
         const paperWidth = paperEl ? Math.max(793.7, paperEl.offsetWidth || 793.7) : 793.7;
-        const paperHeight = paperEl ? Math.max(1122.5, paperEl.scrollHeight || paperEl.offsetHeight || 1122.5) : 1122.5;
+        const scrollH = paperEl ? paperEl.scrollHeight : 0;
+        const offsetH = paperEl ? paperEl.offsetHeight : 0;
+        const paperHeight = paperEl ? Math.max(1122.5, scrollH || offsetH || 1122.5) : 1122.5;
 
         const fitScaleWidth = safeWidth / paperWidth;
         const fitScaleHeight = safeHeight / paperHeight;
@@ -1244,12 +1809,26 @@ export default function EntrySheet({
         baseScale = Math.max(0.18, Math.min(1.0, baseScale * 0.96));
       }
 
+      let newScale = baseScale;
       if (isInputFocused) {
         const minComfortZoom = window.innerWidth < 640 ? 0.85 : 0.88;
-        setCalculatedScale(Math.max(minComfortZoom, Math.min(1.15, baseScale * 1.35)));
-      } else {
-        setCalculatedScale(baseScale);
+        newScale = Math.max(minComfortZoom, Math.min(1.15, baseScale * 1.35));
       }
+
+      if (Math.abs(newScale - currentScaleRef.current) > 0.002) {
+        currentScaleRef.current = newScale;
+        setCalculatedScale(newScale);
+      }
+    };
+
+    const handleResize = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        computeScale();
+      });
     };
 
     handleResize();
@@ -1265,6 +1844,9 @@ export default function EntrySheet({
     }
 
     return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
       window.removeEventListener('resize', handleResize);
       if (resizeObserver) {
         resizeObserver.disconnect();
@@ -1337,31 +1919,129 @@ export default function EntrySheet({
 
   const isSwappingRef = useRef(false);
 
-  // Synchronize changes in live active states back into sheets list slice
-  useEffect(() => {
+  // Live state tracking ref for active sheet slice
+  const liveStateRef = useRef({
+    recOfficer,
+    recOfficerLabel,
+    area,
+    areaLabel,
+    sheetDate,
+    dateLabel,
+    table1Rows,
+    table2Rows,
+    cashReceived,
+    sign,
+    submitted,
+    footnoteLeft,
+    footnoteRight,
+    t1Headers,
+    t2Headers,
+    t1TotalLabel,
+    t2TotalLabel,
+    cashReceivedLabel,
+    signLabel,
+    submittedLabel
+  });
+
+  // Keep ref synchronously updated without triggering secondary renders
+  liveStateRef.current = {
+    recOfficer,
+    recOfficerLabel,
+    area,
+    areaLabel,
+    sheetDate,
+    dateLabel,
+    table1Rows,
+    table2Rows,
+    cashReceived,
+    sign,
+    submitted,
+    footnoteLeft,
+    footnoteRight,
+    t1Headers,
+    t2Headers,
+    t1TotalLabel,
+    t2TotalLabel,
+    cashReceivedLabel,
+    signLabel,
+    submittedLabel
+  };
+
+  const flushLiveSheetState = useCallback(() => {
     if (sheets.length === 0 || isSwappingRef.current) return;
+    const live = liveStateRef.current;
     setSheets(prev => {
+      if (!prev[activeSheetIdx]) return prev;
       return prev.map((sh, idx) => {
         if (idx === activeSheetIdx) {
           return {
             ...sh,
-            recOfficer,
-            recOfficerLabel,
-            area,
-            areaLabel,
-            sheetDate,
-            dateLabel,
-            table1Rows,
-            table2Rows,
-            cashReceived,
-            sign,
-            submitted
+            recOfficer: live.recOfficer,
+            recOfficerLabel: live.recOfficerLabel,
+            area: live.area,
+            areaLabel: live.areaLabel,
+            sheetDate: live.sheetDate,
+            dateLabel: live.dateLabel,
+            table1Rows: live.table1Rows,
+            table2Rows: live.table2Rows,
+            cashReceived: live.cashReceived,
+            sign: live.sign,
+            submitted: live.submitted,
+            footnoteLeft: live.footnoteLeft,
+            footnoteRight: live.footnoteRight,
+            t1Headers: live.t1Headers,
+            t2Headers: live.t2Headers,
+            t1TotalLabel: live.t1TotalLabel,
+            t2TotalLabel: live.t2TotalLabel,
+            cashReceivedLabel: live.cashReceivedLabel,
+            signLabel: live.signLabel,
+            submittedLabel: live.submittedLabel
           };
         }
         return sh;
       });
     });
-  }, [recOfficer, recOfficerLabel, area, areaLabel, sheetDate, dateLabel, table1Rows, table2Rows, cashReceived, sign, submitted, activeSheetIdx]);
+  }, [activeSheetIdx, sheets.length]);
+
+  // Flush live state before unmounting / navigating away
+  useEffect(() => {
+    return () => {
+      flushLiveSheetState();
+    };
+  }, [flushLiveSheetState]);
+
+  const switchToSheet = useCallback((targetIdx: number) => {
+    if (targetIdx === activeSheetIdx || !sheets[targetIdx]) return;
+    flushLiveSheetState();
+    const target = sheets[targetIdx];
+    if (target) {
+      isSwappingRef.current = true;
+      setRecOfficer(target.recOfficer || '');
+      setRecOfficerLabel(target.recOfficerLabel || 'REC. OFFICER');
+      setArea(target.area || 'MAIN');
+      setAreaLabel(target.areaLabel || 'AREA');
+      setSheetDate(target.sheetDate || '');
+      setDateLabel(target.dateLabel || 'DATE');
+      setTable1Rows(Array.isArray(target.table1Rows) ? target.table1Rows : []);
+      setTable2Rows(Array.isArray(target.table2Rows) ? target.table2Rows : []);
+      setCashReceived(target.cashReceived || '');
+      setSign(target.sign || '');
+      setSubmitted(target.submitted || '');
+      setCashReceivedLabel(target.cashReceivedLabel || 'CASH RECEIVED');
+      setSignLabel(target.signLabel || 'SIGN');
+      setSubmittedLabel(target.submittedLabel || 'SUBMITTED');
+      setFootnoteLeft(target.footnoteLeft || 'Enterprise Ledger Dispatch System');
+      setFootnoteRight(target.footnoteRight || 'GENv2.5 // A4 PRINTABLE');
+      setT1Headers(target.t1Headers || ['SR', 'C. ID', 'NAME', 'COMMENTS', 'AMOUNT', 'CH']);
+      setT2Headers(target.t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH']);
+      setT1TotalLabel(target.t1TotalLabel || 'TOTAL');
+      setT2TotalLabel(target.t2TotalLabel || 'TOTAL');
+      setActiveSheetIdx(targetIdx);
+      setTimeout(() => {
+        isSwappingRef.current = false;
+      }, 50);
+    }
+  }, [activeSheetIdx, sheets, flushLiveSheetState]);
 
   const isExcludedName = (name?: string) => {
     if (!name) return false;
@@ -1426,6 +2106,7 @@ export default function EntrySheet({
   };
 
   const handleAddSheet = (fromIdx?: number) => {
+    flushLiveSheetState();
     const tRef: Table1Row[] = [];
     for (let i = 1; i <= 22; i++) {
       tRef.push({
@@ -1475,6 +2156,7 @@ export default function EntrySheet({
   };
 
   const handleDeleteSheetItem = (idxToDelete: number) => {
+    flushLiveSheetState();
     if (sheets.length <= 1) {
       toast.error("Cannot delete the last remaining sheet page.");
       return;
@@ -1542,6 +2224,7 @@ export default function EntrySheet({
   };
 
   const handleSaveSheet = async () => {
+    flushLiveSheetState();
     if (!pocketbaseService.isBillingFresh || !foldersFreshRef.current || !folderMonthsFreshRef.current) {
       toast.error("Latest data is still syncing, please wait a few seconds");
       return;
@@ -1626,6 +2309,8 @@ export default function EntrySheet({
       const payloadSourceIdx: number[] = [];
       const savedSheetsToLocal: any[] = [];
       const updatedFolderMap = { ...sheetFolderMap };
+      const unmatchedNames = new Set<string>();
+      const ambiguousBillingNames = new Set<string>();
 
       for (let i = 0; i < currentSyncSheets.length; i++) {
         const s = currentSyncSheets[i];
@@ -1645,6 +2330,11 @@ export default function EntrySheet({
 
         const folderObj = folders.find(f => f.id === targetFolderId);
         const folderName = folderObj?.name || targetFolderId || '';
+
+        const openedAtRaw = s.updated || (finalSheetId ? openedUpdatedAtBySheetIdRef.current.get(finalSheetId) : undefined) || s.openedUpdatedAtAsStoredInDb;
+        const openedAtNum = openedAtRaw && typeof openedAtRaw === 'number' ? openedAtRaw : 0;
+        const safeUpdatedAt = Math.max(Date.now(), openedAtNum + 1);
+        const openedUpdatedAtAsStoredDb = (typeof openedAtRaw === 'string' && openedAtRaw.trim()) ? openedAtRaw : undefined;
 
         const payload = {
           id: finalSheetId,
@@ -1683,8 +2373,9 @@ export default function EntrySheet({
           submittedLabel: s.submittedLabel || 'SUBMITTED',
           footnoteLeft: s.footnoteLeft || 'Enterprise Ledger Dispatch System',
           footnoteRight: s.footnoteRight || 'GENv2.5 // A4 PRINTABLE',
-          openedUpdatedAt: s.openedUpdatedAt || (finalSheetId ? openedUpdatedAtBySheetIdRef.current.get(finalSheetId) : undefined) || s.updatedAt,
-          updatedAt: Date.now()
+          openedUpdatedAt: openedAtNum || openedAtRaw,
+          openedUpdatedAtAsStoredInDb: openedUpdatedAtAsStoredDb,
+          updatedAt: safeUpdatedAt
         };
 
         sheetPayloads.push(payload);
@@ -1827,9 +2518,19 @@ export default function EntrySheet({
             }
             if (matchedIdx === -1 && hasName) {
               const searchName = String(r.name).trim().toLowerCase();
-              matchedIdx = baseRecalculatedRows.findIndex((br: any) => 
-                br.name && String(br.name).trim().toLowerCase() === searchName
-              );
+              const nameMatches: number[] = [];
+              for (let i = 0; i < baseRecalculatedRows.length; i++) {
+                const br = baseRecalculatedRows[i];
+                if (br.name && String(br.name).trim().toLowerCase() === searchName) {
+                  nameMatches.push(i);
+                }
+              }
+              if (nameMatches.length === 1) {
+                matchedIdx = nameMatches[0];
+              } else if (nameMatches.length > 1) {
+                ambiguousBillingNames.add(String(r.name).trim());
+                matchedIdx = -1;
+              }
             }
             return matchedIdx;
           };
@@ -1994,18 +2695,32 @@ export default function EntrySheet({
             const rUser = (r.clientUsername || '').trim().toLowerCase();
             const rId = (r.clientId || '').trim().toLowerCase();
 
-            return (originalActiveRows || []).find((orig: any) => {
-              const origName = (orig.name || '').trim().toLowerCase();
+            const rows = originalActiveRows || [];
+            // Match by id/username/cId first
+            for (const orig of rows) {
               const origCId = (orig.cId || '').trim().toLowerCase();
               const origUser = (orig.clientUsername || '').trim().toLowerCase();
               const origId = (orig.clientId || '').trim().toLowerCase();
 
-              if (rId && origId && rId === origId) return true;
-              if (rUser && origUser && rUser === origUser) return true;
-              if (rCId && origCId && rCId === origCId) return true;
-              if (rName && origName && rName === origName) return true;
-              return false;
-            });
+              if (rId && origId && rId === origId) return orig;
+              if (rUser && origUser && rUser === origUser) return orig;
+              if (rCId && origCId && rCId === origCId) return orig;
+            }
+
+            // Fallback by name only when exactly ONE matches
+            if (rName) {
+              const nameMatches = rows.filter((orig: any) => {
+                const origName = (orig.name || '').trim().toLowerCase();
+                return Boolean(origName && origName === rName);
+              });
+              if (nameMatches.length === 1) {
+                return nameMatches[0];
+              } else if (nameMatches.length > 1) {
+                ambiguousBillingNames.add(String(r.name).trim());
+                return null;
+              }
+            }
+            return null;
           };
 
           // 2. Process ONLY the rows of the current saving sheet(s) (sheetPayloads)
@@ -2115,17 +2830,22 @@ export default function EntrySheet({
                   allSyncedUsersSummary.push(`${baseRecalculatedRows[matchedIdx].name} (${baseRecalculatedRows[matchedIdx].username || baseRecalculatedRows[matchedIdx].clientId || ''}): ${finalStatus.toUpperCase()} (${newPaymentReceived}) ${tag}`);
                 }
               } else {
-                // Skip creating a billing row entirely if this entry sheet row has no
-                // matched client and no real name — it's an empty/unused template row,
-                // not an actual client entry.
-                const hasRealName = Boolean(r.name && String(r.name).trim());
-                if (!client && !hasRealName) {
-                  return; // skip this row — do not create an "Unknown" placeholder row
+                // 3) Do not create billing rows for unregistered names.
+                // In the branch "New user not present in targetMonthRows": only create a row when client
+                // (resolved by findClientForEntry) exists; otherwise collect the name in unmatchedNames
+                // and, after saving, show toast.warning("Not found in Client Management, not synced to billing: <names>").
+                // The sheet itself still saves.
+                if (!client) {
+                  const rawName = String(r.name || '').trim();
+                  if (rawName && !isExcludedName(rawName)) {
+                    unmatchedNames.add(rawName);
+                  }
+                  return; // Skip creating a billing row for unregistered clients
                 }
 
-                // New user not present in targetMonthRows
-                const baseAmount = client ? (Number(client.baseAmount) || 0) : amountVal;
-                const cr = client ? (Number(client.cr) || 0) : 0;
+                // New user not present in targetMonthRows (client is guaranteed to exist)
+                const baseAmount = Number(client.baseAmount) || 0;
+                const cr = Number(client.cr) || 0;
                 const totalAmount = baseAmount + cr;
 
                 let finalStatus = 'partial';
@@ -2136,28 +2856,28 @@ export default function EntrySheet({
                 else if (amountVal >= totalAmount && totalAmount > 0) finalStatus = 'paid';
                 else if (amountVal === 0) finalStatus = 'unpaid';
 
-                const clientKey = client?.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-                const clientPhone = client?.mobileNumber || client?.number || client?.phone || '';
+                const clientKey = client.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+                const clientPhone = client.mobileNumber || client.number || client.phone || '';
                 const newRow = {
                   id: clientKey,
-                  clientId: client?.id || r.clientId || r.cId || '',
-                  name: client?.name || r.name || 'Unknown',
-                  username: client?.username || r.clientUsername || r.cId || '',
+                  clientId: client.id || r.clientId || r.cId || '',
+                  name: client.name || r.name || 'Unknown',
+                  username: client.username || r.clientUsername || r.cId || '',
                   mobileNumber: clientPhone,
                   phone: clientPhone,
-                  area: client?.area || r.area || area || '',
-                  rt: client?.rt || '',
+                  area: client.area || r.area || area || '',
+                  rt: client.rt || '',
                   baseAmount: baseAmount,
                   cr: cr,
                   totalAmount: totalAmount,
-                  billingDay: client?.billingDay || '5',
+                  billingDay: client.billingDay || '5',
                   paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
                   paymentStatus: finalStatus,
                   comments: r.comments || '',
-                  pkgDetails: client?.pkgDetails || '',
-                  connectionDate: client?.connectionDate || '',
-                  devicePrice: client?.devicePrice || '',
-                  abl: client?.abl || ''
+                  pkgDetails: client.pkgDetails || '',
+                  connectionDate: client.connectionDate || '',
+                  devicePrice: client.devicePrice || '',
+                  abl: client.abl || ''
                 };
 
                 const newIdx = baseRecalculatedRows.length;
@@ -2176,61 +2896,7 @@ export default function EntrySheet({
         }
       }
 
-      // --- INSTANT OPTIMISTIC UI STATE SYNCHRONIZATION ---
-
-      // 1. Instantly update folders organisation mapping
-      setSheetFolderMap(updatedFolderMap);
-      saveMapToDb(updatedFolderMap);
-
-      // 2. Instantly update local ledger history
-      setLedgerHistory(prev => {
-        let next = [...prev];
-        savedSheetsToLocal.forEach(localObj => {
-          const existsIdx = next.findIndex(sh => sh.id === localObj.id);
-          if (existsIdx >= 0) {
-            next[existsIdx] = { ...next[existsIdx], ...localObj };
-          } else {
-            next = [localObj, ...next];
-          }
-        });
-        return next;
-      });
-
-      // 3. Instantly update parent state billing months
-      for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
-        if (setBillingMonths) {
-          setBillingMonths(prev => {
-            const activeDocIndex = prev.findIndex(m => m.id === monthId);
-            const mergedRows = accumulatedRows;
-            if (activeDocIndex !== -1) {
-              const newPrev = [...prev];
-              newPrev[activeDocIndex] = { ...prev[activeDocIndex], rows: mergedRows };
-              return newPrev;
-            } else {
-              return [{ id: monthId, rows: mergedRows, createdAt: Date.now(), updatedAt: Date.now() }, ...prev];
-            }
-          });
-        }
-      }
-
-      // 4. Update currently loaded sheet references in editor with updated rows
-      const lastSavedId = currentLoadedId || currentSyncSheets[activeSheetIdx]?.id;
-      if (lastSavedId) {
-        lastLoadedSheetIdRef.current = lastSavedId;
-        const targetFolder = openedFolderId || sheetFolderMap[lastSavedId] || 'all';
-        const targetPath = `${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${targetFolder}/sheet/${lastSavedId}`;
-        if (location.pathname !== targetPath) {
-          navigate(targetPath, { replace: true });
-        }
-      }
-
-      const activeSavedPayload = sheetPayloads.find((_, pIdx) => payloadSourceIdx[pIdx] === activeSheetIdx);
-      if (activeSavedPayload) {
-        setTable1Rows(activeSavedPayload.table1Rows);
-        setTable2Rows(activeSavedPayload.table2Rows);
-      }
-
-      // 6. PARALLEL FAST DATABASE SYNC (Save A4 sheets and connected recovery rows concurrently)
+      // PARALLEL FAST DATABASE SYNC (Save A4 sheets and connected recovery rows concurrently)
       try {
         const tStartFastSave = performance.now();
         const dbTasks: Promise<any>[] = [];
@@ -2272,18 +2938,73 @@ export default function EntrySheet({
           });
         };
 
-        await withTimeout(Promise.all(dbTasks), 25000, 'Save is taking too long \u2014');
+        const saveResults = await withTimeout(Promise.all(dbTasks), 25000, 'Save is taking too long \u2014');
+        const savedVersionMap: Record<string, string> = (sheetPayloads.length > 0 && saveResults && saveResults[0]) ? saveResults[0] : {};
         const elapsedFastSave = Math.round(performance.now() - tStartFastSave);
         console.log(`[Save Timing] Fast save (A4 sheets + billing rows sync) completed in ${elapsedFastSave}ms`);
 
-        // Show success toast immediately as soon as step 2 finishes
+        // Show success toast immediately as soon as database save finishes
         const primaryOfficerName = currentSyncSheets[0]?.recOfficer || recOfficer || 'Recovery Officer';
         toast.success("📄 A4 Size Sheet Saved Successfully!", {
           description: `Sheet for "${primaryOfficerName}" has been securely saved.`,
           duration: 4000
         });
 
-        // Update removal baseline and remembered versions ONLY AFTER the database save has succeeded
+        // --- UI STATE SYNCHRONIZATION (ONLY AFTER DATABASE PERSISTENCE SUCCEEDED) ---
+
+        // 1. Update folders organisation mapping
+        setSheetFolderMap(updatedFolderMap);
+        saveMapToDb(updatedFolderMap);
+
+        // 2. Update local ledger history
+        setLedgerHistory(prev => {
+          let next = [...prev];
+          savedSheetsToLocal.forEach(localObj => {
+            const existsIdx = next.findIndex(sh => sh.id === localObj.id);
+            if (existsIdx >= 0) {
+              next[existsIdx] = { ...next[existsIdx], ...localObj };
+            } else {
+              next = [localObj, ...next];
+            }
+          });
+          return next;
+        });
+
+        // 3. Update parent state billing months
+        for (const [monthId, accumulatedRows] of Object.entries(accumulatedBillingMonths)) {
+          if (setBillingMonths) {
+            setBillingMonths(prev => {
+              const activeDocIndex = prev.findIndex(m => m.id === monthId);
+              const mergedRows = accumulatedRows;
+              if (activeDocIndex !== -1) {
+                const newPrev = [...prev];
+                newPrev[activeDocIndex] = { ...prev[activeDocIndex], rows: mergedRows };
+                return newPrev;
+              } else {
+                return [{ id: monthId, rows: mergedRows, createdAt: Date.now(), updatedAt: Date.now() }, ...prev];
+              }
+            });
+          }
+        }
+
+        // 4. Update currently loaded sheet references in editor with updated rows
+        const lastSavedId = currentLoadedId || currentSyncSheets[activeSheetIdx]?.id;
+        if (lastSavedId) {
+          lastLoadedSheetIdRef.current = lastSavedId;
+          const targetFolder = openedFolderId || sheetFolderMap[lastSavedId] || 'all';
+          const targetPath = `${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${targetFolder}/sheet/${lastSavedId}`;
+          if (location.pathname !== targetPath) {
+            navigate(targetPath, { replace: true });
+          }
+        }
+
+        const activeSavedPayload = sheetPayloads.find((_, pIdx) => payloadSourceIdx[pIdx] === activeSheetIdx);
+        if (activeSavedPayload) {
+          setTable1Rows(activeSavedPayload.table1Rows);
+          setTable2Rows(activeSavedPayload.table2Rows);
+        }
+
+        // 5. Update removal baseline and remembered versions ONLY AFTER the database save has succeeded
         const activeRowsNow: any[] = [];
         sheetPayloads.forEach(sp => {
           const rows = (Array.isArray(sp.table1Rows) ? sp.table1Rows : []).filter((r: any) =>
@@ -2299,7 +3020,10 @@ export default function EntrySheet({
           }));
           if (sp.id) {
             originalRowsBySheetIdRef.current.set(sp.id, rows);
-            openedUpdatedAtBySheetIdRef.current.set(sp.id, sp.updatedAt);
+            const returnedVersion = savedVersionMap[sp.id] || sp.updated || sp.openedUpdatedAtAsStoredInDb;
+            if (returnedVersion) {
+              openedUpdatedAtBySheetIdRef.current.set(sp.id, returnedVersion);
+            }
           }
           rows.forEach(r => activeRowsNow.push(r));
         });
@@ -2310,56 +3034,84 @@ export default function EntrySheet({
             const matchingPayload = sheetPayloads.find((_, pIdx) => payloadSourceIdx[pIdx] === idx);
             if (matchingPayload) {
               const savedLocal = savedSheetsToLocal.find(s => s.id === matchingPayload.id);
+              const returnedVersion = savedVersionMap[matchingPayload.id] || matchingPayload.updated || matchingPayload.openedUpdatedAtAsStoredInDb;
               return {
                 ...sh,
                 id: matchingPayload.id,
                 folderId: savedLocal?.folderId || matchingPayload.folderId || sh.folderId || '',
                 table1Rows: matchingPayload.table1Rows,
                 table2Rows: matchingPayload.table2Rows,
-                openedUpdatedAt: matchingPayload.updatedAt,
+                openedUpdatedAt: returnedVersion || sh.openedUpdatedAt,
+                openedUpdatedAtAsStoredInDb: returnedVersion || sh.openedUpdatedAtAsStoredInDb,
+                updated: returnedVersion || sh.updated,
                 updatedAt: matchingPayload.updatedAt,
               };
             }
             return sh;
           });
         });
+
+        if (allSyncedUsersSummary.length > 0) {
+          const removedEntries = allSyncedUsersSummary.filter(s => s.startsWith("set back to UNPAID:"));
+          toast.success("🎯 Connected Recovery Sheet Synced!", {
+            description: (
+              <div className="mt-1.5 space-y-1 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                <p className="font-extrabold text-emerald-600 dark:text-emerald-400">Successfully updated recovery entries for {allSyncedUsersSummary.length} user(s):</p>
+                {removedEntries.length > 0 && (
+                  <p className="font-bold text-amber-600 dark:text-amber-400">
+                    {removedEntries.map(s => s.replace(" [REMOVED]", "")).join(', ')}
+                  </p>
+                )}
+                <ul className="list-disc pl-3 max-h-32 overflow-y-auto space-y-0.5 font-mono">
+                  {allSyncedUsersSummary.map((summary, idx) => (
+                    <li key={idx} className={summary.startsWith("set back to UNPAID:") ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>
+                      {summary}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ),
+            duration: 6000
+          });
+        }
+
+        // Show warnings for unregistered and ambiguous name entries
+        if (unmatchedNames.size > 0) {
+          toast.warning(`Not found in Client Management, not synced to billing: ${Array.from(unmatchedNames).join(', ')}`);
+        }
+
+        if (ambiguousBillingNames.size > 0) {
+          toast.warning(`Multiple billing rows found for name, skipped sync: ${Array.from(ambiguousBillingNames).join(', ')}`);
+        }
+
       } catch (dbError: any) {
         console.error("DB persistence failed:", dbError);
         const errMsg = dbError?.message || "Failed to save to database. Please check your network and try again.";
-        toast.error(errMsg.includes('timed out') ? errMsg : "Save Blocked — Action Required", {
-          description: errMsg.includes('timed out') ? '' : errMsg,
-          duration: 8000
-        });
-        throw new Error(errMsg);
-      }
+        const isCasConflict = errMsg.includes("changed on another device");
+        const isTimeout = errMsg.includes("timed out");
 
-      if (allSyncedUsersSummary.length > 0) {
-        const removedEntries = allSyncedUsersSummary.filter(s => s.startsWith("set back to UNPAID:"));
-        toast.success("🎯 Connected Recovery Sheet Synced!", {
-          description: (
-            <div className="mt-1.5 space-y-1 text-[11px] font-bold text-slate-600 dark:text-slate-300">
-              <p className="font-extrabold text-emerald-600 dark:text-emerald-400">Successfully updated recovery entries for {allSyncedUsersSummary.length} user(s):</p>
-              {removedEntries.length > 0 && (
-                <p className="font-bold text-amber-600 dark:text-amber-400">
-                  {removedEntries.map(s => s.replace(" [REMOVED]", "")).join(', ')}
-                </p>
-              )}
-              <ul className="list-disc pl-3 max-h-32 overflow-y-auto space-y-0.5 font-mono">
-                {allSyncedUsersSummary.map((summary, idx) => (
-                  <li key={idx} className={summary.startsWith("set back to UNPAID:") ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>
-                    {summary}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ),
-          duration: 6000
-        });
+        if (isCasConflict) {
+          toast.error("Save Blocked \u2014 Conflict Detected", {
+            description: "This sheet was changed on another device. Please reload it and try again.",
+            duration: 9000
+          });
+        } else {
+          toast.error(isTimeout ? "Save Timed Out" : "Save Incomplete \u2014 Retry Safe", {
+            description: `${errMsg} Note: Some parts of the save may already be completed; pressing Save again is safe (it is idempotent).`,
+            duration: 9000
+          });
+        }
+        throw dbError;
       }
 
     } catch (e: any) {
       console.error("Save sheet error:", e);
-      toast.error(getCleanErrorMessage(e) || "Failed to save sheet");
+      const msg = getCleanErrorMessage(e) || "Failed to save sheet";
+      if (!msg.includes("changed on another device") && !msg.includes("idempotent")) {
+        toast.error("Failed to save sheet", {
+          description: `${msg} (Pressing Save again is safe)`
+        });
+      }
     } finally {
       toast.dismiss(savingToastId);
       setIsSavingSheet(false);
@@ -2452,8 +3204,9 @@ export default function EntrySheet({
       t2Headers: sheet.t2Headers || ['SR', 'NAME', 'AMOUNT', 'CH'],
       t1TotalLabel: sheet.t1TotalLabel || 'TOTAL',
       t2TotalLabel: sheet.t2TotalLabel || 'TOTAL',
-      openedUpdatedAt: sheet.updatedAt || sheet.updated_at || undefined,
-      updatedAt: sheet.updatedAt || sheet.updated_at || undefined
+      openedUpdatedAt: sheet.updated || sheet.openedUpdatedAt || undefined,
+      updatedAt: sheet.updatedAt || sheet.updated_at || undefined,
+      updated: sheet.updated || undefined
     };
     
     const initialActive = reT1.filter((r: any) => (r.name || '').trim() || (r.cId || '').trim() || (Number(r.amount) || 0) > 0 || r.status || String(r.amount || '').trim().toUpperCase() === 'PAID');
@@ -2471,9 +3224,9 @@ export default function EntrySheet({
     setOriginalActiveSheetId(targetSheetId);
     if (targetSheetId) {
       originalRowsBySheetIdRef.current.set(targetSheetId, mappedInitialActive);
-      const sheetOpenedUpdatedAt = sheet.updatedAt || sheet.updated_at;
-      if (sheetOpenedUpdatedAt) {
-        openedUpdatedAtBySheetIdRef.current.set(targetSheetId, sheetOpenedUpdatedAt);
+      const sheetOpenedUpdated = sheet.updated || sheet.openedUpdatedAtAsStoredInDb;
+      if (sheetOpenedUpdated) {
+        openedUpdatedAtBySheetIdRef.current.set(targetSheetId, sheetOpenedUpdated);
       }
     }
     isSwappingRef.current = true;
@@ -2727,77 +3480,108 @@ export default function EntrySheet({
   const totalAmount2 = table2Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
   // Edit helper for Table 1
-  // Edit helper for Table 1
-  const handleT1Change = (index: number, field: keyof Table1Row, value: any) => {
+  const handleT1Change = useCallback((index: number, field: keyof Table1Row, value: any) => {
     if (isLocked) return;
-    const updated = [...table1Rows];
-    let commentsVal = updated[index].comments;
-    let statusVal = updated[index].status;
-    if (field === 'comments') {
-      commentsVal = value;
-    } else if (field === 'amount') {
-      const orig = updated[index].originalAmount;
-      const strVal = String(value || '').trim().toUpperCase();
-      const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(strVal);
-      if (isStatusString) {
-        statusVal = strVal.toLowerCase();
-        if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
-          commentsVal = '';
-        }
-      } else {
-        const numVal = parseFloat(value);
-        if (!isNaN(numVal) && numVal > 0) {
-          // Reset DC status so entering an amount shifts DC users back to active billing!
-          if (statusVal === 'dc' || statusVal === 'tdc') {
-            statusVal = 'unpaid';
+    const start = performance.now();
+    setTable1Rows(prevRows => {
+      const updated = [...prevRows];
+      if (!updated[index]) return prevRows;
+      let commentsVal = updated[index].comments;
+      let statusVal = updated[index].status;
+      if (field === 'comments') {
+        commentsVal = value;
+      } else if (field === 'amount') {
+        const orig = updated[index].originalAmount;
+        const strVal = String(value || '').trim().toUpperCase();
+        const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(strVal);
+        if (isStatusString) {
+          statusVal = strVal.toLowerCase();
+          if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
+            commentsVal = '';
           }
-        }
-        if (typeof orig === 'number') {
-          const newAmt = parseFloat(value) || 0;
-          if (newAmt > orig) {
-            commentsVal = 'Upgrade';
-          } else if (newAmt < orig) {
-            commentsVal = 'Downgrade';
-          } else {
-            if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
-              commentsVal = '';
+        } else {
+          const numVal = parseFloat(value);
+          if (!isNaN(numVal) && numVal > 0) {
+            // Reset DC status so entering an amount shifts DC users back to active billing!
+            if (statusVal === 'dc' || statusVal === 'tdc') {
+              statusVal = 'unpaid';
+            }
+          }
+          if (typeof orig === 'number') {
+            const newAmt = parseFloat(value) || 0;
+            if (newAmt > orig) {
+              commentsVal = 'Upgrade';
+            } else if (newAmt < orig) {
+              commentsVal = 'Downgrade';
+            } else {
+              if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
+                commentsVal = '';
+              }
             }
           }
         }
+      } else if (field === 'status') {
+        statusVal = String(value || '').toLowerCase();
       }
-    } else if (field === 'status') {
-      statusVal = String(value || '').toLowerCase();
-    }
-    updated[index] = {
-      ...updated[index],
-      [field]: value,
-      comments: commentsVal,
-      status: statusVal
-    };
-    if (field === 'name') {
-      updated[index].clientId = undefined;
-      updated[index].clientUsername = undefined;
-    }
-    setTable1Rows(updated);
-  };
+      updated[index] = {
+        ...updated[index],
+        [field]: value,
+        comments: commentsVal,
+        status: statusVal
+      };
+      if (field === 'name') {
+        updated[index].clientId = undefined;
+        updated[index].clientUsername = undefined;
+      }
+      return updated;
+    });
+    logPerf(`handleT1Change (${field})`, start);
+  }, [isLocked, logPerf]);
 
   // Edit helper for Table 2
-  const handleT2Change = (index: number, field: keyof Table2Row, value: any) => {
+  const handleT2Change = useCallback((index: number, field: keyof Table2Row, value: any) => {
     if (isLocked) return;
-    const updated = [...table2Rows];
-    updated[index] = {
-      ...updated[index],
-      [field]: value
-    };
-    setTable2Rows(updated);
-  };
+    const start = performance.now();
+    setTable2Rows(prevRows => {
+      const updated = [...prevRows];
+      if (!updated[index]) return prevRows;
+      updated[index] = {
+        ...updated[index],
+        [field]: value
+      };
+      return updated;
+    });
+    logPerf(`handleT2Change (${field})`, start);
+  }, [isLocked, logPerf]);
 
-  const proceedSelectSuggestion = (index: number, client: any) => {
+  const handleFocusField = useCallback((index: number, field: 'name' | 'amount', currentVal: string, element: HTMLInputElement) => {
+    setFocusedRowIndex(index);
+    setFocusedField(field);
+    setActiveInputElement(element);
+    if (field === 'name') {
+      setSearchQuery(currentVal);
+      setHasTypedSinceFocus(false);
+    }
+  }, []);
+
+  const handleBlurField = useCallback(() => {
+    setTimeout(() => {
+      setFocusedRowIndex(null);
+      setFocusedField(null);
+      setActiveInputElement(null);
+    }, 250);
+  }, []);
+
+  const handleSearchQueryChange = useCallback((val: string) => {
+    setSearchQuery(val);
+    setHasTypedSinceFocus(true);
+  }, []);
+
+  const proceedSelectSuggestion = useCallback((index: number, client: any) => {
     const matchingActiveRow = activeRows?.find(r => 
       (r.username && r.username.toLowerCase() === client.username?.toLowerCase()) || 
       (r.clientId && r.clientId.toLowerCase() === client.id?.toLowerCase())
     );
-    const updated = [...table1Rows];
     let amount = 0;
     
     if (matchingActiveRow) {
@@ -2819,24 +3603,33 @@ export default function EntrySheet({
         amount = Number(client.baseAmount) || 0;
       }
     }
-    updated[index] = {
-      ...updated[index],
-      cId: focusedField === 'name' ? '' : (client.username || client.id || ''),
-      name: client.name || '',
-      amount: amount,
-      originalAmount: amount,
-      clientId: client.id || '',
-      clientUsername: client.username || '',
-      status: amount > 0 ? 'paid' : ((matchingActiveRow?.paymentStatus === 'dc' && amount > 0) ? 'paid' : (matchingActiveRow?.paymentStatus || undefined))
-    };
+
+    setTable1Rows(prev => {
+      const updated = [...prev];
+      if (!updated[index]) return prev;
+      updated[index] = {
+        ...updated[index],
+        cId: focusedField === 'name' ? '' : (client.username || client.id || ''),
+        name: client.name || '',
+        amount: amount,
+        originalAmount: amount,
+        clientId: client.id || '',
+        clientUsername: client.username || '',
+        status: amount > 0 ? 'paid' : ((matchingActiveRow?.paymentStatus === 'dc' && amount > 0) ? 'paid' : (matchingActiveRow?.paymentStatus || undefined))
+      };
+      return updated;
+    });
     
-    setTable1Rows(updated);
     setFocusedRowIndex(null);
     setFocusedField(null);
     setSearchQuery('');
-  };
-  const handleSelectSuggestion = (index: number, client: any) => {
+    setActiveInputElement(null);
+  }, [activeRows, focusedField]);
+
+  const handleSelectSuggestion = useCallback((index: number, client: any) => {
     if (isLocked) return;
+    const start = performance.now();
+    flushLiveSheetState();
 
     const currentSheetId = sheets[activeSheetIdx]?.id;
     const currentFolderId = currentSheetId 
@@ -2878,32 +3671,44 @@ export default function EntrySheet({
           client,
           message: `This user (${client.username || client.name}) already exists in ${dupLocation} within this folder. Are you sure you want to add a double entry?`
         });
+        logPerf('handleSelectSuggestion (duplicate warning)', start);
         return;
       }
     }
 
     proceedSelectSuggestion(index, client);
-  };
+    logPerf('handleSelectSuggestion', start);
+  }, [isLocked, flushLiveSheetState, sheets, activeSheetIdx, sheetFolderMap, ledgerHistory, table1Rows, proceedSelectSuggestion, logPerf]);
 
-  const getFilteredSuggestions = (field: 'cId' | 'name', queryValue: string) => {
-    let sourceList = [...clients];
-    
-    // Build unique set of usernames/ids already in sourceList
-    const seenUsernames = new Set(
-      sourceList.map(c => (c.username || c.id || '').toLowerCase()).filter(Boolean)
-    );
-    const seenNames = new Set(
-      sourceList.map(c => (c.name || '').toLowerCase()).filter(Boolean)
-    );
+  // Memoized search index for ultra-fast customer autocomplete
+  const suggestionsIndex = useMemo(() => {
+    const sourceList: any[] = [];
+    const seenUsernames = new Set<string>();
+    const seenNames = new Set<string>();
 
-    // Build fallback and augment from active monthly payments if activeRows exists
+    for (let i = 0; i < clients.length; i++) {
+      const c = clients[i];
+      if (!c) continue;
+      const uKey = String(c.username || c.id || '').toLowerCase();
+      const nKey = String(c.name || '').trim().toLowerCase();
+      if (uKey) seenUsernames.add(uKey);
+      if (nKey) seenNames.add(nKey);
+      sourceList.push({
+        ...c,
+        _lowerName: nKey,
+        _lowerUsername: uKey,
+        _lowerId: String(c.id || '').toLowerCase(),
+      });
+    }
+
     if (activeRows && activeRows.length > 0) {
-      activeRows.forEach(r => {
-        const usernameKey = (r.username || r.clientId || '').toLowerCase();
-        const nameKey = (r.name || '').toLowerCase();
-        
+      for (let i = 0; i < activeRows.length; i++) {
+        const r = activeRows[i];
+        if (!r) continue;
+        const usernameKey = String(r.username || r.clientId || '').toLowerCase();
+        const nameKey = String(r.name || '').trim().toLowerCase();
         const alreadyExists = (usernameKey && seenUsernames.has(usernameKey)) || (nameKey && seenNames.has(nameKey));
-        
+
         if (!alreadyExists && (usernameKey || nameKey)) {
           if (usernameKey) seenUsernames.add(usernameKey);
           if (nameKey) seenNames.add(nameKey);
@@ -2913,32 +3718,47 @@ export default function EntrySheet({
             name: r.name || '',
             mobileNumber: r.mobileNumber || '',
             pkgDetails: r.pkgDetails || r.comments || '',
-            area: r.area || ''
+            area: r.area || '',
+            _lowerName: nameKey,
+            _lowerUsername: usernameKey,
+            _lowerId: String(r.clientId || r.username || '').toLowerCase()
           });
         }
-      });
+      }
     }
 
-    // Strip leading '@' from the search query if typed
-    let q = queryValue.trim().toLowerCase();
+    return sourceList;
+  }, [clients, activeRows]);
+
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  const filteredSuggestions = useMemo(() => {
+    if (focusedRowIndex === null || focusedField === null) return [];
+    let q = deferredSearchQuery.trim().toLowerCase();
     if (q.startsWith('@')) {
       q = q.substring(1);
     }
-
-    // Detect if we should show all default suggestions:
-    // 1. If query is empty
-    // 2. If the user hasn't typed anything yet since they focused the field
     const isShowingCurrentValue = !hasTypedSinceFocus;
-
     if (!q || isShowingCurrentValue) {
-      return sourceList.slice(0, 8);
+      return suggestionsIndex.slice(0, 8);
     }
+    const results: any[] = [];
+    for (let i = 0; i < suggestionsIndex.length; i++) {
+      const c = suggestionsIndex[i];
+      if (
+        (c._lowerName && c._lowerName.includes(q)) ||
+        (c._lowerUsername && c._lowerUsername.includes(q)) ||
+        (c._lowerId && c._lowerId.includes(q))
+      ) {
+        results.push(c);
+        if (results.length >= 8) break;
+      }
+    }
+    return results;
+  }, [suggestionsIndex, deferredSearchQuery, hasTypedSinceFocus, focusedRowIndex, focusedField]);
 
-    return sourceList.filter(c => 
-      (c.name && c.name.toLowerCase().includes(q)) ||
-      (c.username && c.username.toLowerCase().includes(q)) ||
-      (c.id && c.id.toLowerCase().includes(q))
-    ).slice(0, 8);
+  const getFilteredSuggestions = (_field: 'cId' | 'name' | 'amount' | null, _queryValue: string) => {
+    return filteredSuggestions;
   };
 
   const handlePrint = () => {
@@ -4578,14 +5398,12 @@ export default function EntrySheet({
                           key={`sh-${sh.id || sheetIdx}-${sheetIdx}`}
                           onMouseDownCapture={() => {
                             if (activeSheetIdx !== sheetIdx) {
-                              isSwappingRef.current = true;
-                              setActiveSheetIdx(sheetIdx);
+                              switchToSheet(sheetIdx);
                             }
                           }}
                           onFocusCapture={() => {
                             if (activeSheetIdx !== sheetIdx) {
-                              isSwappingRef.current = true;
-                              setActiveSheetIdx(sheetIdx);
+                              switchToSheet(sheetIdx);
                             }
                           }}
                           className={`print-sheet-wrapper group relative flex flex-col items-center shrink-0 print:block print:w-auto print:h-auto print:static my-auto transition-all ${
@@ -4886,190 +5704,33 @@ export default function EntrySheet({
                   const isSearchResultMatch = !!(historySearchQuery.trim() && (
                     (row.cId && row.cId.toLowerCase().includes(historySearchQuery.toLowerCase())) ||
                     (row.name && row.name.toLowerCase().includes(historySearchQuery.toLowerCase())) ||
-                    (row.receiptCode && row.receiptCode.toLowerCase().includes(historySearchQuery.toLowerCase()))
+                    ((row as any).receiptCode && (row as any).receiptCode.toLowerCase().includes(historySearchQuery.toLowerCase()))
                   ));
                   return (
-                    <tr 
-                      key={index} 
-                      className={`border-b border-slate-405 font-mono colRow transition-all duration-250 relative ${
-                        focusedRowIndex === index ? 'z-[99999]' : 'z-0'
-                      } ${
-                        isSearchResultMatch 
-                           ? 'bg-brand-accent/20 dark:bg-brand-accent/30 font-bold border-l-4 border-l-brand-accent' 
-                          : ''
-                      }`}
-                    >
-                    {/* Sr */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-1 border-r-2 border-black text-center font-bold font-sans text-slate-600 bg-slate-50/50"
-                    >
-                      <input
-                        type="text"
-                        value={row.sr}
-                        onChange={(e) => handleT1Change(index, 'sr', e.target.value)}
-                        style={{ fontSize: `${tableFontSize - 0.5}px` }}
-                        className="w-full min-w-0 border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
-                        title="Double-click/type to edit Serial"
-                      />
-                    </td>
- 
-                    {/* C. ID */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-1 border-r border-black relative group/cell"
-                    >
-                      <input
-                        type="text"
-                        value={row.cId}
-                        onChange={(e) => handleT1Change(index, 'cId', e.target.value)}
-                        style={{ fontSize: `${tableFontSize - 0.5}px` }}
-                        className="w-full min-w-0 border-none p-0 text-center text-slate-900 bg-transparent focus:bg-slate-100 font-bold tracking-tight outline-none"
-                      />
-                    </td>
- 
-                    {/* Name */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className={`px-2 border-r border-black font-sans relative group/cell ${focusedRowIndex === index && focusedField === 'name' ? 'z-[99999]' : ''}`}
-                    >
-                      <div className="flex items-center justify-between gap-1 w-full">
-                        <input
-                          type="text"
-                          value={row.name}
-                          onChange={(e) => {
-                            handleT1Change(index, 'name', e.target.value);
-                            setSearchQuery(e.target.value);
-                            setFocusedRowIndex(index);
-                            setFocusedField('name');
-                            setActiveInputElement(e.currentTarget);
-                            setHasTypedSinceFocus(true);
-                          }}
-                          onFocus={(e) => {
-                            setSearchQuery(row.name);
-                            setFocusedRowIndex(index);
-                            setFocusedField('name');
-                            setActiveInputElement(e.currentTarget);
-                            setHasTypedSinceFocus(false);
-                          }}
-                          onBlur={() => {
-                            setTimeout(() => {
-                              setFocusedRowIndex(null);
-                              setFocusedField(null);
-                              setActiveInputElement(null);
-                            }, 250);
-                          }}
-                          style={{ fontSize: `${tableFontSize}px` }}
-                          className="flex-1 min-w-0 border-none p-0 text-slate-900 bg-transparent font-black tracking-tight focus:bg-slate-100 outline-none"
-                        />
-                        {(row.clientUsername || (row.cId && row.name)) && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const textToCopy = (row.clientUsername || row.cId || '').trim();
-                              if (textToCopy) {
-                                navigator.clipboard.writeText(textToCopy);
-                                toast.success(`Copied: ${textToCopy}`, { duration: 2500, icon: '📋' });
-                              }
-                            }}
-                            title="Click to copy User ID"
-                            className="print:hidden text-[9px] font-black text-slate-500 hover:text-indigo-600 bg-slate-100/80 hover:bg-indigo-50 active:scale-95 dark:text-slate-400 dark:bg-slate-800 dark:hover:bg-indigo-900/40 px-1.5 py-0.5 rounded leading-none shrink-0 border border-slate-200/60 hover:border-indigo-200 dark:border-slate-700 dark:hover:border-indigo-800/60 cursor-pointer transition-all duration-200 flex items-center gap-1 select-none group/copy overflow-hidden"
-                          >
-                            <span className="truncate max-w-[60px] group-hover/copy:max-w-none transition-all duration-300">@{row.clientUsername || row.cId}</span>
-                            <Copy size={9} className="opacity-0 w-0 -ml-1 group-hover/copy:w-auto group-hover/copy:opacity-100 group-hover/copy:ml-0 transition-all duration-300 ease-out text-indigo-500" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
- 
-                    {/* Comments */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-2 border-r border-black font-sans"
-                    >
-                      <input
-                        type="text"
-                        value={row.comments}
-                        onChange={(e) => handleT1Change(index, 'comments', e.target.value)}
-                        style={{ fontSize: `${tableFontSize - 0.5}px` }}
-                        className="w-full min-w-0 border-none p-0 text-slate-600 dark:text-slate-600 bg-transparent font-semibold focus:bg-slate-100 outline-none"
-                      />
-                    </td>
- 
-                    {/* Amount */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className={`px-2 border-r border-black text-right relative ${focusedRowIndex === index && focusedField === 'amount' ? 'z-[99999]' : ''}`}
-                    >
-                      <input
-                        type="text"
-                        value={row.amount === 0 ? '' : row.amount}
-                        placeholder="0"
-                        onChange={(e) => handleT1Change(index, 'amount', e.target.value)}
-                        onFocus={() => {
-                          setFocusedRowIndex(index);
-                          setFocusedField('amount');
-                        }}
-                        onBlur={() => {
-                          setTimeout(() => {
-                            setFocusedRowIndex(null);
-                            setFocusedField(null);
-                          }, 250);
-                        }}
-                        style={{ fontSize: `${tableFontSize}px` }}
-                        className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono uppercase"
-                      />
-                      
-                      {focusedRowIndex === index && focusedField === 'amount' && (
-                        <div className="absolute top-[105%] right-0 w-[120px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-white/10 shadow-2xl rounded-xl p-1 z-[99999] print:hidden font-sans pointer-events-auto">
-                          <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1 text-left">
-                            Set Status
-                          </div>
-                          {['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].map(st => (
-                            <button
-                              key={st}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                handleT1Change(index, 'amount', st);
-                                handleT1Change(index, 'status', st.toLowerCase());
-                                setFocusedRowIndex(null);
-                                setFocusedField(null);
-                              }}
-                              onTouchEnd={(e) => {
-                                e.preventDefault();
-                                handleT1Change(index, 'amount', st);
-                                handleT1Change(index, 'status', st.toLowerCase());
-                                setFocusedRowIndex(null);
-                                setFocusedField(null);
-                              }}
-                              className="w-full text-right px-2 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 transition-colors uppercase tracking-widest cursor-pointer"
-                            >
-                              {st}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </td>
- 
-                    {/* Ch (Tick checkbox) */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px` }}
-                      className="px-1 text-center select-none"
-                    >
-                      <div className="flex items-center justify-center">
-                        <input
-                          type="checkbox"
-                          checked={row.ch}
-                          onChange={(e) => handleT1Change(index, 'ch', e.target.checked)}
-                          className="w-3.5 h-3.5 rounded border-slate-400 text-brand-accent focus:ring-brand-accent cursor-pointer"
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ); })}
+                    <Table1RowItem
+                      key={`t1-${index}`}
+                      row={row}
+                      index={index}
+                      rowPadding={rowPadding}
+                      tableFontSize={tableFontSize}
+                      t1WidthSr={t1WidthSr}
+                      t1WidthId={t1WidthId}
+                      t1WidthName={t1WidthName}
+                      t1WidthComments={t1WidthComments}
+                      t1WidthAmount={t1WidthAmount}
+                      t1WidthCh={t1WidthCh}
+                      isFocusedRow={focusedRowIndex === index}
+                      focusedField={focusedRowIndex === index ? focusedField : null}
+                      isSearchResultMatch={isSearchResultMatch}
+                      isLocked={isLocked}
+                      onCommitChange={handleT1Change}
+                      onFocusField={handleFocusField}
+                      onBlurField={handleBlurField}
+                      onSearchQueryChange={handleSearchQueryChange}
+                      logPerf={logPerf}
+                    />
+                  );
+                })}
 
                 {/* Sub Total row */}
                 <tr className="border-t-2 border-black font-extrabold bg-slate-100/60 print-bg-gray">
@@ -5187,66 +5848,19 @@ export default function EntrySheet({
               </thead>
               <tbody style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
                 {table2Rows.map((row, index) => (
-                  <tr key={index} className="border-b border-slate-400 font-mono">
-                    {/* Sr */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-1 border-r-2 border-black text-center font-bold font-sans text-slate-600 bg-slate-50/50"
-                    >
-                      <input
-                        type="text"
-                        value={row.sr}
-                        onChange={(e) => handleT2Change(index, 'sr', e.target.value)}
-                        style={{ fontSize: `${tableFontSize - 0.5}px` }}
-                        className="w-full min-w-0 border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
-                        title="Double-click/type to edit Serial"
-                      />
-                    </td>
- 
-                    {/* Name */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-3 border-r border-black font-sans text-slate-800 font-extrabold uppercase select-text"
-                    >
-                      <input
-                        type="text"
-                        value={row.name}
-                        onChange={(e) => handleT2Change(index, 'name', e.target.value)}
-                        style={{ fontSize: `${tableFontSize}px` }}
-                        className="w-full min-w-0 border-none p-0 text-slate-900 font-black tracking-wide bg-transparent focus:bg-slate-100 outline-none uppercase font-mono"
-                      />
-                    </td>
- 
-                    {/* Amount */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-                      className="px-2 border-r border-black text-right"
-                    >
-                      <input
-                        type="number"
-                        value={row.amount === 0 ? '' : row.amount}
-                        placeholder="0"
-                        onChange={(e) => handleT2Change(index, 'amount', parseFloat(e.target.value) || 0)}
-                        style={{ fontSize: `${tableFontSize}px` }}
-                        className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
-                      />
-                    </td>
- 
-                    {/* Ch checkbox */}
-                    <td 
-                      style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px` }}
-                      className="px-1 text-center select-none"
-                    >
-                      <div className="flex items-center justify-center">
-                        <input
-                          type="checkbox"
-                          checked={row.ch}
-                          onChange={(e) => handleT2Change(index, 'ch', e.target.checked)}
-                          className="w-3.5 h-3.5 rounded border-slate-400 text-brand-accent focus:ring-brand-accent cursor-pointer"
-                        />
-                      </div>
-                    </td>
-                  </tr>
+                  <Table2RowItem
+                    key={`t2-${index}`}
+                    row={row}
+                    index={index}
+                    rowPadding={rowPadding}
+                    tableFontSize={tableFontSize}
+                    t2WidthSr={t2WidthSr}
+                    t2WidthName={t2WidthName}
+                    t2WidthAmount={t2WidthAmount}
+                    isLocked={isLocked}
+                    onCommitChange={handleT2Change}
+                    logPerf={logPerf}
+                  />
                 ))}
  
                 {/* Sub Total row 2 */}
@@ -5360,23 +5974,30 @@ export default function EntrySheet({
             </div> {/* center scale workspace ends */}
 
         {/* Receipt Swipe Left Panel on the right */}
-        <AnimatePresence>
+        <AnimatePresence onExitComplete={() => setReceiptPanelReady(false)}>
           {isReceiptSwipeOpen && (
             <motion.div
-              initial={{ opacity: 0, x: "100%" }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: "100%" }}
-              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-              drag="x"
+              initial={{ x: 380 }}
+              animate={{ x: 0 }}
+              exit={{ x: 380 }}
+              transition={{ type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.28 }}
+              style={{ willChange: 'transform' }}
+              onAnimationComplete={() => {
+                if (isReceiptSwipeOpen) {
+                  setReceiptPanelReady(true);
+                }
+              }}
+              drag={receiptPanelReady ? 'x' : false}
               dragDirectionLock
               dragConstraints={{ left: 0, right: 380 }}
               dragElastic={{ left: 0.1, right: 0.6 }}
               onDragEnd={(event, info) => {
                 if (info.offset.x > 120) {
+                  setReceiptPanelReady(false);
                   setIsReceiptSwipeOpen(false);
                 }
               }}
-              className={`w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[400] max-w-full ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 right-0 shadow-2xl' : 'relative'}`}
+              className="absolute right-0 top-0 h-full w-[380px] max-w-full z-[400] shadow-2xl bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left overflow-y-auto scrollbar-thin transform-gpu"
             >
               {/* Header / Title block */}
               <div className="flex items-center justify-between pb-2 border-b border-slate-205 dark:border-white/10">
@@ -5391,6 +6012,7 @@ export default function EntrySheet({
                 {/* Hold Action Button */}
                 <button
                   onClick={() => {
+                    setReceiptPanelReady(false);
                     setIsReceiptSwipeOpen(false);
                     setIsPendingReceipt(true);
                     toast.info('Receipt placed on Hold. Click the floating pending badge to resume.');
@@ -5404,7 +6026,12 @@ export default function EntrySheet({
 
               {/* Receipt Preview */}
               <div className="flex-1 flex flex-col items-center justify-center py-4 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-white/10 overflow-y-auto">
-                {lastSavedEntry ? (() => {
+                {!receiptPanelReady ? (
+                  <div className="flex flex-col items-center justify-center gap-2 p-8 text-slate-400">
+                    <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs font-mono font-medium">Loading receipt preview...</span>
+                  </div>
+                ) : lastSavedEntry ? (() => {
                   const now = new Date();
                   const optionsDate: Intl.DateTimeFormatOptions = { month: 'long', day: '2-digit', year: 'numeric' };
                   const formattedDate = now.toLocaleDateString('en-US', optionsDate);
@@ -5448,89 +6075,52 @@ export default function EntrySheet({
                         </div>
                         
                         <div className="space-y-2.5 text-[11px] font-medium text-slate-700 px-3 min-h-[90px]">
-                          {(() => {
-                            const getOutstandingPaymentForEntry = (entryName: string) => {
-                              if (!activeRows || activeRows.length === 0) return 0;
-                              const match = activeRows.find(r => 
-                                r.name && entryName && r.name.trim().toLowerCase() === entryName.trim().toLowerCase()
-                              );
-                              if (match) {
-                                return parseFloat(match.cr) || 0;
-                              }
-                              return 0;
-                            };
-
-                            const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
-                            const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
-                            const actualCount = itemsToPrint.filter(item => item && (item?.name || '').trim() !== '').length;
-                            const previewItems = [...itemsToPrint];
-                            while (previewItems.length < 4) {
-                              previewItems.push({
-                                name: '',
-                                amount: ''
-                              });
-                            }
-
-                            return previewItems.map((entry, index) => {
-                              const client = (entry && entry.name) ? findClientForEntry(entry) : null;
-
-                              const hasExtraDetails = actualCount <= 2 && client;
-                              
-                              return (
-                                <div key={index} className="flex justify-between items-start pb-1.5 border-b border-dashed border-slate-100 last:border-0 pt-1">
-                                  <div className="flex flex-col text-left max-w-[170px] overflow-hidden">
-                                    <span className="truncate leading-tight font-semibold text-slate-800">
-                                      {entry?.name || '\u00A0'}
-                                    </span>
-                                    {hasExtraDetails && (
-                                      <div className="flex flex-col mt-0.5 space-y-0.5 text-[9px] text-slate-500 font-medium">
-                                        {client.username && (
-                                          <span className="truncate">ID: <span className="font-mono text-slate-700">{client.username}</span></span>
-                                        )}
-                                        {client.mobileNumber && (
-                                          <span className="truncate">Mob: <span className="font-mono text-slate-700">{client.mobileNumber}</span></span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <span className="font-mono font-bold text-slate-900 pt-0.5">
-                                    {entry?.amount !== undefined && entry?.amount !== null && entry?.amount !== '' && !isNaN(Number(entry?.amount)) ? Number(entry?.amount).toFixed(2) : '\u00A0'}
+                          {previewItemsData.map(({ entry, client, actualCount }, index) => {
+                            const hasExtraDetails = actualCount <= 2 && client;
+                            return (
+                              <div key={index} className="flex justify-between items-start pb-1.5 border-b border-dashed border-slate-100 last:border-0 pt-1">
+                                <div className="flex flex-col text-left max-w-[170px] overflow-hidden">
+                                  <span className="truncate leading-tight font-semibold text-slate-800">
+                                    {entry?.name || '\u00A0'}
                                   </span>
+                                  {hasExtraDetails && (
+                                    <div className="flex flex-col mt-0.5 space-y-0.5 text-[9px] text-slate-500 font-medium">
+                                      {client.username && (
+                                        <span className="truncate">ID: <span className="font-mono text-slate-700">{client.username}</span></span>
+                                      )}
+                                      {client.mobileNumber && (
+                                        <span className="truncate">Mob: <span className="font-mono text-slate-700">{client.mobileNumber}</span></span>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
-                              );
-                            });
-                          })()}
+                                <span className="font-mono font-bold text-slate-900 pt-0.5">
+                                  {entry?.amount !== undefined && entry?.amount !== null && entry?.amount !== '' && !isNaN(Number(entry?.amount)) ? Number(entry?.amount).toFixed(2) : '\u00A0'}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
                         
                         {/* Totals Section */}
                         {(() => {
-                          const getOutstandingPaymentForEntry = (entryName: string) => {
-                            if (!activeRows || activeRows.length === 0) return 0;
-                            const match = activeRows.find(r => 
-                              r.name && entryName && r.name.trim().toLowerCase() === entryName.trim().toLowerCase()
-                            );
-                            if (match) {
-                              return parseFloat(match.cr) || 0;
-                            }
-                            return 0;
-                          };
-
                           const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
-                          const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
+                          const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : (lastSavedEntry ? [lastSavedEntry] : []);
                           
                           const totalOutstanding = itemsToPrint.reduce((sum, item) => {
-                            return sum + getOutstandingPaymentForEntry(item.name);
+                            return sum + (item?.name ? getOutstandingPaymentForEntry(item.name) : 0);
                           }, 0);
+
+                          const totalPreviewAmt = isMulti
+                            ? multiSavedEntries.slice(0, 4).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0)
+                            : (lastSavedEntry ? Number(lastSavedEntry.amount) || 0 : 0);
 
                           return (
                             <div className="flex flex-col items-end gap-1 text-right mt-3 pr-3">
                               <div className="flex items-center gap-2 text-[12px] font-extrabold text-slate-900">
                                 <span>Total:</span>
                                 <span className="font-mono text-emerald-600 font-black">
-                                  = {(multiSavedEntries && multiSavedEntries.length > 0
-                                    ? multiSavedEntries.slice(0, 4).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0)
-                                    : lastSavedEntry.amount
-                                  ).toFixed(2)}
+                                  = {totalPreviewAmt.toFixed(2)}
                                 </span>
                               </div>
                               {totalOutstanding > 0 && (
@@ -5625,25 +6215,13 @@ export default function EntrySheet({
                       printSection.style.margin = '0';
                       
                       const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
-                      const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
+                      const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : (lastSavedEntry ? [lastSavedEntry] : []);
                       
                       const totalOutstanding = itemsToPrint.reduce((sum, item) => {
-                        return sum + getOutstandingPaymentForEntry(item.name);
+                        return sum + (item?.name ? getOutstandingPaymentForEntry(item.name) : 0);
                       }, 0);
 
-                      const printItems = [...itemsToPrint];
-                      while (printItems.length < 4) {
-                        printItems.push({
-                          name: '',
-                          amount: ''
-                        });
-                      }
-
-                      const actualCount = itemsToPrint.filter(item => item && (item?.name || '').trim() !== '').length;
-
-                      const itemsHtml = printItems.map(item => {
-                        const client = (item && item.name) ? findClientForEntry(item) : null;
-
+                      const itemsHtml = previewItemsData.map(({ entry: item, client, actualCount }) => {
                         const hasExtraDetails = actualCount <= 2 && client;
                         const subDetailsHtml = hasExtraDetails ? `
                           <div style="display: flex; flex-direction: column; font-size: 8pt; color: #64748b; margin-top: 3px; font-weight: 500; font-family: sans-serif; text-align: left;">
@@ -5662,7 +6240,7 @@ export default function EntrySheet({
                           </div>
                         `;
                       }).join('');
-                      const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+                      const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0);
 
                       printSection.innerHTML = `
                         <style>
@@ -5837,26 +6415,14 @@ export default function EntrySheet({
 
                         let y = 66;
                         const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
-                        const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : [lastSavedEntry];
+                        const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : (lastSavedEntry ? [lastSavedEntry] : []);
                         
                         const totalOutstanding = itemsToPrint.reduce((sum, item) => {
-                          return sum + getOutstandingPaymentForEntry(item.name);
+                          return sum + (item?.name ? getOutstandingPaymentForEntry(item.name) : 0);
                         }, 0);
 
-                        const printItems = [...itemsToPrint];
-                        while (printItems.length < 4) {
-                          printItems.push({
-                            name: '',
-                            amount: ''
-                          });
-                        }
-
-                        const actualCount = itemsToPrint.filter(item => item && (item?.name || '').trim() !== '').length;
-
                         doc.setTextColor(51, 65, 85);
-                        printItems.forEach(item => {
-                          const client = (item && item.name) ? findClientForEntry(item) : null;
-
+                        previewItemsData.forEach(({ entry: item, client, actualCount }) => {
                           const hasExtraDetails = actualCount <= 2 && client;
 
                           doc.setFont('Helvetica', 'bold');
@@ -5980,7 +6546,10 @@ export default function EntrySheet({
                   </button>
 
                   <button
-                    onClick={() => setIsReceiptSwipeOpen(false)}
+                    onClick={() => {
+                      setReceiptPanelReady(false);
+                      setIsReceiptSwipeOpen(false);
+                    }}
                     className="py-2 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
                   >
                     <X size={13} />
@@ -7018,23 +7587,24 @@ export default function EntrySheet({
 
       {focusedRowIndex !== null && focusedField !== null && activeInputElement && (
         <div 
+          ref={dropdownContainerRef}
           style={getDropdownStyle()}
           className="fixed bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.15)] dark:shadow-[0_12px_40px_-15px_rgba(0,0,0,0.5)] rounded-2xl p-2 max-h-72 overflow-y-auto print:hidden font-sans pointer-events-auto text-slate-900 dark:text-slate-100 scrollbar-thin z-[1000000]"
         >
-          <div className="flex items-center justify-between text-[8.5px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-500 px-3 py-2 mb-1.5 border-b border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-center justify-between text-[8.5px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-3 py-2 mb-1.5 border-b border-slate-100 dark:border-slate-800/80">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
               Select Customer Entry
             </span>
             <span className="text-indigo-500 font-mono font-bold bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded-md">
-              {getFilteredSuggestions(focusedField, searchQuery).length} Found
+              {filteredSuggestions.length} Found
             </span>
           </div>
-          {getFilteredSuggestions(focusedField, searchQuery).length === 0 ? (
+          {filteredSuggestions.length === 0 ? (
             <div className="text-[11px] text-slate-400 dark:text-slate-500 py-6 text-center font-medium">No matching accounts found</div>
           ) : (
             <div className="space-y-1">
-              {getFilteredSuggestions(focusedField, searchQuery).map((cObj, idx) => {
+              {filteredSuggestions.map((cObj, idx) => {
                 const matchingActiveRow = activeRows?.find(r => 
                   (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
                   (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())

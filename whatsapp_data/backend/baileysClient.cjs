@@ -140,12 +140,14 @@ async function initBaileys(rawKey = 'main') {
     const logger = pino({ level: 'silent' });
 
     let waVersion;
-    try {
-      const v = await fetchLatestBaileysVersion();
-      waVersion = v.version;
-      console.log(`[${session.key}] Using WhatsApp Web version ${waVersion.join('.')}`);
-    } catch (e) {
-      console.log(`[${session.key}] Could not fetch latest WA version, using built-in default:`, e.message);
+    if (process.env.WA_USE_LATEST_VERSION === '1') {
+      try {
+        const v = await fetchLatestBaileysVersion();
+        waVersion = v.version;
+        console.log(`[${session.key}] Using WhatsApp Web version ${waVersion.join('.')}`);
+      } catch (e) {
+        console.log(`[${session.key}] Could not fetch latest WA version, using built-in default:`, e.message);
+      }
     }
 
     session.sock = makeWASocket({
@@ -261,6 +263,54 @@ async function initBaileys(rawKey = 'main') {
         }, 3000);
       }
     });
+
+    if (process.env.WA_LOG_INCOMING === '1') {
+      session.sock.ev.on('messages.upsert', async (m) => {
+        try {
+          if (m?.type !== 'notify' || !Array.isArray(m?.messages) || !supabaseClient) return;
+          for (const msg of m.messages) {
+            try {
+              if (!msg || !msg.message || msg.key?.fromMe) continue;
+              const jid = msg.key?.remoteJid || '';
+              if (!jid.endsWith('@s.whatsapp.net')) continue;
+              const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+              if (!text || typeof text !== 'string' || !text.trim()) continue;
+
+              const waMessageId = msg.key?.id;
+              if (!waMessageId) continue;
+
+              const rawPhone = jid.split('@')[0].split(':')[0];
+              const phone = normalizePakistaniPhone(rawPhone) || rawPhone;
+              const truncatedBody = text.slice(0, 4096);
+
+              Promise.resolve(
+                supabaseClient.from('whatsapp_messages').upsert({
+                  session_key: session.key,
+                  dealer_id: session.key !== 'main' ? session.key : null,
+                  phone,
+                  body: truncatedBody,
+                  direction: 'in',
+                  kind: 'manual',
+                  status: 'received',
+                  wa_message_id: waMessageId
+                }, {
+                  onConflict: 'session_key,wa_message_id',
+                  ignoreDuplicates: true
+                })
+              ).then(({ error }) => {
+                if (error) console.error(`[${session.key}] Incoming log upsert error:`, error.message);
+              }).catch(err => {
+                console.error(`[${session.key}] Incoming log upsert exception:`, err.message);
+              });
+            } catch (msgErr) {
+              console.error(`[${session.key}] Error processing incoming message:`, msgErr.message);
+            }
+          }
+        } catch (upsertErr) {
+          console.error(`[${session.key}] messages.upsert handler error:`, upsertErr.message);
+        }
+      });
+    }
 
   } catch (error) {
     console.error(`[${session.key}] Error initializing Baileys:`, error);
@@ -428,7 +478,7 @@ async function sendWithRetry(session, phoneNumber, message) {
       rememberSent(sent);
 
       session.lastActivityTimestamp = Date.now();
-      return { success: true };
+      return { success: true, waMessageId: sent?.key?.id || null };
     } catch (err) {
       lastError = err;
       console.log(`[${session.key}] Send attempt ${attempt}/${MAX_SEND_ATTEMPTS} to ${phoneNumber} failed: ${err.message}`);
@@ -476,11 +526,11 @@ async function processQueue(session) {
     await new Promise(r => setTimeout(r, delayMs));
 
     try {
-      await sendWithRetry(session, phoneNumber, message);
+      const sendRes = await sendWithRetry(session, phoneNumber, message);
       session.sentTimestamps.push(Date.now());
       console.log(`[${session.key}] Successfully sent message to ${phoneNumber}`);
       if (messageLogCallback) messageLogCallback(phoneNumber, message, 'success', null, session.key);
-      resolve({ success: true, session: session.key });
+      resolve({ success: true, session: session.key, waMessageId: sendRes?.waMessageId || null });
     } catch (err) {
       console.error(`[${session.key}] Giving up on message to ${phoneNumber}:`, err.message);
       if (messageLogCallback) messageLogCallback(phoneNumber, message, 'failed', err.message || 'Unknown error', session.key);
@@ -491,13 +541,64 @@ async function processQueue(session) {
   session.isProcessingQueue = false;
 }
 
-// Queue message for transmission
+// Queue message for transmission and fire-and-forget log to whatsapp_messages
 async function sendMessage(phoneNumber, message, options = {}, rawKey = 'main') {
   const session = getSession(rawKey, true);
-  return new Promise((resolve, reject) => {
-    session.messageQueue.push({ phoneNumber, message, resolve, reject });
-    processQueue(session);
-  });
+  const sessionKey = session.key;
+  const normalizedPhone = normalizePakistaniPhone(phoneNumber) || phoneNumber;
+  const truncatedBody = typeof message === 'string' ? message.slice(0, 4096) : String(message || '').slice(0, 4096);
+  const meta = (options && typeof options === 'object' && options.meta && typeof options.meta === 'object') ? options.meta : {};
+
+  let sendResult = null;
+  let sendError = null;
+
+  try {
+    sendResult = await new Promise((resolve, reject) => {
+      session.messageQueue.push({ phoneNumber, message, options, resolve, reject });
+      processQueue(session);
+    });
+  } catch (err) {
+    sendError = err;
+  }
+
+  // Fire-and-forget log write to whatsapp_messages table
+  try {
+    if (supabaseClient) {
+      const allowedKinds = ['reminder', 'complaint', 'campaign', 'manual', 'other'];
+      const rawKind = meta.kind ? String(meta.kind).toLowerCase() : '';
+      const kind = allowedKinds.includes(rawKind) ? rawKind : 'manual';
+
+      const logRow = {
+        session_key: sessionKey,
+        dealer_id: meta.dealerId || meta.dealer_id || (sessionKey !== 'main' ? sessionKey : null),
+        phone: normalizedPhone,
+        client_name: meta.clientName || meta.client_name || null,
+        client_username: meta.clientUsername || meta.client_username || null,
+        direction: 'out',
+        kind,
+        body: truncatedBody,
+        status: sendError ? 'failed' : 'sent',
+        error: sendError ? (sendError.message || String(sendError)) : null,
+        lead_id: meta.leadId || meta.lead_id || null,
+        wa_message_id: sendResult?.waMessageId || null,
+      };
+
+      Promise.resolve(supabaseClient.from('whatsapp_messages').insert(logRow))
+        .then(({ error }) => {
+          if (error) console.error('[whatsapp_messages] Log insert error:', error.message);
+        })
+        .catch(dbErr => {
+          console.error('[whatsapp_messages] Log insert exception:', dbErr.message);
+        });
+    }
+  } catch (logErr) {
+    console.error('[whatsapp_messages] Unexpected log error:', logErr.message);
+  }
+
+  if (sendError) {
+    throw sendError;
+  }
+  return sendResult;
 }
 
 async function logoutBaileys(rawKey = 'main') {

@@ -22,12 +22,14 @@ export function getTabFromPathname(pathname: string, search?: string): string {
         if (tabParam === 'critical') return 'critical';
         if (tabParam === 'top10') return 'top10';
         if (tabParam === 'recycle_bin' || tabParam === 'recyclebin') return 'recycle_bin';
+        if (tabParam === 'whatsappcenter' || tabParam === 'whatsapplogs') return 'whatsappcenter';
         if (tabParam === 'complaints' || tabParam === 'dashboard') return 'complaints';
         return tabParam;
       }
     } catch (e) {}
   }
 
+  if (pathname === '/whatsappcenter' || pathname.startsWith('/whatsappcenter') || pathname === '/whatsapplogs' || pathname.startsWith('/whatsapplogs')) return 'whatsappcenter';
   if (pathname === '/conversation' || pathname.startsWith('/conversation')) return 'complaints';
   if (pathname.startsWith('/billingmod') || pathname === '/billing' || pathname.startsWith('/billing/')) return 'billing';
   if (pathname === '/clients') return 'clients';
@@ -55,6 +57,8 @@ export function getPathnameFromTab(tabId: string): string {
     case 'submit':
     case 'registry':
       return '/registry';
+    case 'whatsappcenter':
+    case 'whatsapplogs': return '/whatsappcenter';
     case 'billing': return '/billingmod';
     case 'clients': return '/clients';
     case 'users': return '/users';
