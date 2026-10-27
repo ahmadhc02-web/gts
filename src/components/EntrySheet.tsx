@@ -298,7 +298,6 @@ const Table1RowItem = React.memo(({
             value={localRow.name}
             onChange={(e) => {
               handleFieldChange('name', e.target.value);
-              onFocusField(index, 'name', e.target.value, e.currentTarget);
             }}
             onFocus={(e) => {
               onFocusField(index, 'name', localRow.name, e.currentTarget);
