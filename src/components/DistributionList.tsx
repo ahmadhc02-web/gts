@@ -299,7 +299,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                         </div>
                       </div>
   
-                      <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150} initialDimension={{ width: 400, height: 250 }} debounce={100}>
                         <PieChart margin={{ top: 0, right: 32, left: 32, bottom: 0 }}>
                           <defs>
                             {/* Neumorphic 3D Raised Extrusion Filter for Light Mode */}

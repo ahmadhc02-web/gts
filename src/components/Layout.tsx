@@ -2172,7 +2172,7 @@ export default function Layout({
 
       <AnimatePresence>
         {isComplaintSwipeDownOpen && user && (
-          <div className="fixed inset-0 top-16 z-[100] flex justify-center items-center overflow-hidden bg-slate-950/45 dark:bg-slate-950/65 backdrop-blur-sm p-4 sm:p-6 lg:p-8">
+          <div className="fixed inset-0 top-16 z-[100] flex justify-center items-center overflow-hidden bg-slate-950/50 dark:bg-slate-950/70 backdrop-blur-md p-4 sm:p-6 lg:p-8">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2182,56 +2182,149 @@ export default function Layout({
             />
             
             <motion.div
-              initial={{ y: -150, opacity: 0, scaleY: 0.9, originY: 0 }}
+              initial={{ y: -180, opacity: 0, scaleY: 0.9, originY: 0 }}
               animate={{ y: 0, opacity: 1, scaleY: 1, originY: 0 }}
-              exit={{ y: -150, opacity: 0, scaleY: 0.9, originY: 0 }}
-              transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-              className="relative w-full max-w-4xl neu-raised-lg rounded-[32px] overflow-hidden border border-white/50 dark:border-white/5"
+              exit={{ y: -180, opacity: 0, scaleY: 0.9, originY: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+              className="relative w-full max-w-5xl bg-white dark:bg-slate-900 rounded-[36px] overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]"
             >
-              {/* Top Accent Gradient Line */}
-              <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600" />
+              {/* Top Accent Gradient Bar */}
+              <div className="h-2.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 w-full" />
               
-              <div className="p-6 sm:p-8 space-y-6">
-                {/* Header section with instructions */}
-                <div className="flex items-center justify-between border-b border-slate-300/40 dark:border-white/5 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex h-3.5 w-3.5 items-center justify-center">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                    </div>
-                    <span className="text-sm sm:text-base font-extrabold uppercase tracking-[0.2em] text-slate-800 dark:text-slate-200">
-                      Complaint Entry Portal
-                    </span>
+              <style dangerouslySetInnerHTML={{ __html: `
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) {
+                  width: 627.118px;
+                  padding-left: 23px;
+                  padding-top: 31px;
+                  padding-right: 16px;
+                  margin-left: -67px;
+                  margin-top: -51px;
+                  margin-bottom: -34px;
+                  padding-bottom: 32px;
+                }
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > h2:nth-of-type(1) {
+                  font-size: 37px;
+                  padding-top: 0px;
+                  margin-top: -159px;
+                }
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) {
+                  height: 226px;
+                  width: 286px;
+                  padding-left: -1px;
+                  padding-right: 36px;
+                  margin-left: -1px;
+                  margin-right: 68px;
+                  padding-top: 22px;
+                  margin-bottom: -131px;
+                }
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(13) > button:nth-of-type(1) {
+                  background-color: #039c72 !important;
+                  color: #ffffff !important;
+                  text-align: center;
+                  margin-left: 0px;
+                }
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(7) > div:nth-of-type(1) > input:nth-of-type(1) {
+                  padding-left: 38px;
+                  font-size: 11px;
+                }
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(6) > div:nth-of-type(1) > input:nth-of-type(1) {
+                  font-size: 10px;
+                }
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(12) > div:nth-of-type(1) > textarea:nth-of-type(1) {
+                  font-size: 13px;
+                }
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) {
+                  margin-left: -20px;
+                  margin-right: 0px;
+                }
+                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) {
+                  margin-left: -21px;
+                }
+              `}} />
+              
+              {/* Modal Header Bar */}
+              <div className="px-6 sm:px-10 pt-6 pb-2 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="relative flex h-3.5 w-3.5 items-center justify-center">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                   </div>
-                  <button
-                    onClick={() => setIsComplaintSwipeDownOpen(false)}
-                    className="p-2.5 rounded-xl neu-btn text-slate-500 hover:text-rose-500 hover:border-rose-500/20 active:scale-95 transition-all cursor-pointer"
-                  >
-                    <X size={18} />
-                  </button>
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-[0.25em] text-slate-800 dark:text-slate-200">
+                    Complaint Entry Portal
+                  </span>
                 </div>
+                <button
+                  onClick={() => setIsComplaintSwipeDownOpen(false)}
+                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer"
+                  title="Close Portal"
+                >
+                  <X size={18} />
+                </button>
+              </div>
 
-                {/* Complaint form wrapper */}
-                <div className="max-h-[75vh] overflow-y-auto pr-2">
-                  <Suspense fallback={<FiberLoading />}>
-                    <ComplaintForm
-                      onSubmit={async (data) => {
-                        if (onRegisterComplaint) {
-                          await onRegisterComplaint(data);
-                        } else {
-                          toast.error("Complaint registration service unavailable");
-                        }
-                        setIsComplaintSwipeDownOpen(false);
-                      }}
-                      isLoading={isLoading || false}
-                      appConfig={appConfig}
-                      currentUser={user}
-                      branding={branding as any}
-                      compact={true}
-                    />
-                  </Suspense>
+              {/* Scrollable Content: Split Grid Layout matching reference design */}
+              <div className="flex-1 overflow-y-auto p-6 sm:p-10">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+                  
+                  {/* Left Column: Bold Headline & Illustration (matching reference image) */}
+                  <div className="lg:col-span-5 flex flex-col justify-between space-y-6">
+                    <div className="space-y-4">
+                      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-[1.1]">
+                        Let&apos;s Make <br className="hidden sm:inline" />
+                        <span className="text-emerald-600 dark:text-emerald-400">Problems Nervous.</span>
+                      </h2>
+                      <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
+                        Tell us what keeps you stuck we&apos;ll turn it into your next competitive advantage.
+                      </p>
+                    </div>
+
+                    {/* Vector/SVG Illustration matching reference image */}
+                    <div className="py-4 flex justify-center items-center">
+                      <div className="relative w-full max-w-[280px] h-[180px] bg-emerald-500/5 dark:bg-emerald-500/10 rounded-3xl border border-emerald-500/10 flex items-center justify-center p-6 shadow-xs overflow-hidden">
+                        <div className="absolute -right-4 -bottom-4 w-32 h-32 bg-emerald-400/10 rounded-full blur-xl pointer-events-none" />
+                        <svg className="w-full h-full text-slate-800 dark:text-slate-200" viewBox="0 0 240 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          {/* Laptop base */}
+                          <path d="M70 120H150L160 135H60L70 120Z" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="currentColor" fillOpacity="0.05" />
+                          <path d="M40 135H180" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                          {/* Laptop screen */}
+                          <rect x="75" y="70" width="65" height="50" rx="4" stroke="currentColor" strokeWidth="3" fill="currentColor" fillOpacity="0.05" />
+                          {/* Person figure */}
+                          <circle cx="45" cy="85" r="12" stroke="currentColor" strokeWidth="3" fill="currentColor" fillOpacity="0.1" />
+                          <path d="M30 135C30 110 45 105 55 105C65 105 80 110 80 135" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                          {/* Arm holding paper airplane */}
+                          <path d="M55 110C65 100 80 85 95 75C110 65 130 55 145 50" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                          {/* Paper airplane */}
+                          <path d="M140 45L170 35L150 65L140 45Z" fill="#10B981" stroke="#059669" strokeWidth="2" strokeLinejoin="round" />
+                          <path d="M140 45L155 52L150 65Z" fill="#34D399" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Modern Form Card */}
+                  <div className="lg:col-span-7 bg-slate-50/80 dark:bg-slate-800/40 p-6 sm:p-8 rounded-[28px] border border-slate-200/80 dark:border-slate-800/80 shadow-inner">
+                    <Suspense fallback={<FiberLoading />}>
+                      <ComplaintForm
+                        onSubmit={async (data) => {
+                          if (onRegisterComplaint) {
+                            await onRegisterComplaint(data);
+                          } else {
+                            toast.error("Complaint registration service unavailable");
+                          }
+                          setIsComplaintSwipeDownOpen(false);
+                        }}
+                        isLoading={isLoading || false}
+                        appConfig={appConfig}
+                        currentUser={user}
+                        branding={branding as any}
+                        compact={true}
+                      />
+                    </Suspense>
+                  </div>
+
                 </div>
               </div>
+
             </motion.div>
           </div>
         )}

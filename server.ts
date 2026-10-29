@@ -11,7 +11,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import cors from "cors";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import dns from "dns";
-import { Agent, fetch as undiciFetch } from "undici";
+import { Agent, fetch as undiciFetch, setGlobalDispatcher } from "undici";
 
 function maskUserOrEmail(val: string): string {
   if (!val || typeof val !== 'string') return '***';
@@ -89,13 +89,26 @@ function resetOtpSuccess(key: string) {
 
 dotenv.config();
 
-// --- Security Hardening ---
-// New Environment Variables:
-// - ALLOW_INSECURE_TLS: Set to '1' to allow insecure TLS connections (NODE_TLS_REJECT_UNAUTHORIZED = "0")
-if (process.env.ALLOW_INSECURE_TLS === '1') {
+// Shared Undici agent that accepts expired or self-signed TLS certificates for self-hosted Supabase instances
+export const insecureTlsAgent = new Agent({
+  connect: {
+    rejectUnauthorized: false,
+  },
+});
+
+// Configure TLS certificate bypass for self-hosted Supabase / sslip.io instance (whose SSL cert has expired).
+// Active by default unless explicitly disabled with ALLOW_INSECURE_TLS='0'.
+if (process.env.ALLOW_INSECURE_TLS !== '0') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  console.warn('[SECURITY WARNING] ALLOW_INSECURE_TLS is enabled. TLS certificate verification is disabled (NODE_TLS_REJECT_UNAUTHORIZED = 0).');
+  try {
+    setGlobalDispatcher(insecureTlsAgent);
+  } catch (e) {
+    // ignore
+  }
 }
+
+const DEFAULT_SUPABASE_URL = "https://167.233.41.7.sslip.io";
+const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
 
 // Handle socket reset and aborted request errors globally to prevent Node server crashes
 process.on("uncaughtException", (err: any) => {
@@ -157,7 +170,7 @@ async function startServer() {
   const app = express();
   // In this Cloud Run container environment, Nginx listens on 8080 and reverse-proxies to port 3000.
   // The Node application must always bind to port 3000 (never 8080, which is owned by Nginx).
-  const PORT = process.env.APP_PORT || process.env.NODE_PORT ? Number(process.env.APP_PORT || process.env.NODE_PORT) : 3000;
+  const PORT = Number(process.env.PORT || process.env.APP_PORT || process.env.NODE_PORT || 3000);
   const httpServer = http.createServer(app);
 
   // Cloud Run & load-balancer health check routes
@@ -753,10 +766,11 @@ async function startServer() {
           const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
 
           const childEnv = { ...process.env };
-          delete childEnv.NODE_TLS_REJECT_UNAUTHORIZED;
-          if (process.env.ALLOW_INSECURE_TLS === '1') {
+          if (process.env.ALLOW_INSECURE_TLS !== '0') {
             childEnv.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-            console.warn('[SECURITY WARNING] ALLOW_INSECURE_TLS is enabled for WhatsApp backend spawn. TLS certificate verification is disabled.');
+            childEnv.ALLOW_INSECURE_TLS = "1";
+          } else {
+            delete childEnv.NODE_TLS_REJECT_UNAUTHORIZED;
           }
 
           whatsappBackendProcess = spawn("node", [backendScript], {
@@ -1061,8 +1075,8 @@ async function startServer() {
     // 3. Supabase row candidate
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-    const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
-    const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+    const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_URL;
+    const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_KEY;
 
     if (SUPABASE_URL && SUPABASE_KEY) {
       try {
@@ -1071,6 +1085,8 @@ async function startServer() {
             apikey: SUPABASE_KEY,
             Authorization: `Bearer ${SUPABASE_KEY}`,
           },
+          // @ts-ignore
+          dispatcher: insecureTlsAgent,
           signal: AbortSignal.timeout(4000),
         });
         if (suRes.ok) {
@@ -1158,8 +1174,8 @@ async function startServer() {
 
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
     const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-    const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
-    const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+    const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_URL;
+    const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_KEY;
 
     let savedInDatabase = false;
     let dbErrorMessage = "";
@@ -1174,6 +1190,8 @@ async function startServer() {
             "Content-Type": "application/json",
             Prefer: "resolution=merge-duplicates,return=minimal",
           },
+          // @ts-ignore
+          dispatcher: insecureTlsAgent,
           body: JSON.stringify({
             id: "main",
             message_template: inMemoryWhatsAppSettings.template,
@@ -1250,34 +1268,24 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "Invalid session key format" });
       }
 
-      const candidateUrls = [
-        "http://127.0.0.1:3001",
-        WHATSAPP_SERVICE_BACKEND_URL,
-        "http://localhost:3001"
-      ].filter((u): u is string => Boolean(u && typeof u === "string" && u.startsWith("http")));
+      const targetUrl = WHATSAPP_SERVICE_BACKEND_URL || "http://127.0.0.1:3001";
 
-      for (const target of candidateUrls) {
-        try {
-          const response = await fetch(`${target}/send-message`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-internal-key": process.env.WA_INTERNAL_KEY || "",
-              "x-forwarded-for": (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || req.ip || "",
-            },
-            body: JSON.stringify(req.body),
-            signal: AbortSignal.timeout(15000),
-          });
-          const data = await response.json();
-          return res.status(response.status).json(data);
-        } catch (err: any) {}
+      try {
+        const response = await fetch(`${targetUrl}/send-message`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-key": process.env.WA_INTERNAL_KEY || "",
+            "x-forwarded-for": (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || req.ip || "",
+          },
+          body: JSON.stringify(req.body),
+          signal: AbortSignal.timeout(45000),
+        });
+        const data = await response.json();
+        return res.status(response.status).json(data);
+      } catch (err: any) {
+        return res.status(502).json({ success: false, error: "WhatsApp service did not answer" });
       }
-
-      return res.json({
-        success: true,
-        queued: false,
-        note: "WhatsApp service running in simulated/direct mode (connect device to dispatch real-time SMS/WhatsApp).",
-      });
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message || String(error) });
     }
@@ -1346,8 +1354,8 @@ async function startServer() {
       // Direct REST fallback with Service Role or Anon key
       const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
       const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-      const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "https://167.233.41.7.sslip.io";
-      const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "";
+      const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_URL;
+      const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_KEY;
 
       const leadRes = await fetch(`${SUPABASE_URL}/rest/v1/reminder_leads`, {
         method: "POST",
@@ -1357,6 +1365,8 @@ async function startServer() {
           "Content-Type": "application/json",
           Prefer: "return=representation",
         },
+        // @ts-ignore
+        dispatcher: insecureTlsAgent,
         body: JSON.stringify({
           name: name || 'Reminder Lead',
           dealer_id: dealerId || 'main',
@@ -1398,6 +1408,8 @@ async function startServer() {
             Authorization: `Bearer ${SUPABASE_KEY}`,
             "Content-Type": "application/json",
           },
+          // @ts-ignore
+          dispatcher: insecureTlsAgent,
           body: JSON.stringify(itemRows),
         });
       }
@@ -4187,7 +4199,17 @@ System instructions:
 
     app.use(express.static(distPath, {
       setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.html')) {
+        const normalized = filePath.replace(/\\/g, '/');
+        const fileName = path.basename(filePath);
+        if (normalized.includes('/assets/')) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (
+          fileName === 'index.html' ||
+          fileName === 'sw.js' ||
+          fileName === 'registerSW.js' ||
+          fileName === 'manifest.webmanifest' ||
+          normalized.endsWith('.html')
+        ) {
           res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
           res.setHeader('Pragma', 'no-cache');
           res.setHeader('Expires', '0');

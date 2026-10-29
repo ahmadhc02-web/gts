@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned, Layers, CloudOff, WifiOff, RefreshCw } from 'lucide-react';
+import { Send, User, MapPin, FileText, Phone, Info, Package, MapPinned, Layers, CloudOff, WifiOff, RefreshCw, ArrowUpRight } from 'lucide-react';
 import { ComplaintStatus, ComplaintCategory, ComplaintPriority, Client, UserProfile, BrandingConfig } from '../types';
 import { cn, safeStringify } from '../lib/utils';
 import { safeLocalStorage } from '../lib/safeLocalStorage';
@@ -207,8 +207,8 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
   const inputClasses = "w-full px-3.5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-300 font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 shadow-[var(--neu-shadow-inset)] text-center [text-align-last:center] uppercase placeholder:normal-case text-xs sm:text-sm";
   const labelClasses = "block text-[10px] sm:text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.15em] mb-1.5 text-center group-focus-within/field:text-emerald-500 transition-colors duration-300";
 
-  const compactInputClasses = "w-full pl-10 pr-4 py-3 text-sm font-black rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 uppercase placeholder:normal-case shadow-[var(--neu-shadow-inset)] h-12";
-  const compactLabelContainerClasses = "absolute left-3.5 -top-2 px-1.5 bg-[var(--neu-surface)] text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-all duration-200 z-10 flex items-center gap-1.5";
+  const compactInputClasses = "w-full pl-10 pr-4 py-2 text-xs sm:text-sm font-bold rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 uppercase placeholder:normal-case shadow-[var(--neu-shadow-inset)] h-11 text-left";
+  const compactLabelClasses = "block text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1.5 group-focus-within/field:text-emerald-500 transition-colors";
 
   if (compact) {
     return (
@@ -239,11 +239,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
 
         <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-x-4 gap-y-4">
           {/* Identity Fields */}
-          <div className="col-span-12 sm:col-span-6 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <Search size={11} />
+          <div className="col-span-12 sm:col-span-6 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <Search size={12} />
               {customNames.username || 'System Username'}
-            </div>
+            </label>
             <div className="relative" ref={clientListRef}>
               <input
                 type="text"
@@ -262,7 +262,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
               
               {showClientList && customerUsername && filteredClients.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-1 bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl shadow-[var(--neu-shadow-raised-lg)] overflow-hidden max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="absolute left-0 right-0 z-50 mt-1 bg-[var(--neu-surface)] border border-[var(--neu-border)] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
                   <div className="px-3 py-1.5 border-b border-slate-200/40 dark:border-white/5 bg-slate-500/5 text-center">
                     <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">
                       Matches Found
@@ -287,11 +287,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </div>
           </div>
 
-          <div className="col-span-12 sm:col-span-6 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <User size={11} />
+          <div className="col-span-12 sm:col-span-6 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <User size={12} />
               {customNames.client || 'Full Legal Name'}
-            </div>
+            </label>
             <div className="relative">
               <input
                 type="text"
@@ -305,11 +305,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </div>
           </div>
 
-          <div className="col-span-12 sm:col-span-6 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <Phone size={11} />
+          <div className="col-span-12 sm:col-span-6 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <Phone size={12} />
               {customNames.number || 'Contact Number'}
-            </div>
+            </label>
             <div className="relative">
               <input
                 type="tel"
@@ -323,11 +323,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </div>
           </div>
 
-          <div className="col-span-12 sm:col-span-6 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <MapPin size={11} />
+          <div className="col-span-12 sm:col-span-6 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <MapPin size={12} />
               {customNames.zone || 'Deployment Zone'}
-            </div>
+            </label>
             <div className="relative">
               <select
                 value={area}
@@ -352,11 +352,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           </div>
 
           {/* Technical Info Row */}
-          <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <Package size={11} />
+          <div className="col-span-12 sm:col-span-4 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <Package size={12} />
               {customNames.pkg || 'Profile (Package)'}
-            </div>
+            </label>
             <div className="relative">
               <input
                 type="text"
@@ -369,11 +369,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </div>
           </div>
 
-          <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <Layers size={11} />
+          <div className="col-span-12 sm:col-span-4 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <Layers size={12} />
               {customNames.panel || 'Distribution Node'}
-            </div>
+            </label>
             <div className="relative">
               <input
                 type="text"
@@ -386,11 +386,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </div>
           </div>
 
-          <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <MapPinned size={11} />
+          <div className="col-span-12 sm:col-span-4 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <MapPinned size={12} />
               {customNames.nearby || 'Locality Landmark'}
-            </div>
+            </label>
             <div className="relative">
               <input
                 type="text"
@@ -404,11 +404,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           </div>
 
           {/* Settings Row */}
-          <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <Info size={11} />
+          <div className="col-span-12 sm:col-span-4 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <Info size={12} />
               {customNames.category || 'Category'}
-            </div>
+            </label>
             <div className="relative">
               <select
                 value={category}
@@ -431,11 +431,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </div>
           </div>
 
-          <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <ShieldAlert size={11} />
+          <div className="col-span-12 sm:col-span-4 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <ShieldAlert size={12} />
               {customNames.priority || 'Security Priority'}
-            </div>
+            </label>
             <div className="relative">
               <select
                 value={priority}
@@ -451,11 +451,11 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </div>
           </div>
 
-          <div className="col-span-12 sm:col-span-4 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <Wifi size={11} />
+          <div className="col-span-12 sm:col-span-4 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <Wifi size={12} />
               {customNames.status || 'Current Status'}
-            </div>
+            </label>
             <div className="relative">
               <select
                 value={status}
@@ -500,18 +500,18 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           </div>
 
           {/* Description Textarea */}
-          <div className="col-span-12 group/field relative mt-1">
-            <div className={compactLabelContainerClasses}>
-              <FileText size={11} />
+          <div className="col-span-12 group/field space-y-1">
+            <label className={compactLabelClasses}>
+              <FileText size={12} />
               {customNames.description || 'Mission Objectives / Details'}
-            </div>
+            </label>
             <div className="relative">
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value.toUpperCase())}
                 placeholder="DESCRIBE THE TECHNICAL ISSUE IN DETAIL..."
-                rows={1}
-                className={cn(compactInputClasses, "resize-none h-16 py-3 rounded-xl pl-10")}
+                rows={3}
+                className={cn(compactInputClasses, "resize-none h-20 sm:h-24 py-2.5 rounded-xl")}
                 required
               />
               <FileText size={15} className="absolute left-3.5 top-3.5 text-slate-500 dark:text-slate-400 group-focus-within/field:text-emerald-600 dark:group-focus-within/field:text-emerald-400 transition-colors duration-300 pointer-events-none" />
@@ -829,44 +829,42 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </motion.div>
 
             <motion.div layout className="space-y-1 group/field">
-              <label className={labelClasses}>{customNames.description || 'Mission Objectives / Details'}</label>
+              <label className={compactLabelClasses}>{customNames.description || 'Mission Objectives / Details'}</label>
               <div className="relative">
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value.toUpperCase())}
                   placeholder="DESCRIBE THE TECHNICAL ISSUE IN DETAIL..."
                   rows={3}
-                  className={cn(inputClasses, "resize-none h-24 sm:h-28 py-3 rounded-2xl")}
+                  className={cn(compactInputClasses, "resize-none h-20 sm:h-24 py-2.5 rounded-xl")}
                   required
                 />
               </div>
             </motion.div>
 
-            <motion.div layout className="pt-1">
+            <motion.div layout className="pt-2">
               <button
                 type="submit"
                 disabled={isLoading || isSyncing}
                 className={cn(
-                  "w-full h-14 rounded-2xl font-bold transition-all duration-200 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2.5",
+                  "w-full sm:w-auto px-6 h-12 rounded-xl font-black text-xs uppercase tracking-widest transition-all duration-200 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shadow-md",
                   isOffline 
-                    ? "bg-amber-600 text-white shadow-[var(--neu-shadow-raised)] hover:bg-amber-500" 
-                    : "bg-[var(--neu-surface)] text-slate-800 dark:text-slate-100 border border-[var(--neu-border)] shadow-[var(--neu-shadow-btn)] hover:shadow-[var(--neu-shadow-btn-hover)] active:shadow-[var(--neu-shadow-btn-active)] hover:text-emerald-500 dark:hover:text-emerald-400"
+                    ? "bg-amber-600 text-white hover:bg-amber-500" 
+                    : "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20"
                 )}
               >
                 {isLoading || isSyncing ? (
                   <>
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-400 border-t-slate-800 dark:border-white/20 dark:border-t-white" />
-                    <span className="text-[10px] uppercase tracking-[0.3em] font-black">{isSyncing ? "Syncing..." : "Processing..."}</span>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    <span>{isSyncing ? "Syncing..." : "Processing..."}</span>
                   </>
                 ) : (
                   <>
-                    <span className="text-[10px] uppercase tracking-[0.3em] font-black">
-                      {isOffline ? "Store Locally (Offline)" : "Register Complaint"}
-                    </span>
+                    <span>{isOffline ? "Store Locally (Offline)" : "Register Complaint"}</span>
                     {isOffline ? (
                       <CloudOff size={15} />
                     ) : (
-                      <Send size={15} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      <ArrowUpRight size={16} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                     )}
                   </>
                 )}

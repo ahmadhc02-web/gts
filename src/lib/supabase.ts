@@ -19,6 +19,14 @@ try {
   }
 } catch (e) {}
 
+// When running in the browser, if pointing to the self-hosted sslip.io host (whose SSL cert is expired),
+// route through our same-origin /api/supabase proxy so the browser does not reject the connection with ERR_CERT_DATE_INVALID.
+if (typeof window !== 'undefined' && window.location) {
+  if (activeUrl === defaultSupabaseUrl || activeUrl.includes('167.233.41.7.sslip.io')) {
+    activeUrl = `${window.location.origin}/api/supabase`;
+  }
+}
+
 export const supabaseUrl = activeUrl;
 export const supabaseAnonKey = activeKey;
 export const isSupabaseConfigured = true;

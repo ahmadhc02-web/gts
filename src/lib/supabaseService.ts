@@ -747,6 +747,16 @@ function mergeWithCache(fetchedRows: any[], cacheRows: any[]): any[] {
     const cached = cacheMap.get(key);
     if (!cached) return fetchedRow;
 
+    // If cached has rowsLoaded: true, preserve the loaded rows and rowsLoaded flag
+    if (cached.rowsLoaded && Array.isArray(cached.rows)) {
+      return {
+        ...fetchedRow,
+        rows: cached.rows,
+        rowsLoaded: true,
+        excludedClientKeys: cached.excludedClientKeys || fetchedRow.excludedClientKeys || []
+      };
+    }
+
     const cachedTime = getRowTimestamp(cached);
     const fetchedTime = getRowTimestamp(fetchedRow);
     if (cachedTime > fetchedTime) {
@@ -826,6 +836,8 @@ async function fetchAllPages(
   return { data: allRecords, error: null, pageCount: Math.max(1, pageIndex) };
 }
 
+const realtimeBillingMonthDebounceTimers: Record<string, any> = {};
+
 function subscribeTable(
   tableName: string,
   callback: (data: any[], isFresh?: boolean) => void,
@@ -871,7 +883,30 @@ function subscribeTable(
 
       if (tableName === 'billing_months') {
         try {
-          mapped = await supabaseService.getBillingMonths(dealerId);
+          let query = supabase.from('billing_months').select('id, month_id, dealer_id, line_code, created, updated');
+          if (dealerId && dealerId !== 'main' && dealerId !== 'all') {
+            query = query.eq('dealer_id', dealerId);
+          }
+          const cleanBypass = typeof bypassLineCodeFilter === 'string' ? String(bypassLineCodeFilter || '').trim() : '';
+          const cleanActive = String(activeLineCode || '').trim();
+          if (bypassLineCodeFilter === true || bypassLineCodeFilter === 'all') {
+            // no filter
+          } else if (cleanBypass === '__without_line__' || bypassLineCodeFilter === null) {
+            query = query.or('line_code.is.null,line_code.eq.');
+          } else if (cleanBypass) {
+            query = query.eq('line_code', cleanBypass);
+          } else if (cleanActive) {
+            query = query.eq('line_code', cleanActive);
+          } else {
+            query = query.or('line_code.is.null,line_code.eq.');
+          }
+          query = query.order('created', { ascending: false });
+
+          const { data: records, error: fetchErr } = await query;
+          error = fetchErr;
+          if (records) {
+            mapped = records.map(mapRow);
+          }
         } catch (fetchErr) {
           error = fetchErr;
         }
@@ -1047,10 +1082,6 @@ function subscribeTable(
       }
 
       if (mapped.length > 0 || !error) {
-        if (tableName === 'billing_months') {
-          supabaseService.isBillingFresh = true;
-        }
-
         // Prevent double re-render if fetched data is identical to cache
         const isIdentical = globalTableCaches[syncKey] && JSON.stringify(globalTableCaches[syncKey]) === JSON.stringify(mapped);
         
@@ -1279,39 +1310,77 @@ function subscribeTable(
                 let cache = globalTableCaches[syncKey] || [];
                 if (rowId) {
                   const idx = cache.findIndex((item: any) => (item.id || item.month_id || item.sheet_id || item.folder_id) === rowId);
+                  const existing = idx !== -1 ? cache[idx] : null;
+                  const wasLoaded = Boolean(existing && existing.rowsLoaded && Array.isArray(existing.rows));
+
                   if (idx !== -1) {
                     cache = [...cache];
-                    cache[idx] = { ...cache[idx], ...mappedRow };
+                    cache[idx] = {
+                      ...cache[idx],
+                      ...mappedRow,
+                      rows: wasLoaded ? cache[idx].rows : (cache[idx].rows || []),
+                      rowsLoaded: wasLoaded ? true : false,
+                      excludedClientKeys: wasLoaded ? (cache[idx].excludedClientKeys || mappedRow.excludedClientKeys) : mappedRow.excludedClientKeys
+                    };
                   } else {
                     cache = [mappedRow, ...cache];
                   }
+
                   if (tableName === 'billing_months') {
                     billingMonthResolved = true;
-                    supabaseService.isBillingFresh = true;
                     const mId = mappedRow.id || mappedRow.month_id;
                     const dId = mappedRow.dealerId || dealerId || 'main';
-                    if (mId) {
-                      supabaseService.getBillingMonthRowsDirect(mId, dId).then(dbRows => {
-                        if (dbRows && dbRows.length > 0) {
-                          const currentCachedList = globalTableCaches[syncKey];
-                          if (Array.isArray(currentCachedList)) {
-                            const cIdx = currentCachedList.findIndex((item: any) => (item.id || item.month_id) === mId);
-                            if (cIdx !== -1) {
-                              const corrected = supabaseService.overlayBillingRows(mId, currentCachedList[cIdx].rows || [], dbRows);
-                              currentCachedList[cIdx] = { ...currentCachedList[cIdx], rows: corrected };
-                              try {
-                                localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(currentCachedList));
-                              } catch (e) {}
-                              const subs = globalTableSubscribers[syncKey];
-                              if (subs) {
-                                subs.forEach(cb => { try { cb(currentCachedList, true); } catch (e) {} });
+                    const key = `${mId}_${dId}`;
+
+                    // When the changed month is already loaded in state, schedule a debounced (1500 ms) refresh
+                    if (wasLoaded && mId) {
+                      const isSaving = (supabaseService._syncingMonths && supabaseService._syncingMonths.has(key)) ||
+                        (supabaseService._saveBillingMonthLatestRows && !!supabaseService._saveBillingMonthLatestRows[key]) ||
+                        (typeof window !== 'undefined' && (window as any).__gtsSavingMonthIds && (window as any).__gtsSavingMonthIds.has(mId));
+
+                      if (!isSaving) {
+                        if (realtimeBillingMonthDebounceTimers[key]) {
+                          clearTimeout(realtimeBillingMonthDebounceTimers[key]);
+                        }
+                        realtimeBillingMonthDebounceTimers[key] = setTimeout(async () => {
+                          delete realtimeBillingMonthDebounceTimers[key];
+                          const stillSaving = (supabaseService._syncingMonths && supabaseService._syncingMonths.has(key)) ||
+                            (supabaseService._saveBillingMonthLatestRows && !!supabaseService._saveBillingMonthLatestRows[key]) ||
+                            (typeof window !== 'undefined' && (window as any).__gtsSavingMonthIds && (window as any).__gtsSavingMonthIds.has(mId));
+                          if (stillSaving) return;
+
+                          try {
+                            const fresh = await supabaseService.getBillingMonthDirect(mId, dId);
+                            if (fresh && fresh.rows) {
+                              const currentCachedList = globalTableCaches[syncKey];
+                              if (Array.isArray(currentCachedList)) {
+                                const cIdx = currentCachedList.findIndex((item: any) => (item.id || item.month_id) === mId);
+                                if (cIdx !== -1) {
+                                  currentCachedList[cIdx] = {
+                                    ...currentCachedList[cIdx],
+                                    rows: fresh.rows,
+                                    rowsLoaded: true,
+                                    excludedClientKeys: fresh.excludedClientKeys || currentCachedList[cIdx].excludedClientKeys || [],
+                                    updatedAt: fresh.updatedAt || Date.now()
+                                  };
+                                  try {
+                                    localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(currentCachedList));
+                                  } catch (e) {}
+                                  const subs = globalTableSubscribers[syncKey];
+                                  if (subs) {
+                                    subs.forEach(cb => { try { cb([...currentCachedList], true); } catch (e) {} });
+                                  }
+                                }
                               }
                             }
+                          } catch (err) {
+                            console.warn(`[Realtime Debounce] Failed refreshing month ${mId}:`, err);
                           }
-                        }
-                      }).catch(() => {});
+                        }, 1500);
+                      }
                     }
                   }
+
                   globalTableCaches[syncKey] = cache;
                   try {
                     localStorage.setItem(`gts_cache_v3_${syncKey}`, JSON.stringify(cache));
@@ -1330,9 +1399,6 @@ function subscribeTable(
           }
 
           if (tableName === 'billing_months') {
-            if (!billingMonthResolved) {
-              fetchInitial();
-            }
             return;
           }
 
@@ -1605,8 +1671,22 @@ async function fetchBrandingConfigType(configType: string): Promise<any> {
   }
 }
 
+const recentComplaintEvents = new Set<string>();
+function guardComplaintEvent(complaintId: string, event: 'registered' | 'completed'): boolean {
+  if (!complaintId) return true;
+  const key = `${complaintId}:${event}`;
+  if (recentComplaintEvents.has(key)) {
+    return false;
+  }
+  recentComplaintEvents.add(key);
+  setTimeout(() => {
+    recentComplaintEvents.delete(key);
+  }, 60 * 1000);
+  return true;
+}
+
 export const supabaseService = {
-  isBillingFresh: false,
+  isBillingFresh: true,
   clearAllLocalCaches: () => {
     Object.keys(globalTableCaches).forEach(k => {
       delete globalTableCaches[k];
@@ -2679,12 +2759,17 @@ export const supabaseService = {
       // Overlay billing_rows onto blob rows
       const mergedRows = supabaseService.overlayBillingRows(monthId, blobRows, singleRows || []);
 
-      if (mergedRows.length > 0) {
+      if (mergedRows.length > 0 || data) {
         supabaseService._checkAndRepairDirtyBlob(monthId, dealerId, mergedRows, excludedClientKeys);
 
         return {
           id: monthId,
+          dbId: data?.id,
+          month_id: monthId,
+          dealerId: data?.dealer_id || dealerId,
+          lineCode: data?.line_code || '',
           rows: mergedRows,
+          rowsLoaded: true,
           excludedClientKeys,
           updatedAt
         };
@@ -2798,9 +2883,6 @@ export const supabaseService = {
   },
 
   async saveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', forceImmediate = false, changedIndices?: number[] | Set<number>, excludedClientKeys?: string[], freshBase = false, baseRows?: any[]) {
-    if (!this.isBillingFresh) {
-      throw new Error("Latest data is still syncing, please wait a few seconds");
-    }
     const key = `${monthId}_${dealerId}`;
     if (!this._saveBillingMonthLatestRows) this._saveBillingMonthLatestRows = {};
     if (!this._billingMonthSaveCounter) this._billingMonthSaveCounter = {};
@@ -3086,7 +3168,16 @@ export const supabaseService = {
     }
 
     // HARD SAFETY CHECK (Requirement 2): Prevent silent overwriting/wiping of existing payment records and comments
-    const isWipingPaymentRecords = dbPaidCount > 0 && incomingPaidCount === 0;
+    if (incomingTotal === 0 && dbTotal > 0) {
+      console.warn(`[Save Safety] Refusing to save 0 rows over existing ${dbTotal} database rows for "${monthId}".`);
+      return;
+    }
+    if (dbPaidCount > 0 && incomingPaidCount === 0 && dbTotal > 10) {
+      console.warn(`[Save Safety] Refusing to overwrite ${dbPaidCount} paid records with 0 paid records for "${monthId}".`);
+      return;
+    }
+
+    const isWipingPaymentRecords = dbPaidCount > 0 && incomingPaidCount === 0 && dbTotal <= 10;
     const isSeverelyReducingPaidRows = dbPaidCount >= 3 && incomingPaidCount < Math.floor(dbPaidCount * 0.4);
     const isWipingTotalRows = dbTotal >= 5 && incomingTotal === 0;
     const isWipingComments = totalExistingComments > 3 && wipedCommentsCount > totalExistingComments * 0.3;
@@ -3977,6 +4068,9 @@ export const supabaseService = {
       if (complaint.number) {
         (async () => {
           try {
+            if (!guardComplaintEvent(complaint.id, 'registered')) {
+              return;
+            }
             const statusRes = await getStatus();
             if (statusRes.connected) {
               const templates = await getTemplate();
@@ -3990,13 +4084,16 @@ export const supabaseService = {
                   .replace(/\{\{description\}\}/gi, complaint.description || '');
                 await sendMessage(complaint.number, msg, undefined, {
                   kind: 'complaint',
+                  event: 'registered',
+                  refId: complaint.id,
                   clientName: complaint.customerName,
                   clientUsername: complaint.customerUsername
                 });
               }
             }
-          } catch (e) {
-            console.warn('Failed to send WhatsApp registered notification', e);
+          } catch (err: any) {
+            console.warn('Failed to send WhatsApp registered notification', err);
+            toast.error(`Complaint saved, but the WhatsApp message was not sent: ${err.message || String(err)}`);
           }
         })();
       }
@@ -4140,16 +4237,26 @@ export const supabaseService = {
             console.warn(
               `WhatsApp completed-message skipped: status mismatch (current status: "${status}", configured completed value: "${configuredCompletedVal || '[empty - defaults: complete, completed, resolved, done, closed]'}")`
             );
+            toast.info(
+              `WhatsApp completed message skipped: current status is "${status}", but Settings configured completed value is "${configuredCompletedVal || 'complete'}".`,
+              { id: `status-mismatch-${id}` }
+            );
+            return;
+          }
+
+          if (!guardComplaintEvent(id, 'completed')) {
             return;
           }
 
           // Status matches - check customer phone number
           let phone = (compNumber || '').trim();
           let category = '';
+          let custUsername = '';
           try {
-            const { data: cRow } = await supabase.from('complaints').select('number, category').eq('id', id).single();
+            const { data: cRow } = await supabase.from('complaints').select('number, category, customer_username').eq('id', id).single();
             if (cRow?.number && !phone) phone = cRow.number.trim();
             if (cRow?.category) category = cRow.category.trim();
+            if (cRow?.customer_username) custUsername = cRow.customer_username.trim();
           } catch (_) {}
 
           if (!phone) {
@@ -4161,7 +4268,7 @@ export const supabaseService = {
           const statusRes = await getStatus();
           if (!statusRes?.connected) {
             console.warn('WhatsApp completed-message skipped: WhatsApp is not connected');
-            toast.warning("Complaint marked complete but the WhatsApp message was not sent: WhatsApp is not connected");
+            toast.error("Complaint saved, but the WhatsApp message was not sent: WhatsApp is not connected");
             return;
           }
 
@@ -4183,10 +4290,14 @@ export const supabaseService = {
 
           await sendMessage(phone, msg, undefined, {
             kind: 'complaint',
-            clientName: customerName
+            event: 'completed',
+            refId: id,
+            clientName: customerName,
+            clientUsername: custUsername || undefined
           });
-        } catch (e) {
-          console.warn('Failed to send WhatsApp completed notification:', e);
+        } catch (err: any) {
+          console.warn('Failed to send WhatsApp completed notification:', err);
+          toast.error(`Complaint saved, but the WhatsApp message was not sent: ${err.message || String(err)}`);
         }
       })();
 
@@ -4606,6 +4717,10 @@ export const supabaseService = {
     await upsertSupabase('clients', 'id', id, toDb('clients', payload), true);
   },
 
+  updateClientFee: async (clientId: string, newFee: number): Promise<void> => {
+    return updateClientFee(clientId, newFee);
+  },
+
   propagateClientToBilling: async (clientId: string, fields: { username?: string, name?: string, mobileNumber?: string, area?: string, pkgDetails?: string, rt?: string, panelDetails?: string, billingDay?: string }) => {
     try {
       const updatePayload: any = {};
@@ -5021,28 +5136,14 @@ export const supabaseService = {
   },
 
   subscribeBillingMonths: (callback: (months: any[], isFresh?: boolean) => void, dealerId?: string) => {
-    const parseRowsData = (val: any): any[] => {
-      if (Array.isArray(val)) return val;
-      if (val && typeof val === 'object' && !Array.isArray(val) && 'rows' in val) {
-        if (Array.isArray(val.rows)) return val.rows;
-      }
-      if (typeof val === 'string' && val.trim()) {
-        try {
-          const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) return parsed;
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'rows' in parsed) {
-            if (Array.isArray(parsed.rows)) return parsed.rows;
-          }
-        } catch (e) {}
-      }
-      return [];
-    };
     return subscribeTable('billing_months', callback, (row: any) => ({
-      id: row.month_id,
+      id: row.month_id || row.id,
       dbId: row.id,
-      dealerId: row.dealer_id,
+      month_id: row.month_id,
+      dealerId: row.dealer_id || dealerId || 'main',
       lineCode: row.line_code || '',
-      rows: parseRowsData(row.rows_data ?? row.rows),
+      rows: [],
+      rowsLoaded: false,
       excludedClientKeys: parseExcludedKeys(row),
       updatedAt: row.updated ? new Date(row.updated).getTime() : Date.now(),
       createdAt: row.created ? new Date(row.created).getTime() : Date.now()
@@ -6681,4 +6782,8 @@ export const deleteReminderLead = (leadId: string) => {
 };
 export const recordClientReminderSent = (clientId: string, monthId?: string) => {
   return supabaseService.recordClientReminderSent(clientId, monthId);
+};
+export const updateClientFee = async (clientId: string, newFee: number): Promise<void> => {
+  if (!clientId) return;
+  await upsertSupabase('clients', 'id', clientId, { base_amount: newFee }, true);
 };

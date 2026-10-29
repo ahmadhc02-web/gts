@@ -2,7 +2,7 @@
  * Utility functions for billing status calculation and row deduplication
  */
 
-export type EffectiveBillingStatus = 'paid' | 'partial' | 'dc' | 'tdc' | 'unpaid';
+export type EffectiveBillingStatus = 'paid' | 'partial' | 'dc' | 'tdc' | 'unpaid' | 'next';
 
 /**
  * Calculates the effective billing status for a billing row:
@@ -14,10 +14,11 @@ export type EffectiveBillingStatus = 'paid' | 'partial' | 'dc' | 'tdc' | 'unpaid
  * - Return 'paid' if status === 'paid' OR (total > 0 && received >= total)
  * - Return 'partial' if received > 0 and received < total, or status === 'partial'
  * - Keep 'dc' and 'tdc' as they are
+ * - Treat 'next' as unpaid-like (returns 'next' if returnNext is true, otherwise 'unpaid')
  * - Otherwise 'unpaid'
  * (Received money always wins over a stale 'unpaid' label.)
  */
-export function getEffectiveBillingStatus(row: any): EffectiveBillingStatus {
+export function getEffectiveBillingStatus(row: any, returnNext: boolean = false): EffectiveBillingStatus {
   if (!row) return 'unpaid';
 
   const baseAmount = Number(row.baseAmount) || 0;
@@ -44,6 +45,11 @@ export function getEffectiveBillingStatus(row: any): EffectiveBillingStatus {
     return 'tdc';
   }
 
+  // 'next' status is unpaid-like: treated as unpaid by default for campaign/unpaid filters
+  if (status === 'next') {
+    return returnNext ? 'next' : 'unpaid';
+  }
+
   return 'unpaid';
 }
 
@@ -61,7 +67,7 @@ function getLast10Phone(phoneRaw: any): string {
 
 /**
  * Returns payment rank for sorting:
- * paid > partial > tdc/dc > unpaid
+ * paid > partial > tdc/dc > unpaid / next
  */
 function getPaymentRank(status: EffectiveBillingStatus): number {
   switch (status) {
@@ -72,6 +78,7 @@ function getPaymentRank(status: EffectiveBillingStatus): number {
     case 'tdc':
     case 'dc':
       return 2;
+    case 'next':
     case 'unpaid':
     default:
       return 1;

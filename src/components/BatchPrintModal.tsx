@@ -30,7 +30,7 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
   });
 
   // Filter states
-  const [filterPaymentStatus, setFilterPaymentStatus] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState<'all' | 'paid' | 'unpaid' | 'next'>('all');
   const [filterStartDay, setFilterStartDay] = useState<string>('');
   const [filterEndDay, setFilterEndDay] = useState<string>('');
   const [filterRt, setFilterRt] = useState<'all' | 'Phy' | 'Online' | 'Office'>('all');
@@ -222,8 +222,9 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                         className="w-full text-[11px] font-mono p-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 focus:outline-none focus:ring-1 focus:ring-brand-accent focus:border-brand-accent"
                       >
                         <option value="all">Show All Rows</option>
-                        <option value="unpaid">Only Unpaid (unpaid, tdc)</option>
+                        <option value="unpaid">Only Unpaid (unpaid, tdc, next)</option>
                         <option value="paid">Only Paid (paid, partial)</option>
+                        <option value="next">Only Next</option>
                       </select>
                     </div>
                     <div className="flex flex-col gap-1.5">
@@ -372,7 +373,14 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                 } else if (filterPaymentStatus === 'unpaid') {
                   rows = rows.filter((r: any) => {
                     const eff = getEffectiveBillingStatus(r);
-                    return eff === 'unpaid' || eff === 'tdc';
+                    const raw = String(r.paymentStatus || r.status || '').toLowerCase().trim();
+                    return eff === 'unpaid' || eff === 'tdc' || eff === 'next' || raw === 'next';
+                  });
+                } else if (filterPaymentStatus === 'next') {
+                  rows = rows.filter((r: any) => {
+                    const eff = getEffectiveBillingStatus(r, true);
+                    const raw = String(r.paymentStatus || r.status || '').toLowerCase().trim();
+                    return eff === 'next' || raw === 'next';
                   });
                 }
 
@@ -554,7 +562,9 @@ export default function BatchPrintModal({ isOpen, onClose, billingMonths }: Batc
                                         row.paymentStatus === 'paid' && "bg-emerald-50 text-emerald-700 border border-emerald-200",
                                         row.paymentStatus === 'partial' && "bg-amber-50 text-amber-700 border border-amber-200",
                                         row.paymentStatus === 'unpaid' && "bg-slate-50 text-slate-500 border border-slate-200",
-                                        row.paymentStatus === 'tdc' && "bg-rose-50 text-rose-700 border border-rose-200"
+                                        row.paymentStatus === 'next' && "bg-purple-50 text-purple-700 border border-purple-200",
+                                        row.paymentStatus === 'tdc' && "bg-rose-50 text-rose-700 border border-rose-200",
+                                        row.paymentStatus === 'dc' && "bg-neutral-100 text-neutral-600 border border-neutral-300"
                                       )}>
                                         {row.paymentStatus || 'UNPAID'}
                                       </span>

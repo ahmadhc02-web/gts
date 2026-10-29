@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabaseService, pocketbaseService, globalTableCaches, CACHE_MAX_AGE_MS } from '../lib/supabaseService';
+import { supabaseService, pocketbaseService, globalTableCaches, CACHE_MAX_AGE_MS, updateClientFee } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { Client, UserProfile } from '../types';
@@ -375,7 +375,7 @@ const Table1RowItem = React.memo(({
             <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1 text-left">
               Set Status
             </div>
-            {['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].map(st => (
+            {['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA', 'NEXT'].map(st => (
               <button
                 key={st}
                 type="button"
@@ -2434,6 +2434,7 @@ export default function EntrySheet({
       const accumulatedBillingBaseRows: Record<string, any[]> = {};
       const accumulatedChangedIndicesMap: Record<string, Set<number>> = {};
       const allSyncedUsersSummary: string[] = [];
+      const clientFeeUpdatesToApply: Array<{ clientId: string; clientName: string; oldFee: number; newFee: number }> = [];
       let totalUpdatedBillingCount = 0;
 
       for (const targetMonthId of Array.from(targetMonthIdsToUpdate)) {
@@ -2734,7 +2735,8 @@ export default function EntrySheet({
               const isTdcStatus = amountStr === 'TDC' || rowStatusStr === 'TDC';
               const isPaidStatus = amountStr === 'PAID' || rowStatusStr === 'PAID';
               const isUnpaidStatus = amountStr === 'UNPAID' || rowStatusStr === 'UNPAID';
-              const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(amountStr) || ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(rowStatusStr);
+              const isNextStatus = amountStr === 'NEXT' || rowStatusStr === 'NEXT';
+              const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA', 'NEXT'].includes(amountStr) || ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA', 'NEXT'].includes(rowStatusStr);
 
               const hasId = Boolean(r.cId && String(r.cId).trim());
               const hasName = Boolean(r.name && String(r.name).trim());
@@ -2747,8 +2749,18 @@ export default function EntrySheet({
               if (matchedIdx !== -1) {
                 const row = baseRecalculatedRows[matchedIdx];
                 const savedOrigCr = row._originalCr !== undefined ? row._originalCr : (parseFloat(row.cr) || 0);
-                const base = parseFloat(row.baseAmount || 0);
-                const totalAmount = base + savedOrigCr;
+                let base = parseFloat(row.baseAmount || 0);
+
+                // A tdc/dc user who is later given an amount in the A4 sheet becomes 'unpaid' with the client's default fee (never 0)
+                const defaultFee = (client && Number(client.baseAmount) > 0)
+                  ? Number(client.baseAmount)
+                  : (base > 0 ? base : 1000);
+
+                if ((row.paymentStatus === 'tdc' || row.paymentStatus === 'dc' || base === 0) && !isDcStatus && !isTdcStatus) {
+                  base = defaultFee;
+                }
+
+                let totalAmount = base + savedOrigCr;
                 let newPaymentReceived = 0;
                 let finalStatus = 'unpaid';
 
@@ -2760,6 +2772,9 @@ export default function EntrySheet({
                   newPaymentReceived = 0;
                 } else if (isUnpaidStatus) {
                   finalStatus = 'unpaid';
+                  newPaymentReceived = 0;
+                } else if (isNextStatus) {
+                  finalStatus = 'next';
                   newPaymentReceived = 0;
                 } else if (amountVal > 0 || isPaidStatus) {
                   newPaymentReceived = amountVal > 0 ? amountVal : (totalAmount > 0 ? totalAmount : base);
@@ -2774,6 +2789,8 @@ export default function EntrySheet({
                   finalStatus = 'dc';
                 } else if (rowStatusStr === 'TDC') {
                   finalStatus = 'tdc';
+                } else if (rowStatusStr === 'NEXT') {
+                  finalStatus = 'next';
                 } else if (r.status) {
                   finalStatus = r.status.toLowerCase();
                 } else {
@@ -2787,6 +2804,31 @@ export default function EntrySheet({
                     newPaymentReceived = 0;
                   }
                 }
+
+                // Check for Upgrade / Downgrade fee change
+                const comment = String(r.comments || '').trim();
+                if ((comment === 'Upgrade' || comment === 'Downgrade') && amountVal > 0 && !['dc', 'tdc', 'unpaid', 'next'].includes(finalStatus)) {
+                  const resolvedClientId = client?.id || row.clientId || r.clientId;
+                  if (resolvedClientId && client) {
+                    const cr = savedOrigCr;
+                    const newFee = Math.max(0, amountVal - cr);
+                    const clientBase = Number(client.baseAmount) || 0;
+                    if (newFee > 0 && newFee !== clientBase) {
+                      base = newFee;
+                      totalAmount = newFee + cr;
+                      newPaymentReceived = amountVal;
+                      finalStatus = amountVal >= totalAmount ? 'paid' : 'partial';
+
+                      clientFeeUpdatesToApply.push({
+                        clientId: resolvedClientId,
+                        clientName: client.name || row.name || 'Client',
+                        oldFee: clientBase,
+                        newFee: newFee
+                      });
+                    }
+                  }
+                }
+
                 const clientPhone = client?.mobileNumber || client?.number || client?.phone || row.mobileNumber || row.phone || '';
                 baseRecalculatedRows[matchedIdx] = {
                   ...row,
@@ -2796,6 +2838,7 @@ export default function EntrySheet({
                   phone: clientPhone,
                   _originalCr: savedOrigCr,
                   cr: savedOrigCr,
+                  baseAmount: base,
                   totalAmount: totalAmount,
                   paymentReceived: newPaymentReceived,
                   paymentStatus: finalStatus
@@ -2843,17 +2886,40 @@ export default function EntrySheet({
                 }
 
                 // New user not present in targetMonthRows (client is guaranteed to exist)
-                const baseAmount = Number(client.baseAmount) || 0;
+                let baseAmount = Number(client.baseAmount) || 0;
                 const cr = Number(client.cr) || 0;
-                const totalAmount = baseAmount + cr;
+                let totalAmount = baseAmount + cr;
 
                 let finalStatus = 'partial';
                 if (isDcStatus) finalStatus = 'dc';
                 else if (isTdcStatus) finalStatus = 'tdc';
                 else if (isPaidStatus) finalStatus = 'paid';
                 else if (isUnpaidStatus) finalStatus = 'unpaid';
+                else if (isNextStatus) finalStatus = 'next';
                 else if (amountVal >= totalAmount && totalAmount > 0) finalStatus = 'paid';
                 else if (amountVal === 0) finalStatus = 'unpaid';
+
+                let paymentReceived = isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal;
+
+                // Check for Upgrade / Downgrade fee change
+                const comment = String(r.comments || '').trim();
+                if ((comment === 'Upgrade' || comment === 'Downgrade') && amountVal > 0 && !['dc', 'tdc', 'unpaid', 'next'].includes(finalStatus) && client && client.id) {
+                  const newFee = Math.max(0, amountVal - cr);
+                  const clientBase = Number(client.baseAmount) || 0;
+                  if (newFee > 0 && newFee !== clientBase) {
+                    baseAmount = newFee;
+                    totalAmount = newFee + cr;
+                    paymentReceived = amountVal;
+                    finalStatus = amountVal >= totalAmount ? 'paid' : 'partial';
+
+                    clientFeeUpdatesToApply.push({
+                      clientId: client.id,
+                      clientName: client.name || 'Client',
+                      oldFee: clientBase,
+                      newFee: newFee
+                    });
+                  }
+                }
 
                 const clientKey = client.id || `new_row_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                 const clientPhone = client.mobileNumber || client.number || client.phone || '';
@@ -2870,7 +2936,7 @@ export default function EntrySheet({
                   cr: cr,
                   totalAmount: totalAmount,
                   billingDay: client.billingDay || '5',
-                  paymentReceived: isStatusString ? (finalStatus === 'paid' ? totalAmount : 0) : amountVal,
+                  paymentReceived: paymentReceived,
                   paymentStatus: finalStatus,
                   comments: r.comments || '',
                   pkgDetails: client.pkgDetails || '',
@@ -2948,6 +3014,32 @@ export default function EntrySheet({
           description: `Sheet for "${primaryOfficerName}" has been securely saved.`,
           duration: 4000
         });
+
+        // Execute client fee updates after successful database save
+        if (clientFeeUpdatesToApply.length > 0) {
+          // Optimistically update local clients state
+          setClients(prev => prev.map(c => {
+            const upd = clientFeeUpdatesToApply.find(u => u.clientId === c.id);
+            return upd ? { ...c, baseAmount: upd.newFee } : c;
+          }));
+
+          const feeChangeLogs: string[] = [];
+          for (const item of clientFeeUpdatesToApply) {
+            try {
+              await updateClientFee(item.clientId, item.newFee);
+              const logStr = `${item.clientName}: ${item.oldFee} -> ${item.newFee}`;
+              console.log(`[FeeUpdate] ${logStr} (ID: ${item.clientId})`);
+              feeChangeLogs.push(logStr);
+            } catch (feeErr: any) {
+              console.error(`Failed to update fee for ${item.clientName}:`, feeErr);
+              toast.warning(`Sheet saved, but the fee of ${item.clientName} could not be updated`);
+            }
+          }
+
+          if (feeChangeLogs.length > 0) {
+            toast.info(`Updated client base fee:\n${feeChangeLogs.join(', ')}`);
+          }
+        }
 
         // --- UI STATE SYNCHRONIZATION (ONLY AFTER DATABASE PERSISTENCE SUCCEEDED) ---
 
@@ -3492,7 +3584,7 @@ export default function EntrySheet({
       } else if (field === 'amount') {
         const orig = updated[index].originalAmount;
         const strVal = String(value || '').trim().toUpperCase();
-        const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA'].includes(strVal);
+        const isStatusString = ['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA', 'NEXT'].includes(strVal);
         if (isStatusString) {
           statusVal = strVal.toLowerCase();
           if (commentsVal === 'Upgrade' || commentsVal === 'Downgrade') {
@@ -7648,6 +7740,11 @@ export default function EntrySheet({
                       return {
                         label: 'TDC',
                         class: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                      };
+                    case 'next':
+                      return {
+                        label: 'Next',
+                        class: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400 border-purple-200 dark:border-purple-800/60'
                       };
                     default:
                       return {

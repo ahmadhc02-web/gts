@@ -74,6 +74,7 @@ export default function BillingTab(props: BillingTabProps) {
     alertAuthorized,
     animateCellProgress,
     appConfig,
+    ensureMonthLoaded,
     billingAreaFilter,
     billingColWidths,
     billingKeyInput,
@@ -375,6 +376,192 @@ export default function BillingTab(props: BillingTabProps) {
     return (activeRows || []).filter((r: any) => (r.paymentStatus || '').toLowerCase() !== 'dc').length;
   }, [activeRows]);
 
+  // Helper: parseSheetMonth(monthId) - parses IDs like "OCTOBER-26", "OCT-26", "JUN-2026", with fallback to sheet createdAt
+  const parseSheetMonth = useCallback((monthId?: string) => {
+    const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    if (monthId && typeof monthId === 'string') {
+      const dashIdx = monthId.indexOf('-');
+      if (dashIdx !== -1) {
+        const monthPart = monthId.slice(0, dashIdx).trim().toUpperCase();
+        const yearPart = monthId.slice(dashIdx + 1).trim();
+        const first3 = monthPart.slice(0, 3);
+        const mIdx = MONTHS.indexOf(first3);
+        const yNum = parseInt(yearPart, 10);
+        if (mIdx !== -1 && !isNaN(yNum)) {
+          const year = yNum < 100 ? 2000 + yNum : yNum;
+          return {
+            monthIndex: mIdx,
+            year,
+            label: `${MONTHS[mIdx]} ${year}`
+          };
+        }
+      }
+    }
+
+    // Fallback: month of the current sheet's createdAt (from billingMonths or billingMonthsList)
+    const currentSheet = (billingMonths || []).find((m: any) => m?.id === monthId) ||
+                         (billingMonthsList || []).find((m: any) => m?.id === monthId);
+    const createdRaw = currentSheet?.createdAt;
+    if (createdRaw) {
+      const d = new Date(typeof createdRaw === 'string' && !isNaN(Number(createdRaw)) ? Number(createdRaw) : createdRaw);
+      if (!isNaN(d.getTime())) {
+        const mIdx = d.getMonth();
+        const year = d.getFullYear();
+        return {
+          monthIndex: mIdx,
+          year,
+          label: `${MONTHS[mIdx]} ${year}`
+        };
+      }
+    }
+
+    return null;
+  }, [billingMonths, billingMonthsList]);
+
+  const parsedSheetMonth = useMemo(() => parseSheetMonth(currentMonthId), [parseSheetMonth, currentMonthId]);
+
+  // New Users This Month (useMemo on activeRows, masterClients, currentMonthId):
+  // count rows in current sheet whose client createdAt falls inside that month (local time 1st 00:00 to last day 23:59:59.999)
+  const newUsersThisMonth = useMemo(() => {
+    if (!parsedSheetMonth || !Array.isArray(activeRows) || !Array.isArray(masterClients)) return 0;
+    const startMs = new Date(parsedSheetMonth.year, parsedSheetMonth.monthIndex, 1, 0, 0, 0, 0).getTime();
+    const endMs = new Date(parsedSheetMonth.year, parsedSheetMonth.monthIndex + 1, 0, 23, 59, 59, 999).getTime();
+
+    const clientMap = new Map<string, any>();
+    for (const c of masterClients) {
+      if (c && c.id) {
+        clientMap.set(String(c.id), c);
+      }
+    }
+
+    const seenClientIds = new Set<string>();
+    let count = 0;
+
+    for (const row of activeRows) {
+      const cId = row?.clientId ? String(row.clientId) : (row?.cId ? String(row.cId) : '');
+      if (!cId || seenClientIds.has(cId)) continue;
+      seenClientIds.add(cId);
+
+      const client = clientMap.get(cId);
+      if (!client || client.createdAt === undefined || client.createdAt === null || client.createdAt === '') continue;
+
+      let createdTime = NaN;
+      if (typeof client.createdAt === 'number') {
+        createdTime = client.createdAt;
+      } else if (typeof client.createdAt === 'string' && client.createdAt.trim() !== '') {
+        const num = Number(client.createdAt);
+        if (!isNaN(num)) {
+          createdTime = num;
+        } else {
+          const parsed = Date.parse(client.createdAt);
+          if (!isNaN(parsed)) createdTime = parsed;
+        }
+      }
+
+      if (!isNaN(createdTime) && createdTime >= startMs && createdTime <= endMs) {
+        count++;
+      }
+    }
+
+    return count;
+  }, [activeRows, masterClients, parsedSheetMonth]);
+
+  // DC Users This Month (useMemo on activeRows, billingMonths, currentMonthId):
+  // count unique clients in activeRows whose paymentStatus === 'dc' and who became DC in the present month
+  // (strictly excluding TDC, and excluding clients who were already DC in the previous month)
+  const dcUsersThisMonth = useMemo(() => {
+    if (!Array.isArray(activeRows)) return 0;
+
+    // Identify clients who were already DC in the previous month
+    const prevDcKeys = new Set<string>();
+
+    if (Array.isArray(billingMonths) && billingMonths.length > 0 && currentMonthId) {
+      const currentDoc = billingMonths.find((m: any) => m?.id === currentMonthId);
+      const currentCreated = Number(currentDoc?.createdAt || 0);
+
+      // Find prior months
+      const previousMonths = billingMonths.filter((m: any) => {
+        if (!m?.id || m.id === currentMonthId) return false;
+        const mCreated = Number(m?.createdAt || 0);
+        if (currentCreated > 0 && mCreated > 0) {
+          return mCreated < currentCreated;
+        }
+        return true;
+      });
+
+      previousMonths.sort((a: any, b: any) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+      const prevMonth = previousMonths.length > 0 ? previousMonths[0] : null;
+
+      // If previous month exists, but its rows are not loaded yet, return null (render '...')
+      if (prevMonth && (!prevMonth.rowsLoaded || !Array.isArray(prevMonth.rows))) {
+        return null;
+      }
+
+      if (prevMonth && Array.isArray(prevMonth.rows)) {
+        for (const pr of prevMonth.rows) {
+          const prStatus = String(pr?.paymentStatus || pr?.status || '').toLowerCase().trim();
+          if (prStatus === 'dc') {
+            const cId = pr?.clientId ? String(pr.clientId) : (pr?.cId ? String(pr.cId) : (pr?.id ? String(pr.id) : null));
+            if (cId) prevDcKeys.add(cId);
+            if (pr?.username) prevDcKeys.add(String(pr.username).toLowerCase().trim());
+          }
+        }
+      }
+    }
+
+    const seenClientKeys = new Set<string>();
+    let count = 0;
+
+    for (const row of activeRows) {
+      const status = String(row?.paymentStatus || row?.status || '').toLowerCase().trim();
+      // Strictly ONLY 'dc' status (never 'tdc' or anything else)
+      if (status === 'dc') {
+        const cId = row?.clientId ? String(row.clientId) : (row?.cId ? String(row.cId) : (row?.id ? String(row.id) : null));
+        const username = row?.username ? String(row.username).toLowerCase().trim() : null;
+        const key = cId || username;
+
+        if (key) {
+          if (seenClientKeys.has(key)) continue;
+          seenClientKeys.add(key);
+
+          // Check if user was already DC in previous month
+          const wasAlreadyDc = (cId && prevDcKeys.has(cId)) || (username && prevDcKeys.has(username));
+          if (!wasAlreadyDc) {
+            count++;
+          }
+        } else {
+          count++;
+        }
+      }
+    }
+
+    return count;
+  }, [activeRows, billingMonths, currentMonthId]);
+
+  const loadedPrevMonthsRef = React.useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!ensureMonthLoaded || !currentMonthId || !Array.isArray(billingMonths)) return;
+    const currentDoc = billingMonths.find((m: any) => m?.id === currentMonthId);
+    const currentCreated = Number(currentDoc?.createdAt || 0);
+
+    const previousMonths = billingMonths.filter((m: any) => {
+      if (!m?.id || m.id === currentMonthId) return false;
+      const mCreated = Number(m?.createdAt || 0);
+      if (currentCreated > 0 && mCreated > 0) {
+        return mCreated < currentCreated;
+      }
+      return true;
+    });
+
+    previousMonths.sort((a: any, b: any) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+    const prevMonth = previousMonths.length > 0 ? previousMonths[0] : null;
+    if (prevMonth && prevMonth.id && !prevMonth.rowsLoaded && !loadedPrevMonthsRef.current.has(prevMonth.id)) {
+      loadedPrevMonthsRef.current.add(prevMonth.id);
+      ensureMonthLoaded(prevMonth.id).catch(() => {});
+    }
+  }, [currentMonthId, billingMonths, ensureMonthLoaded]);
+
   return (
 
           <div className="max-w-[115rem] mx-auto space-y-6 px-4 sm:px-6 lg:px-8">
@@ -605,7 +792,7 @@ export default function BillingTab(props: BillingTabProps) {
             ) : currentMonthId ? (
               <>
                 {/* Advanced Bento-Style Metrics Grid */}
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                   {[
                     {
                       label: "Expected Revenue",
@@ -636,6 +823,18 @@ export default function BillingTab(props: BillingTabProps) {
                       label: "Subscribers Active",
                       val: `${nonDcCustomersCount} Customers`,
                       desc: `TDC: ${totalTDC} | DC: ${totalDC} | Unpaid: ${totalPending}`
+                    },
+                    {
+                      label: "New Users This Month",
+                      val: `${newUsersThisMonth} Users`,
+                      desc: `Registered in ${parsedSheetMonth ? parsedSheetMonth.label : '—'}`,
+                      borderLeft: "border-l-emerald-500"
+                    },
+                    {
+                      label: "DC Users This Month",
+                      val: dcUsersThisMonth === null ? "..." : `${dcUsersThisMonth} Users`,
+                      desc: `Disconnected in ${parsedSheetMonth ? parsedSheetMonth.label : '—'}`,
+                      borderLeft: "border-l-rose-500"
                     }
                   ].map((card, i) => (
                     <motion.div
@@ -643,7 +842,10 @@ export default function BillingTab(props: BillingTabProps) {
                       initial={!hasAnimatedRef.current ? { opacity: 0 } : false}
                       animate={{ opacity: 1 }}
                       transition={{ duration: 0.18 }}
-                      className="group relative p-3 sm:p-4 bg-[var(--neu-surface)]/90 rounded-xl border border-[var(--neu-border)] border-l-4 border-l-slate-800 dark:border-l-slate-400 flex flex-col justify-between overflow-hidden shadow-[var(--neu-shadow-raised-sm)] hover:border-slate-400 dark:hover:border-slate-500 hover:-translate-y-0.5 transition-transform duration-200 cursor-default"
+                      className={cn(
+                        "group relative p-3 sm:p-4 bg-[var(--neu-surface)]/90 rounded-xl border border-[var(--neu-border)] border-l-4 flex flex-col justify-between overflow-hidden shadow-[var(--neu-shadow-raised-sm)] hover:border-slate-400 dark:hover:border-slate-500 hover:-translate-y-0.5 transition-transform duration-200 cursor-default",
+                        card.borderLeft || "border-l-slate-800 dark:border-l-slate-400"
+                      )}
                     >
                       <div className="space-y-2 relative z-10">
                         <div className="flex items-center justify-between gap-2">
@@ -653,7 +855,7 @@ export default function BillingTab(props: BillingTabProps) {
                         </div>
 
                         <div className="space-y-1">
-                          <div className="text-lg sm:text-xl md:text-2xl font-extrabold tracking-tight font-sans text-slate-900 dark:text-white leading-none" title={card.val}>
+                          <div className="text-base sm:text-lg xl:text-xl font-extrabold tracking-tight font-sans text-slate-900 dark:text-white leading-none truncate" title={card.val}>
                             {card.val}
                           </div>
                           <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-relaxed whitespace-pre-wrap" title={card.desc}>
@@ -745,6 +947,7 @@ export default function BillingTab(props: BillingTabProps) {
                         <option value="paid">PAID</option>
                         <option value="partial">PARTIAL</option>
                         <option value="unpaid">UNPAID</option>
+                        <option value="next">NEXT</option>
                         <option value="tdc">TDC (SUSPENDED)</option>
                         <option value="dc">DC (DISCONNECTED)</option>
                         <option value="extra">EXTRA (UNSPECIFIED / EXPENSE)</option>
@@ -1160,6 +1363,7 @@ export default function BillingTab(props: BillingTabProps) {
                             const isPaid = rowRef.paymentStatus === 'paid';
                             const isPartial = rowRef.paymentStatus === 'partial';
                             const isUnpaid = rowRef.paymentStatus === 'unpaid';
+                            const isNext = rowRef.paymentStatus === 'next';
                             const isTdc = rowRef.paymentStatus === 'tdc';
                             const isDc = rowRef.paymentStatus === 'dc';
                             const isExtra = rowRef.paymentStatus === 'extra' || rowRef.name === 'Unspecified Entry';
@@ -1394,6 +1598,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
                                         isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30 font-black",
                                         isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600 font-black",
+                                        isNext && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black",
                                         isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black",
                                         isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black",
                                         isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black"
@@ -1402,6 +1607,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       <option value="unpaid">UNPAID</option>
                                       <option value="paid">PAID</option>
                                       <option value="partial">PARTIAL</option>
+                                      <option value="next">NEXT</option>
                                       <option value="tdc">TDC</option>
                                       <option value="dc">DC</option>
                                       <option value="extra">EXTRA</option>
@@ -1712,6 +1918,7 @@ export default function BillingTab(props: BillingTabProps) {
                       const isPaid = rowRef.paymentStatus === 'paid';
                       const isPartial = rowRef.paymentStatus === 'partial';
                       const isUnpaid = rowRef.paymentStatus === 'unpaid';
+                      const isNext = rowRef.paymentStatus === 'next';
                       const isTdc = rowRef.paymentStatus === 'tdc';
                       const isDc = rowRef.paymentStatus === 'dc';
                       const isExtra = rowRef.paymentStatus === 'extra' || rowRef.name === 'Unspecified Entry';
@@ -1740,6 +1947,8 @@ export default function BillingTab(props: BillingTabProps) {
                               ? "bg-emerald-500/5 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-100" 
                               : isPartial 
                               ? "bg-amber-500/5 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100" 
+                              : isNext
+                              ? "bg-purple-500/5 dark:bg-purple-950/20 border-purple-300 dark:border-purple-900/60 text-purple-900 dark:text-purple-100"
                               : "bg-[var(--neu-surface)]/95 border-[var(--neu-border)] text-slate-800 dark:text-slate-100"
                           )}
                         >
@@ -1815,6 +2024,7 @@ export default function BillingTab(props: BillingTabProps) {
                                   isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30",
                                   isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30",
                                   isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600",
+                                  isNext && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30",
                                   isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50",
                                   isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700",
                                   isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30"
@@ -1823,6 +2033,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <option value="unpaid">UNPAID</option>
                                 <option value="paid">PAID</option>
                                 <option value="partial">PARTIAL</option>
+                                <option value="next">NEXT</option>
                                 <option value="tdc">TDC</option>
                                 <option value="dc">DC</option>
                                 <option value="extra">EXTRA</option>
@@ -2058,6 +2269,7 @@ export default function BillingTab(props: BillingTabProps) {
                               const isPaid = rowRef.paymentStatus === 'paid';
                               const isPartial = rowRef.paymentStatus === 'partial';
                               const isUnpaid = rowRef.paymentStatus === 'unpaid';
+                              const isNext = rowRef.paymentStatus === 'next';
                               const isTdc = rowRef.paymentStatus === 'tdc';
                               const isDc = rowRef.paymentStatus === 'dc';
                               const isExtra = rowRef.paymentStatus === 'extra' || rowRef.name === 'Unspecified Entry';
@@ -2245,6 +2457,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30 font-black",
                                         isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30 font-black",
                                         isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600 font-black",
+                                        isNext && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black",
                                         isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50 font-black",
                                         isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700 font-black",
                                         isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30 font-black"
@@ -2253,6 +2466,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       <option value="unpaid">UNPAID</option>
                                       <option value="paid">PAID</option>
                                       <option value="partial">PARTIAL</option>
+                                      <option value="next">NEXT</option>
                                       <option value="tdc">TDC</option>
                                       <option value="dc">DC</option>
                                       <option value="extra">EXTRA</option>
@@ -2375,6 +2589,7 @@ export default function BillingTab(props: BillingTabProps) {
                       const isPaid = rowRef.paymentStatus === 'paid';
                       const isPartial = rowRef.paymentStatus === 'partial';
                       const isUnpaid = rowRef.paymentStatus === 'unpaid';
+                      const isNext = rowRef.paymentStatus === 'next';
                       const isTdc = rowRef.paymentStatus === 'tdc';
                       const isDc = rowRef.paymentStatus === 'dc';
                       const isExtra = rowRef.paymentStatus === 'extra' || rowRef.name === 'Unspecified Entry';
@@ -2403,6 +2618,8 @@ export default function BillingTab(props: BillingTabProps) {
                               ? "bg-emerald-500/5 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-900/60 text-emerald-900 dark:text-emerald-100" 
                               : isPartial 
                               ? "bg-amber-500/5 dark:bg-amber-950/20 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-100" 
+                              : isNext
+                              ? "bg-purple-500/5 dark:bg-purple-950/20 border-purple-300 dark:border-purple-900/60 text-purple-900 dark:text-purple-100"
                               : "bg-[var(--neu-surface)]/95 border-[var(--neu-border)] text-slate-800 dark:text-slate-100"
                           )}
                         >
@@ -2478,6 +2695,7 @@ export default function BillingTab(props: BillingTabProps) {
                                   isPaid && "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 border-emerald-200 dark:border-emerald-900/30",
                                   isPartial && "bg-amber-100 dark:bg-amber-950/40 text-amber-700 border-amber-200 dark:border-amber-900/30",
                                   isUnpaid && "bg-slate-200 dark:bg-slate-800 text-black dark:text-white border-slate-400 dark:border-slate-600",
+                                  isNext && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30",
                                   isTdc && "bg-rose-100 dark:bg-rose-950/50 text-rose-700 border-rose-200 dark:border-rose-900/50",
                                   isDc && "bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700",
                                   isExtra && "bg-purple-100 dark:bg-purple-950/40 text-purple-700 border-purple-200 dark:border-purple-900/30"
@@ -2486,6 +2704,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 <option value="unpaid">UNPAID</option>
                                 <option value="paid">PAID</option>
                                 <option value="partial">PARTIAL</option>
+                                <option value="next">NEXT</option>
                                 <option value="tdc">TDC</option>
                                 <option value="dc">DC</option>
                                 <option value="extra">EXTRA</option>

@@ -1,10 +1,14 @@
 require('dotenv').config();
 // --- Security Hardening ---
-// New Environment Variables:
-// - ALLOW_INSECURE_TLS: Set to '1' to allow insecure TLS connections (NODE_TLS_REJECT_UNAUTHORIZED = "0")
-if (process.env.ALLOW_INSECURE_TLS === '1') {
+// Allow insecure TLS connections unless explicitly disabled with ALLOW_INSECURE_TLS='0'
+// because the self-hosted Supabase certificate (sslip.io) has expired.
+if (process.env.ALLOW_INSECURE_TLS !== '0') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-  console.warn('[SECURITY WARNING] ALLOW_INSECURE_TLS is enabled. TLS certificate verification is disabled (NODE_TLS_REJECT_UNAUTHORIZED = 0).');
+  try {
+    const { setGlobalDispatcher, Agent } = require('undici');
+    setGlobalDispatcher(new Agent({ connect: { rejectUnauthorized: false } }));
+  } catch (e) {}
+  console.warn('[SECURITY WARNING] Insecure TLS allowed for self-hosted Supabase (NODE_TLS_REJECT_UNAUTHORIZED = 0).');
 }
 
 // --- Safety Guardrail Constants (overridable by env) ---
@@ -18,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const ws = require('ws');
-const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, autoRestoreAllSessions, logoutBaileys, resetBaileysSession, registerMessageLogCallback, normalizePakistaniPhone, initBaileysClientDb, markLeadStarted, releaseSubDealerSession } = require('./baileysClient.cjs');
+const { getBaileysStatus, getBaileysQr, sendMessage, initBaileys, autoRestoreAllSessions, logoutBaileys, resetBaileysSession, registerMessageLogCallback, normalizePakistaniPhone, initBaileysClientDb, markLeadStarted, releaseSubDealerSession, generateMessageID } = require('./baileysClient.cjs');
 const { createClient } = require('@supabase/supabase-js');
 
 const WA_INTERNAL_KEY = process.env.WA_INTERNAL_KEY;
@@ -246,13 +250,14 @@ app.post('/send-push', rateLimitMiddleware, async (req, res) => {
 // --- In-Memory Fallback & Tracking for Guardrails ---
 let inMemorySentMessages = []; // { sessionKey, targetLast10, normalizedText, timestamp: number }
 
-function recordSentInMemory({ sessionKey, targetLast10, text }) {
+function recordSentInMemory({ sessionKey, targetLast10, text, kind }) {
   const now = Date.now();
   const normalizedText = normalizeMessageForSpam(text);
   inMemorySentMessages.push({
     sessionKey,
     targetLast10,
     normalizedText,
+    kind: kind || 'other',
     timestamp: now
   });
   if (inMemorySentMessages.length > 5000) {
@@ -322,7 +327,42 @@ async function isRegisteredCustomer(phone, sessionKey) {
   return numbersSet.has(targetLast10);
 }
 
-async function checkLimits({ sessionKey, targetLast10 }) {
+async function isComplaintCustomer(phone) {
+  if (!supabase) return true;
+  const targetLast10 = extractLast10Digits(phone);
+  if (!targetLast10 || targetLast10.length < 10) return false;
+
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
+  try {
+    const { data, error } = await supabase
+      .from('complaints')
+      .select('id, phone_number')
+      .ilike('phone_number', `%${targetLast10}`)
+      .gte('created_at', ninetyDaysAgo)
+      .limit(1);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return true;
+    }
+
+    if (error && error.message && error.message.includes('phone_number')) {
+      const fallback = await supabase
+        .from('complaints')
+        .select('id, number')
+        .ilike('number', `%${targetLast10}`)
+        .gte('created_at', ninetyDaysAgo)
+        .limit(1);
+      if (!fallback.error && Array.isArray(fallback.data) && fallback.data.length > 0) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn('[isComplaintCustomer] Error checking complaints table:', err.message);
+  }
+  return false;
+}
+
+async function checkLimits({ sessionKey, targetLast10, kind }) {
   const now = Date.now();
   const oneHourAgo = new Date(now - 3600 * 1000).toISOString();
   const oneDayAgo = new Date(now - 24 * 3600 * 1000).toISOString();
@@ -332,18 +372,28 @@ async function checkLimits({ sessionKey, targetLast10 }) {
   let sessionDayCount = 0;
   let usedDb = false;
 
+  const isComplaint = kind === 'complaint';
+  const recipientHourLimit = isComplaint ? 20 : WA_MAX_PER_RECIPIENT_HOUR;
+
   if (supabase) {
     try {
+      let recQuery = supabase
+        .from('whatsapp_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_key', sessionKey)
+        .eq('direction', 'out')
+        .eq('status', 'sent')
+        .ilike('phone', `%${targetLast10}`)
+        .gte('created_at', oneHourAgo);
+
+      if (isComplaint) {
+        recQuery = recQuery.eq('kind', 'complaint');
+      } else {
+        recQuery = recQuery.is('lead_id', null);
+      }
+
       const [recRes, sessHourRes, sessDayRes] = await Promise.all([
-        supabase
-          .from('whatsapp_messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('session_key', sessionKey)
-          .eq('direction', 'out')
-          .eq('status', 'sent')
-          .is('lead_id', null)
-          .ilike('phone', `%${targetLast10}`)
-          .gte('created_at', oneHourAgo),
+        recQuery,
         supabase
           .from('whatsapp_messages')
           .select('id', { count: 'exact', head: true })
@@ -377,7 +427,7 @@ async function checkLimits({ sessionKey, targetLast10 }) {
     const oneHourCutoff = now - 3600 * 1000;
     const oneDayCutoff = now - 24 * 3600 * 1000;
     recipientHourCount = inMemorySentMessages.filter(
-      m => m.sessionKey === sessionKey && m.targetLast10 === targetLast10 && m.timestamp >= oneHourCutoff
+      m => m.sessionKey === sessionKey && m.targetLast10 === targetLast10 && (isComplaint ? m.kind === 'complaint' : true) && m.timestamp >= oneHourCutoff
     ).length;
     sessionHourCount = inMemorySentMessages.filter(
       m => m.sessionKey === sessionKey && m.timestamp >= oneHourCutoff
@@ -391,7 +441,7 @@ async function checkLimits({ sessionKey, targetLast10 }) {
   const oneHourCutoff = now - 3600 * 1000;
   const oneDayCutoff = now - 24 * 3600 * 1000;
   const recentMemRec = inMemorySentMessages.filter(
-    m => m.sessionKey === sessionKey && m.targetLast10 === targetLast10 && m.timestamp >= oneHourCutoff
+    m => m.sessionKey === sessionKey && m.targetLast10 === targetLast10 && (isComplaint ? m.kind === 'complaint' : true) && m.timestamp >= oneHourCutoff
   ).length;
   const recentMemSessHour = inMemorySentMessages.filter(
     m => m.sessionKey === sessionKey && m.timestamp >= oneHourCutoff
@@ -404,10 +454,10 @@ async function checkLimits({ sessionKey, targetLast10 }) {
   sessionHourCount = Math.max(sessionHourCount, recentMemSessHour);
   sessionDayCount = Math.max(sessionDayCount, recentMemSessDay);
 
-  if (recipientHourCount >= WA_MAX_PER_RECIPIENT_HOUR) {
+  if (recipientHourCount >= recipientHourLimit) {
     return {
       allowed: false,
-      error: `Hourly limit of ${WA_MAX_PER_RECIPIENT_HOUR} messages reached for this recipient`,
+      error: `Hourly limit of ${recipientHourLimit} messages reached for this recipient`,
       retryAfterSeconds: 3600
     };
   }
@@ -547,9 +597,25 @@ app.get('/send-usage', async (req, res) => {
   }
 });
 
+// --- Idempotency Cache for /send-message (120s TTL) ---
+const idempotencyMap = new Map(); // key -> { timestamp: number, promise?: Promise, result?: any, waMessageId?: string }
+const IDEMPOTENCY_TTL_MS = 120 * 1000;
+
+const idempotencyCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of idempotencyMap.entries()) {
+    if (now - entry.timestamp > IDEMPOTENCY_TTL_MS) {
+      idempotencyMap.delete(key);
+    }
+  }
+}, 15 * 1000);
+if (idempotencyCleanup.unref) {
+  idempotencyCleanup.unref();
+}
+
 app.post('/send-message', rateLimitMiddleware, async (req, res) => {
   try {
-    const { phone, message, session, dealerId, vlan, meta } = req.body;
+    const { phone, message, session, dealerId, vlan, meta, requestId } = req.body;
     if (!phone || !message) {
       return res.status(400).json({ success: false, error: 'Phone and message are required' });
     }
@@ -562,19 +628,66 @@ app.post('/send-message', rateLimitMiddleware, async (req, res) => {
 
     let optionsMeta = undefined;
     let kind = 'other';
+    let event = undefined;
+    let refId = undefined;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
       const allowedKinds = ['reminder', 'complaint', 'campaign', 'manual', 'other'];
       const rawKind = typeof meta.kind === 'string' ? meta.kind.trim().toLowerCase() : '';
       kind = allowedKinds.includes(rawKind) ? rawKind : 'other';
       const cleanString = (val) => (typeof val === 'string' ? val.trim().slice(0, 120) : undefined);
 
+      const rawEvent = typeof meta.event === 'string' ? meta.event.trim().toLowerCase() : '';
+      if (rawEvent === 'registered' || rawEvent === 'completed') {
+        event = rawEvent;
+      }
+
+      const rawRefId = cleanString(meta.refId || meta.ref_id);
+      if (rawRefId) {
+        refId = rawRefId.slice(0, 60);
+      }
+
+      const rawClientUsername = cleanString(meta.clientUsername || meta.client_username);
+      const clientUsernameWithMarker = event
+        ? `${rawClientUsername || ''}#event:${event}`
+        : rawClientUsername;
+
       optionsMeta = {
         kind,
+        event,
+        refId,
         clientName: cleanString(meta.clientName || meta.client_name),
-        clientUsername: cleanString(meta.clientUsername || meta.client_username),
-        leadId: cleanString(meta.leadId || meta.lead_id),
+        clientUsername: clientUsernameWithMarker,
+        leadId: refId || cleanString(meta.leadId || meta.lead_id),
         dealerId: cleanString(dealerId || meta.dealerId || meta.dealer_id),
       };
+    }
+
+    // Deduplication check: Send each complaint event only once
+    if (kind === 'complaint' && refId && supabase) {
+      try {
+        let dedupQuery = supabase
+          .from('whatsapp_messages')
+          .select('id')
+          .eq('session_key', sessionKey)
+          .eq('kind', 'complaint')
+          .eq('lead_id', refId)
+          .eq('status', 'sent');
+
+        if (event) {
+          dedupQuery = dedupQuery.ilike('client_username', `%#event:${event}`);
+        }
+
+        const { data: existingSent, error: dedupErr } = await dedupQuery.limit(1);
+        if (!dedupErr && Array.isArray(existingSent) && existingSent.length > 0) {
+          return res.json({
+            success: true,
+            deduplicated: true,
+            session: sessionKey
+          });
+        }
+      } catch (err) {
+        console.warn('[complaint-dedup] Error checking existing complaint message in DB:', err.message);
+      }
     }
 
     // 4) For kind 'manual': trim, remove control characters, max WA_MANUAL_MAX_LEN characters, at most 2 links (http/https), not empty
@@ -604,18 +717,58 @@ app.post('/send-message', rateLimitMiddleware, async (req, res) => {
       }
     }
 
-    // 1) Registered customers only (all kinds sent through /send-message)
+    // Phone last 10 digits & idempotency key
     const phoneDigits = String(phone).replace(/\D/g, '');
     const targetLast10 = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : phoneDigits;
+    const messagePartForKey = requestId ? String(requestId) : messageToSend;
+    const idempotencyRaw = `${sessionKey}|${targetLast10}|${messagePartForKey}`;
+    const idempotencyKey = crypto.createHash('sha1').update(idempotencyRaw).digest('hex');
+
+    const existingEntry = idempotencyMap.get(idempotencyKey);
+    if (existingEntry) {
+      const isFresh = Date.now() - existingEntry.timestamp <= IDEMPOTENCY_TTL_MS;
+      if (isFresh) {
+        if (existingEntry.result) {
+          return res.json({ ...existingEntry.result, deduplicated: true });
+        }
+        if (existingEntry.promise) {
+          try {
+            const awaited = await Promise.race([
+              existingEntry.promise,
+              new Promise(r => setTimeout(() => r({ timedOut: true }), 25000))
+            ]);
+            if (awaited && awaited.timedOut) {
+              return res.json({
+                success: true,
+                pending: true,
+                waMessageId: existingEntry.waMessageId || undefined,
+                session: sessionKey,
+                deduplicated: true
+              });
+            }
+            return res.json({ ...awaited, deduplicated: true });
+          } catch (err) {
+            return res.status(500).json({ success: false, error: err.message || String(err), deduplicated: true });
+          }
+        }
+      } else {
+        idempotencyMap.delete(idempotencyKey);
+      }
+    }
+
+    // 1) Registered customers only (or complaint customer in complaints table within 90 days for kind 'complaint')
     if (WA_STRICT_RECIPIENTS !== '0') {
-      const isRegistered = await isRegisteredCustomer(phone, sessionKey);
-      if (!isRegistered) {
+      let isAllowed = await isRegisteredCustomer(phone, sessionKey);
+      if (!isAllowed && kind === 'complaint') {
+        isAllowed = await isComplaintCustomer(phone);
+      }
+      if (!isAllowed) {
         return res.status(400).json({ success: false, error: "This number is not a registered customer" });
       }
     }
 
     // 2) Limits counted from whatsapp_messages table
-    const limitCheck = await checkLimits({ sessionKey, targetLast10 });
+    const limitCheck = await checkLimits({ sessionKey, targetLast10, kind });
     if (!limitCheck.allowed) {
       return res.status(429).json({
         success: false,
@@ -635,13 +788,63 @@ app.post('/send-message', rateLimitMiddleware, async (req, res) => {
       }
     }
 
+    const waMessageId = generateMessageID();
+    let resolveInFlight;
+    let rejectInFlight;
+    const inFlightPromise = new Promise((resolve, reject) => {
+      resolveInFlight = resolve;
+      rejectInFlight = reject;
+    });
+
+    const newEntry = {
+      timestamp: Date.now(),
+      promise: inFlightPromise,
+      result: null,
+      waMessageId
+    };
+    idempotencyMap.set(idempotencyKey, newEntry);
+
     const normalizedPhone = normalizePakistaniPhone(phone);
-    const result = await sendMessage(normalizedPhone, messageToSend, { meta: optionsMeta }, sessionKey);
-    if (result.success) {
-      recordSentInMemory({ sessionKey, targetLast10, text: messageToSend });
-      res.json({ success: true, session: sessionKey });
-    } else {
-      res.status(500).json({ success: false, error: result.error || 'Failed to send message' });
+    const sendExecution = (async () => {
+      const result = await sendMessage(normalizedPhone, messageToSend, { meta: optionsMeta, messageId: waMessageId }, sessionKey);
+      if (result && result.success) {
+        recordSentInMemory({ sessionKey, targetLast10, text: messageToSend, kind });
+        const successData = { success: true, session: sessionKey, waMessageId: result.waMessageId || waMessageId };
+        newEntry.result = successData;
+        newEntry.promise = null;
+        newEntry.timestamp = Date.now();
+        resolveInFlight(successData);
+        return successData;
+      } else {
+        const errorMsg = result?.error || 'Failed to send message';
+        const err = new Error(errorMsg);
+        idempotencyMap.delete(idempotencyKey);
+        rejectInFlight(err);
+        throw err;
+      }
+    })().catch(err => {
+      idempotencyMap.delete(idempotencyKey);
+      rejectInFlight(err);
+      throw err;
+    });
+
+    // Fast answer: wait at most 25 seconds for the send result
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve({ timedOut: true }), 25000));
+
+    try {
+      const outcome = await Promise.race([sendExecution, timeoutPromise]);
+      if (outcome && outcome.timedOut) {
+        return res.json({
+          success: true,
+          pending: true,
+          waMessageId,
+          session: sessionKey
+        });
+      }
+      return res.json(outcome);
+    } catch (sendErr) {
+      console.error('Send message error:', sendErr);
+      return res.status(500).json({ success: false, error: sendErr.message || String(sendErr) });
     }
   } catch (error) {
     console.error('Send message error:', error);

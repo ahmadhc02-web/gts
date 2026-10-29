@@ -872,7 +872,101 @@ export default function AdminPanel({
     billingMonthsRef.current = billingMonths;
   }, [billingMonths]);
   const savingMonthIds = React.useRef<Set<string>>(new Set());
+  if (typeof window !== 'undefined') {
+    (window as any).__gtsSavingMonthIds = savingMonthIds.current;
+  }
   const deletingMonthIds = React.useRef<Set<string>>(new Set());
+  const loadingMonthsPromisesRef = React.useRef<Record<string, Promise<any>>>({});
+
+  const ensureMonthLoaded = useCallback(async (monthId: string) => {
+    if (!monthId) return null;
+    const existing = billingMonthsRef.current.find((m: any) => (m?.id || m?.month_id) === monthId);
+    if (existing && existing.rowsLoaded && Array.isArray(existing.rows)) {
+      return existing;
+    }
+
+    if (loadingMonthsPromisesRef.current[monthId]) {
+      return loadingMonthsPromisesRef.current[monthId];
+    }
+
+    const promise = (async () => {
+      const startTime = Date.now();
+      try {
+        const freshMonth = await pocketbaseService.getBillingMonthDirect(monthId, activeDealerId || 'main');
+        const elapsed = Date.now() - startTime;
+        const rowCount = freshMonth?.rows?.length || 0;
+        console.log(`[Load Timing] month ${monthId} ${rowCount} rows in ${elapsed}ms`);
+
+        if (freshMonth && Array.isArray(freshMonth.rows)) {
+          setBillingMonths(prev => {
+            let found = false;
+            const next = prev.map((m: any) => {
+              if ((m?.id || m?.month_id) === monthId) {
+                found = true;
+                return {
+                  ...m,
+                  ...freshMonth,
+                  rows: freshMonth.rows,
+                  rowsLoaded: true,
+                  excludedClientKeys: freshMonth.excludedClientKeys || m.excludedClientKeys || []
+                };
+              }
+              return m;
+            });
+            if (!found) {
+              next.push({
+                id: monthId,
+                ...freshMonth,
+                rows: freshMonth.rows,
+                rowsLoaded: true
+              });
+            }
+            return next;
+          });
+
+          // Update local cache so refresh feels instant
+          try {
+            const lc = currentUser?.lineCode || 'nolc';
+            const dealer = activeDealerId || 'all';
+            const exactKey = `billing_months_${dealer}_${lc}`;
+            const currentCache = globalTableCaches[exactKey] || [];
+            if (Array.isArray(currentCache)) {
+              const idx = currentCache.findIndex((m: any) => (m?.id || m?.month_id) === monthId);
+              if (idx !== -1) {
+                currentCache[idx] = {
+                  ...currentCache[idx],
+                  ...freshMonth,
+                  rows: freshMonth.rows,
+                  rowsLoaded: true
+                };
+              } else {
+                currentCache.push({
+                  id: monthId,
+                  ...freshMonth,
+                  rows: freshMonth.rows,
+                  rowsLoaded: true
+                });
+              }
+              globalTableCaches[exactKey] = currentCache;
+              localStorage.setItem(`gts_cache_v3_${exactKey}`, JSON.stringify(currentCache));
+              localStorage.setItem(`gts_cache_meta_${exactKey}`, String(Date.now()));
+            }
+          } catch (e) {}
+
+          return freshMonth;
+        }
+        return null;
+      } catch (err) {
+        console.error(`[ensureMonthLoaded] Failed loading month ${monthId}:`, err);
+        return null;
+      } finally {
+        delete loadingMonthsPromisesRef.current[monthId];
+      }
+    })();
+
+    loadingMonthsPromisesRef.current[monthId] = promise;
+    return promise;
+  }, [activeDealerId, currentUser?.lineCode]);
   
   // Collaborative Editing Cursors:
   // Key: `${rowIndex}_${field}`, Value: { userId, userName, color }
@@ -1090,27 +1184,15 @@ export default function AdminPanel({
     const currentMonths = billingMonthsRef.current.length > 0 ? billingMonthsRef.current : billingMonths;
     const existingMonth = currentMonths.find((m: any) => (m?.id || m?.month_id) === selectedMonthId);
 
-    if (existingMonth && Array.isArray(existingMonth.rows) && existingMonth.rows.length > 0) {
+    if (existingMonth && existingMonth.rowsLoaded && Array.isArray(existingMonth.rows)) {
       setCurrentMonthId(selectedMonthId);
       return;
     }
 
     setIsSwitchingMonth(true);
+    setCurrentMonthId(selectedMonthId);
     try {
-      const historicalMonth = await pocketbaseService.getBillingMonthsHistory(selectedMonthId, activeDealerId || 'main');
-      if (historicalMonth) {
-        setBillingMonths(prev => {
-          const idx = prev.findIndex((m: any) => (m?.id || m?.month_id) === selectedMonthId);
-          if (idx >= 0) {
-            const updated = [...prev];
-            updated[idx] = historicalMonth;
-            return updated;
-          } else {
-            return [...prev, historicalMonth];
-          }
-        });
-      }
-      setCurrentMonthId(selectedMonthId);
+      await ensureMonthLoaded(selectedMonthId);
     } catch (err) {
       console.error("Failed to load historical billing month:", err);
       toast.error(`Failed to load sheet for ${selectedMonthId}`);
@@ -1118,6 +1200,18 @@ export default function AdminPanel({
       setIsSwitchingMonth(false);
     }
   };
+
+  useEffect(() => {
+    if (!currentMonthId) return;
+    const currentMonths = billingMonthsRef.current.length > 0 ? billingMonthsRef.current : billingMonths;
+    const activeDoc = currentMonths.find((m: any) => (m?.id || m?.month_id) === currentMonthId);
+    if (!activeDoc || !activeDoc.rowsLoaded) {
+      setIsSwitchingMonth(true);
+      ensureMonthLoaded(currentMonthId).finally(() => {
+        setIsSwitchingMonth(false);
+      });
+    }
+  }, [currentMonthId, ensureMonthLoaded]);
   const [isConfiguringNewMonth, setIsConfiguringNewMonth] = useState(false);
   const [isDeleteSheetModalOpen, setIsDeleteSheetModalOpen] = useState(false);
   const [isConfirmingPurge, setIsConfirmingPurge] = useState(false);
@@ -1723,10 +1817,6 @@ export default function AdminPanel({
   // Real-time sub for billing months (preloads in background on mount and stays synced)
   useEffect(() => {
     const unsubscribe = pocketbaseService.subscribeBillingMonths((data, isFresh) => {
-      const freshFlag = Boolean(isFresh);
-      setIsBillingFresh(freshFlag);
-      isBillingDataFresh.current = freshFlag;
-      setIsBillingMonthsLoading(false);
       const filtered = data.filter((m: any) => !deletingMonthIds.current.has(m.id));
       const scopedData = filterScopedBillingMonthsRef.current(filtered);
 
@@ -1760,19 +1850,30 @@ export default function AdminPanel({
               nextMap.set(incomingMonth.id, {
                 ...incomingMonth,
                 rows: currentLocalMonth.rows,
+                rowsLoaded: currentLocalMonth.rowsLoaded ?? true,
                 updatedAt: currentLocalMonth.updatedAt
               });
               return;
             }
           }
 
-          if (currentLocalMonth && currentLocalMonth.updatedAt && incomingMonth.updatedAt) {
-            if (currentLocalMonth.updatedAt > incomingMonth.updatedAt) {
-              console.log(`[BillingSync] Preserving newer local rows for ${incomingMonth.id} (${currentLocalMonth.updatedAt} > ${incomingMonth.updatedAt})`);
+          if (currentLocalMonth) {
+            if (currentLocalMonth.rowsLoaded && Array.isArray(currentLocalMonth.rows)) {
+              if (currentLocalMonth.updatedAt && incomingMonth.updatedAt && currentLocalMonth.updatedAt > incomingMonth.updatedAt) {
+                console.log(`[BillingSync] Preserving newer local rows for ${incomingMonth.id} (${currentLocalMonth.updatedAt} > ${incomingMonth.updatedAt})`);
+                nextMap.set(incomingMonth.id, {
+                  ...incomingMonth,
+                  rows: currentLocalMonth.rows,
+                  rowsLoaded: true,
+                  updatedAt: currentLocalMonth.updatedAt
+                });
+                return;
+              }
               nextMap.set(incomingMonth.id, {
                 ...incomingMonth,
                 rows: currentLocalMonth.rows,
-                updatedAt: currentLocalMonth.updatedAt
+                rowsLoaded: true,
+                excludedClientKeys: currentLocalMonth.excludedClientKeys || incomingMonth.excludedClientKeys || []
               });
               return;
             }
@@ -1788,16 +1889,46 @@ export default function AdminPanel({
         return nextList;
       });
 
-      setCurrentMonthId(prev => {
-        if (sorted.length === 0) return '';
-        if (!prev) {
-          return sorted[0].id;
+      let targetMonthId = currentMonthIdRef.current;
+      if (!targetMonthId && sorted.length > 0) {
+        targetMonthId = sorted[0].id;
+        setCurrentMonthId(targetMonthId);
+      }
+
+      if (targetMonthId) {
+        const existingDoc = billingMonths.find(m => m.id === targetMonthId);
+        if (!existingDoc || !existingDoc.rowsLoaded) {
+          ensureMonthLoaded(targetMonthId).then(() => {
+            setIsBillingFresh(true);
+            isBillingDataFresh.current = true;
+            setIsBillingMonthsLoading(false);
+
+            // Schedule low-priority background load of immediate previous month (by createdAt)
+            const targetIndex = sorted.findIndex(m => m.id === targetMonthId);
+            const prevMonthMeta = targetIndex >= 0 && targetIndex + 1 < sorted.length ? sorted[targetIndex + 1] : null;
+            if (prevMonthMeta && prevMonthMeta.id) {
+              const scheduleBg = typeof window !== 'undefined' && 'requestIdleCallback' in window
+                ? (window as any).requestIdleCallback
+                : (cb: any) => setTimeout(cb, 1500);
+
+              scheduleBg(() => {
+                ensureMonthLoaded(prevMonthMeta.id).catch(() => {});
+              });
+            }
+          }).catch(() => {
+            setIsBillingMonthsLoading(false);
+          });
+        } else {
+          setIsBillingFresh(true);
+          isBillingDataFresh.current = true;
+          setIsBillingMonthsLoading(false);
         }
-        return prev;
-      });
+      } else {
+        setIsBillingMonthsLoading(false);
+      }
     }, activeDealerId);
     return () => unsubscribe();
-  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId, ensureMonthLoaded]);
 
   // Clear all caches on dealer, user, or lineCode changes
   const prevScopeRef = React.useRef({
@@ -2126,149 +2257,144 @@ export default function AdminPanel({
       const dbClients = await pocketbaseService.getClients(tenantId);
       const currentMasterClients = dbClients.length > 0 ? dbClients : masterClients;
 
-      let rows: any[] = [];
-      const masterClientIds = new Set(currentMasterClients.map(c => c.id));
+      const dealer = activeDealerId || 'main';
+      const existingMonthsList = await pocketbaseService.getBillingMonthsList(dealer);
 
-      if (billingMonths && billingMonths.length > 0 && billingMonths[0].rows) {
-        const prevRowsRaw = billingMonths[0].rows || [];
+      let prevMonthId: string | null = null;
+      if (existingMonthsList && existingMonthsList.length > 0) {
+        prevMonthId = existingMonthsList[0].id;
+      } else if (billingMonthsList && billingMonthsList.length > 0) {
+        prevMonthId = billingMonthsList[0].id;
+      } else if (billingMonths && billingMonths.length > 0) {
+        const sorted = [...billingMonths].sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+        prevMonthId = sorted[0].id;
+      }
+
+      let prevRowsRaw: any[] = [];
+      if (prevMonthId) {
+        const prevMonthDoc = await pocketbaseService.getBillingMonthDirect(prevMonthId, dealer);
+        if (!prevMonthDoc || !Array.isArray(prevMonthDoc.rows)) {
+          toast.error("Could not load the previous month, nothing was created");
+          return;
+        }
+        prevRowsRaw = prevMonthDoc.rows;
+      }
+
+      const prevRowsByClientId = new Map<string, any>();
+      if (prevRowsRaw.length > 0) {
         const backfilledPrevRows = applyLegacyBackfill(prevRowsRaw, currentMasterClients);
         const { rows: deduplicatedPrevRows } = dedupeRowsByClientId(backfilledPrevRows);
-
-        const activePrevRows = deduplicatedPrevRows.filter((r: any) => r.clientId && masterClientIds.has(r.clientId));
-
-        rows = activePrevRows.map((r: any) => {
-          const prevTotal = parseFloat(r.totalAmount) || 0;
-          const prevReceived = parseFloat(r.paymentReceived) || 0;
-          const isTdcOrDc = r.paymentStatus === 'tdc' || r.paymentStatus === 'dc';
-          
-          let unpaid = Math.max(0, prevTotal - prevReceived);
-          
-          if (isTdcOrDc) {
-            unpaid = 0;
-          } else if (r.paymentStatus === 'paid') {
-            unpaid = 0;
-          } else if (r.paymentStatus === 'unpaid') {
-            unpaid = prevTotal;
+        for (const r of deduplicatedPrevRows) {
+          if (r.clientId) {
+            prevRowsByClientId.set(r.clientId, r);
           }
-          
-          const newBase = isTdcOrDc ? 0 : (parseFloat(r.baseAmount) || 0);
-          const matchingClient = currentMasterClients.find(c => c.id === r.clientId);
-          return {
-            ...r,
-            name: matchingClient?.name || r.name,
-            username: matchingClient?.username || r.username,
-            mobileNumber: matchingClient?.mobileNumber || matchingClient?.number || r.mobileNumber || r.phone,
-            phone: matchingClient?.mobileNumber || matchingClient?.number || r.mobileNumber || r.phone,
-            area: matchingClient?.area || r.area,
-            pkgDetails: matchingClient?.pkgDetails || r.pkgDetails,
-            rt: r.rt || matchingClient?.rt || 'BILL',
-            panelDetails: matchingClient?.panelDetails || r.panelDetails || '',
-            billingDay: matchingClient?.billingDay || r.billingDay || '5',
-            cr: unpaid,
-            baseAmount: newBase,
-            totalAmount: newBase + unpaid,
-            paymentReceived: 0,
-            paymentStatus: isTdcOrDc ? r.paymentStatus : 'unpaid',
-            comments: '',
-            lineCode: r.lineCode || matchingClient?.lineCode || matchingClient?.line_code || currentUser?.lineCode || '',
-            line_code: r.line_code || matchingClient?.line_code || matchingClient?.lineCode || currentUser?.lineCode || '',
-            lineId: r.lineId || matchingClient?.lineId || matchingClient?.line_id || currentUser?.lineId || null,
-            line_id: r.line_id || matchingClient?.line_id || matchingClient?.lineId || currentUser?.lineId || null
-          };
-        });
-        
-        const existingClientIds = new Set(rows.map(r => r.clientId).filter(Boolean));
-        const missingClients = currentMasterClients.filter(c => c && c.id && !existingClientIds.has(c.id));
-        
-        const newRows = missingClients.map((c, i) => {
-          let cleanBase = 1000;
-          if (c.pkgDetails) {
-            const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
-            if (digitsMatch && digitsMatch.length > 0) {
-              cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
-            } else {
-              const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
-              if (lowDigits && lowDigits.length >= 3) {
-                cleanBase = parseInt(lowDigits, 10);
-              }
-            }
-          }
-          
-          return {
-            clientId: c.id,
-            name: c.name || 'Anonymous client',
-            username: c.username || `client_${Date.now()}_${i}`,
-            mobileNumber: c.mobileNumber || c.number || c.phone || '',
-            phone: c.mobileNumber || c.number || c.phone || '',
-            area: c.area || '',
-            rt: 'BILL',
-            baseAmount: cleanBase,
-            cr: 0,
-            totalAmount: cleanBase,
-            billingDay: c.billingDay || '5',
-            paymentReceived: 0,
-            paymentStatus: 'unpaid',
-            comments: '',
-            occ: 'personal',
-            pkgDetails: c.pkgDetails || '8Mb',
-            sag: '0',
-            lai: 'GN',
-            connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
-            devicePrice: '0',
-            abl: '0',
-            panelDetails: c.panelDetails || '',
-            lineCode: c.lineCode || c.line_code || currentUser?.lineCode || '',
-            line_code: c.line_code || c.lineCode || currentUser?.lineCode || '',
-            lineId: c.lineId || c.line_id || currentUser?.lineId || null,
-            line_id: c.line_id || c.lineId || currentUser?.lineId || null
-          };
-        });
-        rows = [...rows, ...newRows];
-      } else {
-        rows = currentMasterClients.map((c, i) => {
-          let cleanBase = 1000;
-          if (c.pkgDetails) {
-            const digitsMatch = c.pkgDetails.match(/\d{3,5}/g);
-            if (digitsMatch && digitsMatch.length > 0) {
-              cleanBase = parseInt(digitsMatch[digitsMatch.length - 1], 10);
-            } else {
-              const lowDigits = c.pkgDetails.replace(/[^0-9]/g, '');
-              if (lowDigits && lowDigits.length >= 3) {
-                cleanBase = parseInt(lowDigits, 10);
-              }
-            }
-          }
-          
-          return {
-            clientId: c.id,
-            name: c.name || 'Anonymous client',
-            username: c.username || `client_${i}`,
-            mobileNumber: c.mobileNumber || c.number || '',
-            phone: c.mobileNumber || c.number || '',
-            area: c.area || '',
-            rt: 'BILL',
-            baseAmount: cleanBase,
-            cr: 0,
-            totalAmount: cleanBase,
-            billingDay: c.billingDay || '5',
-            paymentReceived: 0,
-            paymentStatus: 'unpaid',
-            comments: '',
-            occ: 'personal',
-            pkgDetails: c.pkgDetails || '8Mb',
-            sag: '0',
-            lai: 'GN',
-            connectionDate: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : '01/01/26',
-            devicePrice: '0',
-            abl: '0',
-            panelDetails: c.panelDetails || '',
-            lineCode: c.lineCode || c.line_code || currentUser?.lineCode || '',
-            line_code: c.line_code || c.lineCode || currentUser?.lineCode || '',
-            lineId: c.lineId || c.line_id || currentUser?.lineId || null,
-            line_id: c.line_id || c.lineId || currentUser?.lineId || null
-          };
-        });
+        }
       }
+
+      const rows = currentMasterClients.map((client, i) => {
+        const prevRow = prevRowsByClientId.get(client.id);
+
+        // 1) Fee determination
+        let fee = 0;
+        if (client.baseAmount !== undefined && client.baseAmount !== null && Number(client.baseAmount) > 0) {
+          fee = Number(client.baseAmount);
+        } else if (prevRow && Number(prevRow.baseAmount) > 0) {
+          fee = Number(prevRow.baseAmount);
+        } else {
+          let fallback = 1000;
+          if (client.pkgDetails) {
+            const digitsMatch = client.pkgDetails.match(/\d{3,5}/g);
+            if (digitsMatch && digitsMatch.length > 0) {
+              fallback = parseInt(digitsMatch[digitsMatch.length - 1], 10);
+            } else {
+              const lowDigits = client.pkgDetails.replace(/[^0-9]/g, '');
+              if (lowDigits && lowDigits.length >= 3) {
+                fallback = parseInt(lowDigits, 10);
+              }
+            }
+          }
+          fee = fallback;
+        }
+
+        // 2) Carry-over calculation by previous status
+        let cr = 0;
+        let newBase = fee;
+        let newStatus = 'unpaid';
+        const prevStatus = prevRow ? String(prevRow.paymentStatus || prevRow.status || '').toLowerCase().trim() : 'none';
+
+        if (!prevRow) {
+          cr = 0;
+          newBase = fee;
+          newStatus = 'unpaid';
+        } else {
+          const prevBase = Number(prevRow.baseAmount) || 0;
+          const prevCr = Number(prevRow.cr) || 0;
+          const prevTotal = Number(prevRow.totalAmount !== undefined && prevRow.totalAmount !== null ? prevRow.totalAmount : (prevBase + prevCr)) || (prevBase + prevCr);
+          const prevReceived = Number(prevRow.paymentReceived) || 0;
+
+          if (prevStatus === 'tdc') {
+            newStatus = 'tdc';
+            newBase = 0;
+            cr = 0;
+          } else if (prevStatus === 'dc') {
+            newStatus = 'dc';
+            newBase = 0;
+            cr = 0;
+          } else if (prevStatus === 'paid' || (prevTotal > 0 && prevReceived >= prevTotal)) {
+            cr = 0;
+            newBase = fee;
+            newStatus = 'unpaid';
+          } else if (prevStatus === 'partial' || prevStatus === 'extra' || (prevReceived > 0 && prevReceived < prevTotal)) {
+            cr = Math.max(0, prevTotal - prevReceived);
+            newBase = fee;
+            newStatus = 'unpaid';
+          } else if (prevStatus === 'unpaid' || prevStatus === 'next') {
+            cr = prevTotal;
+            newBase = fee;
+            newStatus = 'unpaid';
+          } else {
+            cr = Math.max(0, prevTotal - prevReceived);
+            newBase = fee;
+            newStatus = 'unpaid';
+          }
+        }
+
+        const newTotal = newBase + cr;
+
+        console.log(`[AddMonth] Client ${client.username || client.name} (${client.id}): prevStatus=${prevStatus}, cr=${cr}, newFee=${newBase}`);
+
+        const clientPhone = client.mobileNumber || client.number || client.phone || (prevRow ? (prevRow.mobileNumber || prevRow.phone) : '') || '';
+        return {
+          ...(prevRow || {}),
+          id: prevRow?.id || client.id || `client_${i}`,
+          clientId: client.id,
+          name: client.name || prevRow?.name || 'Anonymous client',
+          username: client.username || prevRow?.username || `client_${i}`,
+          mobileNumber: clientPhone,
+          phone: clientPhone,
+          area: client.area || prevRow?.area || '',
+          pkgDetails: client.pkgDetails || prevRow?.pkgDetails || '8Mb',
+          rt: prevRow?.rt || client.rt || 'BILL',
+          panelDetails: client.panelDetails || prevRow?.panelDetails || '',
+          billingDay: client.billingDay || prevRow?.billingDay || '5',
+          cr: cr,
+          baseAmount: newBase,
+          totalAmount: newTotal,
+          paymentReceived: 0,
+          paymentStatus: newStatus,
+          comments: '',
+          occ: prevRow?.occ || client.occ || 'personal',
+          sag: prevRow?.sag || client.sag || '0',
+          lai: prevRow?.lai || client.lai || 'GN',
+          connectionDate: client.createdAt ? new Date(client.createdAt).toLocaleDateString('en-US', { year: '2-digit', month: '2-digit', day: '2-digit' }) : (prevRow?.connectionDate || '01/01/26'),
+          devicePrice: prevRow?.devicePrice || client.devicePrice || '0',
+          abl: prevRow?.abl || client.abl || '0',
+          lineCode: client.lineCode || client.line_code || prevRow?.lineCode || prevRow?.line_code || currentUser?.lineCode || '',
+          line_code: client.line_code || client.lineCode || prevRow?.line_code || prevRow?.lineCode || currentUser?.lineCode || '',
+          lineId: client.lineId || client.line_id || prevRow?.lineId || prevRow?.line_id || currentUser?.lineId || null,
+          line_id: client.line_id || client.lineId || prevRow?.line_id || prevRow?.lineId || currentUser?.lineId || null
+        };
+      });
 
       const newMonthRecord = {
         id: monthId,
@@ -2308,7 +2434,8 @@ export default function AdminPanel({
       return;
     }
     if (!currentMonthId) return;
-    const activeDoc = billingMonths.find(m => m.id === currentMonthId);
+    await ensureMonthLoaded(currentMonthId);
+    const activeDoc = billingMonthsRef.current.find(m => m.id === currentMonthId) || billingMonths.find(m => m.id === currentMonthId);
     if (!activeDoc) return;
 
     try {
@@ -2937,7 +3064,8 @@ export default function AdminPanel({
     deletingMonthIds.current.add(selectedMonthId);
 
     try {
-      const fullMonthObj = billingMonths.find(m => m.id === selectedMonthId);
+      await ensureMonthLoaded(selectedMonthId);
+      const fullMonthObj = billingMonthsRef.current.find((m: any) => m.id === selectedMonthId) || billingMonths.find(m => m.id === selectedMonthId);
       await pocketbaseService.deleteBillingMonth(selectedMonthId, activeDealerId, currentUser.username || 'admin', fullMonthObj, isPermanent);
       
       // Remove deleted recovery sheet from React state immediately
@@ -4131,8 +4259,12 @@ export default function AdminPanel({
     input.click();
   };
 
-  const handleDownloadCSV = () => {
-    if (!currentMonthId || !activeRows.length) return;
+  const handleDownloadCSV = async () => {
+    if (!currentMonthId) return;
+    await ensureMonthLoaded(currentMonthId);
+    const activeDoc = billingMonthsRef.current.find((m: any) => m.id === currentMonthId) || billingMonths.find(m => m.id === currentMonthId);
+    const currentRows = (activeDoc?.rows && activeDoc.rows.length > 0) ? activeDoc.rows : activeRows;
+    if (!currentRows || !currentRows.length) return;
     const headers = [
       "Sr#", "NAME", "USER ID", "MOBILE #", "AREA", "RT", "B. AMOUNT", "CR.", "T. AMOUNT", 
       "BD", "MAY RECOVERY", "STATUS", "COMMENTS", "OCC.", "PANEL DETAILS", "PKG", "DATE", 
@@ -4141,7 +4273,7 @@ export default function AdminPanel({
     
     const csvRows = [headers.join(",")];
     
-    activeRows.forEach((r: any, idx: number) => {
+    currentRows.forEach((r: any, idx: number) => {
       const rowData = [
         idx + 1,
         `"${(r.name || '').replace(/"/g, '""')}"`,
@@ -4221,7 +4353,14 @@ export default function AdminPanel({
         setIsConfirmingPurgeAll(false);
         setIsPurgeAllModalOpen(true);
       } else if (action === 'batch-print') {
-        setIsBatchPrintOpen(true);
+        const targetId = currentMonthId || (billingMonths[0]?.id || '');
+        if (targetId) {
+          ensureMonthLoaded(targetId).then(() => {
+            setIsBatchPrintOpen(true);
+          });
+        } else {
+          setIsBatchPrintOpen(true);
+        }
       } else if (action === 'download-csv') {
         handleDownloadCSV();
       } else if (action === 'get-backup') {
@@ -4245,28 +4384,25 @@ export default function AdminPanel({
       window.removeEventListener('gts-billing-action', handleBillingAction);
       window.removeEventListener('gts-billing-month-selected', handleMonthSelected);
     };
-  }, [currentMonthId, billingMonths, activeRows]);
+  }, [currentMonthId, billingMonths, activeRows, ensureMonthLoaded]);
 
     const inputClasses = "w-full px-4 py-3 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-900 dark:text-slate-100 focus:outline-none focus:shadow-[var(--neu-shadow-inset-deep)] transition-all font-medium placeholder:text-slate-400 uppercase placeholder:normal-case";
   const labelClasses = "block text-xs font-black uppercase text-slate-600 dark:text-slate-300 mb-2 tracking-widest ml-1";
 
   const isEffectiveBillingLoading = useMemo(() => {
-    // If active month already has rows, NEVER block the UI with full-screen loading!
-    if (activeMonthDoc && Array.isArray(activeMonthDoc.rows) && activeMonthDoc.rows.length > 0) {
-      return false;
-    }
-    // If any billing month in memory has rows, we have data to display immediately
-    if (billingMonths.some(m => Array.isArray(m.rows) && m.rows.length > 0)) {
+    // If active month already has rows loaded, NEVER block the UI with full-screen loading!
+    if (activeMonthDoc && activeMonthDoc.rowsLoaded && Array.isArray(activeMonthDoc.rows)) {
       return false;
     }
     // If switching to a month that has no rows yet:
     if (isSwitchingMonth) return true;
-    // Otherwise, true only if we have zero months loaded yet:
-    return isBillingMonthsLoading && billingMonths.length === 0;
-  }, [activeMonthDoc, isSwitchingMonth, isBillingMonthsLoading, billingMonths]);
+    // Otherwise, true if billing months are still loading or activeMonthDoc is not loaded:
+    return isBillingMonthsLoading || !activeMonthDoc || !activeMonthDoc.rowsLoaded;
+  }, [activeMonthDoc, isSwitchingMonth, isBillingMonthsLoading]);
 
   const stateProps = {
     onNavigate: onNavigateProp,
+    ensureMonthLoaded,
     canManageClients,
     canWriteBilling,
     canDeleteComplaints,

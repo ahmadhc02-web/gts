@@ -1,6 +1,7 @@
 const baileys = require('@whiskeysockets/baileys');
 const makeWASocket = baileys.makeWASocket || baileys.default;
-const { useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, fetchLatestBaileysVersion } = baileys;
+const { useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, fetchLatestBaileysVersion, generateMessageID: baileysGenerateMessageID } = baileys;
+const generateMessageID = baileysGenerateMessageID || baileys.generateMessageIDV2 || (() => `3EB0${Math.random().toString(16).slice(2).toUpperCase()}`);
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
@@ -37,18 +38,60 @@ function registerMessageLogCallback(callback) {
 // Multi-Tenant Session Map
 const sessions = new Map();
 
-const sentMessageStore = new Map();
-const SENT_STORE_MAX = 1000;
+// In-memory sent message store for retry receipts with 24 hours retention
+const sentMessageStore = new Map(); // id -> { message: any, timestamp: number }
+const SENT_STORE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function storeSentMessage(id, messageContent) {
+  if (!id || !messageContent) return;
+  sentMessageStore.set(id, {
+    message: messageContent,
+    timestamp: Date.now()
+  });
+}
+
+function getStoredMessage(id) {
+  if (!id) return undefined;
+  const entry = sentMessageStore.get(id);
+  if (!entry) return undefined;
+  if (Date.now() - entry.timestamp > SENT_STORE_TTL_MS) {
+    sentMessageStore.delete(id);
+    return undefined;
+  }
+  return entry.message;
+}
+
 function rememberSent(sentMsg) {
   try {
     const id = sentMsg?.key?.id;
     if (!id || !sentMsg.message) return;
-    sentMessageStore.set(id, sentMsg.message);
-    if (sentMessageStore.size > SENT_STORE_MAX) {
-      sentMessageStore.delete(sentMessageStore.keys().next().value);
-    }
+    storeSentMessage(id, sentMsg.message);
   } catch (_) {}
 }
+
+const sentStoreCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of sentMessageStore.entries()) {
+    if (now - entry.timestamp > SENT_STORE_TTL_MS) {
+      sentMessageStore.delete(id);
+    }
+  }
+}, 15 * 60 * 1000);
+if (sentStoreCleanup.unref) sentStoreCleanup.unref();
+
+// In-memory cache for onWhatsApp positive results with 24 hours TTL
+const onWhatsAppCache = new Map(); // jid -> timestamp
+const ON_WHATSAPP_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+const onWhatsAppCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [jid, ts] of onWhatsAppCache.entries()) {
+    if (now - ts > ON_WHATSAPP_CACHE_TTL_MS) {
+      onWhatsAppCache.delete(jid);
+    }
+  }
+}, 30 * 60 * 1000);
+if (onWhatsAppCleanup.unref) onWhatsAppCleanup.unref();
 
 function getSession(rawKey = 'main', createIfMissing = true) {
   const key = normalizeSessionKey(rawKey);
@@ -71,6 +114,7 @@ function getSession(rawKey = 'main', createIfMissing = true) {
       isReconnectPending: false,
       keepAliveTimer: null,
       consecutiveBadSessionCount: 0,
+      consecutiveSendTimeouts: 0,
       proactiveRefreshTimer: null,
       messageQueue: [],
       isProcessingQueue: false,
@@ -161,7 +205,7 @@ async function initBaileys(rawKey = 'main') {
       markOnlineOnConnect: false,
       syncFullHistory: false,
       generateHighQualityLinkPreview: false,
-      getMessage: async (key) => sentMessageStore.get(key.id),
+      getMessage: async (key) => getStoredMessage(key?.id),
       defaultQueryTimeoutMs: 60000,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
@@ -238,6 +282,7 @@ async function initBaileys(rawKey = 'main') {
           sessionLeases.set(session.key, { expiresAt, timer, leadActive: false });
         }
         session.consecutiveBadSessionCount = 0;
+        session.consecutiveSendTimeouts = 0;
         session.currentQr = null;
         session.lastConnectionOpenTimestamp = Date.now();
         session.lastActivityTimestamp = Date.now();
@@ -413,7 +458,7 @@ async function getBaileysQr(rawKey = 'main') {
   }
 }
 
-const MAX_SEND_ATTEMPTS = 3;
+const MAX_SEND_ATTEMPTS = 2;
 const SEND_TIMEOUT_MS = 65000;
 const RECONNECT_WAIT_TIMEOUT_MS = 60000;
 
@@ -434,9 +479,15 @@ function waitForReconnect(session, timeoutMs) {
   });
 }
 
-async function sendWithRetry(session, phoneNumber, message) {
+async function sendWithRetry(session, phoneNumber, message, existingMessageId) {
   const jid = `${phoneNumber}@s.whatsapp.net`;
   let lastError = null;
+  const messageId = existingMessageId || generateMessageID();
+  const totalStart = Date.now();
+  const last4 = String(phoneNumber).replace(/\D/g, '').slice(-4);
+
+  // Store message content before sending under messageId for retry receipts
+  storeSentMessage(messageId, { conversation: message });
 
   for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
     try {
@@ -447,12 +498,28 @@ async function sendWithRetry(session, phoneNumber, message) {
         await new Promise(r => setTimeout(r, 3000));
       }
 
-      await Promise.race([
-        session.sock.sendPresenceUpdate('available'),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('Liveness ping timed out')), 10000))
-      ]);
+      // Pre-checks
+      const prechecksStart = Date.now();
 
-      if (session.sock && typeof session.sock.onWhatsApp === 'function') {
+      // Send presence 'available' only if the last activity was more than 5 minutes ago
+      const timeSinceLastActivity = Date.now() - (session.lastActivityTimestamp || 0);
+      if (timeSinceLastActivity > 5 * 60 * 1000 && session.sock) {
+        try {
+          await Promise.race([
+            session.sock.sendPresenceUpdate('available'),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Liveness ping timed out')), 5000))
+          ]);
+          session.lastActivityTimestamp = Date.now();
+        } catch (pingErr) {
+          console.log(`[${session.key}] Presence ping non-fatal:`, pingErr.message);
+        }
+      }
+
+      // Cache onWhatsApp(jid) result in memory for 24 hours per number (positive results only)
+      const cachedPositiveTime = onWhatsAppCache.get(jid);
+      const isPositiveCached = cachedPositiveTime && (Date.now() - cachedPositiveTime <= ON_WHATSAPP_CACHE_TTL_MS);
+
+      if (!isPositiveCached && session.sock && typeof session.sock.onWhatsApp === 'function') {
         try {
           const waCheck = await Promise.race([
             session.sock.onWhatsApp(jid),
@@ -465,28 +532,59 @@ async function sendWithRetry(session, phoneNumber, message) {
               noWaErr.isNotOnWhatsApp = true;
               throw noWaErr;
             }
+            onWhatsAppCache.set(jid, Date.now());
           }
         } catch (checkErr) {
           if (checkErr.isNotOnWhatsApp) throw checkErr;
         }
       }
 
+      const prechecksMs = Date.now() - prechecksStart;
+
+      // Pass same messageId on every attempt
+      const sendStart = Date.now();
       const sent = await Promise.race([
-        session.sock.sendMessage(jid, { text: message }),
+        session.sock.sendMessage(jid, { text: message }, { messageId }),
         new Promise((_, rej) => setTimeout(() => rej(new Error('Send timed out')), SEND_TIMEOUT_MS))
       ]);
+      const sendMs = Date.now() - sendStart;
+      const totalMs = Date.now() - totalStart;
+
+      // Replace placeholder with the real message in sentMessageStore
       rememberSent(sent);
 
       session.lastActivityTimestamp = Date.now();
-      return { success: true, waMessageId: sent?.key?.id || null };
+      session.consecutiveSendTimeouts = 0;
+
+      // Log timing lines: [Send] <session> <last4> id=<messageId> prechecks=<ms> send=<ms> total=<ms>
+      console.log(`[Send] ${session.key} ${last4} id=${messageId} prechecks=${prechecksMs} send=${sendMs} total=${totalMs}`);
+
+      return { success: true, waMessageId: sent?.key?.id || messageId };
     } catch (err) {
       lastError = err;
       console.log(`[${session.key}] Send attempt ${attempt}/${MAX_SEND_ATTEMPTS} to ${phoneNumber} failed: ${err.message}`);
       if (err.isNotOnWhatsApp) {
         break;
       }
-      session.isConnected = false;
-      handleReconnect(session);
+
+      // Do not mark the session disconnected or reconnect after a single send timeout.
+      // Only call handleReconnect when the socket is really closed or after 2 consecutive timeouts on the same session.
+      const isTimeout = err.message && (err.message.includes('timed out') || err.message.includes('Timed out'));
+      if (isTimeout) {
+        session.consecutiveSendTimeouts = (session.consecutiveSendTimeouts || 0) + 1;
+      }
+
+      const isSocketClosed = !session.sock?.ws || session.sock.ws.readyState !== 1;
+      const shouldReconnect = isSocketClosed || ((session.consecutiveSendTimeouts || 0) >= 2);
+
+      if (shouldReconnect) {
+        console.log(`[${session.key}] Reconnecting: socketClosed=${isSocketClosed}, consecutiveTimeouts=${session.consecutiveSendTimeouts}`);
+        session.isConnected = false;
+        handleReconnect(session);
+      } else {
+        console.log(`[${session.key}] Retaining session connection (socket readyState=${session.sock?.ws?.readyState}, consecutive timeouts=${session.consecutiveSendTimeouts}).`);
+      }
+
       if (attempt < MAX_SEND_ATTEMPTS) {
         await new Promise(r => setTimeout(r, 2000 * attempt));
       }
@@ -520,17 +618,17 @@ async function processQueue(session) {
     disconnectedChecks = 0;
 
     const task = session.messageQueue.shift();
-    const { phoneNumber, message, resolve, reject } = task;
+    const { phoneNumber, message, resolve, reject, messageId } = task;
 
     const delayMs = Math.floor(Math.random() * (7000 - 3000 + 1)) + 3000;
     await new Promise(r => setTimeout(r, delayMs));
 
     try {
-      const sendRes = await sendWithRetry(session, phoneNumber, message);
+      const sendRes = await sendWithRetry(session, phoneNumber, message, messageId);
       session.sentTimestamps.push(Date.now());
       console.log(`[${session.key}] Successfully sent message to ${phoneNumber}`);
       if (messageLogCallback) messageLogCallback(phoneNumber, message, 'success', null, session.key);
-      resolve({ success: true, session: session.key, waMessageId: sendRes?.waMessageId || null });
+      resolve({ success: true, session: session.key, waMessageId: sendRes?.waMessageId || messageId || null });
     } catch (err) {
       console.error(`[${session.key}] Giving up on message to ${phoneNumber}:`, err.message);
       if (messageLogCallback) messageLogCallback(phoneNumber, message, 'failed', err.message || 'Unknown error', session.key);
@@ -548,13 +646,14 @@ async function sendMessage(phoneNumber, message, options = {}, rawKey = 'main') 
   const normalizedPhone = normalizePakistaniPhone(phoneNumber) || phoneNumber;
   const truncatedBody = typeof message === 'string' ? message.slice(0, 4096) : String(message || '').slice(0, 4096);
   const meta = (options && typeof options === 'object' && options.meta && typeof options.meta === 'object') ? options.meta : {};
+  const messageId = options.messageId || generateMessageID();
 
   let sendResult = null;
   let sendError = null;
 
   try {
     sendResult = await new Promise((resolve, reject) => {
-      session.messageQueue.push({ phoneNumber, message, options, resolve, reject });
+      session.messageQueue.push({ phoneNumber, message, options, messageId, resolve, reject });
       processQueue(session);
     });
   } catch (err) {
@@ -580,7 +679,7 @@ async function sendMessage(phoneNumber, message, options = {}, rawKey = 'main') 
         status: sendError ? 'failed' : 'sent',
         error: sendError ? (sendError.message || String(sendError)) : null,
         lead_id: meta.leadId || meta.lead_id || null,
-        wa_message_id: sendResult?.waMessageId || null,
+        wa_message_id: sendResult?.waMessageId || messageId || null,
       };
 
       Promise.resolve(supabaseClient.from('whatsapp_messages').insert(logRow))
@@ -712,4 +811,5 @@ module.exports = {
   initBaileysClientDb,
   markLeadStarted,
   releaseSubDealerSession,
+  generateMessageID,
 };

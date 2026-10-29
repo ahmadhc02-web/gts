@@ -578,7 +578,7 @@ const ServerCard = React.memo<{
 
       {/* Requirement 5: Small Landscape Frame (~72-78px high) Fixed X-Axis 5-min Window */}
       <div className="flex-1 h-[76px] w-full min-w-[260px] bg-slate-50/70 dark:bg-slate-950/90 border border-slate-200/70 dark:border-white/5 rounded-xl p-1 relative overflow-hidden flex flex-col justify-end">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={50} initialDimension={{ width: 300, height: 76 }} debounce={100}>
           <ComposedChart
             data={chartData}
             margin={{ top: 6, right: 12, left: 12, bottom: 0 }}
