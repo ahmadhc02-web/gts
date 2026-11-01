@@ -42,23 +42,76 @@ const sessions = new Map();
 const sentMessageStore = new Map(); // id -> { message: any, timestamp: number }
 const SENT_STORE_TTL_MS = 24 * 60 * 60 * 1000;
 
+function formatProtoMessage(content) {
+  if (!content) return undefined;
+  if (typeof content === 'string') {
+    return {
+      conversation: content,
+      extendedTextMessage: { text: content }
+    };
+  }
+  if (typeof content === 'object') {
+    const text = content.text || content.conversation || content.extendedTextMessage?.text;
+    if (text) {
+      return {
+        ...content,
+        conversation: content.conversation || text,
+        extendedTextMessage: content.extendedTextMessage || { text }
+      };
+    }
+    return content;
+  }
+  return undefined;
+}
+
 function storeSentMessage(id, messageContent) {
   if (!id || !messageContent) return;
-  sentMessageStore.set(id, {
-    message: messageContent,
+  const cleanId = String(id).trim();
+  const formatted = formatProtoMessage(messageContent) || messageContent;
+  sentMessageStore.set(cleanId, {
+    message: formatted,
     timestamp: Date.now()
   });
 }
 
-function getStoredMessage(id) {
+async function getStoredMessage(id) {
   if (!id) return undefined;
-  const entry = sentMessageStore.get(id);
-  if (!entry) return undefined;
-  if (Date.now() - entry.timestamp > SENT_STORE_TTL_MS) {
-    sentMessageStore.delete(id);
-    return undefined;
+  const cleanId = String(id).trim();
+
+  // 1. Check in-memory store
+  const entry = sentMessageStore.get(cleanId);
+  if (entry) {
+    if (Date.now() - entry.timestamp <= SENT_STORE_TTL_MS) {
+      return entry.message;
+    }
+    sentMessageStore.delete(cleanId);
   }
-  return entry.message;
+
+  // 2. Fallback to Supabase database lookup for retry receipts
+  if (supabaseClient) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('whatsapp_messages')
+        .select('body')
+        .eq('wa_message_id', cleanId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!error && data?.body) {
+        const text = String(data.body);
+        const protoMsg = {
+          conversation: text,
+          extendedTextMessage: { text }
+        };
+        storeSentMessage(cleanId, protoMsg);
+        return protoMsg;
+      }
+    } catch (dbErr) {
+      console.warn(`[getStoredMessage] DB lookup error for message ${cleanId}:`, dbErr.message);
+    }
+  }
+
+  return undefined;
 }
 
 function rememberSent(sentMsg) {
@@ -165,6 +218,7 @@ async function initBaileys(rawKey = 'main') {
   const session = getSession(rawKey);
   try {
     if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
+    session.isReconnectPending = false;
     if (session.sock) {
       try {
         session.sock.ev.removeAllListeners();
@@ -205,10 +259,13 @@ async function initBaileys(rawKey = 'main') {
       markOnlineOnConnect: false,
       syncFullHistory: false,
       generateHighQualityLinkPreview: false,
-      getMessage: async (key) => getStoredMessage(key?.id),
+      getMessage: async (key) => await getStoredMessage(key?.id),
       defaultQueryTimeoutMs: 60000,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
+      enableAutoSessionRecreation: true,
+      retryRequestDelayMs: 250,
+      maxMsgRetryCount: 5,
     });
 
     session.sock.ev.on('creds.update', saveCreds);
@@ -269,6 +326,7 @@ async function initBaileys(rawKey = 'main') {
       } else if (connection === 'open') {
         console.log(`[${session.key}] Opened WhatsApp connection successfully!`);
         session.isConnected = true;
+        session.isReconnectPending = false;
         if (session.key !== 'main') {
           const existingLease = sessionLeases.get(session.key);
           if (existingLease && existingLease.timer) clearTimeout(existingLease.timer);
@@ -364,9 +422,14 @@ async function initBaileys(rawKey = 'main') {
 }
 
 function handleReconnect(session) {
-  if (session.isReconnectPending) return;
+  if (session.isReconnectPending) {
+    console.log('Reconnect already pending — not rescheduling.');
+    console.log(`[${session.key}] Reconnect already pending — not rescheduling.`);
+    return;
+  }
   session.isReconnectPending = true;
-  console.log(`[${session.key}] Scheduling reconnect in ${session.reconnectDelay / 1000}s...`);
+  console.log(`Scheduling reconnect in ${session.reconnectDelay / 1000} seconds...`);
+  console.log(`[${session.key}] Scheduling reconnect in ${session.reconnectDelay / 1000} seconds...`);
   session.reconnectTimer = setTimeout(() => {
     session.isReconnectPending = false;
     session.reconnectDelay = Math.min(session.reconnectDelay * 2, 60000);
@@ -541,6 +604,10 @@ async function sendWithRetry(session, phoneNumber, message, existingMessageId) {
 
       const prechecksMs = Date.now() - prechecksStart;
 
+      // Pre-cache message into sentMessageStore BEFORE invoking sendMessage
+      // This prevents retry receipts arriving before sendMessage returns from failing with undefined
+      storeSentMessage(messageId, { text: message });
+
       // Pass same messageId on every attempt
       const sendStart = Date.now();
       const sent = await Promise.race([
@@ -550,7 +617,10 @@ async function sendWithRetry(session, phoneNumber, message, existingMessageId) {
       const sendMs = Date.now() - sendStart;
       const totalMs = Date.now() - totalStart;
 
-      // Replace placeholder with the real message in sentMessageStore
+      // Ensure both messageId and sent.key.id are recorded with full proto
+      if (sent?.key?.id && sent.key.id !== messageId) {
+        storeSentMessage(sent.key.id, sent.message || { text: message });
+      }
       rememberSent(sent);
 
       session.lastActivityTimestamp = Date.now();

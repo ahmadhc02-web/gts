@@ -743,7 +743,7 @@ async function startServer() {
   let whatsappBackendProcess: any = null;
   let lastWhatsAppBackendError: string | null = null;
   const startWhatsAppBackendIfDown = async () => {
-    if (process.env.WHATSAPP_AUTOSTART !== 'true') return;
+    if (process.env.WHATSAPP_AUTOSTART === 'false') return;
     try {
       const testRes = await fetch("http://127.0.0.1:3001/status", {
         headers: { "x-internal-key": process.env.WA_INTERNAL_KEY || "" },

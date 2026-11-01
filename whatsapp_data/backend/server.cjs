@@ -724,7 +724,8 @@ app.post('/send-message', rateLimitMiddleware, async (req, res) => {
     const idempotencyRaw = `${sessionKey}|${targetLast10}|${messagePartForKey}`;
     const idempotencyKey = crypto.createHash('sha1').update(idempotencyRaw).digest('hex');
 
-    const existingEntry = idempotencyMap.get(idempotencyKey);
+    const isReminder = kind === 'reminder';
+    const existingEntry = isReminder ? null : idempotencyMap.get(idempotencyKey);
     if (existingEntry) {
       const isFresh = Date.now() - existingEntry.timestamp <= IDEMPOTENCY_TTL_MS;
       if (isFresh) {
@@ -802,7 +803,9 @@ app.post('/send-message', rateLimitMiddleware, async (req, res) => {
       result: null,
       waMessageId
     };
-    idempotencyMap.set(idempotencyKey, newEntry);
+    if (!isReminder) {
+      idempotencyMap.set(idempotencyKey, newEntry);
+    }
 
     const normalizedPhone = normalizePakistaniPhone(phone);
     const sendExecution = (async () => {

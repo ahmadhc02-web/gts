@@ -95,6 +95,7 @@ function isRateLimitReached() {
 async function initBaileys() {
   try {
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    isReconnectPending = false;
     if (sock) {
       try {
         sock.ev.removeAllListeners();
@@ -181,6 +182,8 @@ async function initBaileys() {
       } else if (connection === 'open') {
         console.log('Opened connection to WhatsApp');
         isConnected = true;
+        isReconnectPending = false;
+        reconnectDelay = 3000;
         consecutiveBadSessionCount = 0;
         currentQr = null;
         lastConnectionOpenTimestamp = Date.now();
