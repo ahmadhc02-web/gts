@@ -1,6 +1,6 @@
 const baileys = require('@whiskeysockets/baileys');
 const makeWASocket = baileys.makeWASocket || baileys.default;
-const { useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, fetchLatestBaileysVersion, generateMessageID: baileysGenerateMessageID } = baileys;
+const { useMultiFileAuthState, DisconnectReason, Browsers, makeCacheableSignalKeyStore, fetchLatestBaileysVersion, generateMessageID: baileysGenerateMessageID } = baileys;
 const generateMessageID = baileysGenerateMessageID || baileys.generateMessageIDV2 || (() => `3EB0${Math.random().toString(16).slice(2).toUpperCase()}`);
 const QRCode = require('qrcode');
 const pino = require('pino');
@@ -45,19 +45,12 @@ const SENT_STORE_TTL_MS = 24 * 60 * 60 * 1000;
 function formatProtoMessage(content) {
   if (!content) return undefined;
   if (typeof content === 'string') {
-    return {
-      conversation: content,
-      extendedTextMessage: { text: content }
-    };
+    return { conversation: content };
   }
   if (typeof content === 'object') {
-    const text = content.text || content.conversation || content.extendedTextMessage?.text;
-    if (text) {
-      return {
-        ...content,
-        conversation: content.conversation || text,
-        extendedTextMessage: content.extendedTextMessage || { text }
-      };
+    const text = content.conversation || content.text || content.extendedTextMessage?.text;
+    if (text && !content.imageMessage && !content.documentMessage) {
+      return { conversation: text };
     }
     return content;
   }
@@ -99,10 +92,7 @@ async function getStoredMessage(id) {
 
       if (!error && data?.body) {
         const text = String(data.body);
-        const protoMsg = {
-          conversation: text,
-          extendedTextMessage: { text }
-        };
+        const protoMsg = { conversation: text };
         storeSentMessage(cleanId, protoMsg);
         return protoMsg;
       }
@@ -216,6 +206,11 @@ function stopProactiveRefresh(session) {
 
 async function initBaileys(rawKey = 'main') {
   const session = getSession(rawKey);
+  if (session.isInitializing) {
+    console.log(`[${session.key}] Init already in progress - skipping duplicate init.`);
+    return;
+  }
+  session.isInitializing = true;
   try {
     if (session.reconnectTimer) clearTimeout(session.reconnectTimer);
     session.isReconnectPending = false;
@@ -255,6 +250,7 @@ async function initBaileys(rawKey = 'main') {
         keys: makeCacheableSignalKeyStore(state.keys, logger),
       },
       printQRInTerminal: false,
+      browser: Browsers.macOS('Desktop'),
       logger,
       markOnlineOnConnect: false,
       syncFullHistory: false,
@@ -267,10 +263,13 @@ async function initBaileys(rawKey = 'main') {
       retryRequestDelayMs: 250,
       maxMsgRetryCount: 5,
     });
+    session.isInitializing = false;
+    const thisSock = session.sock;
 
     session.sock.ev.on('creds.update', saveCreds);
 
     session.sock.ev.on('connection.update', (update) => {
+      if (session.sock !== thisSock) return;
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
@@ -416,6 +415,7 @@ async function initBaileys(rawKey = 'main') {
     }
 
   } catch (error) {
+    session.isInitializing = false;
     console.error(`[${session.key}] Error initializing Baileys:`, error);
     handleReconnect(session);
   }
@@ -606,7 +606,7 @@ async function sendWithRetry(session, phoneNumber, message, existingMessageId) {
 
       // Pre-cache message into sentMessageStore BEFORE invoking sendMessage
       // This prevents retry receipts arriving before sendMessage returns from failing with undefined
-      storeSentMessage(messageId, { text: message });
+      storeSentMessage(messageId, { conversation: message });
 
       // Pass same messageId on every attempt
       const sendStart = Date.now();
@@ -619,7 +619,7 @@ async function sendWithRetry(session, phoneNumber, message, existingMessageId) {
 
       // Ensure both messageId and sent.key.id are recorded with full proto
       if (sent?.key?.id && sent.key.id !== messageId) {
-        storeSentMessage(sent.key.id, sent.message || { text: message });
+        storeSentMessage(sent.key.id, sent.message || { conversation: message });
       }
       rememberSent(sent);
 
@@ -690,11 +690,15 @@ async function processQueue(session) {
     const task = session.messageQueue.shift();
     const { phoneNumber, message, resolve, reject, messageId } = task;
 
-    const delayMs = Math.floor(Math.random() * (7000 - 3000 + 1)) + 3000;
+    const idleMs = Date.now() - (session.lastSendFinishedAt || 0);
+    const delayMs = idleMs > 60000
+      ? Math.floor(Math.random() * (1000 - 300 + 1)) + 300
+      : Math.floor(Math.random() * (7000 - 3000 + 1)) + 3000;
     await new Promise(r => setTimeout(r, delayMs));
 
     try {
       const sendRes = await sendWithRetry(session, phoneNumber, message, messageId);
+      session.lastSendFinishedAt = Date.now();
       session.sentTimestamps.push(Date.now());
       console.log(`[${session.key}] Successfully sent message to ${phoneNumber}`);
       if (messageLogCallback) messageLogCallback(phoneNumber, message, 'success', null, session.key);

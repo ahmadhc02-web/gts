@@ -1342,12 +1342,13 @@ async function startServer() {
             body: JSON.stringify(req.body),
             signal: AbortSignal.timeout(15000),
           });
-          if (response.ok) {
-            const data = await response.json();
-            return res.status(response.status).json(data);
-          }
+          const data = await response.json().catch(() => ({}));
+          return res.status(response.status).json(data);
         } catch (err: any) {
-          console.warn("Proxy to external create-lead failed, trying direct REST insert:", err.message);
+          return res.status(502).json({
+            success: false,
+            error: "WhatsApp service did not answer, please check the lead list before retrying",
+          });
         }
       }
 

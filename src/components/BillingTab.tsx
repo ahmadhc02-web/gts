@@ -1738,6 +1738,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         username={rowRef.username || rowRef.clientId || ''}
                                         area={rowRef.area || ''}
                                         package={rowRef.package || rowRef.pkgDetails || rowRef.pkg || rowRef.plan || ''}
+                                        monthId={currentMonthId}
                                         reminderSentAt={rowRef.reminderSentAt}
                                         reminderSentCount={rowRef.reminderSentCount || 0}
                                         onReminderSent={(newCount, sentAtIso) => {
@@ -1969,6 +1970,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     username={rowRef.username || rowRef.clientId || ""}
                                     area={rowRef.area || ""}
                                     package={rowRef.package || rowRef.pkgDetails || rowRef.pkg || rowRef.plan || ""}
+                                    monthId={currentMonthId}
                                     reminderSentAt={rowRef.reminderSentAt}
                                     reminderSentCount={rowRef.reminderSentCount || 0}
                                     onReminderSent={(newCount, sentAtIso) => {
@@ -2640,6 +2642,7 @@ export default function BillingTab(props: BillingTabProps) {
                                     username={rowRef.username || rowRef.clientId || ""}
                                     area={rowRef.area || ""}
                                     package={rowRef.package || rowRef.pkgDetails || rowRef.pkg || rowRef.plan || ""}
+                                    monthId={currentMonthId}
                                     reminderSentAt={rowRef.reminderSentAt}
                                     reminderSentCount={rowRef.reminderSentCount || 0}
                                     onReminderSent={(newCount, sentAtIso) => {

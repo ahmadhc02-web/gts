@@ -2366,6 +2366,10 @@ export default function AdminPanel({
         const clientPhone = client.mobileNumber || client.number || client.phone || (prevRow ? (prevRow.mobileNumber || prevRow.phone) : '') || '';
         return {
           ...(prevRow || {}),
+          reminderSentCount: 0,
+          reminderSentAt: null,
+          reminder_sent_count: 0,
+          reminder_sent_at: null,
           id: prevRow?.id || client.id || `client_${i}`,
           clientId: client.id,
           name: client.name || prevRow?.name || 'Anonymous client',

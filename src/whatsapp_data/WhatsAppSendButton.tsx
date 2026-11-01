@@ -21,6 +21,7 @@ interface Props {
   packageDetails?: string;
   reminderSentAt?: string | number | null;
   reminderSentCount?: number;
+  monthId?: string;
   onReminderSent?: (newCount: number, sentAtIso: string) => void;
   onSent?: () => void;
 }
@@ -43,6 +44,7 @@ export default function WhatsAppSendButton({
   packageDetails,
   reminderSentAt,
   reminderSentCount = 0,
+  monthId,
   onReminderSent,
   onSent
 }: Props) {
@@ -56,8 +58,8 @@ export default function WhatsAppSendButton({
   const { remainingSec, isCooldownActive, isCurrentTrigger } = useReminderCooldown(buttonKey);
 
   // Permanent local tracking to ensure immediate and permanent blue color on click
-  const localSentKey = `gts_wa_reminder_sent_${buttonKey}`;
-  const localCountKey = `gts_wa_reminder_count_${buttonKey}`;
+  const localSentKey = `gts_wa_reminder_sent_${monthId || 'nomonth'}_${buttonKey}`;
+  const localCountKey = `gts_wa_reminder_count_${monthId || 'nomonth'}_${buttonKey}`;
 
   const [localSentAt, setLocalSentAt] = useState<number | null>(() => {
     try {
@@ -80,6 +82,32 @@ export default function WhatsAppSendButton({
     } catch (e) {}
     return 0;
   });
+
+  useEffect(() => {
+    try {
+      const savedSent = localStorage.getItem(localSentKey);
+      if (savedSent) {
+        const t = parseInt(savedSent, 10);
+        setLocalSentAt(!isNaN(t) && t > 0 ? t : null);
+      } else {
+        setLocalSentAt(null);
+      }
+    } catch (e) {
+      setLocalSentAt(null);
+    }
+
+    try {
+      const savedCount = localStorage.getItem(localCountKey);
+      if (savedCount) {
+        const c = parseInt(savedCount, 10);
+        setLocalCount(!isNaN(c) && c > 0 ? c : 0);
+      } else {
+        setLocalCount(0);
+      }
+    } catch (e) {
+      setLocalCount(0);
+    }
+  }, [localSentKey, localCountKey]);
 
   // Calculate permanent reminded state and permanent count badge
   const isReminded = useMemo(() => {
