@@ -7,6 +7,8 @@ import ComplaintList from './ComplaintList';
 import EntrySheet from './EntrySheet';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { SkTable } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
 
 interface DealerDataViewerProps {
   users: UserProfile[];
@@ -48,6 +50,7 @@ export default function DealerDataViewer({ users, appConfig, branding, currentUs
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'complaints' | 'billing'>('complaints');
   const [loading, setLoading] = useState(false);
+  const showSkeleton = useSkeletonGate(loading) && complaints.length === 0 && billingMonths.length === 0;
 
   const selectedDealer = useMemo(() => users.find(u => u.uid === selectedDealerId), [selectedDealerId, users]);
 
@@ -212,9 +215,9 @@ export default function DealerDataViewer({ users, appConfig, branding, currentUs
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center p-20">
-          <Loader2 className="animate-spin text-amber-500" size={32} />
+      {showSkeleton ? (
+        <div className="p-4 bg-[var(--neu-surface)] rounded-xl border border-slate-200 dark:border-white/10">
+          <SkTable rows={8} cols={5} />
         </div>
       ) : (
         <div className="read-only-wrapper opacity-95">

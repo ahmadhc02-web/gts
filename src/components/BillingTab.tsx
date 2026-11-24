@@ -19,7 +19,12 @@ import MicVisualizer from './MicVisualizer';
 import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import RouteLoadingFallback from './RouteLoadingFallback';
+import { SkBillingView, SkTable, SkBar } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
+import { LazySection } from './ui/LazySection';
+import { useProgressiveCount } from '../lib/useProgressiveCount';
 import BillingModSettingView from './BillingModSettingView';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
 import { 
   getBillingColumnVisibility, 
   subscribeToBillingColumnVisibility, 
@@ -46,17 +51,7 @@ function useIsDesktop(): boolean {
 }
 
 function RowsSkeleton() {
-  return (
-    <div className="w-full min-h-[520px] border border-[var(--neu-border)] rounded-xl bg-slate-50/50 dark:bg-slate-950/20 p-6 flex flex-col justify-between space-y-4 animate-pulse">
-      <div className="h-10 bg-slate-200/60 dark:bg-slate-800/60 rounded-lg w-full" />
-      <div className="space-y-3 flex-1 py-4">
-        {[...Array(8)].map((_, i) => (
-          <div key={i} className="h-8 bg-slate-200/40 dark:bg-slate-800/40 rounded w-full" />
-        ))}
-      </div>
-      <div className="h-10 bg-slate-200/50 dark:bg-slate-800/50 rounded-lg w-full" />
-    </div>
-  );
+  return <SkTable rows={8} cols={6} className="min-h-[520px]" />;
 }
 
 interface BillingTabProps {
@@ -64,7 +59,7 @@ interface BillingTabProps {
   [key: string]: any;
 }
 
-export default function BillingTab(props: BillingTabProps) {
+const BillingTab = React.memo(function BillingTab(props: BillingTabProps) {
   const navigate = useNavigate();
     const {
     forceViewOnly = false,
@@ -229,6 +224,7 @@ export default function BillingTab(props: BillingTabProps) {
     saveBillingColumnWidths,
     saveBillingMonthTracked,
     savingMonthIds,
+    savingSwitchClientIds,
     selectedDealerForSubAccounts,
     selectedDealerId,
     selectedRecycleItemIds,
@@ -312,14 +308,41 @@ export default function BillingTab(props: BillingTabProps) {
     totalRecovered,
     totalTDC,
     triggerDeleteBillingRow,
+    handleBatchSetSwitches,
+    showAllSavedChip = false,
+    switchSavingCount = 0,
     uploadedBackupData,
     users
   } = props;
+
+  const [showSwitchBulkMenu, setShowSwitchBulkMenu] = useState(false);
+  const switchBulkMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showSwitchBulkMenu) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (switchBulkMenuRef.current && !switchBulkMenuRef.current.contains(e.target as Node)) {
+        setShowSwitchBulkMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showSwitchBulkMenu]);
+
+  const firstBillingRowId = paginatedRows?.[0]?.clientId || paginatedRows?.[0]?.username || '';
+  const lastBillingRowId = paginatedRows?.[paginatedRows.length - 1]?.clientId || paginatedRows?.[paginatedRows.length - 1]?.username || '';
+  const visibleBillingCount = useProgressiveCount(paginatedRows ? paginatedRows.length : 0, {
+    initial: 20,
+    chunk: 40,
+    resetKey: `${currentMonthId}|${billingSearchQuery}|${billingStatusFilter}|${billingAreaFilter}|${billingLineFilter}|${currentMainPage}|${itemsPerPage}|${paginatedRows ? paginatedRows.length : 0}|${firstBillingRowId}|${lastBillingRowId}`,
+  });
+
+  const displayedBillingRows = paginatedRows ? paginatedRows.slice(0, visibleBillingCount) : [];
 
   const effectiveBillingUnlocked = (forceViewOnly || !isBillingFresh) ? false : isBillingUnlocked;
 
   const isDesktop = useIsDesktop();
   const [areRowsDeferred, setAreRowsDeferred] = useState(false);
+  const showBillingSkeleton = useSkeletonGate(Boolean(isLoading)) && (!activeRows || activeRows.length === 0);
 
   // Skip animation completely when data is already available from cache on mount
   const isCachedOnMountRef = useRef(!props.isLoading && Boolean(props.activeRows && props.activeRows.length > 0));
@@ -782,13 +805,8 @@ export default function BillingTab(props: BillingTabProps) {
             </div>
             )}
 
-            {isLoading ? (
-              <div className="p-12 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 bg-[var(--neu-surface)] flex flex-col items-center justify-center gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                <p className="text-slate-400 font-bold uppercase text-xs tracking-wider">
-                  Loading billing data...
-                </p>
-              </div>
+            {showBillingSkeleton ? (
+              <SkBillingView showHeader={false} />
             ) : currentMonthId ? (
               <>
                 {/* Advanced Bento-Style Metrics Grid */}
@@ -796,8 +814,8 @@ export default function BillingTab(props: BillingTabProps) {
                   {[
                     {
                       label: "Expected Revenue",
-                      val: `PKR ${(totalExpected).toLocaleString()}`,
-                      desc: `Base Amount: PKR ${(totalBase).toLocaleString()}`
+                      val: `PKR ${Math.round(totalBase || 0).toLocaleString()}`,
+                      desc: `B. Amount Total (With CR: PKR ${Math.round(totalExpected || 0).toLocaleString()})`
                     },
                     {
                       label: "CR Payments",
@@ -843,7 +861,7 @@ export default function BillingTab(props: BillingTabProps) {
                       animate={{ opacity: 1 }}
                       transition={{ duration: 0.18 }}
                       className={cn(
-                        "group relative p-3 sm:p-4 bg-[var(--neu-surface)]/90 rounded-xl border border-[var(--neu-border)] border-l-4 flex flex-col justify-between overflow-hidden shadow-[var(--neu-shadow-raised-sm)] hover:border-slate-400 dark:hover:border-slate-500 hover:-translate-y-0.5 transition-transform duration-200 cursor-default",
+                        "group relative p-3 sm:p-4 bg-[var(--neu-surface)]/90 rounded-xl border border-[var(--neu-border)] border-l-4 flex flex-col justify-between overflow-hidden shadow-[var(--neu-shadow-raised-sm)] hover:border-slate-400 dark:hover:border-slate-500 transition-colors duration-200 cursor-default",
                         card.borderLeft || "border-l-slate-800 dark:border-l-slate-400"
                       )}
                     >
@@ -890,7 +908,6 @@ export default function BillingTab(props: BillingTabProps) {
                       </AnimatePresence>
 
                       <motion.button
-                        layout
                         whileHover={{ 
                           scale: 1.05, 
                           boxShadow: isAdvanceMode 
@@ -898,7 +915,7 @@ export default function BillingTab(props: BillingTabProps) {
                             : "0px 0px 10px rgba(148, 163, 184, 0.25)"
                         }}
                         whileTap={{ scale: 0.95 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                        transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                         onClick={() => setIsAdvanceMode(!isAdvanceMode)}
                         className={cn(
                           "ml-2 text-[9.5px] font-black uppercase tracking-wider px-3.5 py-1.5 rounded-xl cursor-pointer transition-all duration-300 inline-flex items-center gap-1.5 shrink-0 border relative overflow-hidden",
@@ -1017,18 +1034,120 @@ export default function BillingTab(props: BillingTabProps) {
                       onMouseLeave={handleBillingMouseLeave}
                       className="overflow-x-auto"
                     >
-                      <table id="billing-spreadsheet-table" className="w-full border-collapse text-left text-xs text-slate-950 dark:text-slate-100">
+                      <table id="billing-spreadsheet-table" className="w-full table-fixed border-collapse text-left text-xs text-slate-950 dark:text-slate-100">
                         <thead>
                           <tr className="bg-[var(--neu-surface)] border-b border-slate-200 dark:border-white/10 font-extrabold uppercase text-[10px] tracking-wider text-slate-950 dark:text-slate-100 font-sans select-none whitespace-nowrap">
 
                             {columnVisibility.sr !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-1 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-visible" 
                                 style={{ width: `${billingColWidths.sr}px`, minWidth: `${billingColWidths.sr}px`, maxWidth: `${billingColWidths.sr}px` }}
-                                onClick={() => handleBillingSort('sr')}
+                                onClick={() => handleBillingSort('switchOn')}
                               >
-                                <div className="flex items-center justify-center">
-                                  Sr#{getBillingSortIcon('sr')}
+                                <div ref={switchBulkMenuRef} className="relative flex flex-col items-center justify-center gap-0.5">
+                                  <div className="flex items-center justify-center gap-0.5 max-w-full">
+                                    <span className="truncate">ON / OFF</span>
+                                    {getBillingSortIcon('switchOn')}
+                                    {!forceViewOnly && handleBatchSetSwitches && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setShowSwitchBulkMenu(prev => !prev);
+                                        }}
+                                        className="p-0.5 rounded hover:bg-slate-300/70 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0 cursor-pointer"
+                                        title="Switch bulk actions"
+                                      >
+                                        <ChevronDown size={11} />
+                                      </button>
+                                    )}
+                                  </div>
+                                  {switchSavingCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[8px] font-black normal-case tracking-normal leading-none">
+                                      <Loader2 size={8} className="animate-spin shrink-0" />
+                                      Saving {switchSavingCount}...
+                                    </span>
+                                  ) : showAllSavedChip ? (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[8px] font-black normal-case tracking-normal leading-none">
+                                      <Check size={8} className="shrink-0" />
+                                      All saved
+                                    </span>
+                                  ) : null}
+
+                                  {showSwitchBulkMenu && handleBatchSetSwitches && !forceViewOnly && (
+                                    <div
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute left-0 top-full mt-1 w-48 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl z-50 p-1.5 text-left normal-case tracking-normal font-sans"
+                                    >
+                                      <div className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
+                                        Filtered Rows ({mainSortedRows?.length || 0})
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setShowSwitchBulkMenu(false);
+                                          handleBatchSetSwitches('all_on', 'filtered', mainSortedRows || []);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+                                      >
+                                        All ON (Filtered)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setShowSwitchBulkMenu(false);
+                                          handleBatchSetSwitches('all_off', 'filtered', mainSortedRows || []);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-bold text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                                      >
+                                        All OFF (Filtered)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setShowSwitchBulkMenu(false);
+                                          handleBatchSetSwitches('apply_rule', 'filtered', mainSortedRows || []);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-bold text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer"
+                                      >
+                                        Apply rule (Filtered)
+                                      </button>
+                                      <div className="my-1 border-t border-slate-200 dark:border-slate-800" />
+                                      <div className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
+                                        Entire Sheet
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setShowSwitchBulkMenu(false);
+                                          handleBatchSetSwitches('all_on', 'all', mainSortedRows || []);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+                                      >
+                                        All ON (All rows)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setShowSwitchBulkMenu(false);
+                                          handleBatchSetSwitches('all_off', 'all', mainSortedRows || []);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-bold text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                                      >
+                                        All OFF (All rows)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setShowSwitchBulkMenu(false);
+                                          handleBatchSetSwitches('apply_rule', 'all', mainSortedRows || []);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-bold text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer"
+                                      >
+                                        Apply rule (All rows)
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                                 <div
                                   onMouseDown={(e) => handleBillingColResizeStart(e, 'sr')}
@@ -1039,11 +1158,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.name !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.name}px`, minWidth: `${billingColWidths.name}px`, maxWidth: `${billingColWidths.name}px` }}
                                 onClick={() => handleBillingSort('name')}
                               >
-                                <div className="flex items-center justify-start">
+                                <div className="flex items-center justify-start truncate">
                                   FULL NAME{getBillingSortIcon('name')}
                                 </div>
                                 <div
@@ -1055,11 +1174,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.username !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.username}px`, minWidth: `${billingColWidths.username}px`, maxWidth: `${billingColWidths.username}px` }}
                                 onClick={() => handleBillingSort('username')}
                               >
-                                <div className="flex items-center justify-start">
+                                <div className="flex items-center justify-start truncate">
                                   USER ID (PPPoE){getBillingSortIcon('username')}
                                 </div>
                                 <div
@@ -1071,11 +1190,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.mobile !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.mobile}px`, minWidth: `${billingColWidths.mobile}px`, maxWidth: `${billingColWidths.mobile}px` }}
                                 onClick={() => handleBillingSort('mobileNumber')}
                               >
-                                <div className="flex items-center justify-start">
+                                <div className="flex items-center justify-start truncate">
                                   MOBILE #{getBillingSortIcon('mobileNumber')}
                                 </div>
                                 <div
@@ -1087,11 +1206,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.panelDetails !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-left cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.panelDetails}px`, minWidth: `${billingColWidths.panelDetails}px`, maxWidth: `${billingColWidths.panelDetails}px` }}
                                 onClick={() => handleBillingSort('panelDetails')}
                               >
-                                <div className="flex items-center justify-start">
+                                <div className="flex items-center justify-start truncate">
                                   PANEL DETAILS{getBillingSortIcon('panelDetails')}
                                 </div>
                                 <div
@@ -1103,11 +1222,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.area !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.area}px`, minWidth: `${billingColWidths.area}px`, maxWidth: `${billingColWidths.area}px` }}
                                 onClick={() => handleBillingSort('area')}
                               >
-                                <div className="flex items-center justify-center">
+                                <div className="flex items-center justify-center truncate">
                                   AREA{getBillingSortIcon('area')}
                                 </div>
                                 <div
@@ -1119,11 +1238,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.rt !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.rt}px`, minWidth: `${billingColWidths.rt}px`, maxWidth: `${billingColWidths.rt}px` }}
                                 onClick={() => handleBillingSort('rt')}
                               >
-                                <div className="flex items-center justify-center">
+                                <div className="flex items-center justify-center truncate">
                                   RT{getBillingSortIcon('rt')}
                                 </div>
                                 <div
@@ -1135,11 +1254,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.baseAmount !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.baseAmount}px`, minWidth: `${billingColWidths.baseAmount}px`, maxWidth: `${billingColWidths.baseAmount}px` }}
                                 onClick={() => handleBillingSort('baseAmount')}
                               >
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-end truncate">
                                   B. AMOUNT{getBillingSortIcon('baseAmount')}
                                 </div>
                                 <div
@@ -1151,11 +1270,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.cr !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.cr}px`, minWidth: `${billingColWidths.cr}px`, maxWidth: `${billingColWidths.cr}px` }}
                                 onClick={() => handleBillingSort('cr')}
                               >
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-end truncate">
                                   CR. (ARREARS){getBillingSortIcon('cr')}
                                 </div>
                                 <div
@@ -1167,11 +1286,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.totalAmount !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-slate-100/50 dark:bg-slate-900/50" 
+                                className="relative py-2 px-2 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-slate-100/50 dark:bg-slate-900/50 overflow-hidden" 
                                 style={{ width: `${billingColWidths.totalAmount}px`, minWidth: `${billingColWidths.totalAmount}px`, maxWidth: `${billingColWidths.totalAmount}px` }}
                                 onClick={() => handleBillingSort('totalAmount')}
                               >
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-end truncate">
                                   T. AMOUNT{getBillingSortIcon('totalAmount')}
                                 </div>
                                 <div
@@ -1183,11 +1302,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.billingDay !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors " 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-center cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors overflow-hidden" 
                                 style={{ width: `${billingColWidths.billingDay}px`, minWidth: `${billingColWidths.billingDay}px`, maxWidth: `${billingColWidths.billingDay}px` }}
                                 onClick={() => handleBillingSort('billingDay')}
                               >
-                                <div className="flex items-center justify-center">
+                                <div className="flex items-center justify-center truncate">
                                   BD{getBillingSortIcon('billingDay')}
                                 </div>
                                 <div
@@ -1199,11 +1318,11 @@ export default function BillingTab(props: BillingTabProps) {
                             )}
                             {columnVisibility.paymentReceived !== false && (
                               <th 
-                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600" 
+                                className="relative py-2 px-1.5 border-r border-slate-200 dark:border-white/10 text-right cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors bg-emerald-500/5 dark:bg-emerald-500/10 text-emerald-600 overflow-hidden" 
                                 style={{ width: `${billingColWidths.paymentReceived}px`, minWidth: `${billingColWidths.paymentReceived}px`, maxWidth: `${billingColWidths.paymentReceived}px` }}
                                 onClick={() => handleBillingSort('paymentReceived')}
                               >
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-end truncate">
                                   RECOVERY{getBillingSortIcon('paymentReceived')}
                                 </div>
                                 <div
@@ -1349,15 +1468,15 @@ export default function BillingTab(props: BillingTabProps) {
                           </tr>
                         </thead>
                         <tbody 
-                          style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}
                           className={cn(
                             "divide-y divide-slate-200 dark:divide-slate-800 font-sans text-[13.5px] font-black text-slate-950 dark:text-zinc-50",
                             !effectiveBillingUnlocked && "[&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none"
                           )}>
-                          {paginatedRows.map((rowRef, localIdx) => {
-                            // Find corresponding absolute row index in full month rows array
-                            const globalRowIdx = rowRef._originalIndex;
-                            if (globalRowIdx === undefined || globalRowIdx === -1) return null;
+                          {(() => {
+                            const renderBillingRow = (rowRef: any, localIdx: number) => {
+                              // Find corresponding absolute row index in full month rows array
+                              const globalRowIdx = rowRef._originalIndex;
+                              if (globalRowIdx === undefined || globalRowIdx === -1) return null;
                             
                             const outstandingCr = parseFloat(rowRef.cr) || 0;
                             const isPaid = rowRef.paymentStatus === 'paid';
@@ -1383,16 +1502,52 @@ export default function BillingTab(props: BillingTabProps) {
                                   }
                                 }}
                               >
-                                {/* Sr# */}
-                                {columnVisibility.sr !== false && (
-                                  <td className="py-1 px-1 border-r border-[var(--neu-border)] text-center select-none font-sans text-[11px] font-bold">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <span>{localIdx + 1}</span>
+                                {/* ON / OFF Toggle */}
+                                {columnVisibility.sr !== false && (() => {
+                                  const cid = String(rowRef.clientId || rowRef.client_id || rowRef.id || '');
+                                  const isSwitchSaving = Boolean(savingSwitchClientIds && cid && savingSwitchClientIds.has(cid));
+                                  return (
+                                  <td
+                                    className="relative py-1 px-1 border-r border-[var(--neu-border)] text-center select-none font-sans overflow-hidden"
+                                    style={{ width: `${billingColWidths.sr}px`, minWidth: `${billingColWidths.sr}px`, maxWidth: `${billingColWidths.sr}px` }}
+                                  >
+                                    {renderCellProgress(globalRowIdx, 'switchOn')}
+                                    <div className="flex items-center justify-center">
+                                      <button
+                                        type="button"
+                                        disabled={forceViewOnly}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (forceViewOnly) return;
+                                          handleSaveRowField(globalRowIdx, 'switchOn', !Boolean(rowRef.switchOn), true);
+                                        }}
+                                        className={cn(
+                                          "inline-flex items-center gap-1 h-5 px-2 rounded-full text-[9px] font-black uppercase tracking-wider transition-all shadow-xs border cursor-pointer shrink-0",
+                                          Boolean(rowRef.switchOn)
+                                            ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 shadow-emerald-500/25"
+                                            : "bg-rose-500 hover:bg-rose-600 text-white border-rose-600 shadow-rose-500/25",
+                                          isSwitchSaving && "ring-2 ring-amber-400/80 animate-pulse",
+                                          forceViewOnly && "opacity-60 cursor-not-allowed"
+                                        )}
+                                        title={isSwitchSaving ? "Saving..." : (Boolean(rowRef.switchOn) ? "ON — Click to turn OFF" : "OFF — Click to turn ON")}
+                                      >
+                                        {isSwitchSaving ? (
+                                          <Loader2 size={9} className="animate-spin shrink-0" />
+                                        ) : (
+                                          !Boolean(rowRef.switchOn) && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                                        )}
+                                        <span>{Boolean(rowRef.switchOn) ? "ON" : "OFF"}</span>
+                                        {!isSwitchSaving && Boolean(rowRef.switchOn) && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />}
+                                      </button>
                                     </div>
                                   </td>
-                                )}
+                                  );
+                                })()}
                                 {columnVisibility.name !== false && (
-                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black">
+                                  <td
+                                    className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black overflow-hidden"
+                                    style={{ width: `${billingColWidths.name}px`, minWidth: `${billingColWidths.name}px`, maxWidth: `${billingColWidths.name}px` }}
+                                  >
                                     {renderCellProgress(globalRowIdx, 'name')}
                                     <input
                                       id={`rec_cell_${globalRowIdx}_name`}
@@ -1410,24 +1565,49 @@ export default function BillingTab(props: BillingTabProps) {
 
                                 {/* User ID / Username */}
                                 {columnVisibility.username !== false && (
-                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black text-black dark:text-white">
+                                  <td
+                                    className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black text-black dark:text-white overflow-hidden"
+                                    style={{ width: `${billingColWidths.username}px`, minWidth: `${billingColWidths.username}px`, maxWidth: `${billingColWidths.username}px` }}
+                                  >
                                     {renderCellProgress(globalRowIdx, 'username')}
-                                    <input
-                                      id={`rec_cell_${globalRowIdx}_username`}
-                                      type="text"
-                                      value={rowRef.username || ''}
-                                      disabled={!effectiveBillingUnlocked}
-                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
-                                      className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
-                                    />
+                                    <div className="flex items-center gap-1 min-w-0">
+                                      <input
+                                        id={`rec_cell_${globalRowIdx}_username`}
+                                        type="text"
+                                        value={rowRef.username || ''}
+                                        disabled={!effectiveBillingUnlocked}
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
+                                        className="w-full min-w-0 flex-1 bg-transparent px-1 py-0.5 border-none rounded text-[13.5px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                      />
+                                      {(rowRef.username || rowRef.clientId) && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const uname = String(rowRef.username || rowRef.clientId || '').trim();
+                                            if (!uname) return;
+                                            if (handleCopyText) {
+                                              handleCopyText(uname, `Username (${uname})`);
+                                            } else {
+                                              navigator.clipboard?.writeText(uname);
+                                              toast.success(`Copied: ${uname}`);
+                                            }
+                                          }}
+                                          className="p-1 rounded-md hover:bg-blue-500/15 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors shrink-0 cursor-pointer"
+                                          title={`Copy username: ${rowRef.username || rowRef.clientId}`}
+                                        >
+                                          <Copy size={12} />
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
                                 )}
 
                                 {/* Mobile */}
                                 {columnVisibility.mobile !== false && (
-                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white ">
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white overflow-hidden">
                                     {renderCellProgress(globalRowIdx, 'mobileNumber')}
                                     <input
                                       id={`rec_cell_${globalRowIdx}_mobileNumber`}
@@ -1437,7 +1617,7 @@ export default function BillingTab(props: BillingTabProps) {
                                       onChange={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value)}
                                       onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'mobileNumber', activeRows.length)}
                                       onBlur={(e) => handleSaveRowField(globalRowIdx, 'mobileNumber', e.target.value, true)}
-                                      className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap overflow-visible hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
+                                      className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-sans font-black tracking-tight whitespace-nowrap hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                       placeholder="03XXXXXXXXX"
                                     />
                                   </td>
@@ -1445,7 +1625,7 @@ export default function BillingTab(props: BillingTabProps) {
 
                                 {/* Panel Details */}
                                 {columnVisibility.panelDetails !== false && (
-                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white ">
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13px] font-black text-black dark:text-white overflow-hidden">
                                     {renderCellProgress(globalRowIdx, 'panelDetails')}
                                     <input
                                       id={`rec_cell_${globalRowIdx}_panelDetails`}
@@ -1463,7 +1643,7 @@ export default function BillingTab(props: BillingTabProps) {
 
                                 {/* Area */}
                                 {columnVisibility.area !== false && (
-                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans">
+                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans overflow-hidden">
                                     {renderCellProgress(globalRowIdx, 'area')}
                                     <input
                                       id={`rec_cell_${globalRowIdx}_area`}
@@ -1480,7 +1660,7 @@ export default function BillingTab(props: BillingTabProps) {
 
                                 {/* RT */}
                                 {columnVisibility.rt !== false && (
-                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans">
+                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-center font-sans overflow-hidden">
                                     {renderCellProgress(globalRowIdx, 'rt')}
                                     <input
                                       id={`rec_cell_${globalRowIdx}_rt`}
@@ -1497,10 +1677,13 @@ export default function BillingTab(props: BillingTabProps) {
 
                                 {/* Base Amount */}
                                 {columnVisibility.baseAmount !== false && (
-                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
+                                  <td
+                                    className="relative py-1 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right font-sans overflow-hidden"
+                                    style={{ width: `${billingColWidths.baseAmount}px`, minWidth: `${billingColWidths.baseAmount}px`, maxWidth: `${billingColWidths.baseAmount}px` }}
+                                  >
                                     {renderCellProgress(globalRowIdx, 'baseAmount')}
-                                    <div className="flex items-center justify-end font-black text-black">
-                                      <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
+                                    <div className="flex items-center justify-end gap-1 min-w-0 font-black text-black">
+                                      <span className="text-black dark:text-zinc-200 font-black text-[10px] shrink-0">PKR</span>
                                       <input
                                         id={`rec_cell_${globalRowIdx}_baseAmount`}
                                         type="number"
@@ -1509,7 +1692,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'baseAmount', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
-                                        className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        className="w-full min-w-0 flex-1 text-right bg-transparent px-0.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                       />
                                     </div>
                                   </td>
@@ -1517,10 +1700,13 @@ export default function BillingTab(props: BillingTabProps) {
 
                                 {/* Cr. Arrears */}
                                 {columnVisibility.cr !== false && (
-                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
+                                  <td
+                                    className="relative py-1 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right font-sans overflow-hidden"
+                                    style={{ width: `${billingColWidths.cr}px`, minWidth: `${billingColWidths.cr}px`, maxWidth: `${billingColWidths.cr}px` }}
+                                  >
                                     {renderCellProgress(globalRowIdx, 'cr')}
-                                    <div className="flex items-center justify-end">
-                                      <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
+                                    <div className="flex items-center justify-end gap-1 min-w-0">
+                                      <span className={cn("font-black text-[10px] shrink-0", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
                                       <input
                                         id={`rec_cell_${globalRowIdx}_cr`}
                                         type="number"
@@ -1530,7 +1716,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'cr', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
                                         className={cn(
-                                          "w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                          "w-full min-w-0 flex-1 text-right bg-transparent px-0.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                                           outstandingCr > 0 ? "text-rose-750 dark:text-rose-450 font-black disabled:text-rose-750 dark:disabled:text-rose-450 disabled:opacity-100" : "text-black dark:text-white font-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                         )}
                                       />
@@ -1540,7 +1726,10 @@ export default function BillingTab(props: BillingTabProps) {
 
                                 {/* Total Amount */}
                                 {columnVisibility.totalAmount !== false && (
-                                  <td className="py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-[13.5px] font-sans">
+                                  <td
+                                    className="py-1 px-2 border-r border-[var(--neu-border)]/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-[13.5px] font-sans overflow-hidden truncate tabular-nums"
+                                    style={{ width: `${billingColWidths.totalAmount}px`, minWidth: `${billingColWidths.totalAmount}px`, maxWidth: `${billingColWidths.totalAmount}px` }}
+                                  >
                                     PKR {isDc ? 0 : (isTdc ? (rowRef.cr || 0) : (rowRef.totalAmount || 0)).toLocaleString()}
                                   </td>
                                 )}
@@ -1765,7 +1954,22 @@ export default function BillingTab(props: BillingTabProps) {
                                 )}
                               </tr>
                             );
-                          })}
+                          };
+
+                          return (
+                            <>
+                              {displayedBillingRows.map((r, i) => renderBillingRow(r, i))}
+                              {visibleBillingCount < paginatedRows.length &&
+                                Array.from({ length: 3 }).map((_, i) => (
+                                  <tr key={`lazy-skel-${i}`} className="h-10 border-b border-slate-200 dark:border-slate-800">
+                                    <td colSpan={14} className="px-4 py-2">
+                                      <SkBar w="w-full" h="h-4" />
+                                    </td>
+                                  </tr>
+                                ))}
+                            </>
+                          );
+                        })()}
                         </tbody>
                         <tfoot className="bg-[var(--neu-surface)] sticky bottom-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] border-t-2 border-slate-300 dark:border-slate-700">
                           <tr>
@@ -1775,30 +1979,30 @@ export default function BillingTab(props: BillingTabProps) {
                               </td>
                             )}
                             {columnVisibility.baseAmount !== false && (
-                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                              <td className="py-3.5 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right font-sans font-black text-xs bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white overflow-hidden truncate tabular-nums">
                                 PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
                               </td>
                             )}
                             {columnVisibility.cr !== false && (
-                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-rose-500/10 text-rose-700 dark:text-rose-400">
+                              <td className="py-3.5 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right font-sans font-black text-xs bg-rose-500/10 text-rose-700 dark:text-rose-400 overflow-hidden truncate tabular-nums">
                                 PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
                               </td>
                             )}
                             {columnVisibility.totalAmount !== false && (
-                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                              <td className="py-3.5 px-2 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-xs bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white overflow-hidden truncate tabular-nums">
                                 PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
                               </td>
                             )}
                             {columnVisibility.billingDay !== false && (
-                              <td className="py-4 px-3 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
+                              <td className="py-3.5 px-1 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
                             )}
                             {columnVisibility.paymentReceived !== false && (
-                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
+                              <td className="py-3.5 px-2 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-sm text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner overflow-hidden truncate tabular-nums">
                                 PKR {Math.round(paginatedRows.reduce((a, r) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
                               </td>
                             )}
                             {trailingVisibleColSpan > 0 && (
-                              <td colSpan={trailingVisibleColSpan} className="py-4 px-4 border-slate-200/50 dark:border-white/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
+                              <td colSpan={trailingVisibleColSpan} className="py-3.5 px-3 border-slate-200/50 dark:border-white/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
                                 (Current Page)
                               </td>
                             )}
@@ -1806,35 +2010,35 @@ export default function BillingTab(props: BillingTabProps) {
                           {/* Grand Total Row */}
                           <tr className="border-t border-slate-300 dark:border-slate-700">
                             {leadingVisibleColSpan > 0 && (
-                              <td colSpan={leadingVisibleColSpan} className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest bg-slate-100 dark:bg-slate-900 shadow-inner">
+                              <td colSpan={leadingVisibleColSpan} className="py-3.5 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-slate-800 dark:text-slate-200 text-sm uppercase tracking-widest bg-slate-100 dark:bg-slate-900 shadow-inner">
                                 Grand Total (All Pages)
                               </td>
                             )}
                             {columnVisibility.baseAmount !== false && (
-                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                              <td className="py-3.5 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right font-sans font-black text-xs bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white overflow-hidden truncate tabular-nums">
                                 PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.baseAmount) || 0)), 0)).toLocaleString()}
                               </td>
                             )}
                             {columnVisibility.cr !== false && (
-                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-rose-500/10 text-rose-700 dark:text-rose-400">
+                              <td className="py-3.5 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right font-sans font-black text-xs bg-rose-500/10 text-rose-700 dark:text-rose-400 overflow-hidden truncate tabular-nums">
                                 PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.cr) || 0)), 0)).toLocaleString()}
                               </td>
                             )}
                             {columnVisibility.totalAmount !== false && (
-                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white">
+                              <td className="py-3.5 px-2 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-xs bg-slate-200/60 dark:bg-slate-800/60 text-black dark:text-white overflow-hidden truncate tabular-nums">
                                 PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.totalAmount) || 0)), 0)).toLocaleString()}
                               </td>
                             )}
                             {columnVisibility.billingDay !== false && (
-                              <td className="py-4 px-3 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
+                              <td className="py-3.5 px-1 border-r border-slate-200/50 dark:border-white/10/50 bg-slate-50 dark:bg-slate-950/30"></td>
                             )}
                             {columnVisibility.paymentReceived !== false && (
-                              <td className="py-4 px-4 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-lg text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner">
+                              <td className="py-3.5 px-2 border-r border-slate-200/50 dark:border-white/10/50 text-right font-sans font-black text-sm text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 shadow-inner overflow-hidden truncate tabular-nums">
                                 PKR {Math.round(mainSortedRows.reduce((a: number, r: any) => a + (r.paymentStatus === 'dc' ? 0 : (parseFloat(r.paymentReceived) || 0)), 0)).toLocaleString()}
                               </td>
                             )}
                             {trailingVisibleColSpan > 0 && (
-                              <td colSpan={trailingVisibleColSpan} className="py-4 px-4 border-slate-200/50 dark:border-white/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
+                              <td colSpan={trailingVisibleColSpan} className="py-3.5 px-3 border-slate-200/50 dark:border-white/10/50 text-left font-sans text-[10px] text-black dark:text-zinc-200 font-extrabold uppercase tracking-widest bg-slate-50 dark:bg-slate-950/30">
                                 (Cumulative total of {mainSortedRows.length} active rows)
                               </td>
                             )}
@@ -1911,7 +2115,7 @@ export default function BillingTab(props: BillingTabProps) {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
-                    {paginatedRows.map((rowRef, localIdx) => {
+                    {displayedBillingRows.map((rowRef, localIdx) => {
                       const globalRowIdx = rowRef._originalIndex;
                       if (globalRowIdx === undefined || globalRowIdx === -1) return null;
                       
@@ -1929,16 +2133,14 @@ export default function BillingTab(props: BillingTabProps) {
                           key={`mobile-billing-frame-${rowRef.clientId || rowRef.username || 'idx'}-${localIdx}`}
                           initial={false}
                           animate={{ opacity: 1, scale: 1, y: 0 }}
-                          whileHover={{ scale: 1.01 }}
                           transition={{ duration: 0.15 }}
-                          style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
                           onClick={(e) => {
                             if (!effectiveBillingUnlocked) {
                               setSelectedRecoveryRow(rowRef);
                             }
                           }}
                           className={cn(
-                            "p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between shadow-[var(--neu-shadow-raised-sm)]",
+                            "row-cv p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col justify-between shadow-[var(--neu-shadow-raised-sm)]",
                             !effectiveBillingUnlocked && "cursor-pointer [&_input:disabled]:pointer-events-none [&_select:disabled]:pointer-events-none [&_button:disabled]:pointer-events-none",
                             isTdc 
                               ? "bg-rose-500/5 dark:bg-rose-950/20 border-rose-300 dark:border-rose-900/60 text-rose-600 dark:text-rose-450" 
@@ -1956,9 +2158,38 @@ export default function BillingTab(props: BillingTabProps) {
                           {/* Top bar */}
                           <div className="flex items-start justify-between gap-2 border-b border-dotted border-[var(--neu-border)] pb-2 mb-2">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-[9px] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-700 dark:text-slate-300 font-black px-1.5 py-0.5 rounded shrink-0">
-                                #{globalRowIdx + 1}
-                              </span>
+                              {(() => {
+                                const cid = String(rowRef.clientId || rowRef.client_id || rowRef.id || '');
+                                const isSwitchSaving = Boolean(savingSwitchClientIds && cid && savingSwitchClientIds.has(cid));
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={forceViewOnly}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (forceViewOnly) return;
+                                      handleSaveRowField(globalRowIdx, 'switchOn', !Boolean(rowRef.switchOn), true);
+                                    }}
+                                    className={cn(
+                                      "inline-flex items-center gap-1 h-5 px-2 rounded-full text-[9px] font-black uppercase tracking-wider transition-all shadow-xs border cursor-pointer shrink-0",
+                                      Boolean(rowRef.switchOn)
+                                        ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600"
+                                        : "bg-rose-500 hover:bg-rose-600 text-white border-rose-600",
+                                      isSwitchSaving && "ring-2 ring-amber-400/80 animate-pulse",
+                                      forceViewOnly && "opacity-60 cursor-not-allowed"
+                                    )}
+                                    title={isSwitchSaving ? "Saving..." : (Boolean(rowRef.switchOn) ? "ON — Click to turn OFF" : "OFF — Click to turn ON")}
+                                  >
+                                    {isSwitchSaving ? (
+                                      <Loader2 size={9} className="animate-spin shrink-0" />
+                                    ) : (
+                                      !Boolean(rowRef.switchOn) && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                                    )}
+                                    <span>{Boolean(rowRef.switchOn) ? "ON" : "OFF"}</span>
+                                    {!isSwitchSaving && Boolean(rowRef.switchOn) && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />}
+                                  </button>
+                                );
+                              })()}
                               {effectiveBillingUnlocked && (
                                 <div className="flex items-center gap-1">
                                   <WhatsAppSendButton
@@ -1993,7 +2224,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 )}
                                 </div>
                               )}
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <input
                                   type="text"
                                   value={rowRef.name || ''}
@@ -2004,16 +2235,38 @@ export default function BillingTab(props: BillingTabProps) {
                                   className="w-full bg-transparent border-none p-0 text-[12.5px] font-black focus:ring-0 text-black dark:text-white"
                                   placeholder="Full Name"
                                 />
-                                <input
-                                  type="text"
-                                  value={rowRef.username || rowRef.clientId || ''}
-                                  disabled={!effectiveBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                  onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
-                                  className="w-full bg-transparent border-none p-0 text-[10px] font-bold text-slate-500 focus:ring-0 uppercase tracking-wide"
-                                  placeholder="USER ID"
-                                />
+                                <div className="flex items-center gap-1 min-w-0">
+                                  <input
+                                    type="text"
+                                    value={rowRef.username || rowRef.clientId || ''}
+                                    disabled={!effectiveBillingUnlocked}
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
+                                    className="w-full min-w-0 flex-1 bg-transparent border-none p-0 text-[10px] font-bold text-slate-500 focus:ring-0 uppercase tracking-wide"
+                                    placeholder="USER ID"
+                                  />
+                                  {(rowRef.username || rowRef.clientId) && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const uname = String(rowRef.username || rowRef.clientId || '').trim();
+                                        if (!uname) return;
+                                        if (handleCopyText) {
+                                          handleCopyText(uname, `Username (${uname})`);
+                                        } else {
+                                          navigator.clipboard?.writeText(uname);
+                                          toast.success(`Copied: ${uname}`);
+                                        }
+                                      }}
+                                      className="p-0.5 rounded hover:bg-blue-500/15 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors shrink-0 cursor-pointer"
+                                      title={`Copy username: ${rowRef.username || rowRef.clientId}`}
+                                    >
+                                      <Copy size={11} />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                             <div className="flex flex-col items-end shrink-0">
@@ -2201,7 +2454,8 @@ export default function BillingTab(props: BillingTabProps) {
                   </div>
                   
                   {showDcList && (
-                    <div className="mb-6 border border-neutral-200/60 dark:border-white/10 rounded-xl bg-neutral-50/50 dark:bg-neutral-950/20 overflow-hidden shadow-sm">
+                    <LazySection mode="visible" minHeight={200} fallback={<SkTable rows={4} cols={6} />}>
+                      <div className="mb-6 border border-neutral-200/60 dark:border-white/10 rounded-xl bg-neutral-50/50 dark:bg-neutral-950/20 overflow-hidden shadow-sm">
                       <div className="px-4 py-3 bg-neutral-100 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
                          <h3 className="font-black uppercase tracking-widest text-neutral-600 dark:text-neutral-400 text-[11px] font-sans">Disconnected / Dead Clients</h3>
                       </div>
@@ -2213,28 +2467,28 @@ export default function BillingTab(props: BillingTabProps) {
                           {/* We don't have thead easily accessible, let's copy it from earlier */}
                           <thead className="bg-[var(--neu-surface)] shadow-[0_2px_4px_-1px_rgba(0,0,0,0.05)] border-b-2 border-slate-300 dark:border-slate-700">
                             <tr>
-                              <th className="py-2 px-1 border-r border-[var(--neu-border)] text-center text-[10px] font-black text-slate-500 uppercase tracking-widest w-[40px]">
-                                Sr#
+                              <th className="py-2 px-1 border-r border-[var(--neu-border)] text-center text-[10px] font-black text-slate-500 uppercase tracking-widest w-[68px] min-w-[68px] max-w-[68px] overflow-hidden">
+                                ON / OFF
                               </th>
-                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-left text-[10px] font-black text-slate-500 uppercase tracking-widest w-[160px] min-w-[140px] max-w-[200px]">
+                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-left text-[10px] font-black text-slate-500 uppercase tracking-widest w-[160px] min-w-[140px] max-w-[200px] overflow-hidden">
                                 Name
                               </th>
-                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-left text-[10px] font-black text-slate-500 uppercase tracking-widest w-[130px]">
+                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-left text-[10px] font-black text-slate-500 uppercase tracking-widest w-[150px] min-w-[140px] overflow-hidden">
                                 User ID
                               </th>
-                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest w-[110px]">
+                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest w-[110px] overflow-hidden">
                                 Phone
                               </th>
-                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest w-[70px]">
+                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest w-[70px] overflow-hidden">
                                 Pkg/Mbps
                               </th>
-                              <th className="py-2 px-1 border-r border-[var(--neu-border)]/80 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest w-[100px] min-w-[90px]">
+                              <th className="py-2 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest w-[115px] min-w-[115px] overflow-hidden">
                                 Base
                               </th>
-                              <th className="py-2 px-1 border-r border-[var(--neu-border)]/80 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest w-[100px] min-w-[90px]">
+                              <th className="py-2 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest w-[120px] min-w-[120px] overflow-hidden">
                                 Arrears
                               </th>
-                              <th className="py-2 px-1.5 border-r border-[var(--neu-border)]/80 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest w-[110px] min-w-[100px] bg-slate-100/50 dark:bg-slate-900/50">
+                              <th className="py-2 px-2 border-r border-[var(--neu-border)]/80 text-right text-[10px] font-black text-slate-500 uppercase tracking-widest w-[115px] min-w-[110px] bg-slate-100/50 dark:bg-slate-900/50 overflow-hidden">
                                 Total
                               </th>
                               <th className="py-2 px-0 border-r border-[var(--neu-border)]/80 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest w-[40px]">
@@ -2291,13 +2545,44 @@ export default function BillingTab(props: BillingTabProps) {
                                     }
                                   }}
                                 >
-                                  {/* Sr# */}
-                                  <td className="py-1 px-1 border-r border-[var(--neu-border)] text-center select-none font-sans text-[11px] font-bold">
-                                    <div className="flex items-center justify-center gap-1">
-                                      <span>{globalRowIdx + 1}</span>
+                                  {/* ON / OFF Toggle */}
+                                  <td className="py-1 px-1 border-r border-[var(--neu-border)] text-center select-none font-sans overflow-hidden">
+                                    <div className="flex items-center justify-center">
+                                      {(() => {
+                                        const cid = String(rowRef.clientId || rowRef.client_id || rowRef.id || '');
+                                        const isSwitchSaving = Boolean(savingSwitchClientIds && cid && savingSwitchClientIds.has(cid));
+                                        return (
+                                          <button
+                                            type="button"
+                                            disabled={forceViewOnly}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (forceViewOnly) return;
+                                              handleSaveRowField(globalRowIdx, 'switchOn', !Boolean(rowRef.switchOn), true);
+                                            }}
+                                            className={cn(
+                                              "inline-flex items-center gap-1 h-5 px-2 rounded-full text-[9px] font-black uppercase tracking-wider transition-all shadow-xs border cursor-pointer shrink-0",
+                                              Boolean(rowRef.switchOn)
+                                                ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600"
+                                                : "bg-rose-500 hover:bg-rose-600 text-white border-rose-600",
+                                              isSwitchSaving && "ring-2 ring-amber-400/80 animate-pulse",
+                                              forceViewOnly && "opacity-60 cursor-not-allowed"
+                                            )}
+                                            title={isSwitchSaving ? "Saving..." : (Boolean(rowRef.switchOn) ? "ON — Click to turn OFF" : "OFF — Click to turn ON")}
+                                          >
+                                            {isSwitchSaving ? (
+                                              <Loader2 size={9} className="animate-spin shrink-0" />
+                                            ) : (
+                                              !Boolean(rowRef.switchOn) && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                                            )}
+                                            <span>{Boolean(rowRef.switchOn) ? "ON" : "OFF"}</span>
+                                            {!isSwitchSaving && Boolean(rowRef.switchOn) && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />}
+                                          </button>
+                                        );
+                                      })()}
                                     </div>
                                   </td>
-                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black">
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black overflow-hidden">
                                     {renderCellProgress(globalRowIdx, 'name')}
                                     <input
                                       id={`rec_cell_${globalRowIdx}_name`}
@@ -2313,18 +2598,40 @@ export default function BillingTab(props: BillingTabProps) {
                                   </td>
 
                                   {/* User ID / Username */}
-                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black text-black dark:text-white">
+                                  <td className="relative py-1 px-1.5 border-r border-[var(--neu-border)]/80 font-sans text-[13.5px] font-black text-black dark:text-white overflow-hidden">
                                     {renderCellProgress(globalRowIdx, 'username')}
-                                    <input
-                                      id={`rec_cell_${globalRowIdx}_username`}
-                                      type="text"
-                                      value={rowRef.username || rowRef.clientId || ''}
-                                      disabled={!effectiveBillingUnlocked}
-                                      onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                      onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
-                                      onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
-                                      className="w-full min-w-0 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-bold hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 tracking-wide"
-                                    />
+                                    <div className="flex items-center gap-1 min-w-0">
+                                      <input
+                                        id={`rec_cell_${globalRowIdx}_username`}
+                                        type="text"
+                                        value={rowRef.username || rowRef.clientId || ''}
+                                        disabled={!effectiveBillingUnlocked}
+                                        onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
+                                        onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
+                                        onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
+                                        className="w-full min-w-0 flex-1 bg-transparent px-1 py-0.5 border-none rounded text-[13px] focus:ring-1 focus:ring-blue-500/30 text-black dark:text-white font-bold hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 tracking-wide"
+                                      />
+                                      {(rowRef.username || rowRef.clientId) && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            const uname = String(rowRef.username || rowRef.clientId || '').trim();
+                                            if (!uname) return;
+                                            if (handleCopyText) {
+                                              handleCopyText(uname, `Username (${uname})`);
+                                            } else {
+                                              navigator.clipboard?.writeText(uname);
+                                              toast.success(`Copied: ${uname}`);
+                                            }
+                                          }}
+                                          className="p-1 rounded-md hover:bg-blue-500/15 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors shrink-0 cursor-pointer"
+                                          title={`Copy username: ${rowRef.username || rowRef.clientId}`}
+                                        >
+                                          <Copy size={12} />
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
 
                                   {/* Phone */}
@@ -2368,10 +2675,10 @@ export default function BillingTab(props: BillingTabProps) {
                                   </td>
 
                                   {/* Base Package */}
-                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
+                                  <td className="relative py-1 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right font-sans overflow-hidden">
                                     {renderCellProgress(globalRowIdx, 'baseAmount')}
-                                    <div className="flex items-center justify-end">
-                                      <span className="text-black dark:text-zinc-200 mr-0.5 font-black text-[11px]">PKR</span>
+                                    <div className="flex items-center justify-end gap-1 min-w-0">
+                                      <span className="text-black dark:text-zinc-200 font-black text-[10px] shrink-0">PKR</span>
                                       <input
                                         id={`rec_cell_${globalRowIdx}_baseAmount`}
                                         type="number"
@@ -2380,16 +2687,16 @@ export default function BillingTab(props: BillingTabProps) {
                                         onChange={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'baseAmount', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'baseAmount', parseFloat(e.target.value) || 0, true)}
-                                        className="w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        className="w-full min-w-0 flex-1 text-right bg-transparent px-0.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans text-black dark:text-white font-black hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black disabled:text-black dark:disabled:text-white disabled:opacity-100 text-[13px] tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                       />
                                     </div>
                                   </td>
 
                                   {/* Cr. Arrears */}
-                                  <td className="relative py-1 px-1 border-r border-[var(--neu-border)]/80 text-right font-sans">
+                                  <td className="relative py-1 px-2 border-r border-slate-300 dark:border-slate-700/80 text-right font-sans overflow-hidden">
                                     {renderCellProgress(globalRowIdx, 'cr')}
-                                    <div className="flex items-center justify-end">
-                                      <span className={cn("mr-0.5 font-black text-[11px]", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
+                                    <div className="flex items-center justify-end gap-1 min-w-0">
+                                      <span className={cn("font-black text-[10px] shrink-0", outstandingCr > 0 ? "text-rose-750 dark:text-rose-450" : "text-black dark:text-zinc-200")}>PKR</span>
                                       <input
                                         id={`rec_cell_${globalRowIdx}_cr`}
                                         type="number"
@@ -2399,7 +2706,7 @@ export default function BillingTab(props: BillingTabProps) {
                                         onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'cr', activeRows.length)}
                                         onBlur={(e) => handleSaveRowField(globalRowIdx, 'cr', parseFloat(e.target.value) || 0, true)}
                                         className={cn(
-                                          "w-full min-w-0 flex-1 text-right bg-transparent px-1 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                                          "w-full min-w-0 flex-1 text-right bg-transparent px-0.5 py-0.5 border-none rounded focus:ring-1 focus:ring-blue-500/30 font-sans hover:bg-white/40 dark:hover:bg-black/10 focus:bg-white dark:focus:bg-black text-[13px] tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
                                           outstandingCr > 0 ? "text-rose-750 dark:text-rose-450 font-black disabled:text-rose-750 dark:disabled:text-rose-450 disabled:opacity-100" : "text-black dark:text-white font-black disabled:text-black dark:disabled:text-white disabled:opacity-100"
                                         )}
                                       />
@@ -2407,7 +2714,7 @@ export default function BillingTab(props: BillingTabProps) {
                                   </td>
 
                                   {/* Total Amount */}
-                                  <td className="py-1 px-1.5 border-r border-[var(--neu-border)]/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-[13.5px] font-sans">
+                                  <td className="py-1 px-2 border-r border-[var(--neu-border)]/80 text-right text-black dark:text-white bg-slate-100/50 dark:bg-slate-900/50 select-none font-black text-[13.5px] font-sans overflow-hidden truncate tabular-nums">
                                     PKR {isDc ? 0 : (isTdc ? (rowRef.cr || 0) : (rowRef.totalAmount || 0)).toLocaleString()}
                                   </td>
 
@@ -2601,7 +2908,6 @@ export default function BillingTab(props: BillingTabProps) {
                           key={`mobile-billing-frame-${rowRef.clientId || rowRef.username || 'idx'}-${localIdx}`}
                           initial={false}
                           animate={{ opacity: 1, scale: 1, y: 0 }}
-                          whileHover={{ scale: 1.01 }}
                           transition={{ duration: 0.15 }}
                           style={{ contentVisibility: 'auto', containIntrinsicSize: '200px' }}
                           onClick={(e) => {
@@ -2628,9 +2934,38 @@ export default function BillingTab(props: BillingTabProps) {
                           {/* Top bar */}
                           <div className="flex items-start justify-between gap-2 border-b border-dotted border-[var(--neu-border)] pb-2 mb-2">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-[9px] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-700 dark:text-slate-300 font-black px-1.5 py-0.5 rounded shrink-0">
-                                #{globalRowIdx + 1}
-                              </span>
+                              {(() => {
+                                const cid = String(rowRef.clientId || rowRef.client_id || rowRef.id || '');
+                                const isSwitchSaving = Boolean(savingSwitchClientIds && cid && savingSwitchClientIds.has(cid));
+                                return (
+                                  <button
+                                    type="button"
+                                    disabled={forceViewOnly}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (forceViewOnly) return;
+                                      handleSaveRowField(globalRowIdx, 'switchOn', !Boolean(rowRef.switchOn), true);
+                                    }}
+                                    className={cn(
+                                      "inline-flex items-center gap-1 h-5 px-2 rounded-full text-[9px] font-black uppercase tracking-wider transition-all shadow-xs border cursor-pointer shrink-0",
+                                      Boolean(rowRef.switchOn)
+                                        ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600"
+                                        : "bg-rose-500 hover:bg-rose-600 text-white border-rose-600",
+                                      isSwitchSaving && "ring-2 ring-amber-400/80 animate-pulse",
+                                      forceViewOnly && "opacity-60 cursor-not-allowed"
+                                    )}
+                                    title={isSwitchSaving ? "Saving..." : (Boolean(rowRef.switchOn) ? "ON — Click to turn OFF" : "OFF — Click to turn ON")}
+                                  >
+                                    {isSwitchSaving ? (
+                                      <Loader2 size={9} className="animate-spin shrink-0" />
+                                    ) : (
+                                      !Boolean(rowRef.switchOn) && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                                    )}
+                                    <span>{Boolean(rowRef.switchOn) ? "ON" : "OFF"}</span>
+                                    {!isSwitchSaving && Boolean(rowRef.switchOn) && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />}
+                                  </button>
+                                );
+                              })()}
                               {effectiveBillingUnlocked && (
                                 <div className="flex items-center gap-1">
                                   <WhatsAppSendButton
@@ -2665,7 +3000,7 @@ export default function BillingTab(props: BillingTabProps) {
                                 )}
                                 </div>
                               )}
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <input
                                   type="text"
                                   value={rowRef.name || ''}
@@ -2676,16 +3011,38 @@ export default function BillingTab(props: BillingTabProps) {
                                   className="w-full bg-transparent border-none p-0 text-[12.5px] font-black focus:ring-0 text-black dark:text-white"
                                   placeholder="Full Name"
                                 />
-                                <input
-                                  type="text"
-                                  value={rowRef.username || rowRef.clientId || ''}
-                                  disabled={!effectiveBillingUnlocked}
-                                  onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
-                                  onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
-                                  onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
-                                  className="w-full bg-transparent border-none p-0 text-[10px] font-bold text-slate-500 focus:ring-0 uppercase tracking-wide"
-                                  placeholder="USER ID"
-                                />
+                                <div className="flex items-center gap-1 min-w-0">
+                                  <input
+                                    type="text"
+                                    value={rowRef.username || rowRef.clientId || ''}
+                                    disabled={!effectiveBillingUnlocked}
+                                    onChange={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value)}
+                                    onKeyDown={(e) => handleRecoveryCellKeyDown(e, globalRowIdx, 'username', activeRows.length)}
+                                    onBlur={(e) => handleSaveRowField(globalRowIdx, 'username', e.target.value, true)}
+                                    className="w-full min-w-0 flex-1 bg-transparent border-none p-0 text-[10px] font-bold text-slate-500 focus:ring-0 uppercase tracking-wide"
+                                    placeholder="USER ID"
+                                  />
+                                  {(rowRef.username || rowRef.clientId) && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const uname = String(rowRef.username || rowRef.clientId || '').trim();
+                                        if (!uname) return;
+                                        if (handleCopyText) {
+                                          handleCopyText(uname, `Username (${uname})`);
+                                        } else {
+                                          navigator.clipboard?.writeText(uname);
+                                          toast.success(`Copied: ${uname}`);
+                                        }
+                                      }}
+                                      className="p-0.5 rounded hover:bg-blue-500/15 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors shrink-0 cursor-pointer"
+                                      title={`Copy username: ${rowRef.username || rowRef.clientId}`}
+                                    >
+                                      <Copy size={11} />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                             <div className="flex flex-col items-end shrink-0">
@@ -2860,6 +3217,7 @@ export default function BillingTab(props: BillingTabProps) {
                 </div>
               )}
             </div>
+          </LazySection>
           )}
 
                   <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold uppercase tracking-wider bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-[var(--neu-border)]">
@@ -2965,17 +3323,13 @@ export default function BillingTab(props: BillingTabProps) {
               {isColumnSettingModalOpen && (
                 <div className="fixed inset-0 z-[700] flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
                   <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
+                    {...overlayMotion}
                     onClick={() => setIsColumnSettingModalOpen(false)}
                     className="fixed inset-0 bg-slate-950/80 backdrop-blur-md"
                   />
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
-                    className="relative w-full max-w-5xl bg-[var(--neu-surface)] rounded-3xl shadow-2xl border border-[var(--neu-border)] p-4 sm:p-6 max-h-[90vh] overflow-y-auto text-left z-10"
+                    {...dialogMotion}
+                    className="transform-gpu will-change-transform relative w-full max-w-5xl bg-[var(--neu-surface)] rounded-3xl shadow-2xl border border-[var(--neu-border)] p-4 sm:p-6 max-h-[90vh] overflow-y-auto text-left z-10"
                   >
                     <div className="flex items-center justify-between pb-4 mb-4 border-b border-[var(--neu-border)]">
                       <div className="flex items-center gap-2">
@@ -3024,5 +3378,7 @@ export default function BillingTab(props: BillingTabProps) {
             </AnimatePresence>
             </div>
   );
-}
+});
+
+export default BillingTab;
 

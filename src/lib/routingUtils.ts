@@ -5,6 +5,7 @@ export function getTabFromPathname(pathname: string, search?: string): string {
       const params = new URLSearchParams(search);
       const tabParam = params.get('tab');
       if (tabParam) {
+        if (tabParam === 'greenradius' || tabParam === 'radius' || tabParam === 'vertix') return 'greenradius';
         if (tabParam === 'billing' || tabParam === 'billingmod') return 'billing';
         if (tabParam === 'clients') return 'clients';
         if (tabParam === 'users') return 'users';
@@ -29,6 +30,7 @@ export function getTabFromPathname(pathname: string, search?: string): string {
     } catch (e) {}
   }
 
+  if (pathname === '/greenradius' || pathname.startsWith('/greenradius')) return 'greenradius';
   if (pathname === '/whatsappcenter' || pathname.startsWith('/whatsappcenter') || pathname === '/whatsapplogs' || pathname.startsWith('/whatsapplogs')) return 'whatsappcenter';
   if (pathname === '/conversation' || pathname.startsWith('/conversation')) return 'complaints';
   if (pathname.startsWith('/billingmod') || pathname === '/billing' || pathname.startsWith('/billing/')) return 'billing';
@@ -54,6 +56,10 @@ export function getTabFromPathname(pathname: string, search?: string): string {
 
 export function getPathnameFromTab(tabId: string): string {
   switch (tabId) {
+    case 'greenradius':
+    case 'radius':
+    case 'vertix':
+      return '/greenradius';
     case 'submit':
     case 'registry':
       return '/registry';

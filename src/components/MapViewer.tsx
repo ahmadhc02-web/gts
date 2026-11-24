@@ -1,64 +1,25 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, ZoomControl, Tooltip } from 'react-leaflet';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useDragControls } from 'motion/react';
+import { overlayMotion, dialogMotion, dropdownMotion } from '../lib/motionPresets';
 import { X, Map as MapIcon, Layers, Satellite, Crosshair, RefreshCw, ZoomIn, ZoomOut, Search, MapPin, Save, Plus, Ruler, Trash2, Navigation, ClipboardList, Globe } from 'lucide-react';
 import { UserProfile, Client, MonitorTarget } from '../types';
 import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
-import { Polyline } from 'react-leaflet';
+import { SkMap, SkBar, SkFrame } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
+import { DeferredBody } from './ui/DeferredBody';
+import { usePopupTiming } from '../lib/usePopupTiming';
+import { DefaultIcon, TargetIcon, LiveLocationIcon, MeasureDotIcon } from './map/mapIcons';
+import { ClientMarkersLayer, ClientMapItem } from './map/ClientMarkersLayer';
 
-// Fix for default marker icons in Leaflet with React
-// Using standard CDN URLs for marker icons (this also bypasses build system path issues)
-const DefaultIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+// Ensure bundled default Leaflet marker assets are registered without external CDN URLs
+L.Marker.prototype.options.icon = DefaultIcon;
 
-// Cache to avoid creating thousands of identical Leaflet divIcon objects
-const iconCache = new Map<string, L.DivIcon>();
-
-const ClientIcon = (client: any, zoomLevel: number) => {
-  const displayId = client.username || (client.id || '').slice(0,6);
-  const showLabel = zoomLevel >= 18;
-  const cacheKey = `${displayId}-${showLabel}`;
-  
-  if (iconCache.has(cacheKey)) {
-    return iconCache.get(cacheKey)!;
-  }
-
-  const labelHtml = showLabel ? `<div style="position: absolute; top: 30px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.95); padding: 3px 6px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); white-space: nowrap; display: flex; flex-direction: column; align-items: center; pointer-events: none; border: 1px solid #e2e8f0; z-index: 100;"><span style="font-size: 11px; font-weight: 900; color: #0f172a; line-height: 1.2;">${client.name || 'Unknown'}</span><span style="font-size: 9px; font-family: monospace; font-weight: bold; color: #64748b; line-height: 1; margin-top: 2px;">${displayId}</span></div>` : '';
-  const pinSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="30" height="30" style="filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.4));"><path fill="#10b981" stroke="#ffffff" stroke-width="1.5" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>';
-  
-  const newIcon = L.divIcon({
-    className: 'custom-client-marker',
-    html: '<div style="position: relative; width: 30px; height: 30px; display: flex; justify-content: center; align-items: flex-end;">' + pinSvg + labelHtml + '</div>',
-    iconSize: [30, 30],
-    iconAnchor: [15, 30],
-  });
-  
-  iconCache.set(cacheKey, newIcon);
-  return newIcon;
-};
-
-const TargetIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `<div style="background-color: #f59e0b; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); animation: pulse 2s infinite;"></div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
-const LiveLocationIcon = L.divIcon({
-  className: 'custom-div-icon',
-  html: `<div style="background-color: #ef4444; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 20px rgba(239, 68, 68, 0.8); position: relative;">
-          <div style="position: absolute; inset: -8px; background: rgba(239, 68, 68, 0.2); border-radius: 50%; animation: pulse 2s infinite;"></div>
-         </div>`,
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
-});
+const ROAD_TILE_URL = import.meta.env.VITE_MAP_TILE_ROAD || 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
+const SAT_TILE_URL = import.meta.env.VITE_MAP_TILE_SAT || 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
 
 const DomainTargetIcon = (status: string) => {
   let color = '#6366f1'; // blue-indigo
@@ -99,14 +60,16 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
   const [loading, setLoading] = useState(false);
   const [filterText, setFilterText] = useState('');
   const [clients, setClients] = useState<Client[]>([]);
+  const showMapSkeleton = useSkeletonGate(loading) && clients.length === 0;
   const [selectedCoord, setSelectedCoord] = useState<{lat: number, lng: number} | null>(null);
   const [selectedClientId, setSelectedClientId] = useState('');
   const [mapSearchText, setMapSearchText] = useState('');
   const [measurePoints, setMeasurePoints] = useState<[number, number][]>([]);
   const [isMeasuring, setIsMeasuring] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(INITIAL_ZOOM);
   const [purgeTarget, setPurgeTarget] = useState<Client | null>(null);
   const [selectedPopupClient, setSelectedPopupClient] = useState<Client | null>(null);
+  usePopupTiming('MapViewer', isOpen);
+  usePopupTiming('MapClientPopup', Boolean(selectedPopupClient));
   
   // Custom Web Domain Monitoring Targets States
   const [isTargetsPanelOpen, setIsTargetsPanelOpen] = useState(false);
@@ -126,6 +89,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
   const lastUpdateRef = useRef<number>(0);
   const watchIdRef = useRef<number | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const targetSheetDragControls = useDragControls();
 
   useEffect(() => {
     if (isTracking) {
@@ -335,7 +299,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
   };
 
   // Reposition customized server target on click
-  const handleSetTargetPosition = async (id: string, lat: number, lng: number) => {
+  const handleSetTargetPosition = useCallback(async (id: string, lat: number, lng: number) => {
     try {
       const target = monitorTargets.find(t => t.id === id);
       if (!target) return;
@@ -345,7 +309,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     } catch (err) {
       toast.error("Deployment failed");
     }
-  };
+  }, [monitorTargets]);
 
   const lastFocusedIdRef = useRef<string | null>(null);
 
@@ -385,11 +349,45 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     }
   };
 
-  const filteredClients = clients.filter(c => 
-    !filterText || 
-    (c.name || '').toLowerCase().includes(filterText.toLowerCase()) ||
-    (c.username || '').toLowerCase().includes(filterText.toLowerCase())
-  );
+  const deferredFilterText = useDeferredValue(filterText);
+  const deferredMapSearchText = useDeferredValue(mapSearchText);
+
+  const { clientsWithCoords, clientById } = useMemo(() => {
+    const items: ClientMapItem[] = [];
+    const byId = new Map<string, Client>();
+    for (let i = 0; i < clients.length; i++) {
+      const c = clients[i];
+      if (!c.lat || !c.lng) continue;
+      const id = c.id ? String(c.id) : `anon-${i}`;
+      if (byId.has(id)) continue;
+      const name = c.name || '';
+      const username = c.username || '';
+      const displayId = username || id.slice(0, 6);
+      items.push({
+        client: c,
+        id,
+        lat: c.lat,
+        lng: c.lng,
+        name: name || 'Unknown',
+        displayId,
+        searchText: `${name} ${username} ${id}`.toLowerCase(),
+      });
+      byId.set(id, c);
+    }
+    return { clientsWithCoords: items, clientById: byId };
+  }, [clients]);
+
+  const mapSearchMatches = useMemo(() => {
+    const q = deferredMapSearchText.trim().toLowerCase();
+    if (!q) return [];
+    return clientsWithCoords.filter(item => item.searchText.includes(q));
+  }, [clientsWithCoords, deferredMapSearchText]);
+
+  const targetSelectMatches = useMemo(() => {
+    const q = deferredFilterText.trim().toLowerCase();
+    if (!q) return clientsWithCoords;
+    return clientsWithCoords.filter(item => item.searchText.includes(q));
+  }, [clientsWithCoords, deferredFilterText]);
 
   const handleSaveLocation = async () => {
     if (!selectedCoord || !selectedClientId || !user) return;
@@ -434,7 +432,6 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     }
   };
 
-  const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
   const selectedPopupClientRef = useRef<Client | null>(null);
   useEffect(() => {
     selectedPopupClientRef.current = selectedPopupClient;
@@ -455,15 +452,6 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     }
   }, [positioningTargetId, isMeasuring, handleSetTargetPosition]);
 
-  const handleZoomEnd = useCallback((zoom: number, bounds: L.LatLngBounds) => {
-    setZoomLevel(zoom);
-    setMapBounds(bounds);
-  }, []);
-
-  const handleMoveEnd = useCallback((bounds: L.LatLngBounds) => {
-    setMapBounds(bounds);
-  }, []);
-
   const handlePopupClose = useCallback(() => {
     if (!isMeasuring) {
       setSelectedCoord(null);
@@ -471,29 +459,30 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     }
   }, [isMeasuring]);
 
-  const handleInitBounds = useCallback((bounds: L.LatLngBounds) => {
-    setMapBounds(prev => prev || bounds);
-  }, []);
-
-  const calculateDistance = () => {
+  const measureTotalDistance = useMemo(() => {
     if (measurePoints.length < 2) return 0;
     let total = 0;
     for (let i = 0; i < measurePoints.length - 1; i++) {
       const p1 = L.latLng(measurePoints[i][0], measurePoints[i][1]);
-      const p2 = L.latLng(measurePoints[i+1][0], measurePoints[i+1][1]);
+      const p2 = L.latLng(measurePoints[i + 1][0], measurePoints[i + 1][1]);
       total += p1.distanceTo(p2);
     }
     return total;
-  };
+  }, [measurePoints]);
 
-  const handleClosePopup = React.useCallback(() => {
-    setSelectedPopupClient(null);
-  }, []);
+  const clientByIdRef = useRef<Map<string, Client>>(clientById);
+  clientByIdRef.current = clientById;
 
-  const handleMarkerClick = React.useCallback((client: Client) => {
+  const handleMarkerClickById = useCallback((clientId: string) => {
+    const client = clientByIdRef.current.get(clientId);
+    if (!client) return;
     setSelectedCoord(null);
     setSelectedClientId('');
     setSelectedPopupClient(client);
+  }, []);
+
+  const handleLiveLocationClick = useCallback(() => {
+    setIsSelectingTarget(true);
   }, []);
 
   if (!isOpen) return null;
@@ -502,9 +491,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
     <AnimatePresence>
       <div className="fixed inset-0 z-[1000] flex items-center justify-center p-2 md:p-8">
         <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          {...overlayMotion}
           className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
           onClick={onClose}
         />
@@ -514,19 +501,28 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
           {purgeTarget && (
             <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
               <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                {...overlayMotion}
                 onClick={() => setPurgeTarget(null)}
                 className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
               />
               <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="relative w-full max-w-sm bg-[var(--neu-surface)] rounded-[2rem] shadow-[var(--neu-shadow-raised-lg)] border border-rose-500/20 overflow-hidden"
+                {...dialogMotion}
+                className="relative w-full max-w-sm bg-[var(--neu-surface)] rounded-[2rem] shadow-[var(--neu-shadow-raised-lg)] border border-rose-500/20 overflow-hidden transform-gpu will-change-transform"
               >
                 <div className="p-8 text-center space-y-6">
+                  <DeferredBody fallback={
+                    <div className="min-h-[220px] flex flex-col items-center justify-center space-y-4">
+                      <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center mx-auto" />
+                      <div className="space-y-2 w-full flex flex-col items-center">
+                        <SkBar w="w-36" h="h-5" />
+                        <SkBar w="w-48" h="h-3" />
+                      </div>
+                      <div className="w-full space-y-2 pt-2">
+                        <SkBar w="w-full" h="h-11" rounded="rounded-2xl" />
+                        <SkBar w="w-full" h="h-11" rounded="rounded-2xl" />
+                      </div>
+                    </div>
+                  }>
                   <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto text-rose-500">
                     <Trash2 size={32} />
                   </div>
@@ -550,6 +546,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                       Cancel
                     </button>
                   </div>
+                  </DeferredBody>
                 </div>
               </motion.div>
             </div>
@@ -557,10 +554,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
         </AnimatePresence>
         
         <motion.div
-          initial={{ y: 50, opacity: 0, scale: 0.95 }}
-          animate={{ y: 0, opacity: 1, scale: 1 }}
-          exit={{ y: 50, opacity: 0, scale: 0.95 }}
-          className="relative w-full max-w-7xl h-full md:h-[85vh] bg-[var(--neu-surface)] rounded-3xl md:rounded-[2.5rem] shadow-[var(--neu-shadow-raised-lg)] overflow-hidden border border-white/20 flex flex-col"
+          {...dialogMotion}
+          className="relative w-full max-w-7xl h-full md:h-[85vh] bg-[var(--neu-surface)] rounded-3xl md:rounded-[2.5rem] shadow-[var(--neu-shadow-raised-lg)] overflow-hidden border border-white/20 flex flex-col transform-gpu will-change-transform"
         >
           <div className="absolute top-0 inset-x-0 p-3 md:p-6 flex items-center justify-between z-10 pointer-events-none">
             <div className="flex flex-col gap-1.5 md:gap-2 pointer-events-auto bg-slate-950/40 backdrop-blur-md border border-white/10 p-2 md:p-3 rounded-xl md:rounded-3xl shadow-[var(--neu-shadow-raised-lg)] min-w-[160px] md:min-w-[200px]">
@@ -572,7 +567,7 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   <h2 className="text-[10px] md:text-sm font-black text-white tracking-widest uppercase opacity-80 leading-none mb-0.5 md:mb-1">Active MAP</h2>
                   <div className="flex items-center gap-1 text-[8px] md:text-[10px] font-bold text-emerald-400">
                     <div className="w-1 h-1 md:w-1.5 md:h-1.5 bg-emerald-400 rounded-full animate-pulse" />
-                    {loading ? 'Booting...' : `${clients.filter(c => c.lat).length} Nodes`}
+                    {loading ? 'Booting...' : `${clientsWithCoords.length} Nodes`}
                   </div>
                 </div>
               </div>
@@ -592,11 +587,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 <AnimatePresence>
                   {mapSearchText.length >= 1 && (
                     <motion.div
-                      initial={{ opacity: 0, y: 15, scale: 0.98, filter: 'blur(10px)' }}
-                      animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
-                      exit={{ opacity: 0, y: 10, scale: 0.98, filter: 'blur(10px)' }}
-                      transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                      className="absolute top-full left-0 right-0 mt-3 p-1 bg-white border border-slate-200 rounded-3xl shadow-[0_30px_90px_-20px_rgba(0,0,0,0.4)] overflow-hidden z-[1001] origin-top"
+                      {...dropdownMotion}
+                      className="absolute top-full left-0 right-0 mt-3 p-1 bg-white border border-slate-200 rounded-3xl shadow-[0_30px_90px_-20px_rgba(0,0,0,0.4)] overflow-hidden z-[1001] origin-top transform-gpu will-change-transform"
                     >
                       <div className="px-4 py-2 flex items-center justify-between border-b border-slate-100/50 mb-1">
                         <div className="flex items-center gap-2">
@@ -604,61 +596,49 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Matrix Scan</span>
                         </div>
                         <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full uppercase">
-                          {clients.filter(c => 
-                            c.lat && (
-                              (c.name || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                              (c.username || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                              (c.id || '').toLowerCase().includes(mapSearchText.toLowerCase())
-                            )
-                          ).length} Match
+                          {mapSearchMatches.length} Match
                         </span>
                       </div>
                       
                       <div className="max-h-[350px] overflow-y-auto custom-scrollbar space-y-1 p-1">
-                        {clients
-                          .filter(c => c.lat && (
-                            (c.name || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                            (c.username || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                            (c.id || '').toLowerCase().includes(mapSearchText.toLowerCase())
-                          ))
+                        {mapSearchMatches
                           .slice(0, 10)
-                          .map((c, i) => (
-                            <motion.button
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: i * 0.03 }}
-                              key={`search-res-${c.id}-${i}`}
-                              onClick={() => {
-                                handleZoomToUser(c.username || c.id);
-                                setMapSearchText('');
-                              }}
-                              className="w-full flex items-center gap-4 p-3 rounded-[1.25rem] bg-slate-50 hover:bg-emerald-600 group transition-all text-left border border-transparent hover:border-emerald-400/50 shadow-[var(--neu-shadow-raised-sm)]"
-                            >
-                              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-emerald-600 font-black text-sm group-hover:bg-white group-hover:scale-110 transition-all shadow-[var(--neu-shadow-raised)]">
-                                {(c.name || 'U').charAt(0)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[13px] font-black text-slate-900 group-hover:text-white transition-colors uppercase tracking-tight leading-tight">
-                                  {c.name || 'Unknown'}
+                          .map((item, i) => {
+                            const c = item.client;
+                            return (
+                              <motion.button
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: i * 0.03 }}
+                                key={`search-res-${c.id}-${i}`}
+                                onClick={() => {
+                                  handleZoomToUser(c.username || c.id);
+                                  setMapSearchText('');
+                                }}
+                                className="w-full flex items-center gap-4 p-3 rounded-[1.25rem] bg-slate-50 hover:bg-emerald-600 group transition-all text-left border border-transparent hover:border-emerald-400/50 shadow-[var(--neu-shadow-raised-sm)]"
+                              >
+                                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-emerald-600 font-black text-sm group-hover:bg-white transition-colors shadow-[var(--neu-shadow-raised)]">
+                                  {(c.name || 'U').charAt(0)}
                                 </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-[8px] font-black text-slate-400 group-hover:text-emerald-100 uppercase tracking-widest">USER_ID:</span>
-                                  <span className="text-[10px] font-mono font-bold text-emerald-600 group-hover:text-white bg-emerald-100/50 group-hover:bg-white/20 px-1.5 py-0.5 rounded transition-all">
-                                    {c.username || c.id}
-                                  </span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[13px] font-black text-slate-900 group-hover:text-white transition-colors uppercase tracking-tight leading-tight">
+                                    {c.name || 'Unknown'}
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[8px] font-black text-slate-400 group-hover:text-emerald-100 uppercase tracking-widest">USER_ID:</span>
+                                    <span className="text-[10px] font-mono font-bold text-emerald-600 group-hover:text-white bg-emerald-100/50 group-hover:bg-white/20 px-1.5 py-0.5 rounded transition-all">
+                                      {c.username || c.id}
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="opacity-0 group-hover:opacity-100 transform -translate-x-2 group-hover:translate-x-0 transition-all">
-                                <MapPin size={16} className="text-white" />
-                              </div>
-                            </motion.button>
-                          ))}
+                                <div className="opacity-0 group-hover:opacity-100 transform -translate-x-2 group-hover:translate-x-0 transition-all">
+                                  <MapPin size={16} className="text-white" />
+                                </div>
+                              </motion.button>
+                            );
+                          })}
                         
-                        {clients.filter(c => c.lat && (
-                          (c.name || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                          (c.username || '').toLowerCase().includes(mapSearchText.toLowerCase()) ||
-                          (c.id || '').toLowerCase().includes(mapSearchText.toLowerCase())
-                        )).length === 0 && (
+                        {mapSearchMatches.length === 0 && (
                           <div className="py-12 flex flex-col items-center justify-center text-center">
                             <div className="w-12 h-12 rounded-2xl border-2 border-dashed border-slate-200 flex items-center justify-center mb-3 text-slate-300">
                               <Search size={20} />
@@ -712,7 +692,11 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
               center={SADIQABAD_CENTER}
               zoom={INITIAL_ZOOM}
               minZoom={3}
-              maxZoom={28}
+              maxZoom={22}
+              preferCanvas={true}
+              wheelDebounceTime={60}
+              zoomSnap={1}
+              fadeAnimation={false}
               style={{ height: '100%', width: '100%' }}
               zoomControl={false}
               attributionControl={false}
@@ -722,77 +706,37 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
               <MapUpdater mapType={mapType} />
               <MapEventsController 
                 onMapClick={handleMapClick} 
-                onZoomEnd={handleZoomEnd} 
-                onMoveEnd={handleMoveEnd} 
                 onPopupClose={handlePopupClose} 
-                onInitBounds={handleInitBounds} 
               />
               
               {/* Tile Layers */}
               {mapType === 'roadmap' ? (
                 <TileLayer
                   key="roadmap"
-                  url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-                  maxNativeZoom={22}
-                  maxZoom={28}
+                  url={ROAD_TILE_URL}
+                  updateWhenZooming={false}
+                  updateWhenIdle={true}
+                  keepBuffer={3}
+                  maxNativeZoom={21}
+                  maxZoom={22}
+                  detectRetina={false}
                 />
               ) : (
                 <TileLayer
                   key="satellite"
-                  url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-                  maxNativeZoom={22}
-                  maxZoom={28}
+                  url={SAT_TILE_URL}
+                  updateWhenZooming={false}
+                  updateWhenIdle={true}
+                  keepBuffer={3}
+                  maxNativeZoom={21}
+                  maxZoom={22}
+                  detectRetina={false}
                 />
               )}
 
-              {/* Measurement Polyline */}
-              {measurePoints.length > 0 && (
-                <>
-                  <Polyline positions={measurePoints} color="#f59e0b" weight={4} dashArray="10, 10" />
-                  {measurePoints.map((pt, i) => (
-                    <Marker 
-                      key={`measure-pt-${i}`} 
-                      position={pt} 
-                      icon={L.divIcon({
-                        className: 'measure-dot',
-                        html: `<div style="background-color: #f59e0b; width: 8px; height: 8px; border-radius: 50%; border: 2px solid white;"></div>`,
-                        iconSize: [8, 8],
-                        iconAnchor: [4, 4],
-                      })}
-                    >
-                      {i === measurePoints.length - 1 && measurePoints.length > 1 && (
-                        <Tooltip permanent direction="top" offset={[0, -10]} className="measure-tooltip">
-                          <div className="font-black text-[10px] uppercase tracking-tighter">
-                            {calculateDistance() < 1000 
-                              ? `${Math.round(calculateDistance())} Meters` 
-                              : `${(calculateDistance() / 1000).toFixed(2)} KM`}
-                          </div>
-                        </Tooltip>
-                      )}
-                    </Marker>
-                  ))}
-                </>
-              )}
-
-              {/* Live Location Marker (Red Dot) */}
-              {userLocation && (
-                <Marker 
-                  position={userLocation} 
-                  icon={LiveLocationIcon}
-                  eventHandlers={{
-                    click: () => setIsSelectingTarget(true)
-                  }}
-                >
-                  <Tooltip permanent direction="top" offset={[0, -10]} className="user-label-tooltip">
-                    <span className="text-[10px] font-black uppercase text-rose-600">LIVE: YOUR_SIGNAL</span>
-                  </Tooltip>
-                </Marker>
-              )}
-
-              {/* Routing Polyline */}
-              {routePolyline.length > 0 && (
-                <Polyline positions={routePolyline} color="#3b82f6" weight={6} opacity={0.8} lineCap="round" lineJoin="round" />
-              )}
+              <MeasureLayer measurePoints={measurePoints} totalDistance={measureTotalDistance} />
+              <LiveLocationLayer userLocation={userLocation} onClick={handleLiveLocationClick} />
+              <RoutePolylineLayer routePolyline={routePolyline} />
 
               {/* Custom Target Markers (Hidden by request) */}
               {/* {monitorTargets.map((target, idx) => {
@@ -891,75 +835,23 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 );
               })} */}
 
-              {/* Client Markers */}
-              {filteredClients.map((client, markerIdx) => {
-                if (!client.lat || !client.lng) return null;
-                
-                // Viewport culling to prevent lag - always keep the selected client rendered
-                if (mapBounds && selectedPopupClient?.id !== client.id) {
-                  const latLng = L.latLng(client.lat, client.lng);
-                  // Add a small buffer to avoid popping in/out right at the edge
-                  if (!mapBounds.pad(0.2).contains(latLng)) {
-                    return null;
-                  }
-                }
-                
-                return (
-                  <Marker 
-                    key={client.id ? `marker-${client.id}` : `marker-idx-${markerIdx}`} 
-                    position={[client.lat, client.lng]}
-                    icon={ClientIcon(client, zoomLevel)}
-                    eventHandlers={{ 
-                      click: (e) => {
-                        if (e.originalEvent) {
-                          e.originalEvent.stopPropagation();
-                          e.originalEvent.preventDefault();
-                        }
-                        L.DomEvent.stopPropagation(e);
-                        handleMarkerClick(client);
-                      } 
-                    }}
-                  />
-                );
-              })}
+              {/* Client Markers (Clustered) */}
+              <ClientMarkersLayer
+                clients={clientsWithCoords}
+                totalClientsCount={clients.length}
+                filterText={deferredFilterText}
+                selectedClientId={selectedPopupClient?.id ?? null}
+                onMarkerClick={handleMarkerClickById}
+              />
 
               {/* Selected Coordinate Marker */}
-              {selectedCoord && (
-                <Marker position={[selectedCoord.lat, selectedCoord.lng]} icon={TargetIcon}>
-                  <Popup className="custom-popup" autoPan>
-                    <div className="w-56 p-1 flex flex-col gap-2">
-                      <h3 className="font-black text-xs text-slate-800 border-b border-slate-100 pb-1">Set Node Location</h3>
-                      <p className="text-[9px] text-slate-500 leading-tight">Assign these coordinates to a specific user.</p>
-                      
-                      <div>
-                        <input 
-                          type="text"
-                          autoFocus
-                          list="users-list"
-                          placeholder="Type User ID or Name..."
-                          className="w-full text-xs border border-slate-200 dark:border-slate-700 bg-[var(--neu-surface)] text-slate-900 dark:text-white rounded p-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                          value={selectedClientId}
-                          onChange={(e) => setSelectedClientId(e.target.value)}
-                        />
-                        <datalist id="users-list">
-                          {clients.map((c, optIdx) => (
-                            <option key={`opt-${c.id}-${optIdx}`} value={c.username || c.id}>{c.name || 'Unknown'} ({c.username || c.id.slice(0, 6)})</option>
-                          ))}
-                        </datalist>
-                      </div>
-                      
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleSaveLocation(); }}
-                        disabled={!selectedClientId}
-                        className="w-full mt-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:bg-slate-300 text-white text-[10px] font-bold rounded p-1.5 flex justify-center items-center gap-1 transition-colors"
-                      >
-                        <Save size={10} />
-                        Save Location
-                      </button>
-                    </div>
-                  </Popup>
-                </Marker>
-              )}
+              <SelectedCoordLayer
+                selectedCoord={selectedCoord}
+                selectedClientId={selectedClientId}
+                clients={clients}
+                onSelectClientId={setSelectedClientId}
+                onSaveLocation={handleSaveLocation}
+              />
             </MapContainer>
 
             {/* Tactical Control Matrix */}
@@ -1088,18 +980,9 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
             </div>
           </div>
 
-          {loading && (
-            <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[4px] flex items-center justify-center z-50">
-              <div className="flex flex-col items-center gap-4">
-                  <div className="relative">
-                    <RefreshCw className="text-emerald-400 animate-spin" size={48} />
-                    <MapIcon className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white" size={20} />
-                  </div>
-                  <div className="flex flex-col items-center">
-                    <div className="text-white text-xs font-black tracking-[0.3em] uppercase">Constructing Matrix</div>
-                    <div className="text-emerald-400/50 text-[10px] font-bold mt-1 tracking-widest">MAP-PAK-01-SECURE</div>
-                  </div>
-              </div>
+          {showMapSkeleton && (
+            <div className="absolute inset-0 bg-slate-950/60 p-3 z-50">
+              <SkMap className="w-full h-full min-h-[450px]" />
             </div>
           )}
 
@@ -1111,16 +994,22 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   initial={{ y: "100%" }}
                   animate={{ y: 0 }}
                   exit={{ y: "100%" }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                  transition={{ type: 'spring', damping: 36, stiffness: 320, mass: 1 }}
                   drag="y"
+                  dragControls={targetSheetDragControls}
+                  dragListener={false}
                   dragConstraints={{ top: 0 }}
                   dragElastic={0.2}
                   onDragEnd={(_, info) => {
                     if (info.offset.y > 150) setIsSelectingTarget(false);
                   }}
-                  className="w-full max-w-lg bg-[var(--neu-surface)] rounded-t-[3rem] sm:rounded-3xl p-6 shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.3)] border-t sm:border border-slate-200 dark:border-white/10 pointer-events-auto h-[80vh] sm:h-auto flex flex-col"
+                  className="w-full max-w-lg bg-[var(--neu-surface)] rounded-t-[3rem] sm:rounded-3xl p-6 shadow-[0_-20px_50px_-10px_rgba(0,0,0,0.3)] border-t sm:border border-slate-200 dark:border-white/10 pointer-events-auto h-[80vh] sm:h-auto flex flex-col transform-gpu will-change-transform"
                 >
-                  <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto mb-6 sm:hidden cursor-grab active:cursor-grabbing" />
+                  <div
+                    onPointerDown={(e) => targetSheetDragControls.start(e)}
+                    style={{ touchAction: 'none' }}
+                    className="w-12 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto mb-6 sm:hidden cursor-grab active:cursor-grabbing"
+                  />
                   
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-3">
@@ -1151,11 +1040,11 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   </div>
                   
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar pb-10">
-                    {clients
-                      .filter(c => c.lat && (!filterText || (c.name || '').toLowerCase().includes(filterText.toLowerCase()) || (c.id || '').toLowerCase().includes(filterText.toLowerCase())))
-                      .map((c, i) => {
-                        const dist = userLocation && c.lat && c.lng 
-                          ? L.latLng(userLocation[0], userLocation[1]).distanceTo(L.latLng(c.lat, c.lng))
+                    {targetSelectMatches
+                      .map((item, i) => {
+                        const c = item.client;
+                        const dist = userLocation 
+                          ? L.latLng(userLocation[0], userLocation[1]).distanceTo(L.latLng(item.lat, item.lng))
                           : null;
                         
                         return (
@@ -1198,10 +1087,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
           <AnimatePresence>
             {isMeasuring && (
               <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 15 }}
-                className="absolute top-24 left-6 z-[1000] p-4 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-amber-500/30 text-white space-y-2.5 max-w-xs shadow-[var(--neu-shadow-raised-lg)] pointer-events-auto"
+                {...dialogMotion}
+                className="absolute top-24 left-6 z-[1000] p-4 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-amber-500/30 text-white space-y-2.5 max-w-xs shadow-[var(--neu-shadow-raised-lg)] pointer-events-auto transform-gpu will-change-transform"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1232,9 +1119,9 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-[8px] font-black text-slate-400 uppercase tracking-wide">Total Distance:</span>
                     <span className="text-xs font-mono font-black text-amber-400">
-                      {calculateDistance() < 1000 
-                        ? `${Math.round(calculateDistance())} Meters` 
-                        : `${(calculateDistance() / 1000).toFixed(3)} KM`}
+                      {measureTotalDistance < 1000 
+                        ? `${Math.round(measureTotalDistance)} Meters` 
+                        : `${(measureTotalDistance / 1000).toFixed(3)} KM`}
                     </span>
                   </div>
                 )}
@@ -1263,11 +1150,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
           <AnimatePresence>
             {selectedPopupClient && (
               <motion.div 
-                initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="absolute top-20 right-6 z-[1001] w-72 sm:w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.3)] pointer-events-auto"
+                {...dialogMotion}
+                className="absolute top-20 right-6 z-[1001] w-72 sm:w-80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-[0_20px_40px_-15px_rgba(0,0,0,0.3)] pointer-events-auto transform-gpu will-change-transform"
               >
                 <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -1351,10 +1235,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
           <AnimatePresence>
             {positioningTargetId && (
               <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 15 }}
-                className="absolute top-24 left-6 z-[1000] p-4 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-indigo-500/30 text-white space-y-2 max-w-xs shadow-[var(--neu-shadow-raised-lg)] pointer-events-auto"
+                {...dialogMotion}
+                className="absolute top-24 left-6 z-[1000] p-4 bg-slate-950/85 backdrop-blur-md rounded-2xl border border-indigo-500/30 text-white space-y-2 max-w-xs shadow-[var(--neu-shadow-raised-lg)] pointer-events-auto transform-gpu will-change-transform"
               >
                 <div className="flex items-center gap-2">
                   <Crosshair size={14} className="text-indigo-400 animate-spin shrink-0" />
@@ -1382,8 +1264,8 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
                 initial={{ x: "-100%" }}
                 animate={{ x: 0 }}
                 exit={{ x: "-100%" }}
-                transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                className="absolute left-0 top-0 bottom-0 w-full sm:w-[380px] bg-[var(--neu-surface)] border-r border-slate-200 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)] z-[1005] flex flex-col p-6 pt-24 pointer-events-auto"
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute left-0 top-0 bottom-0 w-full sm:w-[380px] bg-[var(--neu-surface)] border-r border-slate-200 dark:border-white/10 shadow-[var(--neu-shadow-raised-lg)] z-[1005] flex flex-col p-6 pt-24 pointer-events-auto transform-gpu will-change-transform"
               >
                 {/* Header info */}
                 <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-white/10">
@@ -1653,40 +1535,116 @@ const MapViewer: React.FC<MapViewerProps> = ({ isOpen, onClose, user, focusedCli
   );
 };
 
+// Memoized live / measure / route / coordinate overlay layers so updates never re-render ClientMarkersLayer
+const MeasureLayer = React.memo<{ measurePoints: [number, number][]; totalDistance: number }>(
+  ({ measurePoints, totalDistance }) => {
+    if (measurePoints.length === 0) return null;
+    return (
+      <>
+        <Polyline positions={measurePoints} color="#f59e0b" weight={4} dashArray="10, 10" />
+        {measurePoints.map((pt, i) => (
+          <Marker key={`measure-pt-${i}`} position={pt} icon={MeasureDotIcon}>
+            {i === measurePoints.length - 1 && measurePoints.length > 1 && (
+              <Tooltip permanent direction="top" offset={[0, -10]} className="measure-tooltip">
+                <div className="font-black text-[10px] uppercase tracking-tighter">
+                  {totalDistance < 1000
+                    ? `${Math.round(totalDistance)} Meters`
+                    : `${(totalDistance / 1000).toFixed(2)} KM`}
+                </div>
+              </Tooltip>
+            )}
+          </Marker>
+        ))}
+      </>
+    );
+  }
+);
+
+const LiveLocationLayer = React.memo<{ userLocation: [number, number] | null; onClick: () => void }>(
+  ({ userLocation, onClick }) => {
+    const eventHandlers = useMemo(() => ({ click: onClick }), [onClick]);
+    if (!userLocation) return null;
+    return (
+      <Marker position={userLocation} icon={LiveLocationIcon} eventHandlers={eventHandlers}>
+        <Tooltip permanent direction="top" offset={[0, -10]} className="user-label-tooltip">
+          <span className="text-[10px] font-black uppercase text-rose-600">LIVE: YOUR_SIGNAL</span>
+        </Tooltip>
+      </Marker>
+    );
+  }
+);
+
+const RoutePolylineLayer = React.memo<{ routePolyline: [number, number][] }>(({ routePolyline }) => {
+  if (routePolyline.length === 0) return null;
+  return (
+    <Polyline positions={routePolyline} color="#3b82f6" weight={6} opacity={0.8} lineCap="round" lineJoin="round" />
+  );
+});
+
+const SelectedCoordLayer = React.memo<{
+  selectedCoord: { lat: number; lng: number } | null;
+  selectedClientId: string;
+  clients: Client[];
+  onSelectClientId: (val: string) => void;
+  onSaveLocation: () => void;
+}>(({ selectedCoord, selectedClientId, clients, onSelectClientId, onSaveLocation }) => {
+  if (!selectedCoord) return null;
+  return (
+    <Marker position={[selectedCoord.lat, selectedCoord.lng]} icon={TargetIcon}>
+      <Popup className="custom-popup" autoPan>
+        <div className="w-56 p-1 flex flex-col gap-2">
+          <h3 className="font-black text-xs text-slate-800 border-b border-slate-100 pb-1">Set Node Location</h3>
+          <p className="text-[9px] text-slate-500 leading-tight">Assign these coordinates to a specific user.</p>
+
+          <div>
+            <input
+              type="text"
+              autoFocus
+              list="users-list"
+              placeholder="Type User ID or Name..."
+              className="w-full text-xs border border-slate-200 dark:border-slate-700 bg-[var(--neu-surface)] text-slate-900 dark:text-white rounded p-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              value={selectedClientId}
+              onChange={(e) => onSelectClientId(e.target.value)}
+            />
+            <datalist id="users-list">
+              {clients.map((c, optIdx) => (
+                <option key={`opt-${c.id}-${optIdx}`} value={c.username || c.id}>{c.name || 'Unknown'} ({c.username || c.id.slice(0, 6)})</option>
+              ))}
+            </datalist>
+          </div>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); onSaveLocation(); }}
+            disabled={!selectedClientId}
+            className="w-full mt-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:bg-slate-300 text-white text-[10px] font-bold rounded p-1.5 flex justify-center items-center gap-1 transition-colors"
+          >
+            <Save size={10} />
+            Save Location
+          </button>
+        </div>
+      </Popup>
+    </Marker>
+  );
+});
+
 // Map events controller to decouple listeners and prevent re-mounting flickering
 interface MapEventsControllerProps {
   onMapClick: (e: L.LeafletMouseEvent) => void;
-  onZoomEnd: (zoom: number, bounds: L.LatLngBounds) => void;
-  onMoveEnd: (bounds: L.LatLngBounds) => void;
   onPopupClose: () => void;
-  onInitBounds: (bounds: L.LatLngBounds) => void;
 }
 
 const MapEventsController: React.FC<MapEventsControllerProps> = React.memo(({
   onMapClick,
-  onZoomEnd,
-  onMoveEnd,
   onPopupClose,
-  onInitBounds
 }) => {
-  const map = useMapEvents({
+  useMapEvents({
     click(e) {
       onMapClick(e);
-    },
-    zoomend(e) {
-      onZoomEnd(e.target.getZoom(), e.target.getBounds());
-    },
-    moveend(e) {
-      onMoveEnd(e.target.getBounds());
     },
     popupclose() {
       onPopupClose();
     }
   });
-
-  useEffect(() => {
-    onInitBounds(map.getBounds());
-  }, [map, onInitBounds]);
 
   return null;
 });

@@ -1,6 +1,7 @@
 import { useTheme } from "../hooks/useTheme";
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { SWITCH_OFF_STATUSES, shouldSwitchBeOff, shouldZeroAmount } from '../lib/billingRules';
 import DistributionList from './DistributionList';
 
 const MyPCTab = lazyWithRetry(() => import('./MyPCTab'));
@@ -23,6 +24,8 @@ import MicVisualizer from './MicVisualizer';
 import { getCardStyle, getCleanErrorMessage } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
 import RouteLoadingFallback from './RouteLoadingFallback';
+import { SkStatTile, SkChartCard, SkTable, SkToolbar, SkFrame, SkBar, SkRegistry, getVariantForTab } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
 import { getAvatarUrl } from '../utils/avatar';
 import { 
   getBillingStatusVisibility, 
@@ -49,6 +52,12 @@ const isExcludedFromRecovery = (r: any) => {
   };
   return check(r.name) || check(r.username) || check(r.comments);
 };
+
+function useStableCallback<T extends (...args: any[]) => any>(fn: T): T {
+  const fnRef = React.useRef(fn);
+  fnRef.current = fn;
+  return React.useCallback(((...args: any[]) => fnRef.current(...args)) as T, []);
+}
 
 const ClientManagement = lazyWithRetry(() => import('./ClientManagement'));
 const RealTimeMonitor = lazyWithRetry(() => import('./RealTimeMonitor'));
@@ -195,6 +204,9 @@ export default function AdminPanel({
   const customNames = branding.customNames || {};
   const [isFormVisible, setIsFormVisible] = useState(true);
 
+  const isComplaintsLoading = (!isComplaintsInitialLoaded && complaints.length === 0);
+  const showComplaintsSkeleton = useSkeletonGate(isComplaintsLoading) && complaints.length === 0;
+
   const [isSyncingPB, setIsSyncingPB] = useState(false);
   const syncAllToDatabase = async () => {
     if (!confirm("This will synchronize all data (Billing, Ledger, Complaints) with your database. Proceed?")) return;
@@ -299,18 +311,18 @@ export default function AdminPanel({
   const [isGeneratingBackup, setIsGeneratingBackup] = useState(false);
 
   const defaultBillingColWidths = {
-    sr: 40,
+    sr: 68,
     name: 160,
-    username: 110,
+    username: 145,
     mobile: 145,
     panelDetails: 130,
     area: 65,
     rt: 60,
-    baseAmount: 85,
-    cr: 85,
-    totalAmount: 100,
-    billingDay: 30,
-    paymentReceived: 100,
+    baseAmount: 118,
+    cr: 128,
+    totalAmount: 115,
+    billingDay: 38,
+    paymentReceived: 115,
     paymentStatus: 95,
     comments: 180,
     occupation: 100,
@@ -318,7 +330,7 @@ export default function AdminPanel({
     date: 90,
     device: 80,
     abl: 80,
-    act: 50
+    act: 58
   };
   const [billingColWidths, setBillingColWidths] = useState(defaultBillingColWidths);
   const [showSaveBillingWidthsBar, setShowSaveBillingWidthsBar] = useState(false);
@@ -332,7 +344,16 @@ export default function AdminPanel({
     pocketbaseService.getUserPreferences(currentUser.uid).then((prefs) => {
       if (!mounted) return;
       if (prefs && prefs.billingColWidths) {
-        setBillingColWidths(prev => ({ ...prev, ...prefs.billingColWidths }));
+        const savedWidths = prefs.billingColWidths;
+        setBillingColWidths(prev => ({
+          ...prev,
+          ...savedWidths,
+          sr: Math.max(Number(savedWidths.sr) || 0, 68),
+          username: Math.max(Number(savedWidths.username) || 0, 140),
+          baseAmount: Math.max(Number(savedWidths.baseAmount) || 0, 118),
+          cr: Math.max(Number(savedWidths.cr) || 0, 128),
+          totalAmount: Math.max(Number(savedWidths.totalAmount) || 0, 115)
+        }));
       }
       setWidthsLoading(false);
     });
@@ -847,8 +868,16 @@ export default function AdminPanel({
   });
 
   const billingMonthsRef = React.useRef<any[]>([]);
-  const isBillingDataFresh = React.useRef(false);
+  const isBillingDataFresh = React.useRef<boolean>(pocketbaseService.isBillingFresh);
   const [isBillingFresh, setIsBillingFresh] = useState<boolean>(() => pocketbaseService.isBillingFresh);
+  useEffect(() => {
+    const unsub = pocketbaseService.subscribeBillingFresh(() => {
+      const fresh = pocketbaseService.getBillingFresh();
+      setIsBillingFresh(fresh);
+      isBillingDataFresh.current = fresh;
+    });
+    return () => unsub();
+  }, []);
   const [isBillingMonthsLoading, setIsBillingMonthsLoading] = useState<boolean>(() => {
     try {
       const lc = currentUser?.lineCode || 'nolc';
@@ -878,10 +907,510 @@ export default function AdminPanel({
   const deletingMonthIds = React.useRef<Set<string>>(new Set());
   const loadingMonthsPromisesRef = React.useRef<Record<string, Promise<any>>>({});
 
-  const ensureMonthLoaded = useCallback(async (monthId: string) => {
+  const [currentMonthId, _setCurrentMonthId] = useState<string>(() => {
+    try {
+      const lc = currentUser?.lineCode || 'nolc';
+      const dealer = activeDealerId || 'all';
+      const exactKey = `billing_months_${dealer}_${lc}`;
+      const metaStr = localStorage.getItem(`gts_cache_meta_${exactKey}`);
+      const metaTime = metaStr ? Number(metaStr) : 0;
+      const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+      if (metaTime && Date.now() - metaTime <= CACHE_MAX_AGE_MS) {
+        const cached: any[] = globalTableCaches[exactKey] || JSON.parse(localStorage.getItem(`gts_cache_v3_${exactKey}`) || '[]');
+        if (Array.isArray(cached) && cached.length > 0) {
+          return cached[0].id || cached[0].month_id || '';
+        }
+      }
+    } catch (e) {}
+    return '';
+  });
+  const currentMonthIdRef = React.useRef<string>('');
+  const setCurrentMonthId = (val: any) => {
+    _setCurrentMonthId(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      currentMonthIdRef.current = next;
+      return next;
+    });
+  };
+
+  type PendingSwitchItem = { monthId: string; dealerId: string; clientId: string; username?: string; on: boolean; prevOn: boolean; rowIndex: number };
+  const pendingSwitchUpdatesByMonthRef = React.useRef<Map<string, Map<string, PendingSwitchItem>>>(new Map());
+  const inFlightSwitchValuesRef = React.useRef<Map<string, Map<string, PendingSwitchItem>>>(new Map());
+  const inFlightSwitchClientIdsRef = React.useRef<Set<string>>(new Set());
+  const switchFlushTimerRef = React.useRef<any>(null);
+  const switchFlushMaxTimerRef = React.useRef<any>(null);
+  const isSwitchFlushingRef = React.useRef<boolean>(false);
+  const [switchSavingCount, setSwitchSavingCount] = useState<number>(0);
+  const [savingSwitchClientIds, setSavingSwitchClientIds] = useState<Set<string>>(() => new Set());
+  const [showAllSavedChip, setShowAllSavedChip] = useState<boolean>(false);
+  const switchAllSavedTimerRef = React.useRef<any>(null);
+
+  const applyPendingSwitchesToMonth = useCallback((month: any, dealerId?: string) => {
+    if (!month || !Array.isArray(month.rows) || month.rows.length === 0) return month;
+    const monthId = month.id || month.month_id;
+    if (!monthId) return month;
+
+    const resolvedDealer = dealerId || month.dealerId || activeDealerId || 'main';
+    const exactBucketKey = `${monthId}::${resolvedDealer}`;
+
+    const desiredByClientId = new Map<string, boolean>();
+    const desiredByUsername = new Map<string, boolean>();
+
+    // 1. Gather all in-flight values matching this monthId
+    for (const [k, b] of inFlightSwitchValuesRef.current.entries()) {
+      if (k === exactBucketKey || k.startsWith(`${monthId}::`)) {
+        b.forEach((item, cid) => {
+          desiredByClientId.set(String(cid), Boolean(item.on));
+          if (item.username) {
+            desiredByUsername.set(String(item.username).trim().toLowerCase(), Boolean(item.on));
+          }
+        });
+      }
+    }
+
+    // 2. Gather all pending values matching this monthId (pending overrides in-flight)
+    for (const [k, b] of pendingSwitchUpdatesByMonthRef.current.entries()) {
+      if (k === exactBucketKey || k.startsWith(`${monthId}::`)) {
+        b.forEach((item, cid) => {
+          desiredByClientId.set(String(cid), Boolean(item.on));
+          if (item.username) {
+            desiredByUsername.set(String(item.username).trim().toLowerCase(), Boolean(item.on));
+          }
+        });
+      }
+    }
+
+    if (desiredByClientId.size === 0 && desiredByUsername.size === 0) {
+      return month;
+    }
+
+    let appliedCount = 0;
+    let changed = false;
+    const nextRows = month.rows.map((r: any) => {
+      const cid = String(r.clientId || r.client_id || r.id || '');
+      const uname = r.username ? String(r.username).trim().toLowerCase() : '';
+      let targetDesired: boolean | undefined = undefined;
+
+      if (cid && desiredByClientId.has(cid)) {
+        targetDesired = desiredByClientId.get(cid);
+      } else if (uname && desiredByUsername.has(uname)) {
+        targetDesired = desiredByUsername.get(uname);
+      }
+
+      if (targetDesired === undefined) return r;
+
+      if (r.switchOn !== targetDesired || r.switch_on !== targetDesired) {
+        changed = true;
+        appliedCount++;
+        return { ...r, switchOn: targetDesired, switch_on: targetDesired };
+      }
+      return r;
+    });
+
+    if (appliedCount > 0) {
+      console.log(`[Switch] re-applied ${appliedCount} pending values for ${monthId}`);
+    }
+
+    return changed ? { ...month, rows: nextRows } : month;
+  }, [activeDealerId]);
+
+  const recomputeSwitchSavingState = useCallback(() => {
+    const activeIds = new Set<string>(inFlightSwitchClientIdsRef.current);
+    let totalCount = inFlightSwitchClientIdsRef.current.size;
+    pendingSwitchUpdatesByMonthRef.current.forEach((bucket) => {
+      bucket.forEach((item) => {
+        activeIds.add(item.clientId);
+      });
+      totalCount += bucket.size;
+    });
+    setSavingSwitchClientIds(activeIds);
+    setSwitchSavingCount(totalCount);
+  }, []);
+
+  const getTotalPendingSwitchCount = useCallback(() => {
+    let count = 0;
+    pendingSwitchUpdatesByMonthRef.current.forEach((bucket) => {
+      count += bucket.size;
+    });
+    return count;
+  }, []);
+
+  const flushSwitchQueue = useCallback(async (
+    isRetry = false,
+    attempt = 0,
+    retryPayload?: { bucketKey: string; monthId: string; dealerId: string; updates: PendingSwitchItem[] }
+  ): Promise<void> => {
+    if (isSwitchFlushingRef.current && !isRetry) return;
+
+    let bucketKey = '';
+    let bucketMonthId = '';
+    let bucketDealerId = 'main';
+    let updatesList: PendingSwitchItem[] = [];
+
+    if (isRetry && retryPayload) {
+      bucketKey = retryPayload.bucketKey;
+      bucketMonthId = retryPayload.monthId;
+      bucketDealerId = retryPayload.dealerId;
+      updatesList = retryPayload.updates;
+    } else {
+      for (const [k, bucket] of pendingSwitchUpdatesByMonthRef.current.entries()) {
+        if (bucket.size > 0) {
+          bucketKey = k;
+          updatesList = Array.from(bucket.values());
+          bucketMonthId = updatesList[0].monthId;
+          bucketDealerId = updatesList[0].dealerId;
+          bucket.clear();
+          pendingSwitchUpdatesByMonthRef.current.delete(k);
+          break;
+        }
+      }
+    }
+
+    if (updatesList.length === 0 || !bucketMonthId) return;
+
+    isSwitchFlushingRef.current = true;
+    inFlightSwitchClientIdsRef.current = new Set(updatesList.map(u => u.clientId));
+    let inFlightBucket = inFlightSwitchValuesRef.current.get(bucketKey);
+    if (!inFlightBucket) {
+      inFlightBucket = new Map();
+      inFlightSwitchValuesRef.current.set(bucketKey, inFlightBucket);
+    }
+    updatesList.forEach(u => {
+      inFlightBucket!.set(u.clientId, u);
+    });
+    recomputeSwitchSavingState();
+
+    try {
+      const payload = updatesList.map(u => ({ clientId: u.clientId, username: u.username, on: u.on }));
+      await pocketbaseService.setBillingRowSwitches(bucketMonthId, bucketDealerId, payload);
+
+      const activeInFlight = inFlightSwitchValuesRef.current.get(bucketKey);
+      if (activeInFlight) {
+        updatesList.forEach(u => {
+          if (activeInFlight.get(u.clientId) === u) {
+            activeInFlight.delete(u.clientId);
+          }
+        });
+        if (activeInFlight.size === 0) {
+          inFlightSwitchValuesRef.current.delete(bucketKey);
+        }
+      }
+      inFlightSwitchClientIdsRef.current.clear();
+      isSwitchFlushingRef.current = false;
+      recomputeSwitchSavingState();
+
+      if (getTotalPendingSwitchCount() > 0) {
+        flushSwitchQueue();
+      } else {
+        setShowAllSavedChip(true);
+        if (switchAllSavedTimerRef.current) clearTimeout(switchAllSavedTimerRef.current);
+        switchAllSavedTimerRef.current = setTimeout(() => {
+          setShowAllSavedChip(false);
+        }, 2000);
+      }
+    } catch (err: any) {
+      if (attempt < 3) {
+        const delays = [500, 1500, 3000];
+        const delay = delays[attempt] || 3000;
+        recomputeSwitchSavingState();
+        setTimeout(() => {
+          flushSwitchQueue(true, attempt + 1, {
+            bucketKey,
+            monthId: bucketMonthId,
+            dealerId: bucketDealerId,
+            updates: updatesList
+          });
+        }, delay);
+      } else {
+        const activeInFlight = inFlightSwitchValuesRef.current.get(bucketKey);
+        if (activeInFlight) {
+          updatesList.forEach(u => {
+            if (activeInFlight.get(u.clientId) === u) {
+              activeInFlight.delete(u.clientId);
+            }
+          });
+          if (activeInFlight.size === 0) {
+            inFlightSwitchValuesRef.current.delete(bucketKey);
+          }
+        }
+        inFlightSwitchClientIdsRef.current.clear();
+        isSwitchFlushingRef.current = false;
+
+        const currentBucket = pendingSwitchUpdatesByMonthRef.current.get(bucketKey);
+        const currentMonths = billingMonthsRef.current;
+        const idx = currentMonths.findIndex(m => m.id === bucketMonthId);
+        if (idx !== -1) {
+          const doc = currentMonths[idx];
+          const rows = [...doc.rows];
+          updatesList.forEach(u => {
+            if (currentBucket && currentBucket.has(u.clientId)) return;
+            const rIdx = rows.findIndex(r => String(r.clientId || r.client_id || r.id) === String(u.clientId));
+            if (rIdx !== -1) {
+              rows[rIdx] = { ...rows[rIdx], switchOn: u.prevOn, switch_on: u.prevOn };
+            }
+          });
+          const nextMonths = [...currentMonths];
+          nextMonths[idx] = { ...doc, rows };
+          billingMonthsRef.current = nextMonths;
+          setBillingMonths(nextMonths);
+        }
+
+        recomputeSwitchSavingState();
+
+        toast.error(`Could not save ${updatesList.length} switches`, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              let bucket = pendingSwitchUpdatesByMonthRef.current.get(bucketKey);
+              if (!bucket) {
+                bucket = new Map();
+                pendingSwitchUpdatesByMonthRef.current.set(bucketKey, bucket);
+              }
+              updatesList.forEach(u => {
+                if (!bucket!.has(u.clientId)) {
+                  bucket!.set(u.clientId, u);
+                }
+              });
+              recomputeSwitchSavingState();
+              flushSwitchQueue();
+            }
+          }
+        });
+
+        if (getTotalPendingSwitchCount() > 0) {
+          flushSwitchQueue();
+        }
+      }
+    }
+  }, [getTotalPendingSwitchCount, recomputeSwitchSavingState]);
+
+  const enqueueSwitchUpdate = useCallback((
+    monthId: string,
+    dealerId: string | undefined,
+    clientId: string,
+    username: string | undefined,
+    on: boolean,
+    prevOn: boolean,
+    rowIndex: number
+  ) => {
+    if (!monthId || !clientId) return;
+    const resolvedDealer = dealerId || 'main';
+    const bucketKey = `${monthId}::${resolvedDealer}`;
+    let bucket = pendingSwitchUpdatesByMonthRef.current.get(bucketKey);
+    if (!bucket) {
+      bucket = new Map();
+      pendingSwitchUpdatesByMonthRef.current.set(bucketKey, bucket);
+    }
+    const existing = bucket.get(clientId);
+    bucket.set(clientId, {
+      monthId,
+      dealerId: resolvedDealer,
+      clientId,
+      username,
+      on: Boolean(on),
+      prevOn: existing ? existing.prevOn : prevOn,
+      rowIndex
+    });
+
+    setShowAllSavedChip(false);
+    if (switchAllSavedTimerRef.current) {
+      clearTimeout(switchAllSavedTimerRef.current);
+      switchAllSavedTimerRef.current = null;
+    }
+    recomputeSwitchSavingState();
+
+    if (switchFlushTimerRef.current) clearTimeout(switchFlushTimerRef.current);
+    if (!switchFlushMaxTimerRef.current) {
+      switchFlushMaxTimerRef.current = setTimeout(() => {
+        if (switchFlushTimerRef.current) {
+          clearTimeout(switchFlushTimerRef.current);
+          switchFlushTimerRef.current = null;
+        }
+        switchFlushMaxTimerRef.current = null;
+        flushSwitchQueue();
+      }, 1000);
+    }
+    switchFlushTimerRef.current = setTimeout(() => {
+      if (switchFlushMaxTimerRef.current) {
+        clearTimeout(switchFlushMaxTimerRef.current);
+        switchFlushMaxTimerRef.current = null;
+      }
+      switchFlushTimerRef.current = null;
+      flushSwitchQueue();
+    }, 250);
+  }, [flushSwitchQueue, recomputeSwitchSavingState]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (getTotalPendingSwitchCount() > 0 || isSwitchFlushingRef.current) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved switch changes. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden' && getTotalPendingSwitchCount() > 0) {
+        if (switchFlushTimerRef.current) {
+          clearTimeout(switchFlushTimerRef.current);
+          switchFlushTimerRef.current = null;
+        }
+        if (switchFlushMaxTimerRef.current) {
+          clearTimeout(switchFlushMaxTimerRef.current);
+          switchFlushMaxTimerRef.current = null;
+        }
+        flushSwitchQueue();
+      }
+    };
+    const handlePageHide = () => {
+      if (getTotalPendingSwitchCount() > 0) {
+        if (switchFlushTimerRef.current) {
+          clearTimeout(switchFlushTimerRef.current);
+          switchFlushTimerRef.current = null;
+        }
+        if (switchFlushMaxTimerRef.current) {
+          clearTimeout(switchFlushMaxTimerRef.current);
+          switchFlushMaxTimerRef.current = null;
+        }
+        flushSwitchQueue();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [flushSwitchQueue, getTotalPendingSwitchCount]);
+
+  const prevMonthDealerRef = React.useRef(`${currentMonthId}_${activeDealerId}`);
+  useEffect(() => {
+    const key = `${currentMonthId}_${activeDealerId}`;
+    if (prevMonthDealerRef.current !== key) {
+      if (getTotalPendingSwitchCount() > 0) {
+        flushSwitchQueue();
+      }
+      prevMonthDealerRef.current = key;
+    }
+  }, [currentMonthId, activeDealerId, flushSwitchQueue, getTotalPendingSwitchCount]);
+
+  const handleBatchSetSwitches = useCallback(async (action: 'all_on' | 'all_off' | 'apply_rule', scope: 'filtered' | 'all', filteredRows: any[]) => {
+    if (!currentMonthId) return;
+    const currentMonths = billingMonthsRef.current;
+    const doc = currentMonths.find(m => m.id === currentMonthId);
+    if (!doc || !doc.rows || doc.rows.length === 0) return;
+
+    const rowsToTarget = scope === 'filtered' ? filteredRows : doc.rows;
+    if (!rowsToTarget || rowsToTarget.length === 0) {
+      toast.info("No rows to target");
+      return;
+    }
+
+    const actionLabel = action === 'all_on' ? 'All ON' : action === 'all_off' ? 'All OFF' : 'Apply Rule (Unpaid ON, TDC OFF)';
+    const confirmMsg = `Set switches for ${rowsToTarget.length} ${scope === 'filtered' ? 'filtered ' : ''}rows to ${actionLabel}?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    const idx = currentMonths.findIndex(m => m.id === currentMonthId);
+    if (idx === -1) return;
+    const currentDoc = currentMonths[idx];
+    const rows = [...currentDoc.rows];
+
+    const updates: { clientId: string, username?: string, on: boolean }[] = [];
+    const prevValues = new Map<string, boolean>();
+    const targetBucketKey = `${currentMonthId}::${activeDealerId || 'main'}`;
+    const pendingBucket = pendingSwitchUpdatesByMonthRef.current.get(targetBucketKey);
+
+    rowsToTarget.forEach(targetRow => {
+      const targetCid = String(targetRow.clientId || targetRow.client_id || targetRow.id || '');
+      const rIdx = rows.findIndex(r => String(r.clientId || r.client_id || r.id || '') === targetCid);
+      if (rIdx !== -1) {
+        const r = rows[rIdx];
+        const cid = String(r.clientId || r.client_id || r.id);
+        const prevOn = Boolean(r.switchOn);
+        prevValues.set(cid, prevOn);
+        if (pendingBucket) {
+          pendingBucket.delete(cid);
+        }
+
+        let newOn = true;
+        if (action === 'all_on') newOn = true;
+        else if (action === 'all_off') newOn = false;
+        else if (action === 'apply_rule') {
+          const status = String(r.paymentStatus || r.payment_status || 'unpaid').toLowerCase().trim();
+          newOn = !shouldSwitchBeOff(status);
+        }
+
+        rows[rIdx] = { ...r, switchOn: newOn, switch_on: newOn };
+        updates.push({ clientId: cid, username: r.username, on: newOn });
+      }
+    });
+
+    if (updates.length === 0) return;
+
+    const nextMonths = [...currentMonths];
+    nextMonths[idx] = { ...currentDoc, rows };
+    billingMonthsRef.current = nextMonths;
+    setBillingMonths(nextMonths);
+
+    const batchIds = new Set(updates.map(u => u.clientId));
+    setSavingSwitchClientIds(prev => {
+      const next = new Set(prev);
+      batchIds.forEach(id => next.add(id));
+      return next;
+    });
+    setSwitchSavingCount(prev => prev + updates.length);
+    setShowAllSavedChip(false);
+
+    try {
+      await pocketbaseService.setBillingRowSwitches(currentMonthId, activeDealerId, updates);
+      setSavingSwitchClientIds(prev => {
+        const next = new Set(prev);
+        batchIds.forEach(id => next.delete(id));
+        return next;
+      });
+      recomputeSwitchSavingState();
+      setShowAllSavedChip(true);
+      if (switchAllSavedTimerRef.current) clearTimeout(switchAllSavedTimerRef.current);
+      switchAllSavedTimerRef.current = setTimeout(() => setShowAllSavedChip(false), 2000);
+      toast.success(`Updated ${updates.length} switches.`);
+    } catch (err: any) {
+      setSavingSwitchClientIds(prev => {
+        const next = new Set(prev);
+        batchIds.forEach(id => next.delete(id));
+        return next;
+      });
+      recomputeSwitchSavingState();
+      const curM = billingMonthsRef.current;
+      const mIdx = curM.findIndex(m => m.id === currentMonthId);
+      if (mIdx !== -1) {
+        const docNow = curM[mIdx];
+        const rList = [...docNow.rows];
+        updates.forEach(u => {
+          const rIdx = rList.findIndex(r => String(r.clientId || r.client_id || r.id) === String(u.clientId));
+          if (rIdx !== -1) {
+            const p = prevValues.get(u.clientId) ?? true;
+            rList[rIdx] = { ...rList[rIdx], switchOn: p, switch_on: p };
+          }
+        });
+        const nMonths = [...curM];
+        nMonths[mIdx] = { ...docNow, rows: rList };
+        billingMonthsRef.current = nMonths;
+        setBillingMonths(nMonths);
+      }
+      toast.error(`Could not save ${updates.length} switches`, {
+        action: {
+          label: 'Retry',
+          onClick: () => handleBatchSetSwitches(action, scope, filteredRows)
+        }
+      });
+    }
+  }, [currentMonthId, activeDealerId, recomputeSwitchSavingState]);
+
+  const ensureMonthLoaded = useCallback(async (monthId: string, force = false) => {
     if (!monthId) return null;
     const existing = billingMonthsRef.current.find((m: any) => (m?.id || m?.month_id) === monthId);
-    if (existing && existing.rowsLoaded && Array.isArray(existing.rows)) {
+    if (!force && existing && existing.rowsLoaded && Array.isArray(existing.rows)) {
       return existing;
     }
 
@@ -892,10 +1421,12 @@ export default function AdminPanel({
     const promise = (async () => {
       const startTime = Date.now();
       try {
-        const freshMonth = await pocketbaseService.getBillingMonthDirect(monthId, activeDealerId || 'main');
+        const rawFreshMonth = await pocketbaseService.getBillingMonthDirect(monthId, activeDealerId || 'main');
         const elapsed = Date.now() - startTime;
-        const rowCount = freshMonth?.rows?.length || 0;
+        const rowCount = rawFreshMonth?.rows?.length || 0;
         console.log(`[Load Timing] month ${monthId} ${rowCount} rows in ${elapsed}ms`);
+
+        const freshMonth = rawFreshMonth ? applyPendingSwitchesToMonth(rawFreshMonth, activeDealerId || 'main') : null;
 
         if (freshMonth && Array.isArray(freshMonth.rows)) {
           setBillingMonths(prev => {
@@ -903,23 +1434,23 @@ export default function AdminPanel({
             const next = prev.map((m: any) => {
               if ((m?.id || m?.month_id) === monthId) {
                 found = true;
-                return {
+                return applyPendingSwitchesToMonth({
                   ...m,
                   ...freshMonth,
                   rows: freshMonth.rows,
                   rowsLoaded: true,
                   excludedClientKeys: freshMonth.excludedClientKeys || m.excludedClientKeys || []
-                };
+                }, activeDealerId || 'main');
               }
               return m;
             });
             if (!found) {
-              next.push({
+              next.push(applyPendingSwitchesToMonth({
                 id: monthId,
                 ...freshMonth,
                 rows: freshMonth.rows,
                 rowsLoaded: true
-              });
+              }, activeDealerId || 'main'));
             }
             return next;
           });
@@ -966,7 +1497,23 @@ export default function AdminPanel({
 
     loadingMonthsPromisesRef.current[monthId] = promise;
     return promise;
-  }, [activeDealerId, currentUser?.lineCode]);
+  }, [activeDealerId, currentUser?.lineCode, applyPendingSwitchesToMonth]);
+
+  const handleRequestEntrySheetResync = useCallback(async () => {
+    const targetId = currentMonthIdRef.current || billingMonthsRef.current[0]?.id;
+    if (!targetId) {
+      pocketbaseService.setBillingFresh(true);
+      setIsBillingFresh(true);
+      isBillingDataFresh.current = true;
+      return;
+    }
+    const loaded = await ensureMonthLoaded(targetId, true);
+    if (loaded) {
+      pocketbaseService.setBillingFresh(true);
+      setIsBillingFresh(true);
+      isBillingDataFresh.current = true;
+    }
+  }, [ensureMonthLoaded]);
   
   // Collaborative Editing Cursors:
   // Key: `${rowIndex}_${field}`, Value: { userId, userName, color }
@@ -980,7 +1527,7 @@ export default function AdminPanel({
   const cellDebounceTimersRef = React.useRef<Record<string, NodeJS.Timeout>>({});
   const pendingCommitSavesRef = React.useRef<Record<string, () => void>>({});
 
-  const animateCellProgress = (rowIndex: number, field: string, promise: Promise<any>) => {
+  const animateCellProgress = useCallback((rowIndex: number, field: string, promise: Promise<any>) => {
     const cellKey = `${rowIndex}_${field}`;
     if (cellIntervalsRef.current[cellKey]) {
       clearInterval(cellIntervalsRef.current[cellKey]);
@@ -1022,9 +1569,9 @@ export default function AdminPanel({
         });
       }
     });
-  };
+  }, []);
 
-  const renderCellProgress = (globalRowIdx: number, field: string) => {
+  const renderCellProgress = useCallback((globalRowIdx: number, field: string) => {
     const progress = cellProgress[`${globalRowIdx}_${field}`];
     const cursor = activeCursors[`${globalRowIdx}_${field}`];
     
@@ -1057,7 +1604,7 @@ export default function AdminPanel({
         )}
       </>
     );
-  };
+  }, [cellProgress, activeCursors]);
 
   const savingMonthCounts = React.useRef<Record<string, number>>({});
   
@@ -1083,7 +1630,7 @@ export default function AdminPanel({
       });
       // Re-fetch to restore database state if blocked by safety check
       pocketbaseService.getBillingMonths(dealerId).then(freshMonths => {
-        const scoped = filterScopedBillingMonths(freshMonths);
+        const scoped = filterScopedBillingMonths(freshMonths).map((m: any) => applyPendingSwitchesToMonth(m, dealerId));
         const sorted = [...scoped].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setBillingMonths(sorted);
       }).catch(console.error);
@@ -1147,35 +1694,20 @@ export default function AdminPanel({
   };
 
 
-  const [currentMonthId, _setCurrentMonthId] = useState<string>(() => {
-    try {
-      const lc = currentUser?.lineCode || 'nolc';
-      const dealer = activeDealerId || 'all';
-      const exactKey = `billing_months_${dealer}_${lc}`;
-      const metaStr = localStorage.getItem(`gts_cache_meta_${exactKey}`);
-      const metaTime = metaStr ? Number(metaStr) : 0;
-      const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
-      if (metaTime && Date.now() - metaTime <= CACHE_MAX_AGE_MS) {
-        const cached: any[] = globalTableCaches[exactKey] || JSON.parse(localStorage.getItem(`gts_cache_v3_${exactKey}`) || '[]');
-        if (Array.isArray(cached) && cached.length > 0) {
-          return cached[0].id || cached[0].month_id || '';
-        }
-      }
-    } catch (e) {}
-    return '';
-  });
-  const currentMonthIdRef = React.useRef<string>('');
-  const setCurrentMonthId = (val: any) => {
-    _setCurrentMonthId(prev => {
-      const next = typeof val === 'function' ? val(prev) : val;
-      currentMonthIdRef.current = next;
-      return next;
-    });
-  };
-
   const [isSwitchingMonth, setIsSwitchingMonth] = useState<boolean>(false);
 
   const handleSelectMonth = async (selectedMonthId: string) => {
+    if (getTotalPendingSwitchCount() > 0) {
+      if (switchFlushTimerRef.current) {
+        clearTimeout(switchFlushTimerRef.current);
+        switchFlushTimerRef.current = null;
+      }
+      if (switchFlushMaxTimerRef.current) {
+        clearTimeout(switchFlushMaxTimerRef.current);
+        switchFlushMaxTimerRef.current = null;
+      }
+      flushSwitchQueue();
+    }
     if (!selectedMonthId) {
       setCurrentMonthId('');
       return;
@@ -1375,7 +1907,7 @@ export default function AdminPanel({
   const scrollIntervalRef = React.useRef<any>(null);
   const scrollSpeedRef = React.useRef<number>(0);
 
-  const startBillingScrolling = (speed: number) => {
+  const startBillingScrolling = useCallback((speed: number) => {
     scrollSpeedRef.current = speed;
     if (!scrollIntervalRef.current) {
       scrollIntervalRef.current = setInterval(() => {
@@ -1384,17 +1916,17 @@ export default function AdminPanel({
         }
       }, 16);
     }
-  };
+  }, []);
 
-  const stopBillingScrolling = () => {
+  const stopBillingScrolling = useCallback(() => {
     if (scrollIntervalRef.current) {
       clearInterval(scrollIntervalRef.current);
       scrollIntervalRef.current = null;
     }
     scrollSpeedRef.current = 0;
-  };
+  }, []);
 
-  const handleBillingMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleBillingMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const container = billingScrollContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
@@ -1415,11 +1947,11 @@ export default function AdminPanel({
     } else {
       stopBillingScrolling();
     }
-  };
+  }, [startBillingScrolling, stopBillingScrolling]);
 
-  const handleBillingMouseLeave = () => {
+  const handleBillingMouseLeave = useCallback(() => {
     stopBillingScrolling();
-  };
+  }, [stopBillingScrolling]);
 
   useEffect(() => {
     return () => {
@@ -1814,8 +2346,40 @@ export default function AdminPanel({
     filterScopedBillingMonthsRef.current = filterScopedBillingMonths;
   }, [filterScopedBillingMonths]);
 
+  // Track scope so clearing always happens BEFORE subscribing
+  const prevScopeRef = React.useRef({
+    userId: currentUser?.uid,
+    dealerId: activeDealerId,
+    lineCode: currentUser?.lineCode
+  });
+
   // Real-time sub for billing months (preloads in background on mount and stays synced)
   useEffect(() => {
+    const scopeChanged =
+      prevScopeRef.current.userId !== currentUser?.uid ||
+      prevScopeRef.current.dealerId !== activeDealerId ||
+      prevScopeRef.current.lineCode !== currentUser?.lineCode;
+
+    if (scopeChanged) {
+      prevScopeRef.current = {
+        userId: currentUser?.uid,
+        dealerId: activeDealerId,
+        lineCode: currentUser?.lineCode
+      };
+      pocketbaseService.clearAllLocalCaches();
+      pocketbaseService.setBillingFresh(false);
+      setIsBillingFresh(false);
+      isBillingDataFresh.current = false;
+      setIsBillingMonthsLoading(true);
+      billingMonthsRef.current = [];
+      setBillingMonths([]);
+      setBillingMonthsList([]);
+      currentMonthIdRef.current = '';
+      setCurrentMonthId('');
+    }
+
+    let freshMarkedForScope = false;
+
     const unsubscribe = pocketbaseService.subscribeBillingMonths((data, isFresh) => {
       const filtered = data.filter((m: any) => !deletingMonthIds.current.has(m.id));
       const scopedData = filterScopedBillingMonthsRef.current(filtered);
@@ -1837,22 +2401,41 @@ export default function AdminPanel({
         });
 
         sorted.forEach(incomingMonth => {
-          const key = `${incomingMonth.id}_${activeDealerId || 'main'}`;
+          const resolvedDealer = activeDealerId || 'main';
+          const key = `${incomingMonth.id}_${resolvedDealer}`;
+          const switchBucketKey = `${incomingMonth.id}::${resolvedDealer}`;
+          let hasPendingSwitches = false;
+          for (const [k, b] of pendingSwitchUpdatesByMonthRef.current.entries()) {
+            if ((k === switchBucketKey || k.startsWith(`${incomingMonth.id}::`)) && b.size > 0) {
+              hasPendingSwitches = true;
+              break;
+            }
+          }
+          let hasInFlightSwitches = false;
+          for (const [k, b] of inFlightSwitchValuesRef.current.entries()) {
+            if ((k === switchBucketKey || k.startsWith(`${incomingMonth.id}::`)) && b.size > 0) {
+              hasInFlightSwitches = true;
+              break;
+            }
+          }
           const isSaveInProgress = savingMonthIds.current.has(incomingMonth.id) ||
             (pocketbaseService._syncingMonths && pocketbaseService._syncingMonths.has(key)) ||
-            (pocketbaseService._saveBillingMonthLatestRows && pocketbaseService._saveBillingMonthLatestRows[key]);
+            (pocketbaseService._saveBillingMonthLatestRows && pocketbaseService._saveBillingMonthLatestRows[key]) ||
+            hasPendingSwitches ||
+            hasInFlightSwitches ||
+            isSwitchFlushingRef.current;
 
           const currentLocalMonth = nextMap.get(incomingMonth.id);
 
           if (isSaveInProgress) {
             if (currentLocalMonth) {
               console.log(`[BillingSync] Preserving local rows for ${incomingMonth.id} (save or pending edit in progress)`);
-              nextMap.set(incomingMonth.id, {
+              nextMap.set(incomingMonth.id, applyPendingSwitchesToMonth({
                 ...incomingMonth,
                 rows: currentLocalMonth.rows,
                 rowsLoaded: currentLocalMonth.rowsLoaded ?? true,
                 updatedAt: currentLocalMonth.updatedAt
-              });
+              }, resolvedDealer));
               return;
             }
           }
@@ -1861,25 +2444,25 @@ export default function AdminPanel({
             if (currentLocalMonth.rowsLoaded && Array.isArray(currentLocalMonth.rows)) {
               if (currentLocalMonth.updatedAt && incomingMonth.updatedAt && currentLocalMonth.updatedAt > incomingMonth.updatedAt) {
                 console.log(`[BillingSync] Preserving newer local rows for ${incomingMonth.id} (${currentLocalMonth.updatedAt} > ${incomingMonth.updatedAt})`);
-                nextMap.set(incomingMonth.id, {
+                nextMap.set(incomingMonth.id, applyPendingSwitchesToMonth({
                   ...incomingMonth,
                   rows: currentLocalMonth.rows,
                   rowsLoaded: true,
                   updatedAt: currentLocalMonth.updatedAt
-                });
+                }, resolvedDealer));
                 return;
               }
-              nextMap.set(incomingMonth.id, {
+              nextMap.set(incomingMonth.id, applyPendingSwitchesToMonth({
                 ...incomingMonth,
                 rows: currentLocalMonth.rows,
                 rowsLoaded: true,
                 excludedClientKeys: currentLocalMonth.excludedClientKeys || incomingMonth.excludedClientKeys || []
-              });
+              }, resolvedDealer));
               return;
             }
           }
 
-          nextMap.set(incomingMonth.id, incomingMonth);
+          nextMap.set(incomingMonth.id, applyPendingSwitchesToMonth(incomingMonth, resolvedDealer));
         });
 
         const nextList = Array.from(nextMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -1895,13 +2478,21 @@ export default function AdminPanel({
         setCurrentMonthId(targetMonthId);
       }
 
+      const markBillingFreshOnce = () => {
+        if (!freshMarkedForScope || !pocketbaseService.getBillingFresh()) {
+          freshMarkedForScope = true;
+          pocketbaseService.setBillingFresh(true);
+          setIsBillingFresh(true);
+          isBillingDataFresh.current = true;
+        }
+        setIsBillingMonthsLoading(false);
+      };
+
       if (targetMonthId) {
-        const existingDoc = billingMonths.find(m => m.id === targetMonthId);
+        const existingDoc = billingMonthsRef.current.find(m => m.id === targetMonthId);
         if (!existingDoc || !existingDoc.rowsLoaded) {
           ensureMonthLoaded(targetMonthId).then(() => {
-            setIsBillingFresh(true);
-            isBillingDataFresh.current = true;
-            setIsBillingMonthsLoading(false);
+            markBillingFreshOnce();
 
             // Schedule low-priority background load of immediate previous month (by createdAt)
             const targetIndex = sorted.findIndex(m => m.id === targetMonthId);
@@ -1919,41 +2510,27 @@ export default function AdminPanel({
             setIsBillingMonthsLoading(false);
           });
         } else {
-          setIsBillingFresh(true);
-          isBillingDataFresh.current = true;
-          setIsBillingMonthsLoading(false);
+          markBillingFreshOnce();
         }
       } else {
-        setIsBillingMonthsLoading(false);
+        if (isFresh !== false) {
+          markBillingFreshOnce();
+        } else {
+          setIsBillingMonthsLoading(false);
+        }
       }
     }, activeDealerId);
     return () => unsubscribe();
-  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId, ensureMonthLoaded]);
+  }, [currentUser?.uid, currentUser?.role, currentUser?.dealerId, currentUser?.lineCode, activeDealerId, ensureMonthLoaded, applyPendingSwitchesToMonth]);
 
-  // Clear all caches on dealer, user, or lineCode changes
-  const prevScopeRef = React.useRef({
-    userId: currentUser?.uid,
-    dealerId: activeDealerId,
-    lineCode: currentUser?.lineCode
-  });
-
+  // Safeguard: never leave billing freshness false when a month with rowsLoaded === true exists for the current scope
   useEffect(() => {
-    if (
-      prevScopeRef.current.userId !== currentUser?.uid ||
-      prevScopeRef.current.dealerId !== activeDealerId ||
-      prevScopeRef.current.lineCode !== currentUser?.lineCode
-    ) {
-      prevScopeRef.current = {
-        userId: currentUser?.uid,
-        dealerId: activeDealerId,
-        lineCode: currentUser?.lineCode
-      };
-      pocketbaseService.clearAllLocalCaches();
-      setIsBillingFresh(false);
-      isBillingDataFresh.current = false;
-      setIsBillingMonthsLoading(true);
+    if (!pocketbaseService.getBillingFresh() && billingMonths.some((m: any) => m?.rowsLoaded === true)) {
+      pocketbaseService.setBillingFresh(true);
+      setIsBillingFresh(true);
+      isBillingDataFresh.current = true;
     }
-  }, [currentUser?.uid, currentUser?.lineCode, activeDealerId]);
+  }, [billingMonths]);
 
   // Re-scope in-memory months when clients registry updates without reconnecting database
   useEffect(() => {
@@ -2272,11 +2849,12 @@ export default function AdminPanel({
 
       let prevRowsRaw: any[] = [];
       if (prevMonthId) {
-        const prevMonthDoc = await pocketbaseService.getBillingMonthDirect(prevMonthId, dealer);
-        if (!prevMonthDoc || !Array.isArray(prevMonthDoc.rows)) {
+        const rawPrevMonthDoc = await pocketbaseService.getBillingMonthDirect(prevMonthId, dealer);
+        if (!rawPrevMonthDoc || !Array.isArray(rawPrevMonthDoc.rows)) {
           toast.error("Could not load the previous month, nothing was created");
           return;
         }
+        const prevMonthDoc = applyPendingSwitchesToMonth(rawPrevMonthDoc, dealer);
         prevRowsRaw = prevMonthDoc.rows;
       }
 
@@ -2386,6 +2964,8 @@ export default function AdminPanel({
           totalAmount: newTotal,
           paymentReceived: 0,
           paymentStatus: newStatus,
+          switchOn: SWITCH_OFF_STATUSES.includes(newStatus) ? false : true,
+          switch_on: SWITCH_OFF_STATUSES.includes(newStatus) ? false : true,
           comments: '',
           occ: prevRow?.occ || client.occ || 'personal',
           sag: prevRow?.sag || client.sag || '0',
@@ -2491,6 +3071,8 @@ export default function AdminPanel({
             billingDay: c.billingDay || '5',
             paymentReceived: 0,
             paymentStatus: 'unpaid',
+            switchOn: true,
+            switch_on: true,
             comments: '',
             occ: 'personal',
             pkgDetails: c.pkgDetails || '8Mb',
@@ -2621,7 +3203,7 @@ export default function AdminPanel({
       });
       return;
     }
-    if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments' && field !== 'reminderSentAt' && field !== 'reminderSentCount') {
+    if (!isBillingUnlocked && field !== 'billingDay' && field !== 'comments' && field !== 'reminderSentAt' && field !== 'reminderSentCount' && field !== 'switchOn') {
       toast.error("🔒 ACCESS PROTECTED", { description: "Please enter the Security Key to edit billing information." });
       return;
     }
@@ -2642,6 +3224,37 @@ export default function AdminPanel({
       const targetRow = { ...currentRows[rowIndex] };
       targetRow[field] = val;
 
+      if (field === 'switchOn') {
+        const prevOn = Boolean(currentRows[rowIndex].switchOn);
+        targetRow.switchOn = Boolean(val);
+        targetRow.switch_on = Boolean(val);
+
+        const nextRows = [...currentRows];
+        nextRows[rowIndex] = targetRow;
+
+        const nextMonths = [...currentMonths];
+        // Requirement 3(g): switch-only changes must not bump month's updatedAt
+        nextMonths[idx] = { ...currentDoc, rows: nextRows };
+
+        billingMonthsRef.current = nextMonths;
+        setBillingMonths(nextMonths);
+
+        const clientId = targetRow.clientId || targetRow.client_id || targetRow.id;
+        if (clientId) {
+          enqueueSwitchUpdate(
+            currentMonthId,
+            activeDealerId,
+            String(clientId),
+            targetRow.username,
+            Boolean(val),
+            prevOn,
+            rowIndex
+          );
+        }
+
+        return;
+      }
+
       if (field === 'cr') {
         const crVal = parseFloat(val) || 0;
         targetRow._originalCr = crVal;
@@ -2656,18 +3269,47 @@ export default function AdminPanel({
         const received = parseFloat(val) || 0;
         targetRow.paymentReceived = received;
       } else if (field === 'paymentStatus') {
+        const oldStatus = String(currentRows[rowIndex].paymentStatus || '').toLowerCase().trim();
+        const isZeroAmount = shouldZeroAmount(val);
+        const isNowOff = shouldSwitchBeOff(val);
+        const wasOff = shouldSwitchBeOff(oldStatus);
+
         targetRow.paymentStatus = val;
-        if (val === 'tdc' || val === 'dc') {
+        if (isZeroAmount) {
           targetRow.baseAmount = 0;
           const crVal = parseFloat(targetRow.cr) || 0;
           targetRow.totalAmount = crVal;
-        } else if (val === 'paid') {
-          const total = parseFloat(targetRow.totalAmount) || 0;
-          if (parseFloat(targetRow.paymentReceived) < total) {
-            targetRow.paymentReceived = total;
+        }
+        if (isNowOff) {
+          targetRow.switchOn = false;
+          targetRow.switch_on = false;
+
+          const clientId = targetRow.clientId || targetRow.client_id || targetRow.id;
+          if (clientId) {
+            enqueueSwitchUpdate(
+              currentMonthId,
+              activeDealerId,
+              String(clientId),
+              targetRow.username,
+              false,
+              Boolean(currentRows[rowIndex].switchOn),
+              rowIndex
+            );
           }
-        } else if (val === 'unpaid') {
-          targetRow.paymentReceived = 0;
+        } else {
+          if (wasOff && !isNowOff && (val === 'paid' || val === 'unpaid')) {
+            toast.info("Switch is still OFF");
+          }
+          if (!isZeroAmount) {
+            if (val === 'paid') {
+              const total = parseFloat(targetRow.totalAmount) || 0;
+              if (parseFloat(targetRow.paymentReceived) < total) {
+                targetRow.paymentReceived = total;
+              }
+            } else if (val === 'unpaid') {
+              targetRow.paymentReceived = 0;
+            }
+          }
         }
       }
 
@@ -3147,16 +3789,46 @@ export default function AdminPanel({
     return lower === 'complete' || lower === 'finalized' || lower === 'resolved' || lower === 'hold';
   };
 
-  const stats = [
-    { label: branding.tabNames?.total_registry || 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.pending_requests || 'Pending Requests', value: complaints.filter(c => isPendingStatus(c.status)).length, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.new_connection_pending || 'New Connection', value: complaints.filter(c => isNewConnectionCat(c.category) && isPendingStatus(c.status)).length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
-    { label: branding.tabNames?.in_operation || 'In Operation', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'in process' || (c.status || '').toString().trim().toLowerCase() === 'in_process').length, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.customer_review || branding.tabNames?.costumer_review || 'Costumer review', value: complaints.filter(c => isCustomerReviewStatus(c.status)).length, tooltip: 'Operational tickets undergoing customer review & service verification.', color: 'border-indigo-500', textColor: 'text-indigo-500', icon: <MessageSquare size={18} />, filter: { status: 'customer review', priority: 'all', category: 'all' } },
-    { label: branding.tabNames?.finalized || 'Finalized', value: complaints.filter(c => isFinalizedStatus(c.status)).length, tooltip: 'Service successfully restored, resolved or put on hold according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
-  ];
+  const stats = useMemo(() => {
+    let pendingCount = 0;
+    let newConnPendingCount = 0;
+    let inOperationCount = 0;
+    let customerReviewCount = 0;
+    let finalizedCount = 0;
 
-  const handleTileClick = (filter: any) => {
+    for (let i = 0; i < complaints.length; i++) {
+      const c = complaints[i];
+      const s = c.status;
+      if (isPendingStatus(s)) {
+        pendingCount++;
+        if (isNewConnectionCat(c.category)) newConnPendingCount++;
+      } else {
+        const lower = (s || '').toString().trim().toLowerCase();
+        if (lower === 'in process' || lower === 'in_process') {
+          inOperationCount++;
+        } else if (isCustomerReviewStatus(s)) {
+          customerReviewCount++;
+        } else if (isFinalizedStatus(s)) {
+          finalizedCount++;
+        }
+      }
+    }
+
+    return [
+      { label: branding.tabNames?.total_registry || 'Total Registry', value: complaints.length, tooltip: 'Total volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
+      { label: branding.tabNames?.pending_requests || 'Pending Requests', value: pendingCount, tooltip: 'Operations currently in the queue awaiting technician dispatch or initial resource allocation.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
+      { label: branding.tabNames?.new_connection_pending || 'New Connection', value: newConnPendingCount, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
+      { label: branding.tabNames?.in_operation || 'In Operation', value: inOperationCount, tooltip: 'Active logistics: Tasks currently under execution by on-site technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
+      { label: branding.tabNames?.customer_review || branding.tabNames?.costumer_review || 'Costumer review', value: customerReviewCount, tooltip: 'Operational tickets undergoing customer review & service verification.', color: 'border-indigo-500', textColor: 'text-indigo-500', icon: <MessageSquare size={18} />, filter: { status: 'customer review', priority: 'all', category: 'all' } },
+      { label: branding.tabNames?.finalized || 'Finalized', value: finalizedCount, tooltip: 'Service successfully restored, resolved or put on hold according to enterprise protocols.', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
+    ];
+  }, [complaints, branding.tabNames]);
+
+  const dealerFilteredComplaints = useMemo(() => {
+    return selectedDealerId === 'all' ? complaints : complaints.filter(c => c.dealerId === selectedDealerId);
+  }, [complaints, selectedDealerId]);
+
+  const handleTileClick = useCallback((filter: any) => {
     setForcedStatus(filter.status || 'all');
     setForcedPriority(filter.priority || 'all');
     setForcedCategory(filter.category || 'all');
@@ -3166,7 +3838,7 @@ export default function AdminPanel({
     if (listElement) {
       listElement.scrollIntoView({ behavior: 'smooth' });
     }
-  };
+  }, []);
 
   const [googleTokens, setGoogleTokens] = useState(googleSheetsService.getTokens());
   
@@ -3476,253 +4148,297 @@ export default function AdminPanel({
           { id: 'registry', visible: true, order: 2 }
         ];
 
+    const hasActiveTileFilter = forcedStatus !== 'all' || forcedPriority !== 'all' || forcedCategory !== 'all';
+
+    // Crisp jagged-organic sparkline paths with endpoint coordinates matching the uploaded card style
+    const sparklinePresets = [
+      {
+        path: 'M 2,12 L 8,14 L 14,13 L 20,18 L 26,25 L 32,27 L 38,29 L 44,27 L 50,24 L 56,22 L 62,18 L 68,13 L 74,15 L 80,10 L 86,11 L 92,14',
+        endY: 14,
+      },
+      {
+        path: 'M 2,18 L 8,15 L 14,19 L 20,14 L 26,16 L 32,11 L 38,14 L 44,19 L 50,23 L 56,20 L 62,25 L 68,21 L 74,17 L 80,19 L 86,13 L 92,11',
+        endY: 11,
+      },
+      {
+        path: 'M 2,24 L 8,22 L 14,25 L 20,20 L 26,17 L 32,19 L 38,14 L 44,16 L 50,12 L 56,15 L 62,11 L 68,14 L 74,9 L 80,12 L 86,8 L 92,10',
+        endY: 10,
+      },
+      {
+        path: 'M 2,15 L 8,18 L 14,14 L 20,20 L 26,18 L 32,24 L 38,21 L 44,16 L 50,18 L 56,13 L 62,15 L 68,10 L 74,13 L 80,16 L 86,12 L 92,13',
+        endY: 13,
+      },
+      {
+        path: 'M 2,21 L 8,17 L 14,20 L 20,24 L 26,22 L 32,26 L 38,20 L 44,17 L 50,19 L 56,14 L 62,16 L 68,12 L 74,14 L 80,11 L 86,15 L 92,12',
+        endY: 12,
+      },
+      {
+        path: 'M 2,25 L 8,21 L 14,23 L 20,18 L 26,20 L 32,15 L 38,17 L 44,13 L 50,16 L 56,11 L 62,13 L 68,9 L 74,11 L 80,8 L 86,10 L 92,9',
+        endY: 9,
+      },
+    ];
+
     return [...sections].sort((a, b) => a.order - b.order).map((section, sIdx) => {
       if (!section.visible) return null;
 
       switch(section.id) {
         case 'stats':
+          if (showComplaintsSkeleton) {
+            return (
+              <div key={`section-${section.id}-${sIdx}`} className="space-y-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 lg:gap-3">
+                  {Array.from({ length: 6 }).map((_, idx) => (
+                    <SkStatTile key={`sk-stat-${idx}`} className="w-full min-h-[128.25px] rounded-[18px]" />
+                  ))}
+                </div>
+              </div>
+            );
+          }
           return (
-            <div key={`section-${section.id}-${sIdx}`} className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-6">
-              {stats.map((stat, idx) => {
-                const isTileActive = (
-                  forcedStatus === stat.filter.status &&
-                  forcedPriority === stat.filter.priority &&
-                  forcedCategory === stat.filter.category &&
-                  stat.label !== (branding.tabNames?.total_registry || 'Total Registry')
-                );
-
-                return (
-                  <motion.div
-                    key={`stat-tile-${idx}`}
-                    initial={{ opacity: 0, y: 30, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ delay: idx * 0.06, type: "spring", stiffness: 280, damping: 20 }}
-                    whileHover={{ 
-                      y: -8, 
-                      scale: 1.03
+            <div key={`section-${section.id}-${sIdx}`} className="space-y-2.5">
+              {hasActiveTileFilter && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForcedStatus('all');
+                      setForcedPriority('all');
+                      setForcedCategory('all');
                     }}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => handleTileClick(stat.filter)}
-                    title={stat.tooltip}
-                    className={cn(
-                      "p-3 sm:p-6 neu-card rounded-xl sm:rounded-2xl border-l-4 flex flex-col justify-between transition-all duration-300 group cursor-pointer relative",
-                      stat.color,
-                      isTileActive ? "neu-inset ring-2 ring-brand-accent scale-[1.03] z-10" : "neu-raised hover:scale-[1.02]"
-                    )}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white dark:bg-[#31343c] border border-black/[0.08] dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-emerald-50 hover:text-[#126f51] dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300 shadow-xs transition-all cursor-pointer"
                   >
-                  <div className="flex justify-between items-start mb-2 sm:mb-4">
-                    <span className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-800 dark:group-hover:text-slate-100 transition-colors leading-tight">
-                      {stat.label}
-                    </span>
-                    <div 
-                      className={cn("p-1.5 sm:p-2 rounded-lg transition-all duration-300 shrink-0 group-hover:scale-110 group-hover:rotate-6", 
-                        stat.textColor === 'text-rose-500' ? "bg-rose-500/10 text-rose-500 group-hover:bg-rose-500/20" :
-                        stat.textColor === 'text-blue-600' ? "bg-blue-600/10 text-blue-600 group-hover:bg-blue-600/20" :
-                        stat.textColor === 'text-emerald-500' ? "bg-emerald-500/10 text-emerald-500 group-hover:bg-emerald-500/20" :
-                        stat.textColor === 'text-brand-accent' ? "bg-brand-accent/10 text-brand-accent group-hover:bg-brand-accent/20" :
-                        stat.textColor === 'text-cyan-500' ? "bg-cyan-500/10 text-cyan-500 group-hover:bg-cyan-500/20" :
-                        stat.textColor === 'text-amber-500' ? "bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20 animate-pulse" :
-                        "bg-[var(--neu-surface)] group-hover:bg-slate-200 dark:group-hover:bg-slate-800"
+                    <RotateCcw size={12} />
+                    <span>Show All ({complaints.length})</span>
+                  </button>
+                </div>
+              )}
+
+              {/* 6 Minimal Balance-Style Sparkline KPI Cards (2 rows on narrower widths, 1 row on wider screens) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 lg:gap-3">
+                {stats.map((stat, idx) => {
+                  const isTileActive = (
+                    forcedStatus === stat.filter.status &&
+                    forcedPriority === stat.filter.priority &&
+                    forcedCategory === stat.filter.category &&
+                    stat.label !== (branding.tabNames?.total_registry || 'Total Registry')
+                  );
+                  const spark = sparklinePresets[idx % sparklinePresets.length];
+                  const sharePct = complaints.length > 0 ? Math.round((stat.value / complaints.length) * 100) : 0;
+
+                  return (
+                    <motion.div
+                      key={`stat-tile-${idx}`}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleTileClick(stat.filter);
+                        }
+                      }}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.015, duration: 0.14, ease: 'easeOut' }}
+                      whileHover={{ y: -2 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={() => handleTileClick(stat.filter)}
+                      title={stat.tooltip}
+                      className={cn(
+                        "w-full min-h-[128.25px] px-3.5 py-3 rounded-[18px] bg-[#f4f4f4] dark:bg-[#2c3038] border transition-all duration-200 group cursor-pointer relative flex flex-col justify-between gap-1.5 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#126f51] dark:focus-visible:ring-emerald-400 min-w-0",
+                        isTileActive
+                          ? "border-[#126f51] dark:border-emerald-400 ring-2 ring-[#126f51]/25 dark:ring-emerald-400/25 shadow-[0_6px_18px_rgba(18,111,81,0.18),5px_0_14px_-2px_rgba(15,23,42,0.12),-5px_0_14px_-2px_rgba(15,23,42,0.12)] dark:shadow-[0_8px_22px_rgba(16,185,129,0.22),5px_0_16px_-2px_rgba(0,0,0,0.45),-5px_0_16px_-2px_rgba(0,0,0,0.45)] z-10"
+                          : "border-black/[0.06] dark:border-white/[0.08] shadow-[0_4px_14px_rgba(15,23,42,0.10),5px_0_12px_-3px_rgba(15,23,42,0.10),-5px_0_12px_-3px_rgba(15,23,42,0.10)] dark:shadow-[0_6px_18px_rgba(0,0,0,0.42),5px_0_14px_-2px_rgba(0,0,0,0.38),-5px_0_14px_-2px_rgba(0,0,0,0.38)] hover:bg-[#ececec] hover:shadow-[0_8px_22px_rgba(15,23,42,0.14),6px_0_16px_-2px_rgba(15,23,42,0.12),-6px_0_16px_-2px_rgba(15,23,42,0.12)] dark:hover:bg-[#333842] dark:hover:shadow-[0_10px_26px_rgba(0,0,0,0.55),6px_0_18px_-2px_rgba(0,0,0,0.45),-6px_0_18px_-2px_rgba(0,0,0,0.45)]"
                       )}
-                      style={
-                        idx === 1 ? (isDark ? { backgroundColor: '#383b42', borderColor: '#757575', color: '#f87171' } : { backgroundColor: '#eec9c9', borderColor: '#eec9c9' }) :
-                        idx === 2 ? (isDark ? { backgroundColor: '#383b42', color: '#34d399' } : { backgroundColor: '#d8eeea', color: '#189476' }) :
-                        idx === 3 ? (isDark ? { backgroundColor: '#383b42', color: '#ffffff' } : { backgroundColor: '#f2f4f7', color: '#000000' }) :
-                        idx === 4 ? (isDark ? { backgroundColor: '#383b42', color: '#38bdf8' } : { backgroundColor: '#dbecf1', borderColor: '#dbecf1', color: '#13b0cd' }) :
-                        undefined
-                      }
                     >
-                      {React.cloneElement(stat.icon as React.ReactElement, {
-                        size: window.innerWidth < 640 ? 14 : 18,
-                        style: idx === 1 ? { color: isDark ? '#f87171' : '#902323' } : 
-                               idx === 2 ? { color: isDark ? '#34d399' : '#189476' } :
-                               idx === 4 ? { color: isDark ? '#38bdf8' : '#13b0cd' } :
-                               undefined
-                      })}
-                    </div>
-                  </div>
-                  <div 
-                    className="flex items-end justify-between gap-2"
-                    style={idx === 2 ? (isDark ? { backgroundColor: '#383b42' } : { backgroundColor: '#f2f4f7' }) : undefined}
-                  >
-                    <div 
-                      className={cn("text-2xl sm:text-3xl xl:text-4xl font-black tracking-tight leading-none transition-transform duration-300 group-hover:scale-105 origin-left", stat.textColor)}
-                      style={
-                        idx === 1 ? { color: isDark ? '#f87171' : '#a23838' } :
-                        idx === 2 ? { color: isDark ? '#34d399' : '#12ac86', borderColor: '#757575' } :
-                        idx === 3 ? (isDark ? { color: '#ffffff' } : { color: '#000000' }) :
-                        idx === 4 ? { color: '#6dc2d2' } :
-                        idx === 5 ? { color: isDark ? '#34d399' : '#059669' } :
-                        undefined
-                      }
-                    >
-                      {stat.value.toString().padStart(2, '0')}
-                    </div>
-                    {/* Micro Sparklines matching the uploaded mockup dashboard design perfectly */}
-                    {(stat.label === 'New Connection' || stat.label === branding.tabNames?.new_connection_pending) && (
-                      <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
-                        <svg 
-                          viewBox="0 0 80 30" 
-                          width="100%" 
-                          height="100%" 
-                          className="overflow-visible"
-                          style={{ backgroundColor: isDark ? '#383b42' : '#f2f4f7' }}
-                        >
-                          <path
-                            d="M 0,22 Q 15,4 32,18 T 64,8 T 80,12"
-                            fill="none"
-                            stroke="#3b82f6"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                          />
-                          <circle cx="80" cy="12" r="3" fill="#3b82f6" className="animate-pulse" />
-                        </svg>
+                      {/* Top + Middle Section: Title over Crisp Metric + Inline Micro-Sparkline */}
+                      <div className="space-y-1">
+                        <div className="text-[14px] font-medium text-slate-800 dark:text-slate-200 tracking-tight truncate leading-snug">
+                          {stat.label}
+                        </div>
+
+                        <div className="flex items-center justify-between gap-1.5 min-w-0">
+                          <div className="text-[36px] sm:text-[45px] xl:text-[38px] min-[1420px]:text-[45px] font-bold tracking-tight text-slate-950 dark:text-white leading-none tabular-nums shrink-0">
+                            {stat.value.toString().padStart(2, '0')}
+                          </div>
+
+                          {/* Micro Sparkline with Horizontal Baseline & Halo Dot */}
+                          <div className="w-[46px] sm:w-[58px] xl:w-[44px] min-[1420px]:w-[60px] h-7 shrink-0 overflow-visible">
+                            <svg
+                              viewBox="0 0 100 34"
+                              className="w-full h-full overflow-visible text-slate-700 dark:text-slate-300"
+                            >
+                              <defs>
+                                <linearGradient id={`kpi-spark-${idx}`} x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="currentColor" stopOpacity="0.12" />
+                                  <stop offset="100%" stopColor="currentColor" stopOpacity="0.00" />
+                                </linearGradient>
+                              </defs>
+
+                              {/* Subtle horizontal reference baseline */}
+                              <line
+                                x1="0"
+                                y1="24"
+                                x2="94"
+                                y2="24"
+                                stroke="currentColor"
+                                strokeOpacity="0.14"
+                                strokeWidth="1"
+                              />
+
+                              <path
+                                d={`${spark.path} L 92,32 L 2,32 Z`}
+                                fill={`url(#kpi-spark-${idx})`}
+                              />
+                              <path
+                                d={spark.path}
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.35"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                              <circle
+                                cx="92"
+                                cy={spark.endY}
+                                r="3.4"
+                                className="fill-slate-950 dark:fill-white stroke-[#f4f4f4] dark:stroke-[#2c3038]"
+                                strokeWidth="2.2"
+                              />
+                            </svg>
+                          </div>
+                        </div>
                       </div>
-                    )}
-                    {(stat.label === 'In Operation' || stat.label === branding.tabNames?.in_operation) && (
-                      <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
-                        <svg 
-                          viewBox="0 0 80 30" 
-                          width="100%" 
-                          height="100%" 
-                          className="overflow-visible"
-                          style={{ backgroundColor: isDark ? '#383b42' : '#f2f4f7' }}
-                        >
-                          <path
-                            d="M 0,20 Q 12,28 28,10 T 56,18 T 80,4"
-                            fill="none"
-                            stroke="#1d4ed8"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                          />
-                          <circle cx="80" cy="4" r="3" fill="#1d4ed8" className="animate-pulse" />
-                        </svg>
+
+                      {/* Bottom Row: Muted Secondary Value + Subtle Right Chevron */}
+                      <div className="flex items-center justify-between gap-1 pt-0.5">
+                        <div className="text-[11px] xl:text-[11px] 2xl:text-[11.5px] tabular-nums truncate">
+                          <span className="font-medium text-slate-600 dark:text-slate-300">
+                            {idx === 0 ? complaints.length : `${sharePct}%`}
+                          </span>
+                          <span className="text-slate-400 dark:text-slate-400 ml-1 font-normal">
+                            {idx === 0 ? 'Total Records' : 'of Total'}
+                          </span>
+                        </div>
+
+                        <ChevronRight
+                          size={14}
+                          strokeWidth={1.75}
+                          className="text-slate-700 dark:text-slate-300 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5"
+                        />
                       </div>
-                    )}
-                    {(stat.label === 'Costumer review' || stat.label === 'Customer Review' || stat.label === branding.tabNames?.customer_review || stat.label === branding.tabNames?.costumer_review) && (
-                      <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
-                        <svg 
-                          viewBox="0 0 80 30" 
-                          width="100%" 
-                          height="100%" 
-                          className="overflow-visible"
-                          style={{ backgroundColor: isDark ? '#383b42' : '#f2f4f7' }}
-                        >
-                          <path
-                            d="M 0,16 Q 20,4 40,20 T 65,10 T 80,18"
-                            fill="none"
-                            stroke="#6366f1"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                          />
-                          <circle cx="80" cy="18" r="3" fill="#6366f1" className="animate-pulse" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              );
-              })}
+                    </motion.div>
+                  );
+                })}
+              </div>
             </div>
           );
         case 'charts':
-  
-
-  
-
-
           return (
-            <div key={`section-${section.id}-${sIdx}`} className="space-y-4">
+            <div key={`section-${section.id}-${sIdx}`} className="space-y-2.5">
               <div 
-                className="text-center mb-4 cursor-pointer select-none group"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 cursor-pointer select-none group"
                 onDoubleClick={() => setIsChartsVisible(!isChartsVisible)}
                 title="Double-click to toggle analytics"
               >
-                <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 group-hover:scale-105 transition-transform duration-500">Chart Analytics</h2>
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-slate-50 leading-tight">
+                    Chart Analytics
+                  </h2>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                    Distribution & real-time telemetry breakdown
+                  </p>
+                </div>
               </div>
 
-              <AnimatePresence mode="wait">
-                {isChartsVisible && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, filter: 'blur(10px)', y: 20 }}
-                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', y: 0 }}
-                    exit={{ 
-                      opacity: 0, 
-                      scale: 0.9, 
-                      y: -20, 
-                      filter: 'blur(10px)',
-                      transition: { duration: 0.3, ease: 'easeIn' }
-                    }}
-                    transition={{ 
-                      type: 'spring',
-                      stiffness: 260,
-                      damping: 25,
-                      mass: 0.8
-                    }}
-                    className="grid grid-cols-1 lg:grid-cols-3 gap-6 origin-top"
-                  >
-                    <div className="h-[350px] sm:h-[380px] transition-all duration-300">
-                      <DistributionList complaints={complaints} chartType="area" />
-                    </div>
-                    <div className="h-[350px] sm:h-[380px] transition-all duration-300">
-                      <RealTimeMonitor complaints={complaints} />
-                    </div>
-                    <div className="h-[350px] sm:h-[380px] transition-all duration-300">
-                      <DistributionList complaints={complaints} chartType="category" />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {showComplaintsSkeleton ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <SkChartCard type="donut" className="h-[340px] sm:h-[365px]" />
+                  <SkChartCard type="area" className="h-[340px] sm:h-[365px]" />
+                  <SkChartCard type="donut" className="h-[340px] sm:h-[365px]" />
+                </div>
+              ) : (
+                <AnimatePresence mode="wait">
+                  {isChartsVisible && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ 
+                        opacity: 0, 
+                        y: -4, 
+                        transition: { duration: 0.06, ease: 'easeIn' }
+                      }}
+                      transition={{ 
+                        duration: 0.08,
+                        ease: 'easeOut'
+                      }}
+                      className="grid grid-cols-1 lg:grid-cols-3 gap-4 origin-top"
+                    >
+                      <div className="h-[340px] sm:h-[365px] transition-all duration-150">
+                        <DistributionList complaints={complaints} chartType="area" />
+                      </div>
+                      <div className="h-[340px] sm:h-[365px] transition-all duration-150">
+                        <RealTimeMonitor complaints={complaints} />
+                      </div>
+                      <div className="h-[340px] sm:h-[365px] transition-all duration-150">
+                        <DistributionList complaints={complaints} chartType="category" />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              )}
             </div>
           );
         case 'registry':
           return (activeTab === 'complaints') ? (
-            <div key={`section-${section.id}-${sIdx}`} className="space-y-6">
-              <motion.div
-                key="complaints-list"
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.15 }}
-                id="operations-registry"
-              >
-                <div className="space-y-6">
-                  {selectedDealerId !== 'all' && (
-                    <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-xl">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
-                          <BarChart3 size={16} />
+            <div key={`section-${section.id}-${sIdx}`} className="space-y-3" id="operations-registry">
+              {showComplaintsSkeleton ? (
+                <SkRegistry />
+              ) : (
+                <motion.div
+                  key="complaints-list"
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  <div className="space-y-3">
+                    {selectedDealerId !== 'all' && (
+                      <div className="flex items-center justify-between p-4 bg-white dark:bg-[#31343c] border border-slate-200/80 dark:border-white/10 rounded-[18px] shadow-[0_6px_20px_rgba(15,23,42,0.09),5px_0_16px_-3px_rgba(15,23,42,0.08),-5px_0_16px_-3px_rgba(15,23,42,0.08)] dark:shadow-[0_8px_22px_rgba(0,0,0,0.48),6px_0_18px_-2px_rgba(0,0,0,0.42),-6px_0_18px_-2px_rgba(0,0,0,0.42)]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-[#187233] flex items-center justify-center text-white">
+                            <BarChart3 size={16} />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Active Dealer Audit Filter</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">Viewing data for: {users.find(u => u.uid === selectedDealerId)?.username || 'Selected Dealer'}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Active Dealer Audit Filter</p>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-tight">Viewing data for: {users.find(u => u.uid === selectedDealerId)?.username || 'Selected Dealer'}</p>
-                        </div>
+                        <button 
+                          onClick={() => setSelectedDealerId('all')}
+                          className="px-4 py-2 rounded-xl bg-white dark:bg-[#24262b] border border-black/[0.08] dark:border-white/10 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-emerald-50 hover:text-[#155d27] transition-all cursor-pointer"
+                        >
+                          Clear Filter
+                        </button>
                       </div>
-                      <button 
-                        onClick={() => setSelectedDealerId('all')}
-                        className="px-4 py-2 rounded-lg bg-[var(--neu-surface)] border border-blue-100 dark:border-blue-800 text-[10px] font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 transition-all shadow-[var(--neu-shadow-raised-sm)]"
-                      >
-                        Clear Filter
-                      </button>
-                    </div>
-                  )}
-                  <ComplaintList
-                    complaints={selectedDealerId === 'all' ? complaints : complaints.filter(c => c.dealerId === selectedDealerId)}
-                    users={users}
-                    onDelete={onDeleteComplaint}
-                    onStatusChange={onUpdateComplaintStatus}
-                    onUpdateRemarks={onUpdateRemarks}
-                    onEdit={onUpdateComplaint}
-                    isAdmin={true}
-                    canDelete={canDeleteComplaints}
-                    currentUser={currentUser}
-                    forcedStatusFilter={forcedStatus}
-                    forcedPriorityFilter={forcedPriority}
-                    forcedCategoryFilter={forcedCategory}
-                    appConfig={appConfig}
-                    branding={branding}
-                  />
-                </div>
-              </motion.div>
+                    )}
+                    <ComplaintList
+                      complaints={dealerFilteredComplaints}
+                      users={users}
+                      onDelete={onDeleteComplaint}
+                      onStatusChange={onUpdateComplaintStatus}
+                      onUpdateRemarks={onUpdateRemarks}
+                      onEdit={onUpdateComplaint}
+                      isAdmin={true}
+                      canDelete={canDeleteComplaints}
+                      currentUser={currentUser}
+                      forcedStatusFilter={forcedStatus}
+                      forcedPriorityFilter={forcedPriority}
+                      forcedCategoryFilter={forcedCategory}
+                      appConfig={appConfig}
+                      branding={branding}
+                    />
+                  </div>
+                </motion.div>
+              )}
             </div>
           ) : null;
         default:
@@ -3861,6 +4577,8 @@ export default function AdminPanel({
           billingDay: String(c.billingDay || '5'),
           paymentReceived: 0,
           paymentStatus: 'unpaid',
+          switchOn: true,
+          switch_on: true,
           comments: '',
           occ: 'personal',
           pkgDetails: c.pkgDetails || '8Mb',
@@ -4057,6 +4775,9 @@ export default function AdminPanel({
       if (['baseAmount', 'cr', 'totalAmount', 'paymentReceived', 'billingDay'].includes(billingSortField)) {
         valA = parseFloat(valA) || 0;
         valB = parseFloat(valB) || 0;
+      } else if (billingSortField === 'switchOn' || billingSortField === 'sr') {
+        valA = a.switchOn ? 1 : 0;
+        valB = b.switchOn ? 1 : 0;
       } else {
         valA = (valA || '').toString().toLowerCase();
         valB = (valB || '').toString().toLowerCase();
@@ -4106,10 +4827,10 @@ export default function AdminPanel({
     }
   };
 
-  const getBillingSortIcon = (field: string) => {
+  const getBillingSortIcon = useCallback((field: string) => {
     if (billingSortField !== field) return null;
     return billingSortDirection === 'asc' ? <ChevronUp className="inline w-3 h-3 ml-1" /> : <ChevronDown className="inline w-3 h-3 ml-1" />;
-  };
+  }, [billingSortField, billingSortDirection]);
 
   const { totalExpected, totalBase, totalCr, totalRecovered, totalOutstanding, totalTDC, totalDC, totalPending, recoveryRate } = useMemo(() => {
     const expected = activeRows.reduce((acc: number, r: any) => {
@@ -4404,7 +5125,75 @@ export default function AdminPanel({
     return isBillingMonthsLoading || !activeMonthDoc || !activeMonthDoc.rowsLoaded;
   }, [activeMonthDoc, isSwitchingMonth, isBillingMonthsLoading]);
 
-  const stateProps = {
+  const stableSelectMonth = useStableCallback(handleSelectMonth);
+  const stableAddMonth = useStableCallback(handleAddMonth);
+  const stableBillingColResizeStart = useStableCallback(handleBillingColResizeStart);
+  const stableBillingSort = useStableCallback(handleBillingSort);
+  const stableBulkExport = useStableCallback(handleBulkExport);
+  const stableBulkPurge = useStableCallback(handleBulkPurge);
+  const stableBulkRestore = useStableCallback(handleBulkRestore);
+  const stableCancelEditUser = useStableCallback(handleCancelEditUser);
+  const stableCopyText = useStableCallback(handleCopyText);
+  const stableCreateSheet = useStableCallback(handleCreateSheet);
+  const stableCreateUser = useStableCallback(handleCreateUser);
+  const stableDeleteBillingMonth = useStableCallback(handleDeleteBillingMonth);
+  const stableDeleteBillingRow = useStableCallback(handleDeleteBillingRow);
+  const stableDeletePortal = useStableCallback(handleDeletePortal);
+  const stableDownloadCSV = useStableCallback(handleDownloadCSV);
+  const stableDrag = useStableCallback(handleDrag);
+  const stableDrop = useStableCallback(handleDrop);
+  const stableEmptyRecycleBin = useStableCallback(handleEmptyRecycleBin);
+  const stableExecuteRestore = useStableCallback(handleExecuteRestore);
+  const stableFileChange = useStableCallback(handleFileChange);
+  const stableGenerateLocalBackup = useStableCallback(handleGenerateLocalBackup);
+  const stableGetBackup = useStableCallback(handleGetBackup);
+  const stableGoogleConnect = useStableCallback(handleGoogleConnect);
+  const stableManualSaveAllRows = useStableCallback(handleManualSaveAllRows);
+  const stablePermanentDeleteSubscriber = useStableCallback(handlePermanentDeleteSubscriber);
+  const stablePurgeAllBillingData = useStableCallback(handlePurgeAllBillingData);
+  const stablePurgeItem = useStableCallback(handlePurgeItem);
+  const stableRecheckUsers = useStableCallback(handleRecheckUsers);
+  const stableReconciliationCheck = useStableCallback(handleReconciliationCheck);
+  const stableRecoveryCellKeyDown = useStableCallback(handleRecoveryCellKeyDown);
+  const stableResetAllCRToZero = useStableCallback(handleResetAllCRToZero);
+  const stableRestoreItem = useStableCallback(handleRestoreItem);
+  const stableSaveMypc = useStableCallback(handleSaveMypc);
+  const stableSaveRangeSettings = useStableCallback(handleSaveRangeSettings);
+  const stableSaveRowField = useStableCallback(handleSaveRowField);
+  const stableSaveSecurityKey = useStableCallback(handleSaveSecurityKey);
+  const stableSaveSpreadsheetId = useStableCallback(handleSaveSpreadsheetId);
+  const stableStartEditUser = useStableCallback(handleStartEditUser);
+  const stableToggleSelect = useStableCallback(handleToggleSelect);
+  const stableToggleSelectAll = useStableCallback(handleToggleSelectAll);
+  const stableUnlockBilling = useStableCallback(handleUnlockBilling);
+  const stableUpdateUser = useStableCallback(handleUpdateUser);
+  const stableUploadBackup = useStableCallback(handleUploadBackup);
+  const stableIsNewConnectionCat = useStableCallback(isNewConnectionCat);
+  const stableIsPendingStatus = useStableCallback(isPendingStatus);
+  const stableProcessSelectedFile = useStableCallback(processSelectedFile);
+  const stableRenderHomeSections = useStableCallback(renderHomeSections);
+  const stableResetBillingColumnWidths = useStableCallback(resetBillingColumnWidths);
+  const stableSaveBillingColumnWidths = useStableCallback(saveBillingColumnWidths);
+  const stableSaveBillingMonthTracked = useStableCallback(saveBillingMonthTracked);
+  const stableStartDeleteSheetWithProgress = useStableCallback(startDeleteSheetWithProgress);
+  const stableStartSheetLoading = useStableCallback(startSheetLoading);
+  const stableSyncRecoveryRowToMasterClient = useStableCallback(syncRecoveryRowToMasterClient);
+  const stableTriggerDeleteBillingRow = useStableCallback(triggerDeleteBillingRow);
+
+  const handleRegisterComplaintAndSwitch = useCallback(async (data: any) => {
+    await onRegisterComplaint(data);
+    setActiveTab('complaints');
+  }, [onRegisterComplaint]);
+
+  const currentUserNameMemo = useMemo(
+    () => users.find(u => u.uid === currentUser.uid)?.username || 'Admin',
+    [users, currentUser.uid]
+  );
+
+  const handleCloseEntrySheet = useCallback(() => navigate('/admin?tab=billing'), [navigate]);
+  const handleCloseBatchPrint = useCallback(() => setIsBatchPrintOpen(false), []);
+
+  const stateProps = useMemo(() => ({
     onNavigate: onNavigateProp,
     ensureMonthLoaded,
     canManageClients,
@@ -4433,7 +5222,7 @@ export default function AdminPanel({
     complaints,
     currentMainPage,
     currentMonthId,
-    setCurrentMonthId: handleSelectMonth,
+    setCurrentMonthId: stableSelectMonth,
     currentUser,
     dcRowsList,
     dragActive,
@@ -4452,51 +5241,52 @@ export default function AdminPanel({
     formSuccess,
     getBillingSortIcon,
     googleTokens,
-    handleAddMonth,
-    handleBillingColResizeStart,
+    handleAddMonth: stableAddMonth,
+    handleBatchSetSwitches,
+    handleBillingColResizeStart: stableBillingColResizeStart,
     handleBillingMouseLeave,
     handleBillingMouseMove,
-    handleBillingSort,
-    handleBulkExport,
-    handleBulkPurge,
-    handleBulkRestore,
-    handleCancelEditUser,
-    handleCopyText,
-    handleCreateSheet,
-    handleCreateUser,
-    handleDeleteBillingMonth,
-    handleDeleteBillingRow,
-    handleDeletePortal,
-    handleDownloadCSV,
-    handleDrag,
-    handleDrop,
-    handleEmptyRecycleBin,
-    handleExecuteRestore,
-    handleFileChange,
-    handleGenerateLocalBackup,
-    handleGetBackup,
-    handleGoogleConnect,
-    handleManualSaveAllRows,
-    handlePermanentDeleteSubscriber,
-    handlePurgeAllBillingData,
-    handlePurgeItem,
-    handleRecheckUsers,
-    handleReconciliationCheck,
-    handleRecoveryCellKeyDown,
-    handleResetAllCRToZero,
-    handleRestoreItem,
-    handleSaveMypc,
-    handleSaveRangeSettings,
-    handleSaveRowField,
-    handleSaveSecurityKey,
-    handleSaveSpreadsheetId,
-    handleStartEditUser,
+    handleBillingSort: stableBillingSort,
+    handleBulkExport: stableBulkExport,
+    handleBulkPurge: stableBulkPurge,
+    handleBulkRestore: stableBulkRestore,
+    handleCancelEditUser: stableCancelEditUser,
+    handleCopyText: stableCopyText,
+    handleCreateSheet: stableCreateSheet,
+    handleCreateUser: stableCreateUser,
+    handleDeleteBillingMonth: stableDeleteBillingMonth,
+    handleDeleteBillingRow: stableDeleteBillingRow,
+    handleDeletePortal: stableDeletePortal,
+    handleDownloadCSV: stableDownloadCSV,
+    handleDrag: stableDrag,
+    handleDrop: stableDrop,
+    handleEmptyRecycleBin: stableEmptyRecycleBin,
+    handleExecuteRestore: stableExecuteRestore,
+    handleFileChange: stableFileChange,
+    handleGenerateLocalBackup: stableGenerateLocalBackup,
+    handleGetBackup: stableGetBackup,
+    handleGoogleConnect: stableGoogleConnect,
+    handleManualSaveAllRows: stableManualSaveAllRows,
+    handlePermanentDeleteSubscriber: stablePermanentDeleteSubscriber,
+    handlePurgeAllBillingData: stablePurgeAllBillingData,
+    handlePurgeItem: stablePurgeItem,
+    handleRecheckUsers: stableRecheckUsers,
+    handleReconciliationCheck: stableReconciliationCheck,
+    handleRecoveryCellKeyDown: stableRecoveryCellKeyDown,
+    handleResetAllCRToZero: stableResetAllCRToZero,
+    handleRestoreItem: stableRestoreItem,
+    handleSaveMypc: stableSaveMypc,
+    handleSaveRangeSettings: stableSaveRangeSettings,
+    handleSaveRowField: stableSaveRowField,
+    handleSaveSecurityKey: stableSaveSecurityKey,
+    handleSaveSpreadsheetId: stableSaveSpreadsheetId,
+    handleStartEditUser: stableStartEditUser,
     handleTileClick,
-    handleToggleSelect,
-    handleToggleSelectAll,
-    handleUnlockBilling,
-    handleUpdateUser,
-    handleUploadBackup,
+    handleToggleSelect: stableToggleSelect,
+    handleToggleSelectAll: stableToggleSelectAll,
+    handleUnlockBilling: stableUnlockBilling,
+    handleUpdateUser: stableUpdateUser,
+    handleUploadBackup: stableUploadBackup,
     inputClasses,
     isAdvanceMode,
     isAudioMuted,
@@ -4517,8 +5307,8 @@ export default function AdminPanel({
     isLoading: isEffectiveBillingLoading,
     isBillingSyncing: isBillingMonthsLoading && Boolean(activeMonthDoc?.rows?.length),
     isMicMuted,
-    isNewConnectionCat,
-    isPendingStatus,
+    isNewConnectionCat: stableIsNewConnectionCat,
+    isPendingStatus: stableIsPendingStatus,
     isRecycleLoading,
     isRestoringBackup,
     isSecurityWidgetExpanded,
@@ -4559,19 +5349,22 @@ export default function AdminPanel({
     onUpdateUser,
     onUpdateUserStatus,
     paginatedRows,
-    processSelectedFile,
+    processSelectedFile: stableProcessSelectedFile,
     purgingItemId,
     recoveryRate,
     recycleConfirmPhrase,
     recycleSearchTerm,
     renderCellProgress,
-    renderHomeSections,
-    resetBillingColumnWidths,
+    renderHomeSections: stableRenderHomeSections,
+    resetBillingColumnWidths: stableResetBillingColumnWidths,
     restoreFile,
     restoringItemId,
-    saveBillingColumnWidths,
-    saveBillingMonthTracked,
+    saveBillingColumnWidths: stableSaveBillingColumnWidths,
+    saveBillingMonthTracked: stableSaveBillingMonthTracked,
     savingMonthIds,
+    savingSwitchClientIds,
+    showAllSavedChip,
+    switchSavingCount,
     selectedDealerForSubAccounts,
     selectedDealerId,
     selectedRecycleItemIds,
@@ -4640,10 +5433,10 @@ export default function AdminPanel({
     showDcList,
     spreadsheetId,
     startBillingScrolling,
-    startDeleteSheetWithProgress,
-    startSheetLoading,
+    startDeleteSheetWithProgress: stableStartDeleteSheetWithProgress,
+    startSheetLoading: stableStartSheetLoading,
     stopBillingScrolling,
-    syncRecoveryRowToMasterClient,
+    syncRecoveryRowToMasterClient: stableSyncRecoveryRowToMasterClient,
     totalBase,
     totalCr,
     totalDC,
@@ -4653,10 +5446,45 @@ export default function AdminPanel({
     totalPending,
     totalRecovered,
     totalTDC,
-    triggerDeleteBillingRow,
+    triggerDeleteBillingRow: stableTriggerDeleteBillingRow,
     uploadedBackupData,
     users
-  };
+  }), [
+    onNavigateProp, ensureMonthLoaded, canManageClients, canWriteBilling,
+    canDeleteComplaints, canDeleteBillingRows, canEditComplaints, activeRows,
+    activeTab, alertAuthorized, animateCellProgress, appConfig,
+    billingAreaFilter, billingColWidths, billingKeyInput, billingMonths,
+    mergedBillingMonthsList, billingPage, billingRowToDelete,
+    billingSearchQuery, billingStatusFilter, billingLineFilter,
+    branding, complaints, currentMainPage, currentMonthId, stableSelectMonth,
+    currentUser, dcRowsList, dragActive, editCompanyName, editFullName,
+    editLineCode, editPassword, editUserRole, editUsername, editingUserId,
+    entrySheetOpenWithUserLedger, expandedRecycleItem, filteredRecycleItems,
+    filteredRows, formError, formSuccess, getBillingSortIcon, googleTokens,
+    handleBillingMouseLeave, handleBillingMouseMove, handleTileClick,
+    inputClasses, isAdvanceMode, isAudioMuted, isBatchPrintOpen,
+    isBillingFresh, isBillingUnlocked, isBulkPurging, isBulkRestoring,
+    isConfiguringNewMonth, isConnecting, isCreating, isCreatingSheet,
+    isEditingSecurityKey, isEmptyRecycleBinModalOpen, isEntrySheetRouteOpen,
+    isExporting, isGeneratingBackup, isEffectiveBillingLoading,
+    isBillingMonthsLoading, activeMonthDoc, isMicMuted, isRecycleLoading,
+    isRestoringBackup, isSecurityWidgetExpanded, isSuspended, isUpdating,
+    itemsPerPage, labelClasses, lastAutoBackupTime, mainSortedRows,
+    masterClients, micAuthorized, mypcOpenedFile, newCompanyName, newFullName,
+    newLineCode, newMonthName, newMonthYear, newPassword, newSecurityKeyInput,
+    newUserRole, newUsername, onAuthorizeAlerts, onAuthorizeMic,
+    onChangeAdminPass, onCreateUser, onDeleteComplaint, onDeleteUser,
+    onLogout, onRegisterComplaint, onSoundTest, onToggleAudio, onToggleMic,
+    onUpdateBranding, onUpdateComplaint, onUpdateComplaintStatus,
+    onUpdateConfig, onUpdateRemarks, onUpdateUser, onUpdateUserStatus,
+    paginatedRows, purgingItemId, recoveryRate, recycleConfirmPhrase,
+    recycleSearchTerm, renderCellProgress, restoreFile, restoringItemId,
+    savingMonthIds, savingSwitchClientIds, selectedDealerForSubAccounts, selectedDealerId,
+    selectedRecycleItemIds, sheetName, sheetRange, showAllSavedChip, showDcList, spreadsheetId,
+    startBillingScrolling, stopBillingScrolling, switchSavingCount, totalBase, totalCr, totalDC,
+    totalExpected, totalMainPages, totalOutstanding, totalPending,
+    totalRecovered, totalTDC, uploadedBackupData, users, handleBatchSetSwitches
+  ]);
 
 
   return (
@@ -5214,26 +6042,17 @@ export default function AdminPanel({
           </div>
         )}
       </AnimatePresence>
-      <div className="space-y-12">
+      <div className="space-y-3.5 sm:space-y-4">
       {activeTab === 'complaints' ? (
-        !isComplaintsInitialLoaded && complaints.length === 0 ? (
-          <div className="py-24 flex flex-col items-center justify-center space-y-4">
-            <FiberLoading text="Synchronizing Live Operations..." size="md" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 animate-pulse">
-              Connecting to Network Telemetry & Live Register
-            </span>
-          </div>
-        ) : (
-          renderHomeSections()
-        )
+        renderHomeSections()
       ) : (
         <>
-          <Suspense fallback={<RouteLoadingFallback />}>
+          <Suspense fallback={<RouteLoadingFallback variant={getVariantForTab(activeTab)} />}>
           <motion.div
             key={activeTab}
-            initial={activeTab === 'billing' ? { opacity: 0 } : { opacity: 0, y: 5 }}
-            animate={activeTab === 'billing' ? { opacity: 1 } : { opacity: 1, y: 0 }}
-            transition={{ duration: activeTab === 'billing' ? 0.12 : 0.15 }}
+            initial={activeTab === 'billing' || activeTab === 'clients' ? { opacity: 0 } : { opacity: 0, y: 5 }}
+            animate={activeTab === 'billing' || activeTab === 'clients' ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            transition={{ duration: activeTab === 'clients' ? 0.08 : activeTab === 'billing' ? 0.12 : 0.15 }}
           >
             {activeTab === 'dealers_data' && currentUser.role === 'super_admin' && (
           <div className="space-y-8">
@@ -5333,24 +6152,14 @@ export default function AdminPanel({
               <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Capture and process enterprise support requests</p>
             </div>
             
-            <AnimatePresence mode="wait">
+            <AnimatePresence>
               {isFormVisible && (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95, filter: 'blur(10px)', y: 20 }}
-                  animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', y: 0 }}
-                  exit={{ 
-                    opacity: 0, 
-                    scale: 0.95, 
-                    y: -20, 
-                    filter: 'blur(10px)',
-                    transition: { duration: 0.3, ease: 'easeIn' }
-                  }}
-                  transition={{ 
-                    type: 'spring',
-                    stiffness: 280,
-                    damping: 25
-                  }}
-                  className="origin-top"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                  className="origin-top transform-gpu"
                 >
                   <div className="pt-2 pb-8 relative">
                     {isSuspended && (
@@ -5368,14 +6177,12 @@ export default function AdminPanel({
                     )}
                     <div className={cn(isSuspended && "blur-[3px] pointer-events-none select-none opacity-30")}>
                       <ComplaintForm 
-                        onSubmit={async (data) => {
-                          await onRegisterComplaint(data);
-                          setActiveTab('complaints');
-                        }} 
+                        onSubmit={handleRegisterComplaintAndSwitch} 
                         isLoading={isLoading || false} 
                         appConfig={appConfig}
                         currentUser={currentUser}
                         branding={branding}
+                        cardClassName="w-[896px] max-w-full !pt-[29px] mr-0 -mt-[31px]"
                       />
                     </div>
                   </div>
@@ -5390,7 +6197,7 @@ export default function AdminPanel({
             appConfig={appConfig} 
             isAdmin={canManageClients} 
             currentUser={currentUser} 
-            currentUserName={users.find(u => u.uid === currentUser.uid)?.username || 'Admin'} 
+            currentUserName={currentUserNameMemo} 
             isBillingUnlocked={isBillingUnlocked}
           />
         )}
@@ -5684,6 +6491,8 @@ export default function AdminPanel({
                                 <img 
                                   src={getAvatarUrl(user.profilePicture)} 
                                   alt={user.username} 
+                                  width={32}
+                                  height={32}
                                   className="w-full h-full object-cover" 
                                   referrerPolicy="no-referrer"
                                 />
@@ -7162,11 +7971,8 @@ export default function AdminPanel({
 
             {/* Main content body */}
             <div className={cn("p-6 sm:p-8 min-h-[400px]", getCardStyle(branding.cardStyle))}>
-              {isRecycleLoading ? (
-                <div className="flex flex-col items-center justify-center min-h-[300px] gap-3">
-                  <div className="w-10 h-10 border-4 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Syncing Recycle Vault...</span>
-                </div>
+              {isRecycleLoading && recycleItems.length === 0 ? (
+                <SkTable rows={6} cols={5} />
               ) : recycleItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center min-h-[300px] text-center max-w-md mx-auto space-y-4">
                   <div className="w-16 h-16 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center border border-[var(--neu-border)] text-slate-400">
@@ -7862,10 +8668,23 @@ export default function AdminPanel({
         )}
       </div>
       {isEntrySheetRouteOpen && (
-        <Suspense fallback={<div className="fixed inset-0 z-[250] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-[250] bg-slate-900/50 flex items-center justify-center p-4">
+              <SkFrame className="w-[420px] max-w-[92vw] h-[260px] flex flex-col justify-between p-6">
+                <SkBar w="w-1/2" h="h-5" />
+                <div className="space-y-3">
+                  <SkBar w="w-full" h="h-3.5" />
+                  <SkBar w="w-4/5" h="h-3.5" />
+                </div>
+                <SkBar w="w-1/3" h="h-9" rounded="rounded-xl" />
+              </SkFrame>
+            </div>
+          }
+        >
           <EntrySheet
             isOpen={isEntrySheetRouteOpen}
-            onClose={() => navigate('/admin?tab=billing')}
+            onClose={handleCloseEntrySheet}
             currentUser={currentUser}
             activeRows={activeRows}
             currentMonthId={currentMonthId}
@@ -7876,6 +8695,7 @@ export default function AdminPanel({
             initialShowUserLedger={entrySheetOpenWithUserLedger}
             setBillingMonths={setBillingMonths}
             savingMonthIds={savingMonthIds}
+            onRequestResync={handleRequestEntrySheetResync}
           />
         </Suspense>
       )}
@@ -7883,7 +8703,7 @@ export default function AdminPanel({
         <Suspense fallback={null}>
           <BatchPrintModal
             isOpen={isBatchPrintOpen}
-            onClose={() => setIsBatchPrintOpen(false)}
+            onClose={handleCloseBatchPrint}
             currentUser={currentUser}
             activeRows={activeRows}
             currentMonthId={currentMonthId}
@@ -7892,7 +8712,20 @@ export default function AdminPanel({
         </Suspense>
       )}
       {isConversationRouteOpen && (
-        <Suspense fallback={<div className="fixed inset-0 z-[10000] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-white" /></div>}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-[10000] bg-slate-900/50 flex items-center justify-center p-4">
+              <SkFrame className="w-[420px] max-w-[92vw] h-[260px] flex flex-col justify-between p-6">
+                <SkBar w="w-1/2" h="h-5" />
+                <div className="space-y-3">
+                  <SkBar w="w-full" h="h-3.5" />
+                  <SkBar w="w-4/5" h="h-3.5" />
+                </div>
+                <SkBar w="w-1/3" h="h-9" rounded="rounded-xl" />
+              </SkFrame>
+            </div>
+          }
+        >
           <ConversationTab
             isOpen={isConversationRouteOpen}
             onClose={() => navigate('/')}

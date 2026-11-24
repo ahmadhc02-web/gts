@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
 import { MessageCircle, X, RotateCcw, Send, Loader2, Phone } from 'lucide-react';
 
 export interface ReminderPreviewModalProps {
@@ -69,10 +70,7 @@ export default function ReminderPreviewModal({
           {/* Backdrop */}
           <motion.div
             key="reminder-preview-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ type: 'tween', duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            {...overlayMotion}
             onClick={isSending ? undefined : onClose}
             className="fixed inset-0 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-xs"
           />
@@ -80,12 +78,8 @@ export default function ReminderPreviewModal({
           {/* Modal Card / Bottom Sheet on mobile */}
           <motion.div
             key="reminder-preview-card"
-            initial={{ opacity: 0, y: 30, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 30, scale: 0.98 }}
-            transition={{ type: 'tween', duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            style={{ willChange: 'transform, opacity' }}
-            className="relative w-full sm:max-w-lg bg-[var(--neu-surface,#ffffff)] dark:bg-[#2b2d33] border border-slate-200/90 dark:border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] z-10"
+            {...dialogMotion}
+            className="relative w-full sm:max-w-lg bg-[var(--neu-surface,#ffffff)] dark:bg-[#2b2d33] border border-slate-200/90 dark:border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[85vh] z-10 transform-gpu will-change-transform"
           >
             {/* Header */}
             <div className="p-4 sm:p-5 flex items-center justify-between gap-3 border-b border-slate-150 dark:border-white/10 bg-white dark:bg-[#2b2d33]">

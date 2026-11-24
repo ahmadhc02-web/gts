@@ -674,7 +674,67 @@ const reconnectBackoff: Record<string, number> = {};
 const hasSubscribedOnce: Record<string, boolean> = {};
 const badFetchRetryCount: Record<string, number> = {};
 
-const activeFetchInitialFunctions: Record<string, () => void> = {};
+type FetchReason = 'initial' | 'retry' | 'realtime-refetch' | 'resubscribe';
+const inFlightFetchPromises: Record<string, Promise<void>> = {};
+const pendingFetchRerun: Record<string, boolean> = {};
+const pendingFetchRerunReason: Record<string, FetchReason> = {};
+const channelClosedAt: Record<string, number> = {};
+const isChannelConnecting: Record<string, boolean> = {};
+
+const HIGH_PRIORITY_TABLES = new Set(['complaints', 'billing_months', 'users', 'clients']);
+const inFlightHighPriorityKeys = new Set<string>();
+let lowPriorityReleased = false;
+const lowPriorityWaiters: Array<() => void> = [];
+let lowPriorityFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+let highPriorityIdleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function releaseLowPriorityTables(): void {
+  if (lowPriorityReleased) return;
+  lowPriorityReleased = true;
+  if (lowPriorityFallbackTimer) {
+    clearTimeout(lowPriorityFallbackTimer);
+    lowPriorityFallbackTimer = null;
+  }
+  if (highPriorityIdleTimer) {
+    clearTimeout(highPriorityIdleTimer);
+    highPriorityIdleTimer = null;
+  }
+  while (lowPriorityWaiters.length > 0) {
+    const fn = lowPriorityWaiters.shift();
+    if (fn) {
+      try { fn(); } catch (e) {}
+    }
+  }
+}
+
+function scheduleLowPriorityReleaseCheck(): void {
+  if (lowPriorityReleased) return;
+  if (!lowPriorityFallbackTimer) {
+    lowPriorityFallbackTimer = setTimeout(releaseLowPriorityTables, 5000);
+  }
+  if (inFlightHighPriorityKeys.size === 0) {
+    if (highPriorityIdleTimer) clearTimeout(highPriorityIdleTimer);
+    highPriorityIdleTimer = setTimeout(() => {
+      if (inFlightHighPriorityKeys.size === 0) {
+        releaseLowPriorityTables();
+      }
+    }, 150);
+  } else if (highPriorityIdleTimer) {
+    clearTimeout(highPriorityIdleTimer);
+    highPriorityIdleTimer = null;
+  }
+}
+
+function waitForHighPriorityStartup(fn: () => void): void {
+  if (lowPriorityReleased) {
+    fn();
+    return;
+  }
+  scheduleLowPriorityReleaseCheck();
+  lowPriorityWaiters.push(fn);
+}
+
+const activeFetchInitialFunctions: Record<string, (reason?: FetchReason) => void> = {};
 const lastWindowRefetchAt: Record<string, number> = {};
 let windowRefetchDebounceTimer: NodeJS.Timeout | null = null;
 
@@ -871,10 +931,21 @@ function subscribeTable(
     }
   }
 
-  const fetchInitial = async () => {
-    // Requirement 3: Race protection sequence counter and start timestamp
-    const currentSeq = (fetchSeqCounter[syncKey] = (fetchSeqCounter[syncKey] || 0) + 1);
-    const fetchStartedAt = Date.now();
+  const fetchInitial = (reason: FetchReason = 'initial'): Promise<void> => {
+    if (inFlightFetchPromises[syncKey]) {
+      pendingFetchRerun[syncKey] = true;
+      pendingFetchRerunReason[syncKey] = reason;
+      return inFlightFetchPromises[syncKey];
+    }
+
+    const runFetch = async () => {
+      if (HIGH_PRIORITY_TABLES.has(tableName)) {
+        inFlightHighPriorityKeys.add(syncKey);
+        scheduleLowPriorityReleaseCheck();
+      }
+      // Requirement 3: Race protection sequence counter and start timestamp
+      const currentSeq = (fetchSeqCounter[syncKey] = (fetchSeqCounter[syncKey] || 0) + 1);
+      const fetchStartedAt = Date.now();
 
     try {
       let mapped: any[] = [];
@@ -968,7 +1039,7 @@ function subscribeTable(
 
       // Requirement 6: Console timing log for every fetchInitial
       const fetchDuration = Date.now() - fetchStartedAt;
-      console.log(`[Load Timing] ${tableName} ${mapped.length} rows in ${fetchDuration}ms (${pageCount} pages)`);
+      console.log(`[Load Timing] ${tableName} ${mapped.length} rows in ${fetchDuration}ms (${pageCount} pages) reason=${reason}`);
 
       // Special ledger_folders fallback logic
       if (tableName === 'ledger_folders' && (error || mapped.length === 0)) {
@@ -1027,7 +1098,7 @@ function subscribeTable(
       const currentCache = globalTableCaches[syncKey];
       const hasExistingRows = Array.isArray(currentCache) && currentCache.length > 0;
 
-      // Requirement 3: Bad-fetch retry logic (limit to 3 retries)
+      // Requirement 3: Bad-fetch retry logic (limit to 3 retries); 0-row result with no cache accepted immediately
       if ((error || mapped.length === 0) && hasExistingRows) {
         const currentRetries = badFetchRetryCount[syncKey] || 0;
         if (currentRetries < 3) {
@@ -1038,7 +1109,7 @@ function subscribeTable(
           }
           retryFetchTimers[syncKey] = setTimeout(() => {
             delete retryFetchTimers[syncKey];
-            fetchInitial();
+            fetchInitial('retry');
           }, 5000);
           return;
         } else {
@@ -1052,7 +1123,7 @@ function subscribeTable(
             return;
           }
         }
-      } else if (!error && mapped.length > 0) {
+      } else if (!error) {
         badFetchRetryCount[syncKey] = 0;
       }
 
@@ -1063,16 +1134,16 @@ function subscribeTable(
         return;
       }
 
-      // Discard and re-run if a realtime event was applied after this fetch started
+      // Discard and re-run if a realtime event was applied after this fetch started (debounced 2000ms)
       if (lastRealtimeAppliedAt[syncKey] && lastRealtimeAppliedAt[syncKey] > fetchStartedAt) {
-        console.log(`[Race Protection] Realtime event was applied during fetch for ${syncKey}. Discarding stale fetch and re-running fetchInitial.`);
+        console.log(`[Race Protection] Realtime event was applied during fetch for ${syncKey}. Discarding stale fetch and scheduling debounced refetch.`);
         if (retryFetchTimers[syncKey]) {
           clearTimeout(retryFetchTimers[syncKey]);
         }
         retryFetchTimers[syncKey] = setTimeout(() => {
           delete retryFetchTimers[syncKey];
-          fetchInitial();
-        }, 200);
+          fetchInitial('realtime-refetch');
+        }, 2000);
         return;
       }
 
@@ -1118,13 +1189,32 @@ function subscribeTable(
           }
           retryFetchTimers[syncKey] = setTimeout(() => {
             delete retryFetchTimers[syncKey];
-            fetchInitial();
+            fetchInitial('retry');
           }, 5000);
         } else {
           console.warn(`[subscribeTable] 3 consecutive retries failed with error for ${syncKey}. Keeping cache and stopping retries until next event.`);
         }
       }
+    } finally {
+      delete inFlightFetchPromises[syncKey];
+      if (HIGH_PRIORITY_TABLES.has(tableName)) {
+        inFlightHighPriorityKeys.delete(syncKey);
+        scheduleLowPriorityReleaseCheck();
+      }
+      if (pendingFetchRerun[syncKey]) {
+        const nextReason = pendingFetchRerunReason[syncKey] || 'realtime-refetch';
+        delete pendingFetchRerun[syncKey];
+        delete pendingFetchRerunReason[syncKey];
+        if (globalTableSubscribers[syncKey] && globalTableSubscribers[syncKey].size > 0) {
+          fetchInitial(nextReason);
+        }
+      }
     }
+    };
+
+    const promise = runFetch();
+    inFlightFetchPromises[syncKey] = promise;
+    return promise;
   };
 
   // Register fetchInitial for global window wake/online refetch
@@ -1143,11 +1233,23 @@ function subscribeTable(
   }
 
   if (isFirstSubscriber) {
-    fetchInitial();
+    if (HIGH_PRIORITY_TABLES.has(tableName)) {
+      fetchInitial('initial');
+    } else {
+      waitForHighPriorityStartup(() => {
+        if (globalTableSubscribers[syncKey] && globalTableSubscribers[syncKey].size > 0) {
+          fetchInitial('initial');
+        }
+      });
+    }
   }
 
   // Requirement 5: Channel setup with health management, exponential backoff, and re-subscribe
   const setupChannel = () => {
+    if (isChannelConnecting[syncKey] || globalTableChannels[syncKey]) {
+      return;
+    }
+    isChannelConnecting[syncKey] = true;
     try {
       const targetTable = tableName === 'users' ? 'users_data' : tableName;
       const channelName = `rt_${tableName}_${dealerId || 'all'}_${Math.random().toString(36).substring(2, 7)}`;
@@ -1413,7 +1515,7 @@ function subscribeTable(
               }
               lastSafetyRefetchAt[syncKey] = now;
               realtimeFetchTimers[syncKey] = setTimeout(() => {
-                fetchInitial();
+                fetchInitial('realtime-refetch');
                 delete realtimeFetchTimers[syncKey];
               }, 2000);
             }
@@ -1423,7 +1525,7 @@ function subscribeTable(
               clearTimeout(realtimeFetchTimers[syncKey]);
             }
             realtimeFetchTimers[syncKey] = setTimeout(() => {
-              fetchInitial();
+              fetchInitial('realtime-refetch');
               delete realtimeFetchTimers[syncKey];
             }, 3000);
           }
@@ -1524,15 +1626,22 @@ function subscribeTable(
       channel.subscribe((status: string, err?: any) => {
         console.log(`[Realtime Channel] ${channelName} status: ${status}`, err || '');
         if (status === 'SUBSCRIBED') {
+          isChannelConnecting[syncKey] = false;
           reconnectBackoff[syncKey] = 2000;
-          if (hasSubscribedOnce[syncKey]) {
-            fetchInitial();
+          const closedAt = channelClosedAt[syncKey];
+          delete channelClosedAt[syncKey];
+          if (hasSubscribedOnce[syncKey] && closedAt && (Date.now() - closedAt > 30000)) {
+            fetchInitial('resubscribe');
           }
           hasSubscribedOnce[syncKey] = true;
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           // Requirement 2: return immediately if stale channel or closing by us
           if (globalTableChannels[syncKey] !== channel || (channel as any)._closingByUs) {
             return;
+          }
+          isChannelConnecting[syncKey] = false;
+          if (!channelClosedAt[syncKey]) {
+            channelClosedAt[syncKey] = Date.now();
           }
 
           console.warn(`[Realtime Channel] Health issue on ${channelName}: ${status}. Recreating channel with backoff...`);
@@ -1549,9 +1658,11 @@ function subscribeTable(
           } catch (e) {}
           delete globalTableChannels[syncKey];
 
-          // Advance backoff only once for this failure (do not double backoff for one failure)
-          const currentDelay = reconnectBackoff[syncKey] || 2000;
-          reconnectBackoff[syncKey] = Math.min(30000, currentDelay * 2);
+          // When CLOSED re-subscribe after 5000ms; otherwise advance exponential backoff once
+          const currentDelay = status === 'CLOSED' ? 5000 : (reconnectBackoff[syncKey] || 2000);
+          if (status !== 'CLOSED') {
+            reconnectBackoff[syncKey] = Math.min(30000, currentDelay * 2);
+          }
 
           if (channelReconnectTimers[syncKey]) {
             clearTimeout(channelReconnectTimers[syncKey]);
@@ -1566,7 +1677,9 @@ function subscribeTable(
       });
 
       globalTableChannels[syncKey] = channel;
-    } catch (e) {}
+    } catch (e) {
+      isChannelConnecting[syncKey] = false;
+    }
   };
 
   if (!globalTableChannels[syncKey]) {
@@ -1579,6 +1692,10 @@ function subscribeTable(
       subscribers.delete(callback);
       if (subscribers.size === 0) {
         delete activeFetchInitialFunctions[syncKey];
+        delete pendingFetchRerun[syncKey];
+        delete pendingFetchRerunReason[syncKey];
+        delete channelClosedAt[syncKey];
+        delete isChannelConnecting[syncKey];
         if (retryFetchTimers[syncKey]) {
           clearTimeout(retryFetchTimers[syncKey]);
           delete retryFetchTimers[syncKey];
@@ -1685,8 +1802,42 @@ function guardComplaintEvent(complaintId: string, event: 'registered' | 'complet
   return true;
 }
 
+let _billingFresh = true;
+const _billingFreshListeners = new Set<() => void>();
+
+export function getBillingFresh(): boolean {
+  return _billingFresh;
+}
+
+export function setBillingFresh(value: boolean): void {
+  const next = Boolean(value);
+  if (_billingFresh !== next) {
+    _billingFresh = next;
+    _billingFreshListeners.forEach(cb => {
+      try { cb(); } catch (e) { console.error("Error in billingFresh listener", e); }
+    });
+  }
+}
+
+export function subscribeBillingFresh(cb: () => void): () => void {
+  _billingFreshListeners.add(cb);
+  return () => {
+    _billingFreshListeners.delete(cb);
+  };
+}
+
+export { useBillingFresh } from './useBillingFresh';
+
 export const supabaseService = {
-  isBillingFresh: true,
+  get isBillingFresh(): boolean {
+    return _billingFresh;
+  },
+  set isBillingFresh(value: boolean) {
+    setBillingFresh(value);
+  },
+  getBillingFresh,
+  setBillingFresh,
+  subscribeBillingFresh,
   clearAllLocalCaches: () => {
     Object.keys(globalTableCaches).forEach(k => {
       delete globalTableCaches[k];
@@ -1701,7 +1852,7 @@ export const supabaseService = {
       }
       keysToRemove.forEach(k => localStorage.removeItem(k));
     } catch (e) {}
-    supabaseService.isBillingFresh = false;
+    setBillingFresh(false);
   },
   setActiveLineCode: (lineCode?: string, lineId?: string) => {
     const cleanCode = typeof lineCode === 'string' ? lineCode.trim() : (lineCode ? String(lineCode).trim() : '');
@@ -2241,6 +2392,7 @@ export const supabaseService = {
               lineId: r.line_id || null,
               reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
               reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
+              ...(typeof r.switch_on === 'boolean' ? { switchOn: r.switch_on, switch_on: r.switch_on } : {}),
               line_code: r.line_code || '',
               line_id: r.line_id || null
             });
@@ -2439,6 +2591,7 @@ export const supabaseService = {
                 lineId: r.line_id || null,
                 reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
                 reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
+                ...(typeof r.switch_on === 'boolean' ? { switchOn: r.switch_on, switch_on: r.switch_on } : {}),
                 line_code: r.line_code || '',
                 line_id: r.line_id || null
               });
@@ -2591,6 +2744,13 @@ export const supabaseService = {
           connectionDate: r.connection_date || '',
           devicePrice: r.device_price || '',
           abl: r.abl || '',
+          lineCode: r.line_code || '',
+          lineId: r.line_id || null,
+          reminderSentAt: r.reminder_sent_at || r.reminderSentAt || null,
+          reminderSentCount: Number(r.reminder_sent_count ?? r.reminderSentCount ?? 0),
+          ...(typeof r.switch_on === 'boolean' ? { switchOn: r.switch_on, switch_on: r.switch_on } : {}),
+          line_code: r.line_code || '',
+          line_id: r.line_id || null
         }));
       }
       return [];
@@ -2678,6 +2838,27 @@ export const supabaseService = {
         if (dbMatch.devicePrice !== undefined) cloned.devicePrice = dbMatch.devicePrice;
         if (dbMatch.abl !== undefined) cloned.abl = dbMatch.abl;
         if (dbMatch.connectionDate !== undefined) cloned.connectionDate = dbMatch.connectionDate;
+        const rawSwitchOn = dbMatch.switch_on !== undefined && dbMatch.switch_on !== null ? dbMatch.switch_on : dbMatch.switchOn;
+        if (typeof rawSwitchOn === 'boolean') {
+          if (cloned.switchOn !== rawSwitchOn) changesCount++;
+          cloned.switchOn = rawSwitchOn;
+          cloned.switch_on = rawSwitchOn;
+        }
+        const dbRemCount = dbMatch.reminderSentCount ?? dbMatch.reminder_sent_count;
+        const oldRemCount = cloned.reminderSentCount ?? cloned.reminder_sent_count ?? 0;
+        if (dbRemCount !== undefined && dbRemCount !== null) {
+          const maxCount = Math.max(Number(oldRemCount) || 0, Number(dbRemCount) || 0);
+          cloned.reminderSentCount = maxCount;
+          cloned.reminder_sent_count = maxCount;
+        }
+        const dbRemAt = dbMatch.reminderSentAt ?? dbMatch.reminder_sent_at;
+        const oldRemAt = cloned.reminderSentAt ?? cloned.reminder_sent_at;
+        if (dbRemAt) {
+          if (!oldRemAt || new Date(dbRemAt).getTime() > new Date(oldRemAt).getTime()) {
+            cloned.reminderSentAt = dbRemAt;
+            cloned.reminder_sent_at = dbRemAt;
+          }
+        }
       }
 
       return cloned;
@@ -2791,6 +2972,7 @@ export const supabaseService = {
   _billingMonthSaveCounter: {} as Record<string, number>,
   _backgroundBlobTimers: {} as Record<string, any>,
   _backgroundBlobPayloads: {} as Record<string, any>,
+  _backgroundBlobInFlightPayloads: {} as Record<string, any>,
   _backgroundBlobLocks: {} as Record<string, Promise<void>>,
   _backgroundBlobListenerAdded: false,
 
@@ -2843,6 +3025,8 @@ export const supabaseService = {
     const payload = this._backgroundBlobPayloads ? this._backgroundBlobPayloads[syncKey] : null;
     if (!payload) return Promise.resolve();
     delete this._backgroundBlobPayloads[syncKey];
+    if (!this._backgroundBlobInFlightPayloads) this._backgroundBlobInFlightPayloads = {};
+    this._backgroundBlobInFlightPayloads[syncKey] = payload;
 
     const monthId = payload.month_id;
     const dealerId = payload.dealer_id || 'main';
@@ -2875,6 +3059,10 @@ export const supabaseService = {
           description: `Recovery rows are saved, but the full monthly backup failed: ${err?.message || 'Database error'}.`,
           duration: 6000
         });
+      } finally {
+        if (this._backgroundBlobInFlightPayloads && this._backgroundBlobInFlightPayloads[syncKey] === payload) {
+          delete this._backgroundBlobInFlightPayloads[syncKey];
+        }
       }
     });
 
@@ -3006,6 +3194,7 @@ export const supabaseService = {
   },
 
   async _doExecuteSaveBillingMonth(monthId: string, rows: any[], updatedBy: string, dealerId: string = 'main', changedIndices?: number[] | Set<number>, excludedClientKeys?: string[], skipDbFetch?: boolean, baseRows?: any[]) {
+    const startTime = performance.now();
     const syncKey = `${monthId}_${dealerId}_${activeLineCode || 'nolc'}`;
     if (!this._syncingMonths) this._syncingMonths = new Set<string>();
     this._syncingMonths.add(syncKey);
@@ -3025,42 +3214,65 @@ export const supabaseService = {
        (changedIndices instanceof Set && changedIndices.size > 0))
     );
 
-    // Fetch existing month data from database before saving to validate data integrity
+    // Fetch existing month data from database or pending background payload before saving
     let dbTotal = 0;
     let dbPaidCount = 0;
     let existingRowsParsed: any[] = [];
-    if (!skipDbFetch) {
-      if (baseRows && Array.isArray(baseRows) && baseRows.length > 0 && hasChangedIndices) {
-        existingRowsParsed = baseRows;
-        dbTotal = baseRows.length;
-        dbPaidCount = countRecordedPaymentRows(baseRows);
-      } else {
-        try {
-          const { data: dbData } = await supabase
-            .from('billing_months')
-            .select('rows_data')
-            .eq('month_id', monthId)
-            .eq('dealer_id', dealerId)
-            .maybeSingle();
+    let baseSource = 'db';
 
-          if (dbData && dbData.rows_data) {
-            let existingRows = dbData.rows_data;
-            if (typeof existingRows === 'string') {
-              try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
-            }
-            if (existingRows && typeof existingRows === 'object' && !Array.isArray(existingRows) && 'rows' in existingRows) {
-              if (Array.isArray(existingRows.rows)) {
-                existingRows = existingRows.rows;
+    if (!skipDbFetch) {
+      const pendingPayload =
+        (this._backgroundBlobPayloads && this._backgroundBlobPayloads[syncKey]) ||
+        (this._backgroundBlobInFlightPayloads && this._backgroundBlobInFlightPayloads[syncKey]);
+      if (pendingPayload && pendingPayload.rows_data) {
+        baseSource = 'pending';
+        let pendingRows = pendingPayload.rows_data;
+        if (typeof pendingRows === 'string') {
+          try { pendingRows = JSON.parse(pendingRows); } catch {}
+        }
+        if (pendingRows && typeof pendingRows === 'object' && !Array.isArray(pendingRows) && 'rows' in pendingRows) {
+          pendingRows = pendingRows.rows;
+        }
+        if (Array.isArray(pendingRows)) {
+          existingRowsParsed = pendingRows;
+          dbTotal = pendingRows.length;
+          dbPaidCount = countRecordedPaymentRows(pendingRows);
+        }
+      }
+
+      if (existingRowsParsed.length === 0) {
+        if (baseRows && Array.isArray(baseRows) && baseRows.length > 0 && hasChangedIndices) {
+          existingRowsParsed = baseRows;
+          dbTotal = baseRows.length;
+          dbPaidCount = countRecordedPaymentRows(baseRows);
+        } else {
+          try {
+            const { data: dbData } = await supabase
+              .from('billing_months')
+              .select('rows_data')
+              .eq('month_id', monthId)
+              .eq('dealer_id', dealerId)
+              .maybeSingle();
+
+            if (dbData && dbData.rows_data) {
+              let existingRows = dbData.rows_data;
+              if (typeof existingRows === 'string') {
+                try { existingRows = JSON.parse(existingRows); } catch (e) { existingRows = []; }
+              }
+              if (existingRows && typeof existingRows === 'object' && !Array.isArray(existingRows) && 'rows' in existingRows) {
+                if (Array.isArray(existingRows.rows)) {
+                  existingRows = existingRows.rows;
+                }
+              }
+              if (Array.isArray(existingRows)) {
+                existingRowsParsed = existingRows;
+                dbTotal = existingRows.length;
+                dbPaidCount = countRecordedPaymentRows(existingRows);
               }
             }
-            if (Array.isArray(existingRows)) {
-              existingRowsParsed = existingRows;
-              dbTotal = existingRows.length;
-              dbPaidCount = countRecordedPaymentRows(existingRows);
-            }
+          } catch (checkErr) {
+            console.warn("Could not fetch previous month data for validation check:", checkErr);
           }
-        } catch (checkErr) {
-          console.warn("Could not fetch previous month data for validation check:", checkErr);
         }
       }
     } else {
@@ -3190,6 +3402,10 @@ export const supabaseService = {
       console.error(`🚨 CRITICAL DATA LOSS PREVENTED: ${alertMsg}`);
       throw new Error(alertMsg);
     }
+    const elapsedMs = Math.round(performance.now() - startTime);
+    const changedCount = hasChangedIndices && changedIndices ? (Array.isArray(changedIndices) ? changedIndices.length : changedIndices.size) : rows.length;
+    console.log(`[Billing Save] month=${monthId} base=${baseSource} changed=${changedCount} ms=${elapsedMs}`);
+
     try {
       const payload: any = {
         month_id: monthId,
@@ -3327,6 +3543,111 @@ export const supabaseService = {
     }
   },
 
+  async setBillingRowSwitches(monthId: string, dealerId: string = 'main', updates: { clientId: string, username?: string, on: boolean }[]) {
+    if (!Array.isArray(updates) || updates.length === 0) return;
+    const onIds: string[] = [];
+    const offIds: string[] = [];
+    const clientIdToUpdateMap = new Map<string, { clientId: string, username?: string, on: boolean }>();
+    
+    updates.forEach(u => {
+      const cid = String(u.clientId || '').trim();
+      if (!cid) return;
+      clientIdToUpdateMap.set(cid, u);
+      if (u.on) {
+        if (!onIds.includes(cid)) onIds.push(cid);
+      } else {
+        if (!offIds.includes(cid)) offIds.push(cid);
+      }
+    });
+
+    const chunkArray = (arr: string[], size: number) => {
+      const res: string[][] = [];
+      for (let i = 0; i < arr.length; i += size) {
+        res.push(arr.slice(i, i + size));
+      }
+      return res;
+    };
+
+    const updatedClientIds = new Set<string>();
+
+    const processGroup = async (ids: string[], onVal: boolean) => {
+      if (ids.length === 0) return;
+      const chunks = chunkArray(ids, 200);
+      for (const chunk of chunks) {
+        const query = supabase
+          .from('billing_rows')
+          .update({ switch_on: onVal })
+          .eq('month_id', monthId)
+          .eq('dealer_id', dealerId || 'main')
+          .in('client_id', chunk)
+          .select('client_id');
+        
+        const res: any = await withTimeout((async () => await query)(), 15000, `Set billing row switches (${onVal ? 'ON' : 'OFF'})`);
+        const data = res?.data;
+        const error = res?.error;
+        if (error) {
+          throw new Error(error.message || 'Failed to update billing row switches');
+        }
+        if (Array.isArray(data)) {
+          data.forEach((d: any) => {
+            const cId = d.client_id || d.clientId;
+            if (cId) updatedClientIds.add(String(cId));
+          });
+        }
+      }
+    };
+
+    try {
+      await Promise.all([
+        processGroup(onIds, true),
+        processGroup(offIds, false)
+      ]);
+
+      const missingUpdates = updates.filter(u => {
+        const cid = String(u.clientId || '').trim();
+        return cid && !updatedClientIds.has(cid);
+      });
+
+      if (missingUpdates.length > 0) {
+        const monthData: any = await this.getBillingMonthDirect(monthId, dealerId || 'main');
+        let currentRows: any[] = [];
+        if (monthData && Array.isArray(monthData.rows)) {
+          currentRows = monthData.rows;
+        } else if (monthData && monthData.rows_data) {
+          let rd = monthData.rows_data;
+          if (typeof rd === 'string') {
+            try { rd = JSON.parse(rd); } catch {}
+          }
+          if (rd && typeof rd === 'object' && !Array.isArray(rd) && 'rows' in rd) {
+            rd = rd.rows;
+          }
+          if (Array.isArray(rd)) {
+            currentRows = rd;
+          }
+        }
+        const missingClientIds = new Set(missingUpdates.map(m => String(m.clientId).trim()));
+        const missingIndices: number[] = [];
+        currentRows.forEach((r: any, idx: number) => {
+          const cid = String(r.clientId || r.client_id || r.id || '').trim();
+          if (cid && missingClientIds.has(cid)) {
+            const up = clientIdToUpdateMap.get(cid);
+            if (up) {
+              r.switchOn = up.on;
+              r.switch_on = up.on;
+              missingIndices.push(idx);
+            }
+          }
+        });
+        if (missingIndices.length > 0) {
+          await this.syncBillingRows(monthId, dealerId || 'main', currentRows, missingIndices);
+        }
+      }
+    } catch (err: any) {
+      console.error('[Billing Switches Error]:', err);
+      throw err;
+    }
+  },
+
   async syncBillingRows(monthId: string, dealerId: string, rows: any[], changedIndices?: number[] | Set<number>) {
     const sanitizeNum = (val: any): number => {
       if (val === undefined || val === null || val === '') return 0;
@@ -3339,7 +3660,7 @@ export const supabaseService = {
       if (!clientId || !String(clientId).trim()) {
         return null;
       }
-      return {
+      const mapped: any = {
         id: `${monthId}_${clientId}`,
         month_id: String(monthId || ''),
         dealer_id: String(dealerId || 'main'),
@@ -3367,6 +3688,18 @@ export const supabaseService = {
         line_code: String(r.lineCode || r.line_code || activeLineCode || ''),
         line_id: r.lineId || r.line_id || activeLineId || null
       };
+      if (typeof r.switchOn === 'boolean') {
+        mapped.switch_on = r.switchOn;
+      }
+      const rCount = r.reminderSentCount ?? r.reminder_sent_count;
+      if (typeof rCount === 'number' && !isNaN(rCount)) {
+        mapped.reminder_sent_count = rCount;
+      }
+      const rAt = r.reminderSentAt ?? r.reminder_sent_at;
+      if (rAt) {
+        mapped.reminder_sent_at = rAt;
+      }
+      return mapped;
     };
 
     const getPaymentScore = (row: any) => {
@@ -6733,7 +7066,7 @@ export const supabaseService = {
     } catch (e) {
       console.warn("recordClientReminderSent error:", e);
     }
-  }
+  },
 };
 
 export const pocketbaseService = supabaseService;

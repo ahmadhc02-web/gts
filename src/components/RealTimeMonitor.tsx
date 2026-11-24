@@ -16,7 +16,7 @@ interface RealTimeMonitorProps {
   complaints?: Complaint[];
 }
 
-export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProps) {
+const RealTimeMonitor = React.memo(function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProps) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const [reportType, setReportType] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
@@ -72,114 +72,79 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     };
   }, [complaints]);
 
-  // Process data for Chart precisely, matching dates and details dynamically
+  // Process data for Chart in a single O(N) bucket pass
   const chartData = useMemo(() => {
     const now = new Date();
-    
-    if (reportType === 'weekly') {
-      const data = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(now.getDate() - i);
-        
-        const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+
+    const isResolvedStatus = (s?: string) => {
+      const upper = (s || '').toUpperCase();
+      return upper === 'RESOLVED' || upper === 'CLOSED' || upper === 'COMPLETE' || upper === 'COMPLETED';
+    };
+
+    if (reportType === 'weekly' || reportType === 'monthly') {
+      const days = reportType === 'weekly' ? 7 : 30;
+      const buckets: { name: string; total: number; resolved: number }[] = [];
+      const keyToIndex = new Map<string, number>();
+
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
         const dayOfMonth = String(d.getDate()).padStart(2, '0');
         const monthStr = String(d.getMonth() + 1).padStart(2, '0');
-        const label = `${dayName} ${dayOfMonth}/${monthStr}`;
-        
-        const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
-        const endOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
-        
-        const totalCount = complaints.filter(c => {
-          if (!c.createdAt) return false;
-          return c.createdAt >= startOfDay && c.createdAt <= endOfDay;
-        }).length;
-
-        const resolvedCount = complaints.filter(c => {
-          const timestamp = c.updatedAt || c.createdAt;
-          if (!timestamp) return false;
-          const status = c.status?.toUpperCase() || '';
-          const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
-          return isResolved && timestamp >= startOfDay && timestamp <= endOfDay;
-        }).length;
-
-        data.push({
-          name: label,
-          total: totalCount,
-          resolved: resolvedCount
-        });
+        const label =
+          reportType === 'weekly'
+            ? d.toLocaleDateString('en-US', { weekday: 'short' })
+            : `${dayOfMonth}/${monthStr}`;
+        keyToIndex.set(key, buckets.length);
+        buckets.push({ name: label, total: 0, resolved: 0 });
       }
-      return data;
-    } else if (reportType === 'monthly') {
-      const data = [];
-      for (let i = 29; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(now.getDate() - i);
-        
-        const dayOfMonth = String(d.getDate()).padStart(2, '0');
-        const monthStr = String(d.getMonth() + 1).padStart(2, '0');
-        const label = `${dayOfMonth}/${monthStr}`;
-        
-        const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
-        const endOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
-        
-        const totalCount = complaints.filter(c => {
-          if (!c.createdAt) return false;
-          return c.createdAt >= startOfDay && c.createdAt <= endOfDay;
-        }).length;
 
-        const resolvedCount = complaints.filter(c => {
-          const timestamp = c.updatedAt || c.createdAt;
-          if (!timestamp) return false;
-          const status = c.status?.toUpperCase() || '';
-          const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
-          return isResolved && timestamp >= startOfDay && timestamp <= endOfDay;
-        }).length;
-        
-        data.push({
-          name: label,
-          total: totalCount,
-          resolved: resolvedCount
-        });
+      for (let i = 0; i < complaints.length; i++) {
+        const c = complaints[i];
+        if (c.createdAt) {
+          const cd = new Date(c.createdAt);
+          const idx = keyToIndex.get(`${cd.getFullYear()}-${cd.getMonth()}-${cd.getDate()}`);
+          if (idx !== undefined) buckets[idx].total++;
+        }
+        const resTs = c.updatedAt || c.createdAt;
+        if (resTs && isResolvedStatus(c.status)) {
+          const rd = new Date(resTs);
+          const idx = keyToIndex.get(`${rd.getFullYear()}-${rd.getMonth()}-${rd.getDate()}`);
+          if (idx !== undefined) buckets[idx].resolved++;
+        }
       }
-      return data;
+      return buckets;
     } else {
-      const data = [];
+      const buckets: { name: string; total: number; resolved: number }[] = [];
+      const keyToIndex = new Map<string, number>();
+
       for (let i = 11; i >= 0; i--) {
-        const d = new Date();
-        d.setMonth(now.getMonth() - i);
-        
-        const monthName = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-        const yearStr = d.getFullYear().toString().slice(-2);
-        const label = `${monthName} '${yearStr}`;
-        
-        const startOfM = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0).getTime();
-        const endOfM = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
-        
-        const totalCount = complaints.filter(c => {
-          if (!c.createdAt) return false;
-          return c.createdAt >= startOfM && c.createdAt <= endOfM;
-        }).length;
-        
-        const resolvedCount = complaints.filter(c => {
-          const timestamp = c.updatedAt || c.createdAt;
-          if (!timestamp) return false;
-          const status = c.status?.toUpperCase() || '';
-          const isResolved = status === 'RESOLVED' || status === 'CLOSED' || status === 'COMPLETE' || status === 'COMPLETED';
-          return isResolved && timestamp >= startOfM && timestamp <= endOfM;
-        }).length;
-        
-        data.push({
-          name: label,
-          total: totalCount,
-          resolved: resolvedCount
-        });
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${d.getMonth()}`;
+        const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+        keyToIndex.set(key, buckets.length);
+        buckets.push({ name: monthName, total: 0, resolved: 0 });
       }
-      return data;
+
+      for (let i = 0; i < complaints.length; i++) {
+        const c = complaints[i];
+        if (c.createdAt) {
+          const cd = new Date(c.createdAt);
+          const idx = keyToIndex.get(`${cd.getFullYear()}-${cd.getMonth()}`);
+          if (idx !== undefined) buckets[idx].total++;
+        }
+        const resTs = c.updatedAt || c.createdAt;
+        if (resTs && isResolvedStatus(c.status)) {
+          const rd = new Date(resTs);
+          const idx = keyToIndex.get(`${rd.getFullYear()}-${rd.getMonth()}`);
+          if (idx !== undefined) buckets[idx].resolved++;
+        }
+      }
+      return buckets;
     }
   }, [complaints, reportType]);
 
-  // Custom dots rendering
+  // Custom dots rendering (no continuous pulse animation per SVG dot)
   const renderCustomDot = (colorStr: string, activeColorStr: string) => (props: any) => {
     const { cx, cy, index, payload, dataKey } = props;
     if (payload[dataKey] === 0) return null;
@@ -188,9 +153,8 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
         <circle 
           cx={cx} 
           cy={cy} 
-          r={6} 
+          r={5.5} 
           fill={activeColorStr} 
-          className="animate-pulse"
         />
         <circle 
           cx={cx} 
@@ -226,67 +190,55 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
     );
   };
 
-  // Find peak day in current dataset for highlight
-  const peakDay = useMemo(() => {
-    if (chartData.length === 0) return null;
-    let max = -1;
-    let maxDay = '';
-    chartData.forEach(d => {
-      if (d.total > max) {
-        max = d.total;
-        maxDay = d.name;
-      }
-    });
-    return max > 0 ? { name: maxDay, count: max } : null;
-  }, [chartData]);
-
   return (
-    <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 font-lexend animate-fade-in relative z-10">
-      {/* Container Card with clean-edge dashboard feel on soft light-grey textured background */}
-      <div 
-        className="flex-1 neu-card rounded-2xl border border-slate-200/50 dark:border-white/5 p-5 flex flex-col relative overflow-hidden transition-all duration-300"
-      >
-        {/* Subtle ambient light gradient overlays */}
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-[#2563eb]/5 blur-[48px] rounded-full pointer-events-none z-0" />
-        <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 blur-[48px] rounded-full pointer-events-none z-0" />
-
-        {/* Top Header: Controls & Action Details */}
-        <div className="flex items-center justify-between gap-2 mb-4 relative z-10 w-full border-b border-slate-200/80 dark:border-white/10 pb-3">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span 
-              className="text-[10px] font-black tracking-widest text-blue-700 dark:text-blue-300 bg-blue-500/15 dark:bg-blue-500/25 px-2.5 py-1 rounded-lg uppercase border border-blue-500/30 flex items-center gap-1.5 shadow-sm"
-              style={isDark ? { backgroundColor: '#3e4149', color: '#ffffff', borderColor: '#757575' } : { backgroundColor: '#f2f4f7', color: '#000000', borderColor: '#f2f4f7' }}
-            >
-              <Activity size={11} className="stroke-[2.5]" />
-              ACTIVITY MONITOR
-            </span>
-          </div>
-
-          <div className="flex items-center shrink-0">
-            <div className="flex items-center bg-slate-200/70 dark:bg-slate-900/90 p-0.5 rounded-lg border border-slate-300 dark:border-white/10 shadow-xs">
-              {(['weekly', 'monthly', 'yearly'] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setReportType(type)}
-                  className={`px-2.5 sm:px-3 py-1 text-[9px] font-black tracking-wider rounded-md uppercase transition-all duration-200 ${
-                    reportType === type 
-                      ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-[var(--neu-shadow-raised-sm)] border border-slate-200/80 dark:border-white/10' 
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white font-extrabold'
-                  }`}
-                >
-                  {type === 'weekly' ? 'Week' : type === 'monthly' ? 'Month' : 'Year'}
-                </button>
-              ))}
-            </div>
-          </div>
+    <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 font-lexend relative z-10">
+      {/* Top Corners Above Chart Frame: Label & Week / Month / Year selector with no frame background */}
+      <div className="px-1 pb-2 flex items-center justify-between gap-2 shrink-0 relative z-10 w-full">
+        <div className="flex items-center gap-1.5 shrink-0 bg-transparent">
+          <Activity size={12} className="stroke-[2.5] text-blue-600 dark:text-blue-400" />
+          <span className="text-[11px] font-black tracking-widest uppercase text-slate-900 dark:text-slate-100">
+            ACTIVITY MONITOR
+          </span>
         </div>
 
+        <div className="flex items-center gap-1.5 sm:gap-2 bg-transparent shrink-0">
+          {(['weekly', 'monthly', 'yearly'] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => setReportType(type)}
+              className={`px-1.5 py-0.5 text-[10px] font-black tracking-wider uppercase transition-all duration-100 cursor-pointer bg-transparent border-b-2 ${
+                reportType === type
+                  ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white border-transparent font-extrabold'
+              }`}
+            >
+              {type === 'weekly' ? 'Week' : type === 'monthly' ? 'Month' : 'Year'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Container Card with clean-edge dashboard feel on soft light-grey textured background */}
+      <div 
+        className="flex-1 min-h-0 neu-card !bg-[#f5f5f5] dark:!bg-[#2c3038] rounded-2xl border border-slate-200/50 dark:border-white/10 p-2.5 sm:p-3 flex flex-col relative overflow-hidden transition-all duration-150 !shadow-[0_6px_20px_rgba(15,23,42,0.11),6px_0_16px_-3px_rgba(15,23,42,0.11),-6px_0_16px_-3px_rgba(15,23,42,0.11)] hover:!shadow-[0_10px_26px_rgba(15,23,42,0.15),8px_0_20px_-3px_rgba(15,23,42,0.13),-8px_0_20px_-3px_rgba(15,23,42,0.13)] dark:!shadow-[0_8px_22px_rgba(0,0,0,0.48),6px_0_18px_-2px_rgba(0,0,0,0.42),-6px_0_18px_-2px_rgba(0,0,0,0.42)] dark:hover:!shadow-[0_12px_28px_rgba(0,0,0,0.58),8px_0_22px_-2px_rgba(0,0,0,0.5),-8px_0_22px_-2px_rgba(0,0,0,0.5)]"
+      >
+        {/* Subtle ambient light gradient overlays */}
+        <div
+          className="absolute bottom-0 left-0 w-48 h-48 rounded-full pointer-events-none z-0"
+          style={{ background: 'radial-gradient(circle, rgba(37,99,235,0.08) 0%, transparent 70%)' }}
+        />
+        <div
+          className="absolute top-0 right-0 w-48 h-48 rounded-full pointer-events-none z-0"
+          style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)' }}
+        />
+
         {/* Chart Frame */}
-        <div style={{ width: '100%', height: '300px' }} className="flex-1 w-full min-h-[220px] min-w-0 relative z-10 -ml-3 mt-1">
-          <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150} initialDimension={{ width: 500, height: 300 }} debounce={100}>
+        <div style={{ width: '100%', height: '100%' }} className="flex-1 w-full h-full min-h-[220px] min-w-0 relative z-10 flex items-center justify-center">
+          <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150} initialDimension={{ width: 500, height: 300 }} debounce={0}>
             <AreaChart 
               data={chartData} 
-              margin={{ top: 20, right: 20, left: -20, bottom: 5 }}
+              margin={{ top: 14, right: 14, left: 0, bottom: 4 }}
             >
               <defs>
                 <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
@@ -315,16 +267,17 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fontSize: 8.5, fontWeight: 900, fill: '#475569' }}
-                dy={8}
+                dy={6}
                 interval={reportType === 'monthly' ? 5 : 0}
               />
 
               {/* Hidden YAxis to support clean metrics-based scaling */}
               <YAxis 
+                width={28}
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fontSize: 8.5, fontWeight: 900, fill: '#475569' }}
-                dx={-8}
+                dx={-2}
                 allowDecimals={false}
               />
 
@@ -351,13 +304,14 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                 dataKey="total"
                 name="Total Complaints"
                 stroke="#2563eb"
-                strokeWidth={3}
+                strokeWidth={2.75}
                 fillOpacity={1}
                 fill="url(#chartGradient)"
                 dot={renderCustomDot("#2563eb", "rgba(37, 99, 235, 0.25)")}
                 activeDot={renderCustomActiveDot("#2563eb", "rgba(37, 99, 235, 0.45)")}
-                filter="url(#softLineShadow)"
-                animationDuration={1000}
+                animationBegin={0}
+                animationDuration={110}
+                animationEasing="ease-out"
               />
 
               <Area
@@ -365,26 +319,21 @@ export default function RealTimeMonitor({ complaints = [] }: RealTimeMonitorProp
                 dataKey="resolved"
                 name="Resolved (Complete)"
                 stroke="#10b981"
-                strokeWidth={3}
+                strokeWidth={2.75}
                 fillOpacity={1}
                 fill="url(#chartGradientGreen)"
                 dot={renderCustomDot("#10b981", "rgba(16, 185, 129, 0.25)")}
                 activeDot={renderCustomActiveDot("#10b981", "rgba(16, 185, 129, 0.45)")}
-                filter="url(#softLineShadowGreen)"
-                animationDuration={1000}
+                animationBegin={0}
+                animationDuration={110}
+                animationEasing="ease-out"
               />
             </AreaChart>
           </ResponsiveContainer>
         </div>
-
-        {/* Small Peak Day status line with high contrast tag */}
-        {peakDay && (
-          <div className="absolute bottom-4 right-5 text-[9px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-300 z-10 flex items-center gap-1.5 select-none pointer-events-none bg-blue-500/15 dark:bg-blue-500/25 px-2.5 py-1 rounded-md border border-blue-500/30 shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400 inline-block animate-pulse" />
-            Peak: {peakDay.count} complains on {peakDay.name}
-          </div>
-        )}
       </div>
     </div>
   );
-}
+});
+
+export default RealTimeMonitor;

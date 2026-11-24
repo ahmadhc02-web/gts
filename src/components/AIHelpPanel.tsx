@@ -9,6 +9,8 @@ import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 import { supabaseService as pocketbaseService } from '../lib/supabaseService';
 import { Complaint } from '../types';
+import { SkChatThread } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
 
 const getApiUrl = (endpoint: string): string => {
   const host = window.location.hostname;
@@ -71,6 +73,7 @@ export default function AIHelpPanel({ onClose, currentUser }: AIHelpPanelProps) 
   // Trend analyzer states
   const [trendData, setTrendData] = useState<TrendData | null>(null);
   const [loadingTrends, setLoadingTrends] = useState(true);
+  const showTrendsSkeleton = useSkeletonGate(loadingTrends) && !trendData;
   const [copiedResponseIndex, setCopiedResponseIndex] = useState<number | null>(null);
 
   // Search Grounding toggle
@@ -322,7 +325,7 @@ Provide:
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 500, opacity: 0 }}
         transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-        className="fixed top-0 right-0 h-screen w-full sm:w-[500px] z-[200] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.15)] dark:shadow-[0_0_50px_rgba(0,0,0,0.6)] flex flex-col overflow-hidden text-slate-800 dark:text-slate-100"
+        className="fixed top-0 right-0 h-[100dvh] max-h-[100dvh] h-dvh-fallback w-full sm:w-[500px] z-[200] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.15)] dark:shadow-[0_0_50px_rgba(0,0,0,0.6)] flex flex-col overflow-hidden text-slate-800 dark:text-slate-100"
       >
         {/* Header Section */}
         <div className="p-4 border-b border-slate-100 dark:border-white/10 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-md flex items-center justify-between">
@@ -417,12 +420,14 @@ Provide:
               Search Grounding
             </span>
           </label>
-          <AnimatePresence mode="wait">
+          <AnimatePresence>
             {searchGroundingActive ? (
               <motion.span 
-                initial={{ opacity: 0, scale: 0.8 }}
+                key="web-resolver-on"
+                initial={{ opacity: 0, scale: 0.97 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                 className="text-[9px] text-emerald-600 dark:text-[#34d399] font-mono font-bold tracking-wider flex items-center gap-1.5 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20"
               >
                 <span className="w-1.5 h-1.5 bg-emerald-500 dark:bg-emerald-400 rounded-full animate-ping" />
@@ -430,9 +435,11 @@ Provide:
               </motion.span>
             ) : (
               <motion.span 
-                initial={{ opacity: 0, scale: 0.8 }}
+                key="online-engine"
+                initial={{ opacity: 0, scale: 0.97 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                 className="text-[9px] text-emerald-600 dark:text-[#34d399] font-mono font-bold tracking-wider flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20"
               >
                 <span className="w-1.5 h-1.5 bg-emerald-500 dark:bg-emerald-400 rounded-full animate-pulse" />
@@ -453,19 +460,8 @@ Provide:
                 exit={{ opacity: 0, y: -15 }}
                 className="space-y-5"
               >
-                {loadingTrends ? (
-                  <div className="space-y-4 py-12 text-center flex flex-col items-center justify-center">
-                    <div className="relative">
-                      <div className="w-12 h-12 rounded-full border-2 border-slate-200 dark:border-white/10 border-t-brand-accent animate-spin" />
-                      <Sparkles size={16} className="text-brand-accent absolute top-3.5 left-3.5 animate-pulse" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-mono font-black text-slate-400 dark:text-slate-500 tracking-widest uppercase">CONNECTING DIAGNOSTIC SHELF...</p>
-                      <p className="text-[11px] font-black tracking-widest text-[#34d399] dark:text-[#34d399] animate-pulse">
-                        Splicing intelligence channels...
-                      </p>
-                    </div>
-                  </div>
+                {showTrendsSkeleton ? (
+                  <SkChatThread className="h-[420px]" />
                 ) : trendData ? (
                   <>
                     {/* Overall network condition banner */}
@@ -793,7 +789,7 @@ Provide:
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -15 }}
               >
-                <div className="space-y-4 pb-20 max-h-[calc(100vh-235px)] overflow-y-auto pr-1">
+                <div className="space-y-4 pb-20 max-h-[calc(100dvh-235px)] overflow-y-auto pr-1">
                   {askHistory.map((msg, idx) => (
                     <div 
                       key={`msg-${msg.id || idx}-${idx}`}

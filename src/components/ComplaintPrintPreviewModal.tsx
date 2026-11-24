@@ -1,11 +1,15 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
 import { 
   X, Printer, Calendar, MapPin, Phone, User, Package, Layers, CheckCircle2, ShieldAlert, Clock
 } from 'lucide-react';
 import { Complaint, UserProfile, BrandingConfig } from '../types';
 import { cn } from '../lib/utils';
+import { DeferredBody } from './ui/DeferredBody';
+import { SkBar } from './skeleton/Skeleton';
+import { usePopupTiming } from '../lib/usePopupTiming';
 
 interface ComplaintPrintPreviewModalProps {
   isOpen: boolean;
@@ -22,6 +26,7 @@ export default function ComplaintPrintPreviewModal({
   currentUser,
   branding
 }: ComplaintPrintPreviewModalProps) {
+  usePopupTiming('ComplaintPrintPreview', isOpen);
   if (!isOpen) return null;
 
   const customNames = branding.customNames || {};
@@ -127,14 +132,16 @@ export default function ComplaintPrintPreviewModal({
       ` }} />
 
       {/* Main Overlay Backdrop */}
-      <div 
+      <motion.div 
+        {...overlayMotion}
         id="a4-single-complaint-modal-wrapper"
         className="fixed inset-0 z-[600] flex items-stretch justify-end overflow-hidden bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm print:bg-transparent print:backdrop-blur-none print:static"
       >
         {/* Dynamic Controls Drawer (Hidden in print) */}
-        <div 
+        <motion.div 
+          {...dialogMotion}
           id="a4-single-complaint-controls"
-          className="print-single-hide w-full md:w-[380px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-white/10 flex flex-col h-full shadow-2xl relative z-[610]"
+          className="print-single-hide w-full md:w-[380px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-white/10 flex flex-col h-full shadow-2xl relative z-[610] transform-gpu will-change-transform print:transform-none"
         >
           {/* Header */}
           <div className="p-5 border-b border-slate-150 dark:border-white/10 bg-slate-50/50 dark:bg-slate-950/50 flex items-center justify-between">
@@ -211,7 +218,7 @@ export default function ComplaintPrintPreviewModal({
               Sends to physical printer or saves as A4 PDF
             </p>
           </div>
-        </div>
+        </motion.div>
 
         {/* Live A4 Scrollable Preview Canvas on the right */}
         <div 
@@ -228,6 +235,45 @@ export default function ComplaintPrintPreviewModal({
             </span>
           </div>
 
+          <DeferredBody
+            fallback={
+              <div className="w-[210mm] max-w-full min-h-[297mm] bg-white border border-slate-200 rounded-md shadow-2xl p-12 flex flex-col justify-between box-border">
+                <div className="space-y-6">
+                  <div className="flex justify-between items-start border-b-2 border-slate-200 pb-4">
+                    <div className="space-y-2">
+                      <SkBar w="w-56" h="h-5" />
+                      <SkBar w="w-64" h="h-3" />
+                      <SkBar w="w-44" h="h-2.5" />
+                    </div>
+                    <div className="space-y-2 flex flex-col items-end">
+                      <SkBar w="w-28" h="h-6" rounded="rounded" />
+                      <SkBar w="w-36" h="h-2.5" />
+                    </div>
+                  </div>
+                  <SkBar w="w-full" h="h-9" rounded="rounded" />
+                  <div className="space-y-3 pt-2">
+                    <SkBar w="w-48" h="h-3" />
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={`cp-sk-row-${i}`} className="grid grid-cols-4 gap-4 py-2 border-b border-slate-100">
+                        <SkBar w="w-24" h="h-3" />
+                        <SkBar w="w-32" h="h-3" />
+                        <SkBar w="w-24" h="h-3" />
+                        <SkBar w="w-28" h="h-3" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-3 pt-4">
+                    <SkBar w="w-52" h="h-3" />
+                    <SkBar w="w-full" h="h-28" rounded="rounded-lg" />
+                  </div>
+                </div>
+                <div className="flex justify-between items-end pt-8 border-t border-slate-200">
+                  <SkBar w="w-40" h="h-10" rounded="rounded" />
+                  <SkBar w="w-36" h="h-10" rounded="rounded" />
+                </div>
+              </div>
+            }
+          >
           {/* Printable Paper Canvas (Matches A4 standard dimensions on screen) */}
           <div 
             id="a4-single-complaint-paper"
@@ -411,9 +457,10 @@ export default function ComplaintPrintPreviewModal({
             </div>
 
           </div>
+          </DeferredBody>
         </div>
 
-      </div>
+      </motion.div>
     </>,
     document.body
   );

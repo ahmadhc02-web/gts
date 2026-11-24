@@ -106,10 +106,42 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: true,
       sourcemap: false,
       minify: 'esbuild',
-      target: 'es2022',
+      target: 'es2020',
       reportCompressedSize: false,
-      chunkSizeWarningLimit: 2000,
+      chunkSizeWarningLimit: 600,
+      cssCodeSplit: true,
       rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              const normalizedId = id.replace(/\\/g, '/');
+              if (normalizedId.includes('/node_modules/lucide-react/')) {
+                return 'icons';
+              }
+              if (normalizedId.includes('/node_modules/recharts/') || normalizedId.includes('/node_modules/d3-')) {
+                return 'charts';
+              }
+              if (normalizedId.includes('/node_modules/motion/') || normalizedId.includes('/node_modules/framer-motion/')) {
+                return 'motion';
+              }
+              if (normalizedId.includes('/node_modules/@supabase/')) {
+                return 'supabase';
+              }
+              if (normalizedId.includes('/node_modules/@capacitor/')) {
+                return 'capacitor';
+              }
+              if (
+                normalizedId.includes('/node_modules/react/') ||
+                normalizedId.includes('/node_modules/react-dom/') ||
+                normalizedId.includes('/node_modules/react-router/') ||
+                normalizedId.includes('/node_modules/react-router-dom/') ||
+                normalizedId.includes('/node_modules/scheduler/')
+              ) {
+                return 'react';
+              }
+            }
+          }
+        }
       }
     },
   };

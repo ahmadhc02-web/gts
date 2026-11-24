@@ -216,6 +216,9 @@ async function initBaileys(rawKey = 'main') {
     session.isReconnectPending = false;
     if (session.sock) {
       try {
+        await session.saveCreds?.();
+      } catch (e) {}
+      try {
         session.sock.ev.removeAllListeners();
         session.sock.end(new Error(`Reinitializing connection for session ${session.key}`));
       } catch (e) {
@@ -230,6 +233,7 @@ async function initBaileys(rawKey = 'main') {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(session.authDir);
+    session.saveCreds = saveCreds;
     const logger = pino({ level: 'silent' });
 
     let waVersion;
@@ -267,6 +271,30 @@ async function initBaileys(rawKey = 'main') {
     const thisSock = session.sock;
 
     session.sock.ev.on('creds.update', saveCreds);
+
+    session.sock.ev.on('messages.update', (updates) => {
+      if (session.sock !== thisSock) return;
+      try {
+        if (!Array.isArray(updates)) return;
+        for (const update of updates) {
+          try {
+            const key = update?.key;
+            const status = update?.update?.status;
+            if (key?.fromMe && typeof status === 'number' && key?.id) {
+              const id = key.id;
+              if (sentMessageStore.has(id)) {
+                const jid = key.remoteJid || '';
+                const rawDigits = String(jid.split('@')[0] || '').replace(/\D/g, '');
+                const last4 = rawDigits.slice(-4) || '0000';
+                const statusNames = ['ERROR', 'PENDING', 'SERVER_ACK', 'DELIVERY_ACK', 'READ', 'PLAYED'];
+                const statusName = statusNames[status] !== undefined ? statusNames[status] : status;
+                console.log(`[Receipt] ${session.key} ${last4} id=${id} status=${statusName}`);
+              }
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    });
 
     session.sock.ev.on('connection.update', (update) => {
       if (session.sock !== thisSock) return;
@@ -542,7 +570,7 @@ function waitForReconnect(session, timeoutMs) {
   });
 }
 
-async function sendWithRetry(session, phoneNumber, message, existingMessageId) {
+async function sendWithRetry(session, phoneNumber, message, existingMessageId, sendOpts = {}) {
   const jid = `${phoneNumber}@s.whatsapp.net`;
   let lastError = null;
   const messageId = existingMessageId || generateMessageID();
@@ -602,6 +630,19 @@ async function sendWithRetry(session, phoneNumber, message, existingMessageId) {
         }
       }
 
+      let fresh = 0;
+      if ((sendOpts.kind === 'reminder' || attempt > 1) && process.env.WA_FRESH_SESSION_REMINDERS !== '0' && typeof session.sock?.assertSessions === 'function') {
+        try {
+          await Promise.race([
+            session.sock.assertSessions([jid], true),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('assertSessions timed out')), 8000))
+          ]);
+          fresh = 1;
+        } catch (freshErr) {
+          console.log(`[${session.key}] Fresh-session non-fatal: ${freshErr.message}`);
+        }
+      }
+
       const prechecksMs = Date.now() - prechecksStart;
 
       // Pre-cache message into sentMessageStore BEFORE invoking sendMessage
@@ -626,8 +667,8 @@ async function sendWithRetry(session, phoneNumber, message, existingMessageId) {
       session.lastActivityTimestamp = Date.now();
       session.consecutiveSendTimeouts = 0;
 
-      // Log timing lines: [Send] <session> <last4> id=<messageId> prechecks=<ms> send=<ms> total=<ms>
-      console.log(`[Send] ${session.key} ${last4} id=${messageId} prechecks=${prechecksMs} send=${sendMs} total=${totalMs}`);
+      // Log timing lines: [Send] <session> <last4> id=<messageId> prechecks=<ms> send=<ms> total=<ms> fresh=<fresh>
+      console.log(`[Send] ${session.key} ${last4} id=${messageId} prechecks=${prechecksMs} send=${sendMs} total=${totalMs} fresh=${fresh}`);
 
       return { success: true, waMessageId: sent?.key?.id || messageId };
     } catch (err) {
@@ -688,7 +729,8 @@ async function processQueue(session) {
     disconnectedChecks = 0;
 
     const task = session.messageQueue.shift();
-    const { phoneNumber, message, resolve, reject, messageId } = task;
+    const { phoneNumber, message, resolve, reject, messageId, options } = task;
+    const kind = String(options?.meta?.kind || '').toLowerCase();
 
     const idleMs = Date.now() - (session.lastSendFinishedAt || 0);
     const delayMs = idleMs > 60000
@@ -697,7 +739,7 @@ async function processQueue(session) {
     await new Promise(r => setTimeout(r, delayMs));
 
     try {
-      const sendRes = await sendWithRetry(session, phoneNumber, message, messageId);
+      const sendRes = await sendWithRetry(session, phoneNumber, message, messageId, { kind });
       session.lastSendFinishedAt = Date.now();
       session.sentTimestamps.push(Date.now());
       console.log(`[${session.key}] Successfully sent message to ${phoneNumber}`);

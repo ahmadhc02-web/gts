@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sun, Moon, LogOut, User, MessageSquare, MessageCircle, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, Workflow, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload, DatabaseBackup } from 'lucide-react';
+import { Sun, Moon, LogOut, User, MessageSquare, MessageCircle, ChevronRight, Bell, BellOff, Volume2, VolumeX, Settings, Workflow, ShieldAlert, AlertTriangle, Mic, WifiOff, Wifi, History, Trash2, Clock, CheckCircle2, X, Menu, ChevronLeft, LayoutDashboard, ClipboardList, TrendingUp, Users, Shield, CloudUpload, Palette, Map as MapIcon, HelpCircle, PlusSquare, Contact, Flame, BarChart3, ChevronDown, Activity, CreditCard, PenLine, Home, RefreshCw, Sparkles, Lock, Mail, Camera, Key, Monitor, FileSpreadsheet, FolderOpen, Check, Printer, HardDriveDownload, DatabaseBackup, Cpu } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '../lib/utils';
 import { WhatsAppConnectPanel } from '../whatsapp_data';
 import { UserProfile, Notification, BrandingConfig } from '../types';
 import RefreshControl from './RefreshControl';
 import FiberLoading from './FiberLoading';
+import { SkForm } from './skeleton/Skeleton';
 import InlineTextEditor from './InlineTextEditor';
 import { IndependenceBuntingHeader, PakistanFlagFooter, PakistaniFlagBackground } from '../culture_design';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
@@ -15,6 +16,8 @@ import { getAvatarUrl } from '../utils/avatar';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
+import { usePopupTiming } from '../lib/usePopupTiming';
 
 const Chat = lazyWithRetry(() => import('./Chat'));
 const AIHelpPanel = lazyWithRetry(() => import('./AIHelpPanel'));
@@ -46,6 +49,60 @@ interface LayoutProps {
   appConfig?: any;
   onRegisterComplaint?: (data: any) => Promise<void>;
 }
+
+const FooterTypewriterBanner = React.memo(({ text }: { text: string }) => {
+  const fullFooterText = useMemo(() => text.toUpperCase(), [text]);
+  const [footerTypedText, setFooterTypedText] = useState(fullFooterText);
+
+  useEffect(() => {
+    let isMounted = true;
+    let charIndex = 0;
+    let isDeleting = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const typeStep = () => {
+      if (!isMounted) return;
+      if (!isDeleting) {
+        if (charIndex < fullFooterText.length) {
+          charIndex++;
+          setFooterTypedText(fullFooterText.slice(0, charIndex));
+          timeoutId = setTimeout(typeStep, 90);
+        } else {
+          timeoutId = setTimeout(() => {
+            isDeleting = true;
+            typeStep();
+          }, 3600);
+        }
+      } else {
+        if (charIndex > 0) {
+          charIndex--;
+          setFooterTypedText(fullFooterText.slice(0, charIndex));
+          timeoutId = setTimeout(typeStep, 40);
+        } else {
+          isDeleting = false;
+          timeoutId = setTimeout(typeStep, 700);
+        }
+      }
+    };
+
+    typeStep();
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [fullFooterText]);
+
+  return (
+    <div className="w-full bg-white/80 dark:bg-[#2a2d34] rounded-xl p-3 border border-black/[0.05] dark:border-white/10 flex items-center justify-center relative overflow-hidden">
+      <div className="text-center z-10">
+        <span className="text-base sm:text-xl font-bold tracking-widest text-slate-800 dark:text-slate-100 uppercase font-mono">
+          {footerTypedText}
+          <span className="text-[#187233] dark:text-emerald-400 animate-cursor-blink">|</span>
+        </span>
+      </div>
+    </div>
+  );
+});
 
 export default function Layout({ 
   children, 
@@ -87,8 +144,8 @@ export default function Layout({
     let progress = 0;
     let didToggle = false;
     const interval = setInterval(() => {
-      progress += Math.floor(Math.random() * 12) + 8;
-      if (progress >= 85 && !didToggle) {
+      progress += 25;
+      if (progress >= 75 && !didToggle) {
         didToggle = true;
         toggleTheme();
       }
@@ -101,11 +158,11 @@ export default function Layout({
         setTimeout(() => {
           setIsThemeTransitioning(false);
           setTargetTheme(null);
-        }, 220);
+        }, 90);
       } else {
         setThemeTransitionProgress(progress);
       }
-    }, 38);
+    }, 18);
   };
 
   const [isChatOpen, setIsChatOpen] = React.useState(false);
@@ -114,14 +171,65 @@ export default function Layout({
   const [isMonitorOpen, setIsMonitorOpen] = React.useState(false);
   const [isMapOpen, setIsMapOpen] = React.useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [focusedClientId, setFocusedClientId] = React.useState<string | null>(null);
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
   const [selectedNotif, setSelectedNotif] = React.useState<Notification | null>(null);
+  usePopupTiming('NotificationDetail', Boolean(selectedNotif));
   const isOnline = useOnlineStatus();
   const [showSyncStatus, setShowSyncStatus] = useState(false);
   const [isInlineEditingActive, setIsInlineEditingActive] = useState(false);
   const [isComplaintSwipeDownOpen, setIsComplaintSwipeDownOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const isUserSuspended = useMemo(() => {
+    if (!user) return false;
+    if (user.status === 'blocked') return true;
+    if (user.dealerId && user.dealerId !== 'main') {
+      const parentDealer = users.find((u) => u.uid === user.dealerId && u.role === 'dealer');
+      if (parentDealer && parentDealer.status === 'blocked') return true;
+    }
+    return false;
+  }, [user, users]);
+
+  useEffect(() => {
+    if (!isComplaintSwipeDownOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsComplaintSwipeDownOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isComplaintSwipeDownOpen]);
+
+  const prefetchedTabsRef = useRef<Set<string>>(new Set());
+  const handlePrefetchTab = (tabId: string) => {
+    const connection = (navigator as any).connection;
+    if (connection && (connection.saveData || connection.effectiveType === '2g' || connection.effectiveType === 'slow-2g')) {
+      return;
+    }
+    if (prefetchedTabsRef.current.has(tabId)) return;
+    prefetchedTabsRef.current.add(tabId);
+    if (tabId === 'billing') {
+      import('./BillingTab').catch(() => {});
+      import('./EntrySheet').catch(() => {});
+    } else if (tabId === 'clients') {
+      import('./ClientManagement').catch(() => {});
+    } else if (tabId === 'conversations' || tabId === 'config' || tabId === 'campaigns') {
+      import('./ConversationTab').catch(() => {});
+    } else if (tabId === 'whatsapp') {
+      import('../whatsapp_data/WhatsAppCenter').catch(() => {});
+    } else if (tabId === 'monitor' || tabId === 'latency') {
+      import('./ServiceMonitor').catch(() => {});
+    } else if (tabId === 'map') {
+      import('./MapViewer').catch(() => {});
+    } else if (tabId === 'nodes') {
+      import('./HighFrequencyNodes').catch(() => {});
+    } else if (tabId === 'mypc') {
+      import('./MyPCTab').catch(() => {});
+    }
+  };
 
   // Special states for integrated billing header
   const [billingMonths, setBillingMonths] = useState<any[]>([]);
@@ -383,58 +491,6 @@ export default function Layout({
   const brandingText = getBrandingText();
   const isColoredHeader = branding?.sidebarTheme && branding.sidebarTheme !== 'light';
 
-  // Typewriter animation state for footer
-  const fullFooterText = useMemo(() => brandingText.toUpperCase(), [brandingText]);
-  const [footerTypedText, setFooterTypedText] = useState('');
-  const [showFooterCursor, setShowFooterCursor] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-    let charIndex = 0;
-    let isDeleting = false;
-    let timeoutId: NodeJS.Timeout;
-
-    const typeStep = () => {
-      if (!isMounted) return;
-
-      if (!isDeleting) {
-        if (charIndex < fullFooterText.length) {
-          charIndex++;
-          setFooterTypedText(fullFooterText.slice(0, charIndex));
-          timeoutId = setTimeout(typeStep, 75 + Math.random() * 35);
-        } else {
-          timeoutId = setTimeout(() => {
-            isDeleting = true;
-            typeStep();
-          }, 3200);
-        }
-      } else {
-        if (charIndex > 0) {
-          charIndex--;
-          setFooterTypedText(fullFooterText.slice(0, charIndex));
-          timeoutId = setTimeout(typeStep, 35);
-        } else {
-          isDeleting = false;
-          timeoutId = setTimeout(typeStep, 600);
-        }
-      }
-    };
-
-    typeStep();
-
-    return () => {
-      isMounted = false;
-      clearTimeout(timeoutId);
-    };
-  }, [fullFooterText]);
-
-  useEffect(() => {
-    const cursorInterval = setInterval(() => {
-      setShowFooterCursor(prev => !prev);
-    }, 450);
-    return () => clearInterval(cursorInterval);
-  }, []);
-
   const isFirstMountRef = useRef(true);
   const prevOnlineRef = useRef(isOnline);
 
@@ -515,6 +571,7 @@ export default function Layout({
       label: 'Main Operations',
       items: [
         { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList },
+        { id: 'greenradius', label: 'Green Radius OS', icon: Cpu },
         { id: 'nodes', label: 'Active Complainers', icon: Flame },
         { id: 'dealers_data', label: 'Dealers Data', icon: BarChart3, roles: ['super_admin'] },
         { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
@@ -606,58 +663,78 @@ export default function Layout({
     setIsSidebarOpen(false);
   };
 
+  const showShellSidebar = Boolean(user && activeTab !== 'mypc' && activeTab !== 'config' && activeTab !== 'latency');
+
   return (
-    <PakistaniFlagBackground className="transition-colors duration-500">
-      {/* Persistent Left Sidebar Rail for Desktop (Matching Mockup Perfectly) */}
-      {user && activeTab !== 'mypc' && activeTab !== 'config' && activeTab !== 'latency' && (
-        <div className={cn(
-          "group/rail left-0 bottom-0 w-[68px] hover:w-[240px] transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] neu-flat border-r border-slate-200/50 dark:border-white/5 flex-col items-stretch pb-5 select-none overflow-hidden",
-          isSidebarOpen ? "flex z-[160] top-0" : "hidden lg:flex z-[51] top-0",
-          isPreview ? "absolute h-full" : "fixed shadow-[4px_0_24px_rgba(0,0,0,0.06)] dark:shadow-[4px_0_30px_rgba(0,0,0,0.4)]"
+    <PakistaniFlagBackground className={cn(
+      "transition-colors duration-300",
+      showShellSidebar && "bg-[#126f51] dark:bg-[#0c4b37] lg:min-h-0 lg:h-[100dvh] lg:max-h-[100dvh] lg:overflow-hidden"
+    )}>
+      <div className={cn(
+        "flex-1 flex w-full",
+        showShellSidebar
+          ? "min-h-screen lg:fixed lg:inset-0 lg:z-20 lg:w-screen lg:min-h-0 lg:h-[100dvh] lg:max-h-[100dvh] lg:overflow-hidden bg-[#126f51] dark:bg-[#0c4b37]"
+          : "min-h-screen flex-col"
+      )}>
+      {/* Persistent Forest-Green Left Sidebar (Desktop - Matching Reference Image) */}
+      {showShellSidebar && (
+        <aside className={cn(
+          "hidden lg:flex flex-col shrink-0 h-full select-none relative z-[55] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] text-white bg-[#126f51] dark:bg-[#0c4b37]",
+          isSidebarCollapsed ? "w-[74px]" : "w-[232px]"
         )}>
-          {/* Menu Trigger Button Container (Hidden on Desktop, replaced by Header Logo) */}
-          <div className="w-full h-16 flex items-center justify-start shrink-0 border-b border-slate-200/50 dark:border-white/5 relative overflow-hidden">
-            <div className="w-[68px] flex justify-center shrink-0">
-              <div className="relative shrink-0 select-none group cursor-pointer transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)]" onClick={handleLogoClick}>
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl blur-sm opacity-25 group-hover:opacity-40 transition duration-1000 animate-pulse" />
-                <div className="relative w-10 h-10 rounded-2xl neu-raised flex items-center justify-center border border-white/20 dark:border-white/5 shadow-lg">
-                  <span className="text-slate-900 dark:text-white font-black text-sm tracking-tighter italic leading-none">
-                    G<span className="text-emerald-500">TS</span>
-                  </span>
-                </div>
-              </div>
+          {/* Floating Circular Seam Collapse Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed(prev => !prev)}
+            className="absolute -right-3.5 top-7 w-7 h-7 rounded-full bg-white dark:bg-[#2f333b] text-slate-700 dark:text-slate-200 border border-black/10 dark:border-white/15 shadow-md flex items-center justify-center hover:scale-110 active:scale-95 transition-transform z-[70] cursor-pointer"
+            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            <ChevronLeft size={14} className={cn("transition-transform duration-300", isSidebarCollapsed && "rotate-180")} />
+          </button>
+
+          {/* Top Website Brand Logo & Name (Website's Own Logo & Name Preserved) */}
+          <div
+            onClick={handleLogoClick}
+            className={cn(
+              "px-4 pt-5 pb-4 flex items-center gap-3 cursor-pointer shrink-0 bg-[#126f51] dark:bg-[#0c4b37]",
+              isSidebarCollapsed && "justify-center px-2"
+            )}
+          >
+            <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-xs border border-white/25 flex items-center justify-center shadow-sm shrink-0">
+              <span className="text-white font-black text-xs tracking-tighter italic leading-none">
+                G<span className="text-emerald-200">TS</span>
+              </span>
             </div>
-            
-            <div className="opacity-0 group-hover/rail:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] flex flex-col justify-center select-none whitespace-nowrap">
-              <h1 className="text-xs font-black tracking-wider text-emerald-600 dark:text-emerald-400 uppercase leading-none font-sans">
-                {brandingText}
-              </h1>
-              <div className="flex items-center gap-1 mt-1">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse relative -top-[0.5px]" />
-                <span className="text-[7.5px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-none">
-                  POWERED BY GREEN NET
+            {!isSidebarCollapsed && (
+              <div className="min-w-0 flex flex-col">
+                <h1 className="text-[14px] font-bold tracking-tight text-white leading-tight truncate">
+                  {brandingText}
+                </h1>
+                <span className="text-[10px] font-medium text-emerald-100/75 truncate leading-tight mt-0.5">
+                  Powered by Green Net
                 </span>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Dynamic Icon groups */}
-          <div className="flex-1 w-full px-3 flex flex-col gap-3 items-start pt-6 overflow-y-auto overflow-x-hidden no-scrollbar">
+          {/* Navigation Options (Exact Website Options Preserved & Styled per Reference) */}
+          <nav className="flex-1 px-3 py-2 flex flex-col gap-1 overflow-y-auto overflow-x-hidden no-scrollbar bg-[#126f51] dark:bg-[#0c4b37]">
             {(() => {
               const items = [
-                { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList },
-                { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare },
-                { id: 'nodes', label: 'Active Complainers', icon: Flame },
-                { id: 'clients', label: branding?.tabNames?.clients || 'Users Management', icon: Contact },
-                { id: 'mypc', label: 'Settings', icon: Settings },
-                { id: 'billing', label: 'Billing Mod', icon: CreditCard },
-                { id: 'config', label: 'WP Campaigns', icon: Workflow },
-                { id: 'map', label: 'Network Map', icon: MapIcon },
-                { id: 'monitor', label: 'Service Monitor', icon: Activity },
-                { id: 'settings', label: 'Security', icon: Shield },
-                { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
-                { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'] },
-                { id: 'chat', label: 'AI Help', icon: Sparkles }
+                { id: 'complaints', label: branding?.tabNames?.complaints || 'Operations', icon: ClipboardList, group: 'MAIN' },
+                { id: 'greenradius', label: 'Green Radius OS', icon: Cpu, group: 'MAIN' },
+                { id: 'submit', label: branding?.tabNames?.submit || 'Complain Reg', icon: PlusSquare, group: 'MAIN' },
+                { id: 'nodes', label: 'Active Complainers', icon: Flame, group: 'MAIN' },
+                { id: 'clients', label: branding?.tabNames?.clients || 'Users Management', icon: Contact, group: 'OPERATIONS' },
+                { id: 'billing', label: 'Billing Mod', icon: CreditCard, group: 'OPERATIONS' },
+                { id: 'config', label: 'WP Campaigns', icon: Workflow, group: 'OPERATIONS' },
+                { id: 'map', label: 'Network Map', icon: MapIcon, group: 'OPERATIONS' },
+                { id: 'monitor', label: 'Service Monitor', icon: Activity, group: 'OPERATIONS' },
+                { id: 'mypc', label: 'Settings', icon: Settings, group: 'WORKSPACE' },
+                { id: 'settings', label: 'Security', icon: Shield, group: 'WORKSPACE' },
+                { id: 'recycle_bin', label: 'Recycle Bin', icon: Trash2, roles: ['super_admin', 'admin', 'dealer', 'editor'], group: 'WORKSPACE' },
+                { id: 'integrations', label: 'Google Sheet Link', icon: CloudUpload, roles: ['super_admin', 'admin', 'dealer', 'editor'], group: 'WORKSPACE' },
+                { id: 'chat', label: 'AI Help', icon: Sparkles, group: 'WORKSPACE' }
               ];
 
               let permitted;
@@ -676,15 +753,19 @@ export default function Layout({
               }
 
               const visible = permitted.filter(item => !(branding?.hiddenTabs || []).includes(item.id));
+              let lastGroup = '';
 
               return visible.map((item, idx) => {
+                const showGroupHeader = !isSidebarCollapsed && item.group !== lastGroup;
+                lastGroup = item.group;
+
                 const isItemActive = (() => {
                   if (item.id === 'config' || item.id === 'campaigns') return location.pathname.startsWith('/billingmod/conversation') || location.pathname.startsWith('/conversation');
                   if (item.id === 'submit' || item.id === 'registry') return activeTab === 'submit' || location.pathname === '/registry' || location.pathname === '/submit';
                   if (item.id === 'chat') return isChatOpen;
                   if (item.id === 'monitor') return activeTab === 'latency' || activeTab === 'monitor' || isMonitorOpen;
                   if (item.id === 'map') return isMapOpen && !isSidebarOpen;
-                  return activeTab === item.id || 
+                  return activeTab === item.id ||
                          (item.id === 'complaints' && activeTab === 'ops') ||
                          (item.id === 'settings' && activeTab === 'profile');
                 })();
@@ -704,103 +785,85 @@ export default function Layout({
                 };
 
                 return (
-                  <motion.button
-                    key={`nav-${item.id}-${idx}`}
-                    onClick={handleItemClick}
-                    initial="rest"
-                    whileHover="hover"
-                    whileTap="tap"
-                    className={cn(
-                      "h-11 w-full rounded-2xl flex items-center justify-start relative cursor-pointer transition-all duration-300 group",
-                      isItemActive
-                        ? "neu-inset text-blue-600 dark:text-blue-400 border border-blue-500/20"
-                        : "neu-btn text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  <React.Fragment key={`nav-${item.id}-${idx}`}>
+                    {showGroupHeader && (
+                      <div className={cn(
+                        "px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-100/55 select-none",
+                        idx === 0 ? "pt-1 pb-1" : "pt-3.5 pb-1"
+                      )}>
+                        {item.group}
+                      </div>
                     )}
-                  >
-                    <div className="w-11 h-11 flex items-center justify-center shrink-0">
-                      <motion.div
-                      variants={{
-                        rest: { scale: 1, rotate: 0, y: 0 },
-                        hover: { scale: 1.15, rotate: 8, y: -1 }
-                      }}
-                      transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                    <button
+                      type="button"
+                      onClick={handleItemClick}
+                      onPointerEnter={() => handlePrefetchTab(item.id)}
+                      onFocus={() => handlePrefetchTab(item.id)}
+                      title={isSidebarCollapsed ? item.label : undefined}
+                      className={cn(
+                        "w-full rounded-xl flex items-center gap-3 transition-all duration-150 cursor-pointer relative group",
+                        isSidebarCollapsed ? "h-10 justify-center px-0" : "px-3 py-2",
+                        isItemActive
+                          ? "bg-white text-[#126f51] shadow-sm font-semibold"
+                          : "text-white hover:bg-white/10 hover:text-white font-medium"
+                      )}
                     >
-                      <item.icon size={20} />
-                    </motion.div>
-                    </div>
-                    <span className="opacity-0 group-hover/rail:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] text-[10px] font-black uppercase tracking-widest whitespace-nowrap ml-3">{item.label}</span>
-                    
-                    {isItemActive && (
-                      <motion.div
-                        layoutId="activeSideLine"
-                        className="absolute left-0 top-3 bottom-3 w-1 bg-blue-600 dark:bg-blue-400 rounded-r-full"
-                        transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                      <item.icon
+                        size={17}
+                        className={cn(
+                          "shrink-0 transition-transform duration-150 group-hover:scale-105",
+                          isItemActive ? "text-[#126f51]" : "text-white"
+                        )}
                       />
-                    )}
-                    
-                    {/* Tooltip */}
-                    <span className="absolute left-16 scale-0 opacity-0 group-hover:scale-100 group-hover:opacity-100 group-hover/rail:hidden transition-all duration-200 z-[100] bg-slate-900 dark:bg-slate-800 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-lg shadow-lg pointer-events-none whitespace-nowrap">
-                      {item.label}
-                    </span>
-                  </motion.button>
+                      {!isSidebarCollapsed && (
+                        <span className={cn(
+                          "text-[13px] leading-tight truncate whitespace-nowrap",
+                          isItemActive ? "text-[#126f51]" : "text-white"
+                        )}>
+                          {item.label}
+                        </span>
+                      )}
+                    </button>
+                  </React.Fragment>
                 );
               });
             })()}
-          </div>
+          </nav>
 
-          {/* Bottom Help Question Icon & Logout */}
-          <div className="mt-auto px-3 w-full flex flex-col items-start gap-3">
-            {/* Show bottom Sparkles help icon only if 'chat' is hidden from the main custom list to avoid duplication */}
+          {/* Bottom Utility & Logout Section inside Green Sidebar */}
+          <div className="px-3 py-3 border-t border-white/12 flex flex-col gap-1 shrink-0 bg-[#126f51] dark:bg-[#0c4b37]">
             {(branding?.hiddenTabs || []).includes('chat') && (
-              <motion.button
+              <button
+                type="button"
                 onClick={() => setIsChatOpen(true)}
-                whileHover="hover"
-                whileTap="tap"
-                className="h-11 w-full rounded-2xl flex items-center justify-start relative cursor-pointer text-blue-500 dark:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-900 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] group"
-                title="Launch AI Help Portal"
+                className={cn(
+                  "w-full rounded-xl flex items-center gap-3 text-white/85 hover:bg-white/10 hover:text-white transition-all cursor-pointer",
+                  isSidebarCollapsed ? "h-10 justify-center px-0" : "px-3 py-2"
+                )}
+                title="AI Help"
               >
-                <div className="w-11 h-11 flex items-center justify-center shrink-0">
-                      <motion.div
-                      variants={{
-                    hover: { scale: 1.15, rotate: 12 },
-                    tap: { scale: 0.95 }
-                  }}
-                  transition={{ type: "spring", stiffness: 450, damping: 12 }}
-                >
-                  <Sparkles size={20} className="animate-pulse" />
-                </motion.div>
-                </div>
-                <span className="opacity-0 group-hover/rail:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] text-[10px] font-black uppercase tracking-widest whitespace-nowrap ml-3">AI Help</span>
-              </motion.button>
+                <Sparkles size={17} className="shrink-0 text-emerald-200" />
+                {!isSidebarCollapsed && <span className="text-[13px] font-medium whitespace-nowrap">AI Help</span>}
+              </button>
             )}
 
-            <motion.button
-              onClick={() => {
-                if (onLogout) onLogout();
-              }}
-              whileHover="hover"
-              whileTap="tap"
-              className="h-11 w-full rounded-2xl flex items-center justify-start relative cursor-pointer text-slate-400 dark:text-slate-500 hover:bg-red-500/10 hover:text-red-600 dark:hover:bg-red-500/20 dark:hover:text-red-400 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] group"
+            <button
+              type="button"
+              onClick={() => setShowLogoutModal(true)}
+              className={cn(
+                "w-full rounded-xl flex items-center gap-3 text-[#ffffff] hover:bg-white/12 hover:text-[#ffffff] transition-all cursor-pointer",
+                isSidebarCollapsed ? "h-10 justify-center px-0" : "px-3 py-2"
+              )}
               title="Sign Out"
             >
-              <div className="w-11 h-11 flex items-center justify-center shrink-0">
-                      <motion.div
-                      variants={{
-                  hover: { scale: 1.15, x: 2 },
-                  tap: { scale: 0.95 }
-                }}
-                transition={{ type: "spring", stiffness: 450, damping: 12 }}
-              >
-                <LogOut size={20} />
-              </motion.div>
-              </div>
-              <span className="opacity-0 group-hover/rail:opacity-100 transition-all duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] text-[10px] font-black uppercase tracking-widest whitespace-nowrap ml-3">Logout</span>
-            </motion.button>
+              <LogOut size={17} className="shrink-0 text-[#ffffff]" />
+              {!isSidebarCollapsed && <span className="text-[13px] font-medium whitespace-nowrap text-[#ffffff]">Logout</span>}
+            </button>
           </div>
-        </div>
+        </aside>
       )}
 
-      {/* Sidebar Overlay */}
+      {/* Sidebar Overlay for Mobile Drawer */}
       <AnimatePresence>
         {isSidebarOpen && (
           <motion.div
@@ -808,7 +871,7 @@ export default function Layout({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setIsSidebarOpen(false)}
-            className={cn("inset-0 bg-slate-950/40 backdrop-blur-sm z-[140] lg:hidden", isPreview ? "absolute" : "fixed")}
+            className={cn("inset-0 bg-slate-950/50 backdrop-blur-xs z-[140]", isPreview ? "absolute" : "fixed")}
           />
         )}
       </AnimatePresence>
@@ -822,155 +885,144 @@ export default function Layout({
         )}
       </AnimatePresence>
 
-
-            {/* Modern Sidebar */}
+      {/* Mobile / Expanded Drawer Sidebar (Same Green Theme & Website Options) */}
       <motion.aside
         initial={false}
-        animate={{ 
-          width: isSidebarOpen ? (window.innerWidth < 640 ? '100%' : '280px') : '0px',
+        animate={{
+          width: isSidebarOpen ? (typeof window !== 'undefined' && window.innerWidth < 640 ? '86%' : '270px') : '0px',
           x: isSidebarOpen ? 0 : -30,
           opacity: isSidebarOpen ? 1 : 0
         }}
         transition={{ type: 'spring', damping: 28, stiffness: 240 }}
         className={cn(
-          "top-0 bottom-0 left-0 z-[150] overflow-hidden bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-r border-slate-200/80 dark:border-white/10 shadow-2xl flex-col hidden lg:flex",
+          "top-0 bottom-0 left-0 z-[150] overflow-hidden bg-[#126f51] dark:bg-[#0c4b37] text-white border-r border-white/15 shadow-2xl flex flex-col",
           isPreview ? "absolute" : "fixed",
           !isSidebarOpen && "pointer-events-none"
         )}
       >
-        <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-             <div className="w-8 h-8 rounded-lg bg-blue-600 dark:bg-blue-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-                <LayoutDashboard size={18} />
+        <div className="p-5 border-b border-white/12 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+             <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-white shrink-0">
+                <span className="font-black text-xs tracking-tighter italic">G<span className="text-emerald-200">TS</span></span>
              </div>
-             <div>
-                <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">Main Menu</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">Navigation Panel</p>
+             <div className="min-w-0">
+                <h3 className="text-sm font-bold tracking-tight text-white truncate">{brandingText}</h3>
+                <p className="text-[10px] font-medium text-emerald-100/70 leading-none mt-1 truncate">Navigation Panel</p>
              </div>
           </div>
-          <motion.button 
+          <button
+            type="button"
             onClick={() => setIsSidebarOpen(false)}
-            whileHover={{ scale: 1.1, rotate: -90 }}
-            whileTap={{ scale: 0.95 }}
-            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-400 transition-colors cursor-pointer"
+            className="p-2 rounded-xl hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
           >
-            <ChevronLeft size={20} />
-          </motion.button>
+            <ChevronLeft size={18} />
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-3.5 space-y-3 custom-scrollbar no-scrollbar">
           {filteredCategories.map((cat, catIdx) => (
             <div key={`cat-${cat.id}-${catIdx}`} className="space-y-1">
-              <button 
+              <button
+                type="button"
                 onClick={() => toggleCat(cat.id)}
-                className="w-full flex items-center justify-between px-4 py-2 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors group cursor-pointer"
+                className="w-full flex items-center justify-between px-3 py-1.5 text-emerald-100/60 hover:text-white transition-colors group cursor-pointer"
               >
-                <span className="text-[9px] font-black uppercase tracking-[0.2em]">{cat.label}</span>
-                <ChevronDown 
-                  size={14} 
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">{cat.label}</span>
+                <ChevronDown
+                  size={13}
                   className={cn(
-                    "transition-transform duration-350 ease-out",
+                    "transition-transform duration-300 ease-out",
                     expandedCats.includes(cat.id) ? "rotate-180" : ""
-                  )} 
+                  )}
                 />
               </button>
-              
+
               <AnimatePresence initial={false}>
                 {expandedCats.includes(cat.id) && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.25, ease: "easeInOut" }}
-                    className="overflow-hidden space-y-1 pl-2"
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="overflow-hidden space-y-1"
                   >
                     {cat.items.map((item, itemIdx) => {
                       const isItemActive = (item.id === 'config' || item.id === 'campaigns')
                         ? (location.pathname.startsWith('/billingmod/conversation') || location.pathname.startsWith('/conversation'))
                         : (item.id === 'submit' || item.id === 'registry')
                         ? (activeTab === 'submit' || location.pathname === '/registry' || location.pathname === '/submit')
-                        : (activeTab === item.id || 
+                        : (activeTab === item.id ||
                            (item.id === 'complaints' && activeTab === 'ops') ||
                            (item.id === 'settings' && activeTab === 'profile'));
-                      
+
                       return (
-                        <motion.button 
+                        <button
+                          type="button"
                           key={`sub-${item.id}-${itemIdx}`}
                           onClick={() => handleSidebarNav(item.id)}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: itemIdx * 0.03, type: "spring", stiffness: 280, damping: 20 }}
-                          whileHover={{ x: 4 }}
-                          whileTap={{ scale: 0.98 }}
+                          onPointerEnter={() => handlePrefetchTab(item.id)}
+                          onFocus={() => handlePrefetchTab(item.id)}
                           className={cn(
-                            "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-bold group relative overflow-hidden cursor-pointer",
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all group relative cursor-pointer",
                             isItemActive
-                              ? "bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 font-extrabold"
-                              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900/40 hover:text-slate-800 dark:hover:text-white"
+                              ? "bg-white text-[#155d27] font-semibold shadow-sm"
+                              : "text-white/85 hover:bg-white/10 hover:text-white font-medium"
                           )}
                         >
-                          <item.icon size={16} className={cn("group-hover:scale-110 transition-transform", isItemActive ? "text-blue-600 dark:text-blue-400" : "text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300")} />
-                          <span className="text-[10px] uppercase tracking-widest">{item.label}</span>
-                          {isItemActive && (
-                            <motion.span 
-                              layoutId="activeDot"
-                              className="absolute right-3 w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400"
-                              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-                            />
-                          )}
-                        </motion.button>
+                          <item.icon size={16} className={cn(isItemActive ? "text-[#155d27]" : "text-emerald-100/80 group-hover:text-white")} />
+                          <span className="text-[13px] truncate whitespace-nowrap">{item.label}</span>
+                        </button>
                       );
                     })}
                   </motion.div>
                 )}
               </AnimatePresence>
-      <AnimatePresence>
-        {isWhatsAppPanelOpen && (
-          <WhatsAppConnectPanel onClose={() => setIsWhatsAppPanelOpen(false)} />
-        )}
-      </AnimatePresence>
             </div>
           ))}
         </div>
 
-        <div className="p-4 mt-auto space-y-3 shrink-0 border-t border-slate-100 dark:border-white/10 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
-          {/* Settings Sidebar Button */}
-          <motion.button
+        <div className="p-3.5 mt-auto space-y-2 shrink-0 border-t border-white/12 bg-black/10 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+          <button
+            type="button"
             onClick={() => handleSidebarNav('mypc')}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full flex items-center justify-center gap-2.5 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:opacity-95 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-teal-500/10 cursor-pointer group shrink-0"
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors"
           >
-            <Settings size={15} className="group-hover:rotate-45 transition-transform text-teal-100" />
+            <Settings size={14} />
             <span>Settings</span>
-          </motion.button>
+          </button>
 
-          {/* Billing Side Button */}
-          <motion.button
+          <button
+            type="button"
             onClick={() => handleSidebarNav('billing')}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full flex items-center justify-center gap-2.5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-indigo-500/10 cursor-pointer group shrink-0"
+            className="w-full flex items-center justify-center gap-2 py-2.5 bg-white text-[#155d27] hover:bg-emerald-50 rounded-xl text-xs font-semibold shadow-sm cursor-pointer transition-colors"
           >
-            <CreditCard size={15} className="group-hover:rotate-12 transition-transform text-blue-100" />
+            <CreditCard size={14} />
             <span>Billing Mod</span>
-          </motion.button>
+          </button>
 
-          {/* Clean, fully responsive Sign Out Action bar */}
-          <motion.button 
+          <button
+            type="button"
             onClick={() => {
               if (onLogout) onLogout();
               setIsSidebarOpen(false);
             }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-900/50 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer border border-slate-200/50 dark:border-slate-700/50"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/90 text-xs font-semibold transition-colors cursor-pointer"
           >
-            <Settings size={14} className="text-slate-400" />
+            <LogOut size={14} />
             <span>Sign Out</span>
-          </motion.button>
+          </button>
         </div>
       </motion.aside>
+
+      {/* Main Content Shell (Inset Rounded Workspace Sheet on Green Backdrop) */}
+      <div className={cn(
+        "flex-1 min-w-0 flex flex-col transition-all duration-300",
+        showShellSidebar && "lg:py-2.5 lg:pr-2.5 lg:min-h-0 lg:h-full lg:overflow-hidden bg-[#126f51] dark:bg-[#0c4b37]"
+      )}>
+      <div className={cn(
+        "flex-1 min-w-0 flex flex-col transition-colors duration-300",
+        showShellSidebar && "bg-[#ffffff] dark:bg-[#24262b] lg:rounded-[24px] shadow-[0_12px_36px_rgba(0,0,0,0.16)] border border-white/50 dark:border-white/10 overflow-x-hidden lg:min-h-0 lg:h-full lg:overflow-y-auto overscroll-contain custom-scrollbar"
+      )}>
 
       {/* Network Status Banner */}
       <AnimatePresence>
@@ -1012,31 +1064,24 @@ export default function Layout({
         {selectedNotif && (
           <>
             <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              {...overlayMotion}
               onClick={() => setSelectedNotif(null)}
               className="fixed inset-0 bg-slate-950/60 backdrop-blur-md z-[300]"
             />
             <div className="fixed inset-0 flex items-center justify-center z-[310] p-4 pointer-events-none">
               <motion.div
-                initial={{ opacity: 0, scale: 0.8, y: 100, filter: 'blur(20px)', rotate: -5 }}
-                animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)', rotate: 0 }}
-                exit={{ 
-                  opacity: 0, 
-                  scale: 0.5, 
-                  y: -200, 
-                  x: 300, 
-                  rotate: 20, 
-                  skewX: 20, 
-                  filter: 'blur(50px)',
-                  transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] }
-                }}
-                className="w-full max-w-lg bg-white dark:bg-slate-950 rounded-[2.5rem] border border-slate-200/50 dark:border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.4)] pointer-events-auto overflow-hidden relative"
+                {...dialogMotion}
+                className="w-full max-w-lg bg-white dark:bg-slate-950 rounded-[2.5rem] border border-slate-200/50 dark:border-white/10 shadow-2xl pointer-events-auto overflow-hidden relative transform-gpu will-change-transform"
               >
                 {/* Decorative Elements */}
-                <div className="absolute top-0 right-0 -tr-20 -u-20 w-40 h-40 bg-brand-accent/10 blur-[60px] rounded-full" />
-                <div className="absolute bottom-0 left-0 -bl-20 -d-20 w-40 h-40 bg-emerald-500/10 blur-[60px] rounded-full" />
+                <div
+                  className="absolute top-0 right-0 -tr-20 -u-20 w-40 h-40 rounded-full pointer-events-none"
+                  style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.14) 0%, transparent 70%)' }}
+                />
+                <div
+                  className="absolute bottom-0 left-0 -bl-20 -d-20 w-40 h-40 rounded-full pointer-events-none"
+                  style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.12) 0%, transparent 70%)' }}
+                />
 
                 <div className="p-5 sm:p-8 relative z-10">
                   <div className="flex items-center justify-between mb-6 sm:mb-8">
@@ -1076,6 +1121,8 @@ export default function Layout({
                                 <img 
                                   src={getAvatarUrl(authorUser.profilePicture)} 
                                   alt={selectedNotif.authorName} 
+                                  width={16}
+                                  height={16}
                                   className="h-4 w-4 rounded-full object-cover shrink-0"
                                 />
                               );
@@ -1084,6 +1131,8 @@ export default function Layout({
                               <img 
                                 src={getAvatarUrl('default:male')} 
                                 alt={selectedNotif.authorName}
+                                width={16}
+                                height={16}
                                 className="h-4 w-4 rounded-full object-cover shrink-0 opacity-80"
                               />
                             );
@@ -1332,6 +1381,8 @@ export default function Layout({
                                       <img 
                                         src={getAvatarUrl(authorUser.profilePicture)} 
                                         alt={notif.authorName} 
+                                        width={16}
+                                        height={16}
                                         className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700"
                                       />
                                     );
@@ -1340,6 +1391,8 @@ export default function Layout({
                                     <img 
                                       src={getAvatarUrl('default:male')} 
                                       alt={notif.authorName}
+                                      width={16}
+                                      height={16}
                                       className="w-4 h-4 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 opacity-80"
                                     />
                                   );
@@ -1383,17 +1436,21 @@ export default function Layout({
 
       {user && (
       <header className={cn(
-        "z-50 w-full border-b transition-all duration-300",
-        isPreview ? "absolute top-0" : "sticky top-0",
-        user && !isPreview && "lg:pl-[68px]",
-        branding?.sidebarTheme === 'dark' ? "bg-slate-950/90 border-slate-900 text-white" :
-        branding?.sidebarTheme === 'accent' ? "bg-brand-accent/90 border-white/10 text-white" :
-        branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
-        "neu-flat border-slate-200/50 dark:border-white/5"
+        "z-40 w-full border-b transition-all duration-300",
+        showShellSidebar
+          ? "bg-[#ffffff] dark:bg-[#24262b] border-black/[0.06] dark:border-white/10"
+          : isPreview ? "sticky top-0" : "sticky top-0",
+        !showShellSidebar && (
+          branding?.sidebarTheme === 'dark' ? "bg-slate-950/90 border-slate-900 text-white" :
+          branding?.sidebarTheme === 'accent' ? "bg-brand-accent/90 border-white/10 text-white" :
+          branding?.sidebarTheme === 'glass' ? "glass border-white/10" :
+          "neu-flat border-slate-200/50 dark:border-white/5"
+        )
       )}>
         <div className={cn(
-          "max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:pr-8 lg:pl-6 flex items-center justify-between transition-all duration-300",
-          activeTab === 'billing' ? "h-auto min-h-16 py-3.5 md:py-0 md:h-16 flex-wrap md:flex-nowrap gap-3" : "h-16"
+          "max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-7 flex items-center justify-between transition-all duration-300",
+          showShellSidebar && "bg-[#ffffff] dark:bg-[#24262b]",
+          activeTab === 'billing' ? "h-auto min-h-14 py-3 md:py-0 md:h-16 flex-wrap md:flex-nowrap gap-3" : "h-14"
         )}>
           {activeTab === 'billing' ? (
             <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-3 md:gap-4">
@@ -1631,20 +1688,6 @@ export default function Layout({
                   </motion.button>
                 )}
 
-                {isBillingUnlocked && (
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('gts-billing-action', { detail: 'purge-all' }))}
-                    className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 transition-all border border-red-500/20 cursor-pointer shrink-0 font-black uppercase tracking-widest text-[8px] sm:text-[9px]"
-                    title="Delete All Billing Data / Purge All"
-                  >
-                    <AlertTriangle size={13} className="shrink-0" />
-                    <span className="hidden md:inline">Purge All</span>
-                  </motion.button>
-                )}
-
                 {isBillingUnlocked && currentMonthId && (
                   <motion.button
                     whileHover={{ scale: 1.02 }}
@@ -1668,51 +1711,35 @@ export default function Layout({
                 className="flex items-center gap-2 sm:gap-4 lg:gap-3 ml-0"
               >
             {user && (
-              <motion.button 
+              <button
                 id="sidebar-toggle-btn"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                 className={cn(
-                  "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden -ml-2 sm:ml-0 neu-btn",
-                  menuUnlocked ? "opacity-100 w-10 h-10 p-2 scale-100" : "opacity-100 w-10 h-10 p-2 scale-100 lg:hidden",
-                  isColoredHeader ? "hover:bg-white/10 text-white" : "text-slate-500"
+                  "rounded-xl transition-all mr-1 flex items-center justify-center overflow-hidden -ml-1 sm:ml-0 w-9 h-9 bg-white dark:bg-[#31343c] border border-black/[0.08] dark:border-white/10 shadow-xs cursor-pointer",
+                  menuUnlocked ? "flex" : "flex lg:hidden",
+                  "text-slate-700 dark:text-slate-200"
                 )}
-                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
               >
                 <div className="flex items-center justify-center">
-                  {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                  {isSidebarOpen ? <X size={18} /> : <Menu size={18} />}
                 </div>
-              </motion.button>
+              </button>
             )}
-            
+
             {/* Custom Complaint Trigger Button */}
             {user && (
               <motion.button
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => setIsComplaintSwipeDownOpen(!isComplaintSwipeDownOpen)}
-                className="uiverse-complaint-btn"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#f4f4f4] dark:bg-[#31343c] border border-black/[0.08] dark:border-white/10 shadow-xs hover:bg-[#ececec] dark:hover:bg-[#3a3e47] hover:shadow-sm transition-all cursor-pointer group"
               >
-                <span className="uiverse-decor"></span>
-                <div className="uiverse-content">
-                  <div className="uiverse-icon">
-                    <svg viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg" width="22" height="22">
-                      <circle opacity="0.5" cx="25" cy="25" r="23" fill="url(#icon-payments-cat_svg__paint0_linear_1141_21101)"></circle>
-                      <mask id="icon-payments-cat_svg__a" fill="#fff">
-                        <path fillRule="evenodd" clipRule="evenodd" d="M34.42 15.93c.382-1.145-.706-2.234-1.851-1.852l-18.568 6.189c-1.186.395-1.362 2-.29 2.644l5.12 3.072a1.464 1.464 0 001.733-.167l5.394-4.854a1.464 1.464 0 011.958 2.177l-5.154 4.638a1.464 1.464 0 00-.276 1.841l3.101 5.17c.644 1.072 2.25.896 2.645-.29L34.42 15.93z">
-                        </path>
-                      </mask>
-                      <path fillRule="evenodd" clipRule="evenodd" d="M34.42 15.93c.382-1.145-.706-2.234-1.851-1.852l-18.568 6.189c-1.186.395-1.362 2-.29 2.644l5.12 3.072a1.464 1.464 0 001.733-.167l5.394-4.854a1.464 1.464 0 011.958 2.177l-5.154 4.638a1.464 1.464 0 00-.276 1.841l3.101 5.17c.644 1.072 2.25.896 2.645-.29L34.42 15.93z" fill="#fff"></path>
-                      <path d="M25.958 20.962l-1.47-1.632 1.47 1.632zm2.067.109l-1.632 1.469 1.632-1.469zm-.109 2.068l-1.469-1.633 1.47 1.633zm-5.154 4.638l-1.469-1.632 1.469 1.632zm-.276 1.841l-1.883 1.13 1.883-1.13zM34.42 15.93l-2.084-.695 2.084.695zm-19.725 6.42l18.568-6.189-1.39-4.167-18.567 6.19 1.389 4.166zm5.265 1.75l-5.12-3.072-2.26 3.766 5.12 3.072 2.26-3.766zm2.072 3.348l5.394-4.854-2.938-3.264-5.394 4.854 2.938 3.264zm5.394-4.854a.732.732 0 01-1.034-.054l3.265-2.938a3.66 3.66 0 00-5.17-.272l2.939 3.265zm-1.034-.054a.732.732 0 01.054-1.034l2.938 3.265a3.66 3.66 0 00.273-5.169l-3.265 2.938zm.054-1.034l-5.154 4.639 2.938 3.264 5.154-4.638-2.938-3.265zm1.023 12.152l-3.101-5.17-3.766 2.26 3.101 5.17 3.766-2.26zm4.867-18.423l-6.189 18.568 4.167 1.389 6.19-18.568-4.168-1.389zm-8.633 20.682c1.61 2.682 5.622 2.241 6.611-.725l-4.167-1.39a.732.732 0 011.322-.144l-3.766 2.26zm-6.003-8.05a3.66 3.66 0 004.332-.419l-2.938-3.264a.732.732 0 01.866-.084l-2.26 3.766zm3.592-1.722a3.66 3.66 0 00-.69 4.603l3.766-2.26c.18.301.122.687-.138.921l-2.938-3.264zm11.97-9.984a.732.732 0 01-.925-.926l4.166 1.389c.954-2.861-1.768-5.583-4.63-4.63l1.39 4.167zm-19.956 2.022c-2.967.99-3.407 5.003-.726 6.611l2.26-3.766a.732.732 0 01-.145 1.322l-1.39-4.167z" fill="#fff" mask="url(#icon-payments-cat_svg__a)"></path>
-                      <defs>
-                        <linearGradient id="icon-payments-cat_svg__paint0_linear_1141_21101" x1="25" y1="2" x2="25" y2="48" gradientUnits="userSpaceOnUse">
-                          <stop stopColor="#fff" stopOpacity="0.71"></stop>
-                          <stop offset="1" stopColor="#fff" stopOpacity="0"></stop>
-                        </linearGradient>
-                      </defs>
-                    </svg>
-                  </div>
-                  <span className="uiverse-text">{branding?.tabNames?.submit || 'Register Complaint'}</span>
-                </div>
+                <span className="w-6 h-6 rounded-lg bg-[#187233] text-white flex items-center justify-center shrink-0">
+                  <PlusSquare size={14} />
+                </span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">
+                  {branding?.tabNames?.submit || 'Register Complaint'}
+                </span>
               </motion.button>
             )}
           </motion.div>
@@ -1722,24 +1749,24 @@ export default function Layout({
             <IndependenceBuntingHeader />
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-3">
-            {user && (
-              <div className="flex items-center gap-2 h-9">
-                {/* Alerts/Bell notification indicator */}
+          <div className="flex items-center gap-2">
+            {/* Segmented Control Utility Cluster matching Reference Top-Right Controls */}
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-[#f4f4f4] dark:bg-[#1c1e22] border border-black/[0.05] dark:border-white/10">
+              {user && (
                 <button
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                   className={cn(
-                    "w-9 h-9 rounded-full neu-btn flex items-center justify-center relative transition-all cursor-pointer hover:scale-105 active:scale-95",
-                    alertAuthorized 
-                      ? "text-blue-600 dark:text-blue-400" 
-                      : "text-amber-500"
+                    "w-8 h-8 rounded-lg flex items-center justify-center relative transition-all cursor-pointer hover:bg-white dark:hover:bg-[#2f333b]",
+                    alertAuthorized
+                      ? "text-slate-700 dark:text-slate-200"
+                      : "text-amber-600 dark:text-amber-400"
                   )}
                   title={alertAuthorized ? (isAudioMuted ? "Alert History (Muted)" : "Alert History") : "Alert Restricted"}
                 >
                   {isAudioMuted && alertAuthorized ? (
                     <BellOff size={15} />
                   ) : (
-                    <Bell size={15} className={!alertAuthorized ? "opacity-60" : ""} />
+                    <Bell size={15} className={!alertAuthorized ? "opacity-75" : ""} />
                   )}
                   {unreadNotificationsCount > 0 && (
                     <span className="absolute top-1.5 right-1.5 flex h-1.5 w-1.5">
@@ -1748,51 +1775,36 @@ export default function Layout({
                     </span>
                   )}
                 </button>
-              </div>
-            )}
-            
-            {/* Sliding oval toggle theme switch */}
-            <div className="flex items-center h-9 select-none" title="Toggle Theme Modes">
+              )}
+
+              {/* Light / Dark Theme Switch inside Segmented Cluster */}
               <button
                 onClick={handleThemeToggle}
-                className={cn(
-                  "relative w-14 h-7 rounded-full transition-all duration-300 outline-none flex items-center shrink-0 neu-inset cursor-pointer p-0.5",
-                  theme === 'dark' 
-                    ? "border border-white/5" 
-                    : "border border-black/5"
-                )}
+                className="px-2.5 h-8 rounded-lg bg-white dark:bg-[#31343c] text-slate-700 dark:text-slate-200 shadow-xs flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer hover:opacity-90 transition-all"
+                title="Toggle Theme Modes"
               >
-                <div
-                  className={cn(
-                    "w-5 h-5 rounded-full transition-all duration-300 neu-raised flex items-center justify-center",
-                    theme === 'dark' 
-                      ? "translate-x-7 text-amber-300" 
-                      : "translate-x-0.5 text-slate-700"
-                  )}
-                  style={theme === 'dark' ? { backgroundColor: '#dddddd', color: '#dddddd' } : { backgroundColor: '#b5b5b5', borderColor: '#b5b5b5', color: '#b5b5b5' }}
-                >
-                  <div className="w-2 h-2 rounded-full bg-current opacity-80" />
-                </div>
+                {theme === 'dark' ? <Moon size={13} className="text-amber-300" /> : <Sun size={13} className="text-amber-500" />}
+                <span className="hidden md:inline">{theme === 'dark' ? 'Dark' : 'Light'}</span>
               </button>
             </div>
 
             {user && (
               <div className="relative">
-                <button 
+                <button
                   id="profile-toggle-btn"
                   onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="h-9 flex items-center gap-2.5 px-2.5 neu-btn rounded-xl transition-all cursor-pointer select-none"
+                  className="h-9 flex items-center gap-2 px-2.5 bg-white dark:bg-[#31343c] border border-black/[0.08] dark:border-white/10 shadow-xs rounded-xl transition-all cursor-pointer select-none hover:shadow-sm"
                 >
                   <div className="hidden sm:flex flex-col items-end justify-center select-none">
-                    <span className="text-[10px] font-black tracking-tight text-slate-800 dark:text-slate-200 leading-none">
+                    <span className="text-[11px] font-semibold tracking-tight text-slate-800 dark:text-slate-100 leading-none">
                       {user.fullName || user.username || "Muhammad Ahmad"}
                     </span>
-                    <span className="text-[7.5px] font-bold text-slate-450 dark:text-slate-500 tracking-wider mt-0.5 uppercase leading-none">
-                      {user.role === 'super_admin' ? 'SUPER ADMIN' : 
-                       user.role === 'liteadmin' ? 'LITE ADMIN' : 
-                       user.role === 'member' ? 'MEMBER' : 
-                       user.role === 'dealer' ? 'MAIN DEALER' : 
-                       user.role ? user.role.replace('_', ' ').toUpperCase() : 'USER'}
+                    <span className="text-[9px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 leading-none">
+                      {user.role === 'super_admin' ? 'Super Admin' :
+                       user.role === 'liteadmin' ? 'Lite Admin' :
+                       user.role === 'member' ? 'Member' :
+                       user.role === 'dealer' ? 'Main Dealer' :
+                       user.role ? user.role.replace('_', ' ') : 'User'}
                     </span>
                   </div>
                   {/* avatar photo matching profile image */}
@@ -1801,6 +1813,8 @@ export default function Layout({
                       <img 
                         src={getAvatarUrl(user.profilePicture)} 
                         alt="User Profile" 
+                        width={26}
+                        height={26}
                         className="w-full h-full object-cover" 
                         referrerPolicy="no-referrer"
                       />
@@ -1808,6 +1822,8 @@ export default function Layout({
                       <img 
                         src={getAvatarUrl('default:male')} 
                         alt="User Profile" 
+                        width={26}
+                        height={26}
                         className="w-full h-full object-cover" 
                         referrerPolicy="no-referrer"
                       />
@@ -1865,6 +1881,8 @@ export default function Layout({
                                 <img 
                                   src={getAvatarUrl(editProfilePicture)} 
                                   alt="Profile Preview" 
+                                  width={80}
+                                  height={80}
                                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
                                   referrerPolicy="no-referrer"
                                 />
@@ -1872,6 +1890,8 @@ export default function Layout({
                                 <img 
                                   src={getAvatarUrl(`default:${editGender}`)} 
                                   alt="Profile Preview" 
+                                  width={80}
+                                  height={80}
                                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
                                   referrerPolicy="no-referrer"
                                 />
@@ -2098,10 +2118,10 @@ export default function Layout({
                 id="header-logout-btn"
                 onClick={() => setShowLogoutModal(true)}
                 title="Logout from system"
-                className="flex items-center gap-1.5 px-3 h-9 rounded-xl border border-rose-500/25 bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white dark:text-rose-400 dark:hover:text-white transition-all select-none shadow-sm cursor-pointer active:scale-95 group font-sans"
+                className="flex items-center gap-1.5 px-3 h-9 rounded-xl border border-black/[0.08] dark:border-white/10 bg-white dark:bg-[#31343c] hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 hover:text-rose-600 dark:text-slate-200 dark:hover:text-rose-400 transition-all select-none shadow-xs cursor-pointer active:scale-95 group font-sans whitespace-nowrap"
               >
-                <LogOut size={13} className="text-rose-500 group-hover:text-white dark:text-rose-400 transition-colors" />
-                <span className="text-[10px] uppercase font-black tracking-widest leading-none">
+                <LogOut size={13} className="text-slate-500 group-hover:text-rose-600 dark:text-slate-400 dark:group-hover:text-rose-400 transition-colors shrink-0" />
+                <span className="text-[11px] font-semibold leading-none">
                   Logout
                 </span>
               </button>
@@ -2117,19 +2137,14 @@ export default function Layout({
         {showLogoutModal && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md">
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              {...overlayMotion}
               onClick={() => setShowLogoutModal(false)}
               className="absolute inset-0 bg-transparent"
             />
             
             <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 15 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-              className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 shadow-2xl overflow-hidden p-6 z-10 text-center"
+              {...dialogMotion}
+              className="relative w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 shadow-2xl overflow-hidden p-6 z-10 text-center transform-gpu will-change-transform"
             >
               {/* Header Icon Accent */}
               <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-rose-500/10 dark:bg-rose-500/20 text-rose-500 flex items-center justify-center border border-rose-500/20 shadow-inner">
@@ -2172,138 +2187,58 @@ export default function Layout({
 
       <AnimatePresence>
         {isComplaintSwipeDownOpen && user && (
-          <div className="fixed inset-0 top-16 z-[100] flex justify-center items-center overflow-hidden bg-slate-950/50 dark:bg-slate-950/70 backdrop-blur-md p-4 sm:p-6 lg:p-8">
+          <div className="fixed inset-0 top-14 z-[100] flex justify-center items-start overflow-y-auto overflow-x-hidden bg-slate-950/50 dark:bg-slate-950/70 backdrop-blur-md px-3 sm:px-6 pb-8 pt-2 sm:pt-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
               onClick={() => setIsComplaintSwipeDownOpen(false)}
-              className="absolute inset-0 bg-transparent"
+              className="fixed inset-0 top-14 bg-transparent"
             />
-            
-            <motion.div
-              initial={{ y: -180, opacity: 0, scaleY: 0.9, originY: 0 }}
-              animate={{ y: 0, opacity: 1, scaleY: 1, originY: 0 }}
-              exit={{ y: -180, opacity: 0, scaleY: 0.9, originY: 0 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 26 }}
-              className="relative w-full max-w-5xl bg-white dark:bg-slate-900 rounded-[36px] overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]"
-            >
-              {/* Top Accent Gradient Bar */}
-              <div className="h-2.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 w-full" />
-              
-              <style dangerouslySetInnerHTML={{ __html: `
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) {
-                  width: 627.118px;
-                  padding-left: 23px;
-                  padding-top: 31px;
-                  padding-right: 16px;
-                  margin-left: -67px;
-                  margin-top: -51px;
-                  margin-bottom: -34px;
-                  padding-bottom: 32px;
-                }
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(1) > h2:nth-of-type(1) {
-                  font-size: 37px;
-                  padding-top: 0px;
-                  margin-top: -159px;
-                }
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) {
-                  height: 226px;
-                  width: 286px;
-                  padding-left: -1px;
-                  padding-right: 36px;
-                  margin-left: -1px;
-                  margin-right: 68px;
-                  padding-top: 22px;
-                  margin-bottom: -131px;
-                }
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(13) > button:nth-of-type(1) {
-                  background-color: #039c72 !important;
-                  color: #ffffff !important;
-                  text-align: center;
-                  margin-left: 0px;
-                }
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(7) > div:nth-of-type(1) > input:nth-of-type(1) {
-                  padding-left: 38px;
-                  font-size: 11px;
-                }
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(6) > div:nth-of-type(1) > input:nth-of-type(1) {
-                  font-size: 10px;
-                }
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(1) > form:nth-of-type(1) > div:nth-of-type(12) > div:nth-of-type(1) > textarea:nth-of-type(1) {
-                  font-size: 13px;
-                }
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(3) > div:nth-of-type(1) {
-                  margin-left: -20px;
-                  margin-right: 0px;
-                }
-                div#root:nth-of-type(1) > div:nth-of-type(1) > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(2) {
-                  margin-left: -21px;
-                }
-              `}} />
-              
-              {/* Modal Header Bar */}
-              <div className="px-6 sm:px-10 pt-6 pb-2 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="relative flex h-3.5 w-3.5 items-center justify-center">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                  </div>
-                  <span className="text-xs sm:text-sm font-black uppercase tracking-[0.25em] text-slate-800 dark:text-slate-200">
-                    Complaint Entry Portal
-                  </span>
-                </div>
-                <button
-                  onClick={() => setIsComplaintSwipeDownOpen(false)}
-                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer"
-                  title="Close Portal"
-                >
-                  <X size={18} />
-                </button>
-              </div>
 
-              {/* Scrollable Content: Split Grid Layout matching reference design */}
-              <div className="flex-1 overflow-y-auto p-6 sm:p-10">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-                  
-                  {/* Left Column: Bold Headline & Illustration (matching reference image) */}
-                  <div className="lg:col-span-5 flex flex-col justify-between space-y-6">
-                    <div className="space-y-4">
-                      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-[1.1]">
-                        Let&apos;s Make <br className="hidden sm:inline" />
-                        <span className="text-emerald-600 dark:text-emerald-400">Problems Nervous.</span>
-                      </h2>
-                      <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
-                        Tell us what keeps you stuck we&apos;ll turn it into your next competitive advantage.
+            <motion.div
+              initial={{ y: '-100%', opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: '-100%', opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28, mass: 0.85 }}
+              className="relative w-full max-w-4xl mx-auto bg-[#ffffff] dark:bg-[#24262b] rounded-b-3xl sm:rounded-3xl shadow-2xl border border-slate-200/80 dark:border-white/10 px-4 sm:px-8 pt-6 pb-8 overflow-visible transform-gpu will-change-transform"
+            >
+              <button
+                type="button"
+                onClick={() => setIsComplaintSwipeDownOpen(false)}
+                className="absolute top-4 right-4 p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer z-20"
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="max-w-4xl mx-auto">
+                <div className="text-center space-y-2 mb-10 select-none">
+                  <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50">
+                    Field Operations
+                  </h2>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">
+                    Capture and process enterprise support requests
+                  </p>
+                </div>
+
+                <div className="pt-2 pb-2 relative">
+                  {isUserSuspended && (
+                    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-950/70 backdrop-blur-md rounded-3xl border border-red-500/20 p-6 text-center animate-in fade-in duration-300">
+                      <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 flex items-center justify-center mb-4 border border-red-200/50">
+                        <ShieldAlert size={28} className="animate-bounce" />
+                      </div>
+                      <h3 className="text-sm font-black uppercase tracking-[0.2em] text-red-600 dark:text-red-400">
+                        Identity Suspended
+                      </h3>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold uppercase mt-1 max-w-xs leading-relaxed">
+                        Your dealer network access has been deactivated. Complaint registration is frozen.
                       </p>
                     </div>
-
-                    {/* Vector/SVG Illustration matching reference image */}
-                    <div className="py-4 flex justify-center items-center">
-                      <div className="relative w-full max-w-[280px] h-[180px] bg-emerald-500/5 dark:bg-emerald-500/10 rounded-3xl border border-emerald-500/10 flex items-center justify-center p-6 shadow-xs overflow-hidden">
-                        <div className="absolute -right-4 -bottom-4 w-32 h-32 bg-emerald-400/10 rounded-full blur-xl pointer-events-none" />
-                        <svg className="w-full h-full text-slate-800 dark:text-slate-200" viewBox="0 0 240 160" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          {/* Laptop base */}
-                          <path d="M70 120H150L160 135H60L70 120Z" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="currentColor" fillOpacity="0.05" />
-                          <path d="M40 135H180" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-                          {/* Laptop screen */}
-                          <rect x="75" y="70" width="65" height="50" rx="4" stroke="currentColor" strokeWidth="3" fill="currentColor" fillOpacity="0.05" />
-                          {/* Person figure */}
-                          <circle cx="45" cy="85" r="12" stroke="currentColor" strokeWidth="3" fill="currentColor" fillOpacity="0.1" />
-                          <path d="M30 135C30 110 45 105 55 105C65 105 80 110 80 135" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                          {/* Arm holding paper airplane */}
-                          <path d="M55 110C65 100 80 85 95 75C110 65 130 55 145 50" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                          {/* Paper airplane */}
-                          <path d="M140 45L170 35L150 65L140 45Z" fill="#10B981" stroke="#059669" strokeWidth="2" strokeLinejoin="round" />
-                          <path d="M140 45L155 52L150 65Z" fill="#34D399" />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Modern Form Card */}
-                  <div className="lg:col-span-7 bg-slate-50/80 dark:bg-slate-800/40 p-6 sm:p-8 rounded-[28px] border border-slate-200/80 dark:border-slate-800/80 shadow-inner">
-                    <Suspense fallback={<FiberLoading />}>
+                  )}
+                  <div className={cn(isUserSuspended && "blur-[3px] pointer-events-none select-none opacity-30")}>
+                    <Suspense fallback={<SkForm fields={6} className="w-[896px] max-w-full" />}>
                       <ComplaintForm
                         onSubmit={async (data) => {
                           if (onRegisterComplaint) {
@@ -2317,14 +2252,12 @@ export default function Layout({
                         appConfig={appConfig}
                         currentUser={user}
                         branding={branding as any}
-                        compact={true}
+                        cardClassName="w-[896px] max-w-full !pt-[29px] mr-0 -mt-[31px]"
                       />
                     </Suspense>
                   </div>
-
                 </div>
               </div>
-
             </motion.div>
           </div>
         )}
@@ -2336,18 +2269,19 @@ export default function Layout({
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className={cn(
-        "mx-auto transition-all duration-500 flex-1 flex flex-col",
-        user ? (
-          isPreview 
-            ? "py-4 sm:py-8 w-full px-4 pt-20 pl-[80px]" 
-            : "py-4 sm:py-8 max-w-[1850px] w-full px-4 sm:px-6 lg:px-8 lg:pl-[84px]"
-        ) : "w-full max-w-none px-0 py-0 sm:px-0 sm:py-0"
-      )}>
+      <main
+        className={cn(
+          "mx-auto transition-all duration-300 flex-1 flex flex-col",
+          user
+            ? "pt-2 pb-4 sm:pt-2.5 sm:pb-5 max-w-[1850px] w-full px-4 sm:px-6 lg:px-6 bg-[#ffffff] dark:bg-[#24262b]"
+            : "w-full max-w-none px-0 py-0 sm:px-0 sm:py-0"
+        )}
+        style={user ? { paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' } : undefined}
+      >
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.15 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.12 }}
         >
           {children}
         </motion.div>
@@ -2355,74 +2289,48 @@ export default function Layout({
 
       {/* Footer */}
       {user && (
-      <footer className={cn(
-        "relative mt-auto w-full overflow-hidden neu-flat border-t border-slate-200/70 dark:border-white/5 transition-all select-none",
-        user && (isPreview ? "pl-[80px]" : "lg:pl-[68px]")
-      )}>
+      <footer className="relative mt-auto w-full overflow-hidden border-t border-black/[0.06] dark:border-white/10 bg-[#fafbfa]/70 dark:bg-[#1f2126]/80 transition-all select-none">
         <PakistanFlagFooter />
-        <div className="relative z-10 max-w-[1850px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-6 space-y-4">
-          {/* Neumorphic Inset Ticker Display for Typed Branding Text */}
-          <div className="w-full neu-inset rounded-2xl p-3 sm:p-4 border border-white/60 dark:border-white/5 flex items-center justify-center relative overflow-hidden backdrop-blur-xs">
-            <div className="absolute -left-10 top-1/2 -translate-y-1/2 w-28 h-28 bg-brand-accent/5 dark:bg-brand-accent/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="absolute -right-10 top-1/2 -translate-y-1/2 w-28 h-28 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-            
-            <div className="text-center z-10">
-              <span className="text-lg sm:text-2xl lg:text-3xl font-black tracking-widest text-slate-800 dark:text-slate-100 uppercase drop-shadow-xs font-mono">
-                {footerTypedText}
-                <span className={cn("text-brand-accent transition-opacity duration-150", showFooterCursor ? "opacity-100" : "opacity-0")}>
-                  |
-                </span>
-              </span>
-            </div>
-          </div>
+        <div className="relative z-10 max-w-[1850px] w-full mx-auto px-4 sm:px-6 lg:px-7 py-4 space-y-3">
+          {/* Typewriter Banner (Isolated Memo Component) */}
+          <FooterTypewriterBanner text={brandingText} />
 
-          {/* Bottom Controls Row: GTS Emblem, System Details, Version & Powered By */}
-          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-2">
-            {/* Left Section: Neumorphic Emblem + Brand Meta */}
-            <div className="flex flex-col sm:flex-row items-center gap-3.5 text-center sm:text-left">
-              {/* Neumorphic Raised GTS Emblem */}
-              <div className="relative group shrink-0">
-                <div className="relative w-9 h-9 rounded-xl neu-raised flex items-center justify-center border border-white/80 dark:border-white/10 overflow-hidden transition-transform duration-200 hover:scale-105">
-                  <span className="text-slate-900 dark:text-slate-100 font-black text-xs tracking-tighter italic leading-none">
-                    GTS
-                  </span>
-                </div>
+          {/* Bottom Controls Row: GTS Emblem, System Details & Powered By */}
+          <div className="w-full flex flex-col lg:flex-row items-center justify-between gap-3 pt-1">
+            <div className="flex flex-col sm:flex-row items-center gap-3 text-center sm:text-left">
+              <div className="w-8 h-8 rounded-lg bg-[#187233] text-white flex items-center justify-center shadow-xs shrink-0">
+                <span className="font-black text-[11px] tracking-tighter italic leading-none">
+                  GTS
+                </span>
               </div>
 
-              {/* Brand Details & Copyright */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2.5">
-                <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <span className="font-extrabold text-xs sm:text-sm tracking-tight text-slate-800 dark:text-slate-100">
-                    {brandingText}
-                  </span>
-                  <span className="text-[9px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest neu-inset px-2.5 py-0.5 rounded-lg border border-white/60 dark:border-white/5">
-                    ISP MANAGEMENT PRO
-                  </span>
-                </div>
-
-                <span className="hidden sm:inline text-slate-400 dark:text-slate-600">•</span>
-
-                <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium tracking-wide">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                <span className="font-bold text-xs sm:text-sm tracking-tight text-slate-800 dark:text-slate-100">
+                  {brandingText}
+                </span>
+                <span className="hidden sm:inline text-slate-400 dark:text-slate-600">·</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   © {new Date().getFullYear()} {brandingText} Operations. Enterprise Edition.
                 </span>
               </div>
             </div>
 
-            {/* Right Section: System Metrics & Powered By Pill */}
-            <div className="flex items-center gap-2.5 shrink-0 flex-wrap justify-center">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl neu-inset text-[9px] font-mono font-bold text-slate-600 dark:text-slate-400 border border-white/50 dark:border-white/5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>ONLINE</span>
-              </div>
-
-              <div className="inline-flex items-center px-3.5 py-1.5 rounded-xl neu-btn text-[9px] sm:text-[10px] uppercase font-black tracking-widest text-slate-800 dark:text-slate-200 border border-white/70 dark:border-white/10 transition-all cursor-default select-none">
-                POWERED BY GREEN NET
-              </div>
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-center">
+              <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                System Online
+              </span>
+              <span className="text-slate-300 dark:text-slate-600">·</span>
+              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
+                Powered by Green Net
+              </span>
             </div>
           </div>
         </div>
       </footer>
       )}
+      </div>
+      </div>
+      </div>
 
       {/* Funny Walking Mascot Removed */}
 
@@ -2477,11 +2385,20 @@ export default function Layout({
           >
             {/* Ambient visual background glow halos */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-blue-500/10 rounded-full blur-[130px] animate-pulse" />
+              <div
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] rounded-full"
+                style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.14) 0%, transparent 70%)' }}
+              />
               {targetTheme === 'dark' ? (
-                <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-[100px]" />
+                <div
+                  className="absolute top-1/4 right-1/4 w-96 h-96 rounded-full"
+                  style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.09) 0%, transparent 70%)' }}
+                />
               ) : (
-                <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-amber-500/5 rounded-full blur-[100px]" />
+                <div
+                  className="absolute bottom-1/4 left-1/4 w-96 h-96 rounded-full"
+                  style={{ background: 'radial-gradient(circle, rgba(245,158,11,0.09) 0%, transparent 70%)' }}
+                />
               )}
             </div>
 

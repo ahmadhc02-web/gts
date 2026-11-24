@@ -50,7 +50,7 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
 
   return (
     <div className="h-full flex flex-col space-y-6">
-      <div className="flex-1 flex flex-col rounded-3xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] p-5 overflow-hidden">
+      <div className="flex-1 flex flex-col rounded-3xl border border-slate-200/80 dark:border-white/10 !bg-white dark:!bg-[#2c3038] !shadow-[0_8px_24px_rgba(15,23,42,0.11),6px_0_18px_-3px_rgba(15,23,42,0.10),-6px_0_18px_-3px_rgba(15,23,42,0.10)] dark:!shadow-[0_8px_24px_rgba(0,0,0,0.50),6px_0_18px_-2px_rgba(0,0,0,0.44),-6px_0_18px_-2px_rgba(0,0,0,0.44)] p-5 overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[var(--neu-surface)] border border-[var(--neu-border)] shadow-[var(--neu-shadow-inset)] flex items-center justify-center text-amber-500">
@@ -284,6 +284,8 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                                 <img 
                                   src={getAvatarUrl(authorUser.profilePicture)} 
                                   alt={selectedComplaint.memberName} 
+                                  width={14}
+                                  height={14}
                                   className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0"
                                 />
                               );
@@ -292,6 +294,8 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                               <img 
                                 src={getAvatarUrl('default:male')} 
                                 alt={selectedComplaint.memberName || 'System'}
+                                width={14}
+                                height={14}
                                 className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 opacity-80"
                               />
                             );
@@ -348,6 +352,8 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                                 <img 
                                   src={getAvatarUrl(authorUser.profilePicture)} 
                                   alt={selectedComplaint.remarkAuthorName || selectedComplaint.memberName || 'AWAITING DISPATCH'} 
+                                  width={14}
+                                  height={14}
                                   className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0"
                                 />
                               );
@@ -356,6 +362,8 @@ export default function HighFrequencyNodes({ complaints = [], users = [] }: High
                               <img 
                                 src={getAvatarUrl('default:male')} 
                                 alt={selectedComplaint.remarkAuthorName || selectedComplaint.memberName || 'AWAITING DISPATCH'}
+                                width={14}
+                                height={14}
                                 className="h-3.5 w-3.5 rounded-full object-cover border border-slate-205 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 opacity-80"
                               />
                             );

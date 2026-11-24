@@ -1,0 +1,19 @@
+{
+  "name": "green-radius-backend",
+  "version": "1.0.0",
+  "description": "Standalone Green Radius backend service",
+  "main": "server.cjs",
+  "scripts": {
+    "start": "node server.cjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "undici": "^6.6.0"
+  }
+}

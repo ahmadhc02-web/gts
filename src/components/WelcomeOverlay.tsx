@@ -72,23 +72,13 @@ export default function WelcomeOverlay({
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/98 backdrop-blur-xl overflow-hidden select-none"
     >
       {/* Decorative High-End Cyber Ambiance Blobs */}
-      <motion.div 
-        animate={{ 
-          scale: [1, 1.2, 0.9, 1.1, 1],
-          x: [0, 40, -30, 20, 0],
-          y: [0, -30, 40, -20, 0]
-        }}
-        transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-        className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vh] bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none"
+      <div
+        className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vh] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.14) 0%, transparent 70%)' }}
       />
-      <motion.div 
-        animate={{ 
-          scale: [1, 0.9, 1.2, 1, 1.1],
-          x: [0, -50, 20, -10, 0],
-          y: [0, 40, -20, 50, 0]
-        }}
-        transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
-        className="absolute bottom-[-10%] right-[-10%] w-[55vw] h-[55vh] bg-blue-500/10 rounded-full blur-[140px] pointer-events-none"
+      <div
+        className="absolute bottom-[-10%] right-[-10%] w-[55vw] h-[55vh] rounded-full pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.14) 0%, transparent 70%)' }}
       />
 
       {/* Futuristic Background Circles */}
@@ -102,9 +92,9 @@ export default function WelcomeOverlay({
 
       {/* Main Glassmorphism Console Body */}
       <motion.div 
-        initial={{ y: 20, opacity: 0 }}
+        initial={{ y: 8, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.6, type: "spring", damping: 25 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         className="relative z-10 flex flex-col items-center justify-center p-8 md:p-12 w-full max-w-xl mx-4"
       >
         {/* Holographic Interactive Avatar Frame */}
@@ -117,15 +107,17 @@ export default function WelcomeOverlay({
 
           {/* User Profile avatar or dynamic initials */}
           <motion.div 
-            initial={{ scale: 0.8, opacity: 0 }}
+            initial={{ scale: 0.97, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.3, type: "spring", stiffness: 120 }}
+            transition={{ delay: 0.1, duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             className="absolute inset-[18px] rounded-full overflow-hidden flex items-center justify-center border-2 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.2)] bg-gradient-to-br from-slate-900 to-emerald-950"
           >
             {profilePicture ? (
               <img 
                 src={getAvatarUrl(profilePicture)} 
                 alt={username} 
+                width={88}
+                height={88}
                 className="w-full h-full object-cover" 
                 referrerPolicy="no-referrer"
               />
@@ -133,6 +125,8 @@ export default function WelcomeOverlay({
               <img 
                 src={getAvatarUrl('default:male')} 
                 alt={username} 
+                width={88}
+                height={88}
                 className="w-full h-full object-cover" 
                 referrerPolicy="no-referrer"
               />

@@ -9,7 +9,7 @@ export interface BillingColumnDef {
 }
 
 export const BILLING_COLUMNS_LIST: BillingColumnDef[] = [
-  { id: 'sr', label: 'Sr#', subLabel: 'Serial Number', category: 'core', description: 'Row index sequence counter' },
+  { id: 'sr', label: 'ON / OFF', subLabel: 'User ON / OFF Switch', category: 'core', description: 'Quick ON/OFF toggle button (Green = ON, Red = OFF)' },
   { id: 'name', label: 'FULL NAME', subLabel: 'Customer Full Name', category: 'core', description: 'Primary subscriber title & name' },
   { id: 'username', label: 'USER ID (PPPoE)', subLabel: 'PPPoE Username / Login', category: 'core', description: 'Unique network access credential' },
   { id: 'mobile', label: 'MOBILE #', subLabel: 'Contact Phone Number', category: 'core', description: 'Primary contact for WhatsApp & billing alerts' },

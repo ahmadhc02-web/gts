@@ -1,20 +1,63 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
+import React, { Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { 
-  X, Printer, Trash2, RefreshCw, ClipboardList, Check, Info, FileSpreadsheet, Sparkles, Settings2, SlidersHorizontal, RotateCcw,
-  History, Save, Search, Key, FolderPlus, AlertCircle, Database, ChevronRight, LogIn, ChevronLeft, Shield, ShieldAlert,
-  ArrowUpDown, Folder, Plus, FileText, LayoutGrid, FolderOpen, ArrowRight, ChevronDown, Edit3, UserPlus, ArrowLeft, FileDown, Settings, Download, Loader2, AlertTriangle, Copy, CheckCircle2
+  X, Printer, Trash2, RefreshCw, Check, FileSpreadsheet, Sparkles,
+  Save, Search, FolderPlus, AlertCircle, ChevronRight, ChevronLeft, Shield, ShieldAlert,
+  ArrowUpDown, Folder, Plus, FileText, FolderOpen, UserPlus, ArrowLeft, FileDown, Settings, Loader2, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabaseService, pocketbaseService, globalTableCaches, CACHE_MAX_AGE_MS, updateClientFee } from '../lib/supabaseService';
+import { supabaseService, pocketbaseService, globalTableCaches, updateClientFee } from '../lib/supabaseService';
 import { supabase } from '../lib/supabase';
 import { googleSheetsService } from '../services/googleSheetsService';
-import { Client, UserProfile } from '../types';
+import { UserProfile } from '../types';
 import { getCleanErrorMessage } from '../lib/styleUtils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { SkBar, SkFrame, SkTable } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
+import { DeferredBody } from './ui/DeferredBody';
+import { usePopupTiming } from '../lib/usePopupTiming';
+import { useBillingFresh } from '../lib/useBillingFresh';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+import { Table1Row, Table2Row } from './entrysheet/types';
+import {
+  safeGetStorageItem,
+  safeSetStorageItem,
+  safeRemoveStorageItem,
+  getValidCacheItem,
+  debouncedSetStorageItem,
+  setCachedItemWithMeta,
+  flushPendingStorageWrites,
+  logPerf,
+} from './entrysheet/storageCache';
+import {
+  areRecordsShallowEqual,
+  areFoldersEqual,
+  areClientsEqual,
+  areLedgerSheetsEqual,
+} from './entrysheet/compareHelpers';
+import {
+  FoldersGridSkeleton,
+  SheetListSkeleton,
+  A4SheetSkeleton,
+  SizingPanelSkeleton,
+  HistoryPanelSkeleton,
+  ReceiptPreviewPanelSkeleton,
+  ModalDialogSkeleton,
+} from './entrysheet/EntrySheetSkeletons';
+import { Table1RowItem } from './entrysheet/Table1RowItem';
+import { Table2RowItem } from './entrysheet/Table2RowItem';
+import { SuggestionsDropdown, SuggestionsDropdownHandle } from './entrysheet/SuggestionsDropdown';
+import { EditorToolbar } from './entrysheet/EditorToolbar';
+
+const HistoryPanel = lazyWithRetry(() => import('./entrysheet/HistoryPanel'));
+const SizingPanel = lazyWithRetry(() => import('./entrysheet/SizingPanel'));
+const TerminateMonthModal = lazyWithRetry(() => import('./entrysheet/TerminateMonthModal'));
+const ReceiptPreviewPanel = lazyWithRetry(() => import('./entrysheet/ReceiptPreviewPanel'));
+const FolderSettingsModal = lazyWithRetry(() => import('./entrysheet/FolderSettingsModal'));
 
 interface EntrySheetProps {
   isOpen: boolean;
@@ -29,26 +72,7 @@ interface EntrySheetProps {
   initialShowUserLedger?: boolean;
   setBillingMonths?: React.Dispatch<React.SetStateAction<any[]>>;
   savingMonthIds?: React.MutableRefObject<Set<string>>;
-}
-
-interface Table1Row {
-  sr: any;
-  cId: string;
-  name: string;
-  comments: string;
-  amount: number | string;
-  ch: boolean;
-  originalAmount?: number;
-  clientId?: string;
-  clientUsername?: string;
-  status?: string;
-}
-
-interface Table2Row {
-  sr: any;
-  name: string;
-  amount: number | string;
-  ch: boolean;
+  onRequestResync?: () => Promise<any> | void;
 }
 
 const parseRowsArray = (val: any): any[] => {
@@ -62,525 +86,127 @@ const parseRowsArray = (val: any): any[] => {
   return [];
 };
 
-const getValidCacheItem = (key: string): string | null => {
-  try {
-    const meta = localStorage.getItem(`gts_cache_meta_${key}`);
-    if (!meta) return null;
-    const metaTime = Number(meta);
-    if (!metaTime || isNaN(metaTime) || (Date.now() - metaTime > CACHE_MAX_AGE_MS)) {
-      return null;
-    }
-    return localStorage.getItem(key);
-  } catch (e) {
-    return null;
-  }
-};
-
-const setCachedItemWithMeta = (key: string, value: string): void => {
-  try {
-    localStorage.setItem(key, value);
-    localStorage.setItem(`gts_cache_meta_${key}`, String(Date.now()));
-  } catch (e) {}
-};
-
 const ColumnDragHandle = ({ min, max, value, onChange, onDragEnd }: { min: number, max: number, value: number, onChange: (v: number) => void, onDragEnd: () => void }) => {
-  const [isDragging, setIsDragging] = useState(false);
+  const handleRef = useRef<HTMLDivElement | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
   const startXRef = useRef(0);
+  const startYRef = useRef(0);
   const startWidthRef = useRef(0);
+  const dragActivatedRef = useRef(false);
 
-  const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
-    setIsDragging(true);
-    let clientX = 0;
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-    } else {
-      clientX = (e as React.MouseEvent).clientX;
+  const finishDrag = useCallback((notifyEnd: boolean) => {
+    const pointerId = activePointerIdRef.current;
+    activePointerIdRef.current = null;
+    const wasActivated = dragActivatedRef.current;
+    dragActivatedRef.current = false;
+    document.body.style.cursor = '';
+
+    if (pointerId !== null && handleRef.current) {
+      try {
+        if (handleRef.current.hasPointerCapture(pointerId)) {
+          handleRef.current.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // ignore if already released
+      }
     }
-    startXRef.current = clientX;
-    startWidthRef.current = value;
-    document.body.style.cursor = 'col-resize';
-    e.preventDefault();
-  };
+
+    if (notifyEnd && wasActivated && onDragEnd) {
+      onDragEnd();
+    }
+  }, [onDragEnd]);
 
   useEffect(() => {
-    if (!isDragging) return;
-    
-    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
-      let clientX = 0;
-      if ('touches' in e) {
-        clientX = e.touches[0].clientX;
-      } else {
-        clientX = (e as MouseEvent).clientX;
+    const handleWindowBlur = () => {
+      if (activePointerIdRef.current !== null) {
+        finishDrag(true);
       }
-      const delta = clientX - startXRef.current;
-      let newWidth = startWidthRef.current + delta;
-      if (newWidth < min) newWidth = min;
-      if (newWidth > max) newWidth = max;
-      onChange(newWidth);
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden && activePointerIdRef.current !== null) {
+        finishDrag(true);
+      }
     };
 
-    const handlePointerUp = () => {
-      setIsDragging(false);
-      document.body.style.cursor = '';
-      if (onDragEnd) onDragEnd();
-    };
-
-    window.addEventListener('mousemove', handlePointerMove);
-    window.addEventListener('mouseup', handlePointerUp);
-    window.addEventListener('touchmove', handlePointerMove, { passive: false });
-    window.addEventListener('touchend', handlePointerUp);
+    window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('mousemove', handlePointerMove);
-      window.removeEventListener('mouseup', handlePointerUp);
-      window.removeEventListener('touchmove', handlePointerMove);
-      window.removeEventListener('touchend', handlePointerUp);
+      window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      finishDrag(false);
     };
-  }, [isDragging, min, max, onChange, onDragEnd]);
+  }, [finishDrag]);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    activePointerIdRef.current = e.pointerId;
+    startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
+    startWidthRef.current = value;
+    dragActivatedRef.current = false;
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore if capture is unsupported
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    const dx = e.clientX - startXRef.current;
+    const dy = e.clientY - startYRef.current;
+
+    if (!dragActivatedRef.current) {
+      // Only lock into column resize after > 6px horizontal movement
+      if (Math.abs(dx) <= 6) {
+        // If user moved noticeably vertically before 6px horizontally, yield immediately
+        if (Math.abs(dy) > 10) {
+          finishDrag(false);
+        }
+        return;
+      }
+      dragActivatedRef.current = true;
+      document.body.style.cursor = 'col-resize';
+    }
+
+    let newWidth = startWidthRef.current + dx;
+    if (newWidth < min) newWidth = min;
+    if (newWidth > max) newWidth = max;
+    onChange(newWidth);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    finishDrag(true);
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    finishDrag(true);
+  };
+
+  const handleLostPointerCapture = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    finishDrag(true);
+  };
 
   return (
     <div
-      onMouseDown={handlePointerDown}
-      onTouchStart={handlePointerDown}
+      ref={handleRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onLostPointerCapture={handleLostPointerCapture}
       className="absolute top-0 right-0 bottom-0 w-2 cursor-col-resize hover:bg-brand-accent z-10 transition-colors print:hidden"
-      style={{ right: '-1px' }}
+      style={{ right: '-1px', touchAction: 'none' }}
     />
   );
 };
 
-interface Table1RowItemProps {
-  row: Table1Row;
-  index: number;
-  rowPadding: number;
-  tableFontSize: number;
-  t1WidthSr: number;
-  t1WidthId: number;
-  t1WidthName: number;
-  t1WidthComments: number;
-  t1WidthAmount: number;
-  t1WidthCh: number;
-  isFocusedRow: boolean;
-  focusedField: 'cId' | 'name' | 'amount' | null;
-  isSearchResultMatch: boolean;
-  isLocked: boolean;
-  onCommitChange: (index: number, field: keyof Table1Row, value: any) => void;
-  onFocusField: (index: number, field: 'name' | 'amount', currentVal: string, element: HTMLInputElement) => void;
-  onBlurField: () => void;
-  onSearchQueryChange: (val: string) => void;
-  logPerf: (label: string, startMs: number) => void;
-}
 
-const Table1RowItem = React.memo(({
-  row,
-  index,
-  rowPadding,
-  tableFontSize,
-  t1WidthSr,
-  t1WidthId,
-  t1WidthName,
-  t1WidthComments,
-  t1WidthAmount,
-  t1WidthCh,
-  isFocusedRow,
-  focusedField,
-  isSearchResultMatch,
-  isLocked,
-  onCommitChange,
-  onFocusField,
-  onBlurField,
-  onSearchQueryChange,
-  logPerf
-}: Table1RowItemProps) => {
-  const [localRow, setLocalRow] = useState(row);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const pendingRef = useRef<Partial<Table1Row>>({});
-
-  useEffect(() => {
-    setLocalRow(row);
-    pendingRef.current = {};
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-  }, [row.sr, row.cId, row.name, row.comments, row.amount, row.ch, row.clientUsername, row.status]);
-
-  const flushCommit = useCallback(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-    const pending = pendingRef.current;
-    if (Object.keys(pending).length > 0) {
-      for (const [k, v] of Object.entries(pending)) {
-        onCommitChange(index, k as keyof Table1Row, v);
-      }
-      pendingRef.current = {};
-    }
-  }, [index, onCommitChange]);
-
-  const handleFieldChange = (field: keyof Table1Row, val: any) => {
-    if (isLocked) return;
-    const start = performance.now();
-    setLocalRow(prev => ({ ...prev, [field]: val }));
-    pendingRef.current[field] = val;
-
-    if (field === 'name') {
-      onSearchQueryChange(val);
-    }
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      flushCommit();
-    }, 250);
-
-    logPerf(`typing (${field})`, start);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      flushCommit();
-    }
-  };
-
-  return (
-    <tr 
-      className={`border-b border-slate-405 font-mono colRow transition-all duration-250 relative ${
-        isFocusedRow ? 'z-[99999]' : 'z-0'
-      } ${
-        isSearchResultMatch 
-          ? 'bg-brand-accent/20 dark:bg-brand-accent/30 font-bold border-l-4 border-l-brand-accent' 
-          : ''
-      }`}
-    >
-      {/* Sr */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-        className="px-1 border-r-2 border-black text-center font-bold font-sans text-slate-600 bg-slate-50/50"
-      >
-        <input
-          type="text"
-          value={localRow.sr}
-          onChange={(e) => handleFieldChange('sr', e.target.value)}
-          onBlur={flushCommit}
-          onKeyDown={handleKeyDown}
-          style={{ fontSize: `${tableFontSize - 0.5}px` }}
-          className="w-full min-w-0 border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
-          title="Double-click/type to edit Serial"
-        />
-      </td>
-
-      {/* C. ID */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-        className="px-1 border-r border-black relative group/cell"
-      >
-        <input
-          type="text"
-          value={localRow.cId}
-          onChange={(e) => handleFieldChange('cId', e.target.value)}
-          onBlur={flushCommit}
-          onKeyDown={handleKeyDown}
-          style={{ fontSize: `${tableFontSize - 0.5}px` }}
-          className="w-full min-w-0 border-none p-0 text-center text-slate-900 bg-transparent focus:bg-slate-100 font-bold tracking-tight outline-none"
-        />
-      </td>
-
-      {/* Name */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-        className={`px-2 border-r border-black font-sans relative group/cell ${isFocusedRow && focusedField === 'name' ? 'z-[99999]' : ''}`}
-      >
-        <div className="flex items-center justify-between gap-1 w-full">
-          <input
-            type="text"
-            value={localRow.name}
-            onChange={(e) => {
-              handleFieldChange('name', e.target.value);
-            }}
-            onFocus={(e) => {
-              onFocusField(index, 'name', localRow.name, e.currentTarget);
-            }}
-            onBlur={() => {
-              flushCommit();
-              onBlurField();
-            }}
-            onKeyDown={handleKeyDown}
-            style={{ fontSize: `${tableFontSize}px` }}
-            className="flex-1 min-w-0 border-none p-0 text-slate-900 bg-transparent font-black tracking-tight focus:bg-slate-100 outline-none"
-          />
-          {(localRow.clientUsername || (localRow.cId && localRow.name)) && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const textToCopy = (localRow.clientUsername || localRow.cId || '').trim();
-                if (textToCopy) {
-                  navigator.clipboard.writeText(textToCopy);
-                  toast.success(`Copied: ${textToCopy}`, { duration: 2500, icon: '📋' });
-                }
-              }}
-              title="Click to copy User ID"
-              className="print:hidden text-[9px] font-black text-slate-500 hover:text-indigo-600 bg-slate-100/80 hover:bg-indigo-50 active:scale-95 dark:text-slate-400 dark:bg-slate-800 dark:hover:bg-indigo-900/40 px-1.5 py-0.5 rounded leading-none shrink-0 border border-slate-200/60 hover:border-indigo-200 dark:border-slate-700 dark:hover:border-indigo-800/60 cursor-pointer transition-all duration-200 flex items-center gap-1 select-none group/copy overflow-hidden"
-            >
-              <span className="truncate max-w-[60px] group-hover/copy:max-w-none transition-all duration-300">@{localRow.clientUsername || localRow.cId}</span>
-              <Copy size={9} className="opacity-0 w-0 -ml-1 group-hover/copy:w-auto group-hover/copy:opacity-100 group-hover/copy:ml-0 transition-all duration-300 ease-out text-indigo-500" />
-            </button>
-          )}
-        </div>
-      </td>
-
-      {/* Comments */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-        className="px-2 border-r border-black font-sans"
-      >
-        <input
-          type="text"
-          value={localRow.comments}
-          onChange={(e) => handleFieldChange('comments', e.target.value)}
-          onBlur={flushCommit}
-          onKeyDown={handleKeyDown}
-          style={{ fontSize: `${tableFontSize - 0.5}px` }}
-          className="w-full min-w-0 border-none p-0 text-slate-600 dark:text-slate-600 bg-transparent font-semibold focus:bg-slate-100 outline-none"
-        />
-      </td>
-
-      {/* Amount */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-        className={`px-2 border-r border-black text-right relative ${isFocusedRow && focusedField === 'amount' ? 'z-[99999]' : ''}`}
-      >
-        <input
-          type="text"
-          value={localRow.amount === 0 ? '' : localRow.amount}
-          placeholder="0"
-          onChange={(e) => handleFieldChange('amount', e.target.value)}
-          onFocus={(e) => {
-            onFocusField(index, 'amount', String(localRow.amount || ''), e.currentTarget);
-          }}
-          onBlur={() => {
-            flushCommit();
-            onBlurField();
-          }}
-          onKeyDown={handleKeyDown}
-          style={{ fontSize: `${tableFontSize}px` }}
-          className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono uppercase"
-        />
-        
-        {isFocusedRow && focusedField === 'amount' && (
-          <div className="absolute top-[105%] right-0 w-[120px] bg-white border border-slate-350 dark:bg-slate-950 dark:border-white/10 shadow-2xl rounded-xl p-1 z-[99999] print:hidden font-sans pointer-events-auto">
-            <div className="text-[8px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-2 py-1 border-b border-slate-100 dark:border-slate-900 mb-1 text-left">
-              Set Status
-            </div>
-            {['PAID', 'UNPAID', 'TDC', 'DC', 'PARTIAL', 'EXTRA', 'NEXT'].map(st => (
-              <button
-                key={st}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  if (debounceTimerRef.current) {
-                    clearTimeout(debounceTimerRef.current);
-                    debounceTimerRef.current = null;
-                  }
-                  pendingRef.current = {};
-                  onCommitChange(index, 'amount', st);
-                  onCommitChange(index, 'status', st.toLowerCase());
-                  onBlurField();
-                }}
-                onTouchEnd={(e) => {
-                  e.preventDefault();
-                  if (debounceTimerRef.current) {
-                    clearTimeout(debounceTimerRef.current);
-                    debounceTimerRef.current = null;
-                  }
-                  pendingRef.current = {};
-                  onCommitChange(index, 'amount', st);
-                  onCommitChange(index, 'status', st.toLowerCase());
-                  onBlurField();
-                }}
-                className="w-full text-right px-2 py-1.5 hover:bg-brand-accent hover:text-white dark:hover:bg-brand-accent/80 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 transition-colors uppercase tracking-widest cursor-pointer"
-              >
-                {st}
-              </button>
-            ))}
-          </div>
-        )}
-      </td>
-
-      {/* Ch (Tick checkbox) */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px` }}
-        className="px-1 text-center select-none"
-      >
-        <div className="flex items-center justify-center">
-          <input
-            type="checkbox"
-            checked={!!localRow.ch}
-            onChange={(e) => {
-              if (isLocked) return;
-              setLocalRow(prev => ({ ...prev, ch: e.target.checked }));
-              onCommitChange(index, 'ch', e.target.checked);
-            }}
-            className="w-3.5 h-3.5 rounded border-slate-400 text-brand-accent focus:ring-brand-accent cursor-pointer"
-          />
-        </div>
-      </td>
-    </tr>
-  );
-});
-Table1RowItem.displayName = 'Table1RowItem';
-
-interface Table2RowItemProps {
-  row: Table2Row;
-  index: number;
-  rowPadding: number;
-  tableFontSize: number;
-  t2WidthSr: number;
-  t2WidthName: number;
-  t2WidthAmount: number;
-  isLocked: boolean;
-  onCommitChange: (index: number, field: keyof Table2Row, value: any) => void;
-  logPerf: (label: string, startMs: number) => void;
-}
-
-const Table2RowItem = React.memo(({
-  row,
-  index,
-  rowPadding,
-  tableFontSize,
-  t2WidthSr,
-  t2WidthName,
-  t2WidthAmount,
-  isLocked,
-  onCommitChange,
-  logPerf
-}: Table2RowItemProps) => {
-  const [localRow, setLocalRow] = useState(row);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const pendingRef = useRef<Partial<Table2Row>>({});
-
-  useEffect(() => {
-    setLocalRow(row);
-    pendingRef.current = {};
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-  }, [row.sr, row.name, row.amount, row.ch]);
-
-  const flushCommit = useCallback(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-    const pending = pendingRef.current;
-    if (Object.keys(pending).length > 0) {
-      for (const [k, v] of Object.entries(pending)) {
-        onCommitChange(index, k as keyof Table2Row, v);
-      }
-      pendingRef.current = {};
-    }
-  }, [index, onCommitChange]);
-
-  const handleFieldChange = (field: keyof Table2Row, val: any) => {
-    if (isLocked) return;
-    const start = performance.now();
-    setLocalRow(prev => ({ ...prev, [field]: val }));
-    pendingRef.current[field] = val;
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      flushCommit();
-    }, 250);
-
-    logPerf(`typing table2 (${field})`, start);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      flushCommit();
-    }
-  };
-
-  return (
-    <tr className="border-b border-slate-400 font-mono">
-      {/* Sr */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-        className="px-1 border-r-2 border-black text-center font-bold font-sans text-slate-600 bg-slate-50/50"
-      >
-        <input
-          type="text"
-          value={localRow.sr}
-          onChange={(e) => handleFieldChange('sr', e.target.value)}
-          onBlur={flushCommit}
-          onKeyDown={handleKeyDown}
-          style={{ fontSize: `${tableFontSize - 0.5}px` }}
-          className="w-full min-w-0 border-none p-0 text-center text-slate-600 bg-transparent focus:bg-slate-100 font-bold outline-none font-sans"
-          title="Double-click/type to edit Serial"
-        />
-      </td>
-
-      {/* Name */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-        className="px-3 border-r border-black font-sans text-slate-800 font-extrabold uppercase select-text"
-      >
-        <input
-          type="text"
-          value={localRow.name}
-          onChange={(e) => handleFieldChange('name', e.target.value)}
-          onBlur={flushCommit}
-          onKeyDown={handleKeyDown}
-          style={{ fontSize: `${tableFontSize}px` }}
-          className="w-full min-w-0 border-none p-0 text-slate-900 font-black tracking-wide bg-transparent focus:bg-slate-100 outline-none uppercase font-mono"
-        />
-      </td>
-
-      {/* Amount */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px`, fontSize: `${tableFontSize}px` }}
-        className="px-2 border-r border-black text-right"
-      >
-        <input
-          type="number"
-          value={localRow.amount === 0 ? '' : localRow.amount}
-          placeholder="0"
-          onChange={(e) => handleFieldChange('amount', parseFloat(e.target.value) || 0)}
-          onBlur={flushCommit}
-          onKeyDown={handleKeyDown}
-          style={{ fontSize: `${tableFontSize}px` }}
-          className="w-full min-w-0 border-none p-0 text-right text-slate-900 font-black bg-transparent focus:bg-slate-100 outline-none font-mono"
-        />
-      </td>
-
-      {/* Ch checkbox */}
-      <td 
-        style={{ paddingTop: `${rowPadding}px`, paddingBottom: `${rowPadding}px` }}
-        className="px-1 text-center select-none"
-      >
-        <div className="flex items-center justify-center">
-          <input
-            type="checkbox"
-            checked={!!localRow.ch}
-            onChange={(e) => {
-              if (isLocked) return;
-              setLocalRow(prev => ({ ...prev, ch: e.target.checked }));
-              onCommitChange(index, 'ch', e.target.checked);
-            }}
-            className="w-3.5 h-3.5 rounded border-slate-400 text-brand-accent focus:ring-brand-accent cursor-pointer"
-          />
-        </div>
-      </td>
-    </tr>
-  );
-});
-Table2RowItem.displayName = 'Table2RowItem';
 
 export default function EntrySheet({ 
   isOpen, 
@@ -594,8 +220,10 @@ export default function EntrySheet({
   billingMonthsList = [],
   initialShowUserLedger = false,
   setBillingMonths,
-  savingMonthIds
+  savingMonthIds,
+  onRequestResync
 }: EntrySheetProps) {
+  usePopupTiming('EntrySheet', isOpen);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -658,11 +286,32 @@ export default function EntrySheet({
     return map;
   }, [ledgerHistory]);
 
+  const billingFresh = useBillingFresh();
+  const billingFreshRef = useRef(billingFresh);
+  const prevBillingFreshRef = useRef(billingFresh);
+  const freshReasonRef = useRef<'scope-change' | 'loaded' | 'timeout' | 'resync'>('scope-change');
+  if (prevBillingFreshRef.current !== billingFresh) {
+    prevBillingFreshRef.current = billingFresh;
+    if (billingFresh && freshReasonRef.current !== 'resync') {
+      freshReasonRef.current = 'loaded';
+    } else if (!billingFresh) {
+      freshReasonRef.current = 'scope-change';
+    }
+  }
+  billingFreshRef.current = billingFresh;
+
   const foldersFreshRef = useRef(false);
   const folderMonthsFreshRef = useRef(false);
   const [isFoldersFresh, setIsFoldersFresh] = useState(false);
   const [isFolderMonthsFresh, setIsFolderMonthsFresh] = useState(false);
-  const isDataFresh = Boolean(pocketbaseService.isBillingFresh && isFoldersFresh && isFolderMonthsFresh);
+  const [resyncNonce, setResyncNonce] = useState(0);
+  const [isSyncSlow, setIsSyncSlow] = useState(false);
+  const [staleOk, setStaleOk] = useState(false);
+  const staleOkRef = useRef(false);
+  staleOkRef.current = staleOk;
+  const isSavingSheetRef = useRef(false);
+
+  const isDataFresh = Boolean(billingFresh && isFoldersFresh && isFolderMonthsFresh);
   const openedUpdatedAtBySheetIdRef = useRef<Map<string, number | string>>(new Map());
 
   const [settingsFolderId, setSettingsFolderId] = useState<string | null>(null);
@@ -681,48 +330,184 @@ export default function EntrySheet({
     }
   }, [settingsFolderId, folderMonthMap]);
 
-  // Load lightweight list of all billing months if not passed down
   const [internalMonthsList, setInternalMonthsList] = useState<{ id: string }[]>([]);
-  useEffect(() => {
-    if (!isOpen) return;
-    if (billingMonthsList && billingMonthsList.length > 0) return;
-    const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined) || 'main';
-    pocketbaseService.getBillingMonthsList(scopeId).then(list => {
-      if (list && Array.isArray(list)) {
-        setInternalMonthsList(list.map((m: any) => ({ id: m.id })));
-      }
-    }).catch(() => {});
-  }, [isOpen, activeDealerId, currentUser?.role, currentUser?.uid, billingMonthsList]);
-
+  const [isLoadingOpenedFolder, setIsLoadingOpenedFolder] = useState<boolean>(false);
   const effectiveMonthsList = useMemo(() => {
     if (billingMonthsList && billingMonthsList.length > 0) return billingMonthsList;
     if (internalMonthsList.length > 0) return internalMonthsList;
     return billingMonths;
   }, [billingMonthsList, internalMonthsList, billingMonths]);
 
-  // Lazy-load sheets for the opened folder on demand if needed
-  useEffect(() => {
-    if (!isOpen || !openedFolderId) return;
-    const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-    pocketbaseService.getLedgerSheetsForFolder(openedFolderId, tenantId).then(folderSheets => {
-      if (Array.isArray(folderSheets) && folderSheets.length > 0) {
-        setLedgerHistory(prev => {
-          const prevMap = new Map(prev.map(s => [s.id, s]));
-          let hasNew = false;
-          folderSheets.forEach(s => {
-            if (!prevMap.has(s.id)) {
-              prevMap.set(s.id, s);
-              hasNew = true;
-            }
-          });
-          return hasNew ? Array.from(prevMap.values()) : prev;
-        });
-      }
-    }).catch(console.warn);
-  }, [isOpen, openedFolderId, currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
+  const hasOpenedFolderSheets = useMemo(() => {
+    if (!openedFolderId) return false;
+    return ledgerHistory.some(sh => sh.folderId === openedFolderId || sheetFolderMap[sh.id] === openedFolderId);
+  }, [openedFolderId, ledgerHistory, sheetFolderMap]);
 
-  // Scoped folders loading on user change
+  const ledgerHistoryRef = useRef(ledgerHistory);
+  ledgerHistoryRef.current = ledgerHistory;
+  const loadedPrefsUidRef = useRef<string | null>(null);
+
+  const hadFoldersCacheRef = useRef(folders.length > 0);
+  const hadMonthsCacheRef = useRef(effectiveMonthsList.length > 0 || billingMonths.length > 0);
+
   useEffect(() => {
+    if (folders.length > 0 || isFoldersFresh) {
+      hadFoldersCacheRef.current = true;
+    }
+  }, [folders.length, isFoldersFresh]);
+
+  useEffect(() => {
+    if (effectiveMonthsList.length > 0 || billingMonths.length > 0 || isFolderMonthsFresh) {
+      hadMonthsCacheRef.current = true;
+    }
+  }, [effectiveMonthsList.length, billingMonths.length, isFolderMonthsFresh]);
+
+  const triggerResync = useCallback((reason: 'timeout' | 'resync' = 'resync') => {
+    freshReasonRef.current = reason;
+    setResyncNonce(n => n + 1);
+    if (onRequestResync) {
+      Promise.resolve(onRequestResync()).catch(err => {
+        console.warn('[Fresh] onRequestResync failed:', err);
+      });
+    }
+  }, [onRequestResync]);
+
+  const triggerResyncRef = useRef(triggerResync);
+  triggerResyncRef.current = triggerResync;
+
+  const waitForFresh = useCallback((timeoutMs: number) => {
+    const checkReady = () =>
+      (pocketbaseService.getBillingFresh() && foldersFreshRef.current && folderMonthsFreshRef.current) ||
+      staleOkRef.current;
+
+    if (checkReady()) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let unsubBilling: (() => void) | null = null;
+      let pollTimer: number | null = null;
+      let timeoutTimer: number | null = null;
+
+      const cleanup = () => {
+        if (unsubBilling) {
+          unsubBilling();
+          unsubBilling = null;
+        }
+        if (pollTimer !== null) {
+          window.clearInterval(pollTimer);
+          pollTimer = null;
+        }
+        if (timeoutTimer !== null) {
+          window.clearTimeout(timeoutTimer);
+          timeoutTimer = null;
+        }
+      };
+
+      const tryResolve = () => {
+        if (settled) return;
+        if (checkReady()) {
+          settled = true;
+          cleanup();
+          resolve();
+        }
+      };
+
+      unsubBilling = pocketbaseService.subscribeBillingFresh(tryResolve);
+      pollTimer = window.setInterval(tryResolve, 100);
+      timeoutTimer = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error('Sync timed out'));
+      }, timeoutMs);
+    });
+  }, []);
+
+  // Diagnostic freshness log whenever any freshness piece changes
+  const prevFreshLogRef = useRef<{ billing: boolean; folders: boolean; months: boolean; staleOk: boolean } | null>(null);
+  useEffect(() => {
+    const prev = prevFreshLogRef.current;
+    if (
+      !prev ||
+      prev.billing !== billingFresh ||
+      prev.folders !== isFoldersFresh ||
+      prev.months !== isFolderMonthsFresh ||
+      prev.staleOk !== staleOk
+    ) {
+      prevFreshLogRef.current = {
+        billing: billingFresh,
+        folders: isFoldersFresh,
+        months: isFolderMonthsFresh,
+        staleOk
+      };
+      console.log(
+        `[Fresh] billing=${billingFresh} folders=${isFoldersFresh} months=${isFolderMonthsFresh} staleOk=${staleOk} reason=${freshReasonRef.current}`
+      );
+    }
+  }, [billingFresh, isFoldersFresh, isFolderMonthsFresh, staleOk]);
+
+  // Watchdog timer when sheet opens or isDataFresh turns false (8s retry + 15s staleOk fallback)
+  useEffect(() => {
+    if (!isOpen || isDataFresh) {
+      setIsSyncSlow(false);
+      setStaleOk(false);
+      return;
+    }
+
+    setIsSyncSlow(false);
+    let didForceResync = false;
+
+    const slowTimer = window.setTimeout(() => {
+      setIsSyncSlow(true);
+      if (!didForceResync) {
+        didForceResync = true;
+        triggerResyncRef.current('timeout');
+      }
+    }, 8000);
+
+    const staleTimer = window.setTimeout(() => {
+      if (hadFoldersCacheRef.current && hadMonthsCacheRef.current) {
+        freshReasonRef.current = 'timeout';
+        setStaleOk(true);
+      }
+    }, 15000);
+
+    return () => {
+      window.clearTimeout(slowTimer);
+      window.clearTimeout(staleTimer);
+    };
+  }, [isOpen, isDataFresh]);
+
+  // Scoped folders loading on user change or forced resync
+  const prevFolderScopeRef = useRef({
+    uid: currentUser?.uid,
+    dealerId: activeDealerId,
+    isDealerTied
+  });
+  useEffect(() => {
+    const scopeChanged =
+      prevFolderScopeRef.current.uid !== currentUser?.uid ||
+      prevFolderScopeRef.current.dealerId !== activeDealerId ||
+      prevFolderScopeRef.current.isDealerTied !== isDealerTied;
+
+    if (scopeChanged) {
+      prevFolderScopeRef.current = {
+        uid: currentUser?.uid,
+        dealerId: activeDealerId,
+        isDealerTied
+      };
+      freshReasonRef.current = 'scope-change';
+      hadFoldersCacheRef.current = false;
+      hadMonthsCacheRef.current = false;
+      setInternalMonthsList([]);
+      setStaleOk(false);
+      setIsSyncSlow(false);
+    } else if (freshReasonRef.current !== 'timeout' && freshReasonRef.current !== 'resync') {
+      freshReasonRef.current = 'scope-change';
+    }
+
     foldersFreshRef.current = false;
     folderMonthsFreshRef.current = false;
     setIsFoldersFresh(false);
@@ -736,25 +521,25 @@ export default function EntrySheet({
     };
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    const originalSuffix = `_${originalScopeId}`;
-    const foldersKey = `gts_ledger_folders${originalSuffix}`;
-    const sheetFoldersKey = `gts_ledger_sheet_folders${originalSuffix}`;
-
     const scopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined);
-    
+    const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
+
     // Subscribe to Folders
     const unsubFolders = pocketbaseService.subscribeLedgerFolders((data) => {
+      freshReasonRef.current = 'loaded';
       foldersFreshRef.current = true;
       setIsFoldersFresh(true);
       if (Array.isArray(data)) {
-        setFolders(prev => JSON.stringify(prev) === JSON.stringify(data) ? prev : data);
-        setCachedItemWithMeta(`gts_cache_v3_ledger_folders_${originalScopeId}`, JSON.stringify(data));
+        hadFoldersCacheRef.current = true;
+        setFolders(prev => areFoldersEqual(prev, data) ? prev : data);
+        setCachedItemWithMeta(`gts_cache_v3_ledger_folders_${originalScopeId}`, () => JSON.stringify(data));
       }
       setIsLoadingFolders(false);
     }, scopeId);
 
     // Subscribe to Folder Month Map
     const unsubFolderMonths = pocketbaseService.subscribeFolderMonthMap((data) => {
+      freshReasonRef.current = 'loaded';
       folderMonthsFreshRef.current = true;
       setIsFolderMonthsFresh(true);
       let mergedMap = data && Object.keys(data).length > 0 ? { ...data } : {};
@@ -764,10 +549,10 @@ export default function EntrySheet({
       const migrationFlag = `migrated_local_folder_months_${scopeId || 'main'}`;
       const isDbNonEmpty = Boolean(data && Object.keys(data).length > 0);
       if (isDbNonEmpty) {
-        localStorage.setItem(migrationFlag, 'true');
+        debouncedSetStorageItem(migrationFlag, 'true');
       }
 
-      if (!isDbNonEmpty && !localStorage.getItem(migrationFlag)) {
+      if (!isDbNonEmpty && !safeGetStorageItem(migrationFlag)) {
         const savedMap = getValidCacheItem(folderMonthsKey);
         if (savedMap) {
           try {
@@ -782,17 +567,107 @@ export default function EntrySheet({
             }
           } catch (e) { console.error("Migration folder months map parse error", e); }
         }
-        localStorage.setItem(migrationFlag, 'true');
+        debouncedSetStorageItem(migrationFlag, 'true');
       }
 
       if (didMerge) {
         pocketbaseService.updateFolderMonthMap(mergedMap, scopeId).catch(console.error);
       }
-      
-      setFolderMonthMap(prev => JSON.stringify(prev) === JSON.stringify(mergedMap) ? prev : mergedMap);
+
+      setFolderMonthMap(prev => areRecordsShallowEqual(prev, mergedMap) ? prev : mergedMap);
     }, scopeId);
 
+    // Priority parallel startup fetches (independent async calls run concurrently,
+    // opened folder & opened sheet requested BEFORE full cross-folder idle sync)
+    let cancelled = false;
+    if (openedFolderId) {
+      const alreadyHasFolderSheets = ledgerHistoryRef.current.some(
+        sh => sh.folderId === openedFolderId || sh.folder_id === openedFolderId
+      );
+      if (!alreadyHasFolderSheets) {
+        setIsLoadingOpenedFolder(true);
+      }
+    } else {
+      setIsLoadingOpenedFolder(false);
+    }
+
+    const priorityTasks: Promise<any>[] = [];
+
+    if (urlSheetId && !ledgerHistoryRef.current.some(s => s.id === urlSheetId)) {
+      priorityTasks.push(
+        pocketbaseService.getLedgerSheetDirect(urlSheetId).then(sheet => {
+          if (cancelled || !sheet) return;
+          setLedgerHistory(prev => prev.some(s => s.id === sheet.id) ? prev : [sheet, ...prev]);
+        }).catch(console.warn)
+      );
+    }
+
+    if (openedFolderId) {
+      priorityTasks.push(
+        pocketbaseService.getLedgerSheetsForFolder(openedFolderId, tenantId).then(folderSheets => {
+          if (cancelled) return;
+          if (Array.isArray(folderSheets) && folderSheets.length > 0) {
+            setLedgerHistory(prev => {
+              const prevMap = new Map(prev.map(s => [s.id, s]));
+              let hasNew = false;
+              folderSheets.forEach(s => {
+                if (!prevMap.has(s.id)) {
+                  prevMap.set(s.id, s);
+                  hasNew = true;
+                }
+              });
+              return hasNew ? Array.from(prevMap.values()) : prev;
+            });
+          }
+          setIsLoadingOpenedFolder(false);
+        }).catch(err => {
+          console.warn(err);
+          if (!cancelled) setIsLoadingOpenedFolder(false);
+        })
+      );
+    }
+
+    if (!(billingMonthsList && billingMonthsList.length > 0)) {
+      const monthsScopeId = activeDealerId || (currentUser?.role === 'dealer' ? currentUser?.uid : undefined) || 'main';
+      priorityTasks.push(
+        pocketbaseService.getBillingMonthsList(monthsScopeId).then(list => {
+          if (cancelled || !list || !Array.isArray(list)) return;
+          setInternalMonthsList(list.map((m: any) => ({ id: m.id })));
+        }).catch(() => {})
+      );
+    }
+
+    if (currentUser?.uid && loadedPrefsUidRef.current !== currentUser.uid) {
+      loadedPrefsUidRef.current = currentUser.uid;
+      priorityTasks.push(
+        supabaseService.getUserPreferences(currentUser.uid).then(prefs => {
+          if (cancelled) return;
+          if (prefs && prefs.columnWidths) {
+            const w = prefs.columnWidths;
+            if (w.t1WidthSr) setT1WidthSr(w.t1WidthSr);
+            if (w.t1WidthId) setT1WidthId(w.t1WidthId);
+            if (w.t1WidthName) setT1WidthName(w.t1WidthName);
+            if (w.t1WidthComments) setT1WidthComments(w.t1WidthComments);
+            if (w.t1WidthAmount) setT1WidthAmount(w.t1WidthAmount);
+            if (w.t1WidthCh) setT1WidthCh(w.t1WidthCh);
+            if (w.t2WidthSr) setT2WidthSr(w.t2WidthSr);
+            if (w.t2WidthName) setT2WidthName(w.t2WidthName);
+            if (w.t2WidthAmount) setT2WidthAmount(w.t2WidthAmount);
+            if (w.t2WidthCh) setT2WidthCh(w.t2WidthCh);
+          }
+          setWidthsLoading(false);
+        }).catch(() => {
+          if (!cancelled) setWidthsLoading(false);
+        })
+      );
+    }
+
+    if (priorityTasks.length > 0) {
+      Promise.all(priorityTasks).catch(() => {});
+    }
+
     return () => {
+      cancelled = true;
       foldersFreshRef.current = false;
       folderMonthsFreshRef.current = false;
       setIsFoldersFresh(false);
@@ -800,7 +675,7 @@ export default function EntrySheet({
       unsubFolders();
       unsubFolderMonths();
     };
-  }, [isOpen, currentUser?.uid, activeDealerId, isDealerTied]);
+  }, [isOpen, currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId, isDealerTied, openedFolderId, urlSheetId, billingMonthsList, resyncNonce]);
 
   // Folder UI inputs
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
@@ -879,10 +754,10 @@ export default function EntrySheet({
     await pocketbaseService.updateLedgerFolders(newFolders, scopeId);
     
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, () => JSON.stringify(newFolders));
   };
 
-  const saveMapToDb = async (newMap: Record<string, string>) => {
+  const saveMapToDb = async (_newMap: Record<string, string>) => {
     // Deprecated: rely exclusively on ledger_sheets.folder_id column
   };
 
@@ -898,7 +773,7 @@ export default function EntrySheet({
     }
 
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    setCachedItemWithMeta(`gts_ledger_folder_months_${originalScopeId}`, JSON.stringify(newMap));
+    setCachedItemWithMeta(`gts_ledger_folder_months_${originalScopeId}`, () => JSON.stringify(newMap));
   };
 
 
@@ -954,13 +829,13 @@ export default function EntrySheet({
         setFolders(newFolders);
         // Also keep local backup & cloud sync for offline resilience
         const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-        setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+        setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, () => JSON.stringify(newFolders));
         try {
           await pocketbaseService.saveLedgerFolders(newFolders, tenantId);
         } catch (saveErr: any) {
           console.error("Failed to save ledger folders after creation:", saveErr);
           setFolders(previousFolders);
-          setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(previousFolders));
+          setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, () => JSON.stringify(previousFolders));
           toast.error("Failed to save folder: " + (saveErr?.message || String(saveErr)));
           return;
         }
@@ -1020,10 +895,10 @@ export default function EntrySheet({
 
     // 1. Instantly update folders and map in local state & local storage to prevent any race conditions
     setFolders(newFolders);
-    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(newFolders));
+    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, () => JSON.stringify(newFolders));
 
     setSheetFolderMap(nextMap);
-    setCachedItemWithMeta(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(nextMap));
+    setCachedItemWithMeta(`gts_ledger_sheet_folders_${originalScopeId}`, () => JSON.stringify(nextMap));
 
     // 2. Save folder to Recycle Bin first, then update folders in database
     try {
@@ -1066,8 +941,8 @@ export default function EntrySheet({
       // Rollback UI state and localStorage upon failure to prevent inconsistent states
       setFolders(previousFolders);
       setSheetFolderMap(previousMap);
-      setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(previousFolders));
-      setCachedItemWithMeta(`gts_ledger_sheet_folders_${originalScopeId}`, JSON.stringify(previousMap));
+      setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, () => JSON.stringify(previousFolders));
+      setCachedItemWithMeta(`gts_ledger_sheet_folders_${originalScopeId}`, () => JSON.stringify(previousMap));
 
       toast.error(`Database Error: Failed to delete folder. Please check your database connection or permission rules!`, {
         id: `folder-delete-error-${folderId}`,
@@ -1221,7 +1096,7 @@ export default function EntrySheet({
   // Security and lock synchronization
   const [localPasskey, setLocalPasskey] = useState('');
   const [localUnlocked, setLocalUnlocked] = useState(() => {
-    return sessionStorage.getItem('gts_billing_unlocked') === 'true';
+    return safeGetStorageItem('gts_billing_unlocked', 'session') === 'true';
   });
 
   useEffect(() => {
@@ -1237,7 +1112,7 @@ export default function EntrySheet({
     const requiredKey = (isDealerTied && currentUser.password) ? currentUser.password : (appConfig?.billingSecurityKey || '1239870');
     if (localPasskey === requiredKey) {
       setLocalUnlocked(true);
-      sessionStorage.setItem('gts_billing_unlocked', 'true');
+      safeSetStorageItem('gts_billing_unlocked', 'true', 'session');
       // Dispatch custom event to notify rest of components in real-time
       window.dispatchEvent(new CustomEvent('gts-billing-unlocked-changed', { detail: true }));
       toast.success("🔑 ACCESS GRANTED", { description: "WiFi Billing & entry sheets unlocked for editing." });
@@ -1271,6 +1146,14 @@ export default function EntrySheet({
   // Multi-sheet state and active page tracking variables
   const [sheets, setSheets] = useState<any[]>([]);
   const [activeSheetIdx, setActiveSheetIdx] = useState<number>(0);
+
+  const showFoldersSkeleton = useSkeletonGate(isLoadingFolders && folders.length === 0, { delay: 0, minShow: 350 });
+  const showSheetListSkeleton = useSkeletonGate(
+    Boolean(openedFolderId) && activeView === 'dashboard' && (isLoadingSheets || isLoadingOpenedFolder) && !hasOpenedFolderSheets,
+    { delay: 0, minShow: 350 }
+  );
+  const isWorkspaceLoadingForSkeleton = activeView === 'editor' && (!sheets || sheets.length === 0 || (Boolean(urlSheetId) && sheets[activeSheetIdx]?.id !== urlSheetId));
+  const showWorkspaceSkeleton = useSkeletonGate(isWorkspaceLoadingForSkeleton, { delay: 0, minShow: 350 });
 
   // Table 1 rows (22 rows)
   const [table1Rows, setTable1Rows] = useState<Table1Row[]>([]);
@@ -1353,18 +1236,6 @@ export default function EntrySheet({
     toast.success(`Table 2 sorted by ${key.toUpperCase()} (${direction === 'asc' ? 'A-Z' : 'Z-A'})`);
   };
 
-  // Dev-only perf measurement timer (controlled via localStorage 'gts_perf' === '1')
-  const logPerf = useCallback((label: string, startMs: number) => {
-    if (typeof window !== 'undefined' && localStorage.getItem('gts_perf') === '1') {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const ms = (performance.now() - startMs).toFixed(1);
-          console.log(`[EntrySheet perf] ${label} ${ms}ms`);
-        });
-      });
-    }
-  }, []);
-
   // Autocomplete suggestions states
   const [clients, setClients] = useState<any[]>([]);
 
@@ -1444,59 +1315,113 @@ export default function EntrySheet({
 
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const [focusedField, setFocusedField] = useState<'cId' | 'name' | 'amount' | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
   const [activeInputElement, setActiveInputElement] = useState<HTMLInputElement | null>(null);
 
+  const selectionLockRef = useRef<{ index: number; until: number } | null>(null);
+  const blurResetTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
+  const suggestionsDropdownRef = useRef<SuggestionsDropdownHandle | null>(null);
+  const dropdownPosRafRef = useRef<number | null>(null);
+  const lastScrolledRowIndexRef = useRef<number | null>(null);
+
+  const getLiveInputElement = useCallback((): HTMLInputElement | null => {
+    if (activeInputElement && activeInputElement.isConnected) {
+      return activeInputElement;
+    }
+    if (typeof document !== 'undefined' && document.activeElement && document.activeElement !== document.body && document.activeElement.tagName === 'INPUT') {
+      return document.activeElement as HTMLInputElement;
+    }
+    return null;
+  }, [activeInputElement]);
+
+  const getDropdownCoords = useCallback(() => {
+    const inputEl = getLiveInputElement();
+    if (!inputEl) return null;
+    const row = inputEl.closest('tr') || inputEl;
+    const rowRect = row.getBoundingClientRect();
+    const cell = inputEl.closest('td') || inputEl;
+    const cellRect = cell.getBoundingClientRect();
+
+    const top = rowRect.bottom + 2;
+    const desiredWidth = Math.max(370, inputEl.getBoundingClientRect().width);
+    const rawLeft = cellRect.left;
+    const maxLeft = typeof window !== 'undefined' ? window.innerWidth - desiredWidth - 12 : rawLeft;
+    const finalLeft = Math.max(8, Math.min(rawLeft, maxLeft));
+
+    return { top, left: finalLeft, width: desiredWidth };
+  }, [getLiveInputElement]);
 
   const updateDropdownPosition = useCallback(() => {
-    if (!activeInputElement || !dropdownContainerRef.current) return;
-    const rect = activeInputElement.getBoundingClientRect();
-    const desiredWidth = Math.max(370, rect.width);
-    const maxLeft = typeof window !== 'undefined' ? window.innerWidth - desiredWidth - 12 : rect.left;
-    const finalLeft = Math.max(8, Math.min(rect.left, maxLeft));
-    dropdownContainerRef.current.style.top = `${rect.bottom + 4}px`;
-    dropdownContainerRef.current.style.left = `${finalLeft}px`;
-    dropdownContainerRef.current.style.width = `${desiredWidth}px`;
-  }, [activeInputElement]);
+    const coords = getDropdownCoords();
+    if (!coords || !dropdownContainerRef.current) return;
+    dropdownContainerRef.current.style.bottom = '';
+    dropdownContainerRef.current.style.top = `${coords.top}px`;
+    dropdownContainerRef.current.style.left = `${coords.left}px`;
+    dropdownContainerRef.current.style.width = `${coords.width}px`;
+  }, [getDropdownCoords]);
+
+  const scheduleDropdownPositionUpdate = useCallback(() => {
+    if (dropdownPosRafRef.current !== null) return;
+    dropdownPosRafRef.current = requestAnimationFrame(() => {
+      dropdownPosRafRef.current = null;
+      updateDropdownPosition();
+    });
+  }, [updateDropdownPosition]);
+
+  // Handle scrollIntoView and auto-reposition 150ms and 400ms after dropdown opens
+  useEffect(() => {
+    if (focusedRowIndex === null || focusedField === null) {
+      lastScrolledRowIndexRef.current = null;
+      return;
+    }
+
+    const inputEl = getLiveInputElement();
+    if (inputEl) {
+      const row = inputEl.closest('tr') || inputEl;
+      const rect = row.getBoundingClientRect();
+      if (typeof window !== 'undefined' && rect.bottom + 300 > window.innerHeight) {
+        if (lastScrolledRowIndexRef.current !== focusedRowIndex) {
+          lastScrolledRowIndexRef.current = focusedRowIndex;
+          row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      }
+    }
+
+    scheduleDropdownPositionUpdate();
+
+    const timer1 = setTimeout(() => {
+      scheduleDropdownPositionUpdate();
+    }, 150);
+
+    const timer2 = setTimeout(() => {
+      scheduleDropdownPositionUpdate();
+    }, 400);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [focusedRowIndex, focusedField, getLiveInputElement, scheduleDropdownPositionUpdate]);
 
   // RequestAnimationFrame throttled repositioning of suggestions dropdown (no state update per scroll)
   useEffect(() => {
     if (!activeInputElement) return;
-    let rafId: number | null = null;
     const handleScrollOrResize = () => {
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        updateDropdownPosition();
-        rafId = null;
-      });
+      scheduleDropdownPositionUpdate();
     };
 
     window.addEventListener('scroll', handleScrollOrResize, true);
     window.addEventListener('resize', handleScrollOrResize);
 
     return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
+      if (dropdownPosRafRef.current !== null) {
+        cancelAnimationFrame(dropdownPosRafRef.current);
+        dropdownPosRafRef.current = null;
+      }
       window.removeEventListener('scroll', handleScrollOrResize, true);
       window.removeEventListener('resize', handleScrollOrResize);
     };
-  }, [activeInputElement, updateDropdownPosition]);
-
-  const getDropdownStyle = () => {
-    if (!activeInputElement) return {};
-    const rect = activeInputElement.getBoundingClientRect();
-    const desiredWidth = Math.max(370, rect.width);
-    const maxLeft = typeof window !== 'undefined' ? window.innerWidth - desiredWidth - 12 : rect.left;
-    const finalLeft = Math.max(8, Math.min(rect.left, maxLeft));
-    return {
-      position: 'fixed' as const,
-      top: `${rect.bottom + 4}px`,
-      left: `${finalLeft}px`,
-      width: `${desiredWidth}px`,
-      zIndex: 1000000,
-    };
-  };
+  }, [activeInputElement, scheduleDropdownPositionUpdate]);
 
   // Ledger Card Monthly History and Backup States
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
@@ -1564,10 +1489,10 @@ export default function EntrySheet({
   useEffect(() => {
     const handleSync = () => {
       setReceiptConfig({
-        title: localStorage.getItem('gts_receipt_title') || 'GREEN TECH SERVICES',
-        address1: localStorage.getItem('gts_receipt_address1') || 'Jinnah Complax Road',
-        address2: localStorage.getItem('gts_receipt_address2') || 'Sadiqabad',
-        footer: localStorage.getItem('gts_receipt_footer') || 'Thank You For Using Our Services.'
+        title: safeGetStorageItem('gts_receipt_title') || 'GREEN TECH SERVICES',
+        address1: safeGetStorageItem('gts_receipt_address1') || 'Jinnah Complax Road',
+        address2: safeGetStorageItem('gts_receipt_address2') || 'Sadiqabad',
+        footer: safeGetStorageItem('gts_receipt_footer') || 'Thank You For Using Our Services.'
       });
     };
     handleSync();
@@ -1594,44 +1519,89 @@ export default function EntrySheet({
 
 
 
-  // Subeffect to load master clients scoped to the current dealer tenant
+  // Deferred background subscription to master clients scoped to the current dealer tenant
   useEffect(() => {
     if (!isOpen) return;
-    try {
-      const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-      const unsubscribe = pocketbaseService.subscribeClients((data) => {
-        setClients(data);
-      }, tenantId);
-      return () => unsubscribe();
-    } catch (e) {
-      console.warn("Failed to subscribe to clients in EntrySheet:", e);
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    let idleHandle: number | null = null;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+    const startSubscribe = () => {
+      if (cancelled) return;
+      try {
+        const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
+        unsubscribe = pocketbaseService.subscribeClients((data) => {
+          if (cancelled || !Array.isArray(data)) return;
+          setClients(prev => areClientsEqual(prev, data) ? prev : data);
+        }, tenantId);
+      } catch (e) {
+        console.warn("Failed to subscribe to clients in EntrySheet:", e);
+      }
+    };
+
+    if (typeof window !== 'undefined' && typeof (window as any).requestIdleCallback === 'function') {
+      idleHandle = (window as any).requestIdleCallback(startSubscribe, { timeout: 1500 });
+    } else {
+      timeoutHandle = setTimeout(startSubscribe, 1500);
     }
+
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null && typeof (window as any).cancelIdleCallback === 'function') {
+        (window as any).cancelIdleCallback(idleHandle);
+      }
+      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+      if (unsubscribe) unsubscribe();
+    };
   }, [isOpen, currentUser?.uid, currentUser?.role, currentUser?.dealerId]);
 
-  // Real-time listener for Monthly Ledger Sheets History
+  // Deferred background listener for full Monthly Ledger Sheets History (opened folder/sheet fetched on startup)
   useEffect(() => {
     if (!isOpen) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    let idleHandle: number | null = null;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
-    try {
-      const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
-      const unsubscribe = pocketbaseService.subscribeLedgerSheets((data) => {
-        setLedgerHistory(Array.isArray(data) ? data : []);
-        setIsLoadingSheets(false);
-      }, tenantId);
-      return () => unsubscribe();
-    } catch (e) {
-      console.warn("Failed to subscribe historical ledger sheets:", e);
+    const startSubscribe = () => {
+      if (cancelled) return;
+      try {
+        const tenantId = pocketbaseService.getReadTenantId(currentUser as any);
+        unsubscribe = pocketbaseService.subscribeLedgerSheets((data) => {
+          if (cancelled) return;
+          const next = Array.isArray(data) ? data : [];
+          setLedgerHistory(prev => areLedgerSheetsEqual(prev, next) ? prev : next);
+          setIsLoadingSheets(false);
+        }, tenantId);
+      } catch (e) {
+        console.warn("Failed to subscribe historical ledger sheets:", e);
+        if (!cancelled) setIsLoadingSheets(false);
+      }
+    };
+
+    if (typeof window !== 'undefined' && typeof (window as any).requestIdleCallback === 'function') {
+      idleHandle = (window as any).requestIdleCallback(startSubscribe, { timeout: 1500 });
+    } else {
+      timeoutHandle = setTimeout(startSubscribe, 1500);
     }
+
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null && typeof (window as any).cancelIdleCallback === 'function') {
+        (window as any).cancelIdleCallback(idleHandle);
+      }
+      if (timeoutHandle !== null) clearTimeout(timeoutHandle);
+      if (unsubscribe) unsubscribe();
+    };
   }, [isOpen, currentUser?.uid, currentUser?.role, currentUser?.dealerId, activeDealerId]);
 
-
-
-  // Synchronize folders state with browser local storage cache
+  // Synchronize folders state with debounced browser local storage cache
   useEffect(() => {
     if (!isOpen) return;
     const originalScopeId = activeDealerId || currentUser?.uid || 'main';
-    setCachedItemWithMeta(`gts_cache_v3_ledger_folders_${originalScopeId}`, JSON.stringify(folders));
-    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, JSON.stringify(folders));
+    setCachedItemWithMeta(`gts_cache_v3_ledger_folders_${originalScopeId}`, () => JSON.stringify(folders));
+    setCachedItemWithMeta(`gts_ledger_folders_${originalScopeId}`, () => JSON.stringify(folders));
   }, [folders, activeDealerId, currentUser?.uid, isOpen]);
 
   // Sync internal backup states with custom storage changes
@@ -1645,29 +1615,29 @@ export default function EntrySheet({
   }, []);
 
   // Sizing and Layout configuration states (Agy pichy controls)
-  const [showSizingPanel, setShowSizingPanel] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_showSizingPanel');
-    return saved !== null ? saved === 'true' : true;
-  });
+  const [showSizingPanel, setShowSizingPanel] = useState(false);
+  useEffect(() => {
+    setShowSizingPanel(false);
+  }, [isOpen, activeView, loadedSheetId]);
   const [rowPadding, setRowPadding] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_rowPadding');
-    return saved !== null ? parseFloat(saved) : 5.5;
+    const saved = safeGetStorageItem('gts_ledger_rowPadding_v2');
+    return saved !== null ? parseFloat(saved) : 6;
   }); // vertical padding in px/mm
   const [tableFontSize, setTableFontSize] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_tableFontSize');
-    return saved !== null ? parseFloat(saved) : 11.5;
+    const saved = safeGetStorageItem('gts_ledger_tableFontSize_v2');
+    return saved !== null ? parseFloat(saved) : 15;
   }); // in pixels
   const [headerFontSize, setHeaderFontSize] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_headerFontSize');
+    const saved = safeGetStorageItem('gts_ledger_headerFontSize');
     return saved !== null ? parseFloat(saved) : 13;
   }); // in pixels
   const [paperPaddingX, setPaperPaddingX] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_paperPaddingX');
-    return saved !== null ? parseInt(saved) : 10;
+    const saved = safeGetStorageItem('gts_ledger_paperPaddingX');
+    return saved !== null ? parseInt(saved, 10) : 10;
   }); // in mm
   const [paperPaddingY, setPaperPaddingY] = useState(() => {
-    const saved = localStorage.getItem('gts_ledger_paperPaddingY');
-    return saved !== null ? parseInt(saved) : 8;
+    const saved = safeGetStorageItem('gts_ledger_paperPaddingY');
+    return saved !== null ? parseInt(saved, 10) : 8;
   });  // in mm
 
   // Table 1 individual column width states (can be modified back and forth via sliders)
@@ -1688,54 +1658,26 @@ export default function EntrySheet({
   const [showSaveWidthsBar, setShowSaveWidthsBar] = useState(false);
   const [savingWidths, setSavingWidths] = useState(false);
 
+  // Save layout configurations to localStorage on modification (400ms trailing debounce)
   useEffect(() => {
-    if (!currentUser) return;
-    let mounted = true;
-    setWidthsLoading(true);
-    supabaseService.getUserPreferences(currentUser.uid).then((prefs) => {
-      if (!mounted) return;
-      if (prefs && prefs.columnWidths) {
-        const w = prefs.columnWidths;
-        if (w.t1WidthSr) setT1WidthSr(w.t1WidthSr);
-        if (w.t1WidthId) setT1WidthId(w.t1WidthId);
-        if (w.t1WidthName) setT1WidthName(w.t1WidthName);
-        if (w.t1WidthComments) setT1WidthComments(w.t1WidthComments);
-        if (w.t1WidthAmount) setT1WidthAmount(w.t1WidthAmount);
-        if (w.t1WidthCh) setT1WidthCh(w.t1WidthCh);
-        if (w.t2WidthSr) setT2WidthSr(w.t2WidthSr);
-        if (w.t2WidthName) setT2WidthName(w.t2WidthName);
-        if (w.t2WidthAmount) setT2WidthAmount(w.t2WidthAmount);
-        if (w.t2WidthCh) setT2WidthCh(w.t2WidthCh);
-      }
-      setWidthsLoading(false);
-    });
-    return () => { mounted = false; };
-  }, [currentUser]);
-
-  // Save layout configurations to localStorage on modification
-  useEffect(() => {
-    localStorage.setItem('gts_ledger_showSizingPanel', String(showSizingPanel));
-    localStorage.setItem('gts_ledger_rowPadding', String(rowPadding));
-    localStorage.setItem('gts_ledger_tableFontSize', String(tableFontSize));
-    localStorage.setItem('gts_ledger_headerFontSize', String(headerFontSize));
-    localStorage.setItem('gts_ledger_paperPaddingX', String(paperPaddingX));
-    localStorage.setItem('gts_ledger_paperPaddingY', String(paperPaddingY));
+    debouncedSetStorageItem('gts_ledger_rowPadding_v2', String(rowPadding));
+    debouncedSetStorageItem('gts_ledger_tableFontSize_v2', String(tableFontSize));
+    debouncedSetStorageItem('gts_ledger_headerFontSize', String(headerFontSize));
+    debouncedSetStorageItem('gts_ledger_paperPaddingX', String(paperPaddingX));
+    debouncedSetStorageItem('gts_ledger_paperPaddingY', String(paperPaddingY));
   }, [
-    showSizingPanel, rowPadding, tableFontSize, headerFontSize, paperPaddingX, paperPaddingY
+    rowPadding, tableFontSize, headerFontSize, paperPaddingX, paperPaddingY
   ]);
 
   // Zoom & Auto-Fit scaling states: strictly defaults to 'fit' (Auto)
   const [zoomOption, setZoomOption] = useState<'fit' | '100%' | '85%' | '75%'>('fit');
   const [calculatedScale, setCalculatedScale] = useState(1);
+  const [paperHeight, setPaperHeight] = useState(1122.5);
   const [isInputFocused, setIsInputFocused] = useState(false);
 
   // Remove any legacy saved zoomOption key so every fresh session forces 'fit' (Auto) mode by default
   useEffect(() => {
-    try {
-      localStorage.removeItem('gts_ledger_zoomOption');
-    } catch (e) {
-      // ignore
-    }
+    safeRemoveStorageItem('gts_ledger_zoomOption');
   }, []);
 
   const paperContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1757,6 +1699,7 @@ export default function EntrySheet({
 
   const handlePaperBlur = (e: React.FocusEvent) => {
     const currentTarget = e.currentTarget;
+    flushPendingStorageWrites();
     if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
     blurTimeoutRef.current = setTimeout(() => {
       if (!currentTarget || !currentTarget.contains(document.activeElement)) {
@@ -1767,13 +1710,23 @@ export default function EntrySheet({
 
   const [receiptPanelReady, setReceiptPanelReady] = useState(false);
   const currentScaleRef = useRef(1);
+  const currentPaperHeightRef = useRef(1122.5);
 
   useEffect(() => {
     let rafId: number | null = null;
 
     const computeScale = () => {
+      const paperEl = paperContainerRef.current;
+      const measuredPaperHeight = paperEl
+        ? Math.max(1122.5, paperEl.scrollHeight || paperEl.offsetHeight || 1122.5)
+        : 1122.5;
+      if (Math.abs(measuredPaperHeight - currentPaperHeightRef.current) > 1) {
+        currentPaperHeightRef.current = measuredPaperHeight;
+        setPaperHeight(measuredPaperHeight);
+      }
+
       let baseScale = 1;
-      
+
       if (zoomOption !== 'fit') {
         if (zoomOption === '100%') baseScale = 1.0;
         else if (zoomOption === '85%') baseScale = 0.85;
@@ -1795,14 +1748,10 @@ export default function EntrySheet({
         const safeWidth = Math.max(150, availableWidth - padX);
         const safeHeight = Math.max(150, availableHeight - padY);
 
-        const paperEl = paperContainerRef.current;
         const paperWidth = paperEl ? Math.max(793.7, paperEl.offsetWidth || 793.7) : 793.7;
-        const scrollH = paperEl ? paperEl.scrollHeight : 0;
-        const offsetH = paperEl ? paperEl.offsetHeight : 0;
-        const paperHeight = paperEl ? Math.max(1122.5, scrollH || offsetH || 1122.5) : 1122.5;
 
         const fitScaleWidth = safeWidth / paperWidth;
-        const fitScaleHeight = safeHeight / paperHeight;
+        const fitScaleHeight = safeHeight / measuredPaperHeight;
 
         baseScale = Math.min(fitScaleWidth, fitScaleHeight);
         baseScale = Math.max(0.18, Math.min(1.0, baseScale * 0.96));
@@ -1854,9 +1803,9 @@ export default function EntrySheet({
   }, [zoomOption, isLocked, isOpen, showSizingPanel, showHistoryPanel, isInputFocused, activeView, rowPadding, tableFontSize, headerFontSize, paperPaddingY, paperPaddingX]);
 
   // Function to reset all lines & boxes sizing parameters to default
-  const resetSizingToDefault = async () => {
-    setRowPadding(5.5);
-    setTableFontSize(11.5);
+  const resetSizingToDefault = useCallback(async () => {
+    setRowPadding(6);
+    setTableFontSize(15);
     setHeaderFontSize(13);
     setPaperPaddingX(10);
     setPaperPaddingY(8);
@@ -1870,14 +1819,16 @@ export default function EntrySheet({
     setT2WidthName(490);
     setT2WidthAmount(120);
     setT2WidthCh(40);
-    
-    localStorage.removeItem('gts_ledger_showSizingPanel');
-    localStorage.removeItem('gts_ledger_rowPadding');
-    localStorage.removeItem('gts_ledger_tableFontSize');
-    localStorage.removeItem('gts_ledger_headerFontSize');
-    localStorage.removeItem('gts_ledger_paperPaddingX');
-    localStorage.removeItem('gts_ledger_paperPaddingY');
-    
+
+    safeRemoveStorageItem('gts_ledger_showSizingPanel');
+    safeRemoveStorageItem('gts_ledger_rowPadding');
+    safeRemoveStorageItem('gts_ledger_tableFontSize');
+    safeRemoveStorageItem('gts_ledger_rowPadding_v2');
+    safeRemoveStorageItem('gts_ledger_tableFontSize_v2');
+    safeRemoveStorageItem('gts_ledger_headerFontSize');
+    safeRemoveStorageItem('gts_ledger_paperPaddingX');
+    safeRemoveStorageItem('gts_ledger_paperPaddingY');
+
     if (currentUser) {
       try {
         const prefs = await supabaseService.getUserPreferences(currentUser.uid) || {};
@@ -1889,7 +1840,7 @@ export default function EntrySheet({
     }
 
     toast.success("Sizing and column widths restored to defaults and permanently saved!");
-  };
+  }, [currentUser]);
 
   const saveColumnWidths = async () => {
     if (!currentUser) return;
@@ -2002,10 +1953,11 @@ export default function EntrySheet({
     });
   }, [activeSheetIdx, sheets.length]);
 
-  // Flush live state before unmounting / navigating away
+  // Flush live state and pending storage writes before unmounting / navigating away
   useEffect(() => {
     return () => {
       flushLiveSheetState();
+      flushPendingStorageWrites();
     };
   }, [flushLiveSheetState]);
 
@@ -2215,7 +2167,7 @@ export default function EntrySheet({
   const saveReceiptCodeToDb = async (code: string) => {
     try {
       if (code) {
-        localStorage.setItem(`last_receipt_code_${activeDealerId || 'main'}`, code);
+        debouncedSetStorageItem(`last_receipt_code_${activeDealerId || 'main'}`, code);
       }
     } catch (e) {
       console.warn("Could not store receipt code:", e);
@@ -2223,11 +2175,9 @@ export default function EntrySheet({
   };
 
   const handleSaveSheet = async () => {
+    if (isSavingSheetRef.current || isSavingSheet) return;
     flushLiveSheetState();
-    if (!pocketbaseService.isBillingFresh || !foldersFreshRef.current || !folderMonthsFreshRef.current) {
-      toast.error("Latest data is still syncing, please wait a few seconds");
-      return;
-    }
+    flushPendingStorageWrites();
     if (isLocked) {
       toast.error("🔒 SYSTEM SECURED", { description: "Please unlock the Billing Security Shield first." });
       return;
@@ -2300,10 +2250,42 @@ export default function EntrySheet({
       return;
     }
 
+    isSavingSheetRef.current = true;
     setIsSavingSheet(true);
-    const savingToastId = toast.loading("Saving sheet and synchronizing recovery entries...");
+    let savingToastId: string | number | undefined;
+    let usedStaleOk = false;
 
     try {
+      const freshNow =
+        pocketbaseService.getBillingFresh() &&
+        foldersFreshRef.current &&
+        folderMonthsFreshRef.current;
+
+      if (!freshNow && !staleOkRef.current) {
+        const waitToastId = toast.loading("Syncing latest data...");
+        try {
+          await waitForFresh(6000);
+        } catch {
+          toast.dismiss(waitToastId);
+          toast.error("Latest data is still syncing", {
+            description: "Your entries were kept safe. Retry sync and try saving again.",
+            action: {
+              label: "Retry sync",
+              onClick: () => triggerResync('resync')
+            },
+            duration: 8000
+          });
+          return;
+        } finally {
+          toast.dismiss(waitToastId);
+        }
+      }
+
+      usedStaleOk =
+        !(pocketbaseService.getBillingFresh() && foldersFreshRef.current && folderMonthsFreshRef.current) &&
+        staleOkRef.current;
+
+      savingToastId = toast.loading("Saving sheet and synchronizing recovery entries...");
       const sheetPayloads: any[] = [];
       const payloadSourceIdx: number[] = [];
       const savedSheetsToLocal: any[] = [];
@@ -3166,6 +3148,10 @@ export default function EntrySheet({
           });
         }
 
+        if (usedStaleOk) {
+          toast.warning("Saved using last synced data; changes are checked for conflicts");
+        }
+
         // Show warnings for unregistered and ambiguous name entries
         if (unmatchedNames.size > 0) {
           toast.warning(`Not found in Client Management, not synced to billing: ${Array.from(unmatchedNames).join(', ')}`);
@@ -3204,7 +3190,10 @@ export default function EntrySheet({
         });
       }
     } finally {
-      toast.dismiss(savingToastId);
+      if (savingToastId !== undefined) {
+        toast.dismiss(savingToastId);
+      }
+      isSavingSheetRef.current = false;
       setIsSavingSheet(false);
     }
   };
@@ -3559,20 +3548,35 @@ export default function EntrySheet({
   };
 
 
-  // Render nothing if closed
-  if (!isOpen) return null;
-
   // Workspace and Editor Loading indicators
   const isEditorWaitingForSheet = activeView === 'editor' && (!sheets || sheets.length === 0 || sheets[activeSheetIdx]?.id !== urlSheetId);
   const isWorkspaceLoading = isLoadingSheets || isEditorWaitingForSheet;
 
-  // Calculators
-  const totalAmount1 = table1Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-  const totalAmount2 = table2Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  // Calculators (memoized so stable primitives are passed to EditorToolbar)
+  const totalAmount1 = useMemo(
+    () => table1Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0),
+    [table1Rows]
+  );
+  const totalAmount2 = useMemo(
+    () => table2Rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0),
+    [table2Rows]
+  );
+  const rowsFilledCount = useMemo(
+    () => table1Rows.filter(r => r.cId || r.name || r.amount > 0).length,
+    [table1Rows]
+  );
 
   // Edit helper for Table 1
   const handleT1Change = useCallback((index: number, field: keyof Table1Row, value: any) => {
     if (isLocked) return;
+    if (
+      field === 'name' &&
+      selectionLockRef.current &&
+      selectionLockRef.current.index === index &&
+      Date.now() < selectionLockRef.current.until
+    ) {
+      return;
+    }
     const start = performance.now();
     setTable1Rows(prevRows => {
       const updated = [...prevRows];
@@ -3627,7 +3631,7 @@ export default function EntrySheet({
       return updated;
     });
     logPerf(`handleT1Change (${field})`, start);
-  }, [isLocked, logPerf]);
+  }, [isLocked]);
 
   // Edit helper for Table 2
   const handleT2Change = useCallback((index: number, field: keyof Table2Row, value: any) => {
@@ -3643,32 +3647,49 @@ export default function EntrySheet({
       return updated;
     });
     logPerf(`handleT2Change (${field})`, start);
-  }, [isLocked, logPerf]);
+  }, [isLocked]);
 
   const handleFocusField = useCallback((index: number, field: 'name' | 'amount', currentVal: string, element: HTMLInputElement) => {
+    if (blurResetTimerRef.current) {
+      clearTimeout(blurResetTimerRef.current);
+      blurResetTimerRef.current = null;
+    }
     setFocusedRowIndex(index);
     setFocusedField(field);
     setActiveInputElement(element);
     if (field === 'name') {
-      setSearchQuery(currentVal);
-      setHasTypedSinceFocus(false);
+      suggestionsDropdownRef.current?.setSearchState(currentVal, false);
     }
   }, []);
 
   const handleBlurField = useCallback(() => {
-    setTimeout(() => {
+    flushPendingStorageWrites();
+    if (blurResetTimerRef.current) {
+      clearTimeout(blurResetTimerRef.current);
+    }
+    blurResetTimerRef.current = setTimeout(() => {
+      if (document.activeElement && document.activeElement !== document.body && document.activeElement.tagName === 'INPUT') {
+        return;
+      }
       setFocusedRowIndex(null);
       setFocusedField(null);
       setActiveInputElement(null);
+      blurResetTimerRef.current = null;
     }, 250);
   }, []);
 
   const handleSearchQueryChange = useCallback((val: string) => {
-    setSearchQuery(val);
-    setHasTypedSinceFocus(true);
-  }, []);
+    suggestionsDropdownRef.current?.setSearchState(val, true);
+    scheduleDropdownPositionUpdate();
+  }, [scheduleDropdownPositionUpdate]);
 
   const proceedSelectSuggestion = useCallback((index: number, client: any) => {
+    if (blurResetTimerRef.current) {
+      clearTimeout(blurResetTimerRef.current);
+      blurResetTimerRef.current = null;
+    }
+    selectionLockRef.current = { index, until: Date.now() + 600 };
+
     const matchingActiveRow = activeRows?.find(r => 
       (r.username && r.username.toLowerCase() === client.username?.toLowerCase()) || 
       (r.clientId && r.clientId.toLowerCase() === client.id?.toLowerCase())
@@ -3695,13 +3716,28 @@ export default function EntrySheet({
       }
     }
 
+    const rawFoundName = (
+      client.name ||
+      client.fullName ||
+      client.full_name ||
+      client.clientName ||
+      matchingActiveRow?.name ||
+      ''
+    );
+    const resolvedName = typeof rawFoundName === 'string' ? rawFoundName.trim() : String(rawFoundName || '').trim();
+
+    if (!resolvedName) {
+      toast.error('This customer has no name saved');
+    }
+
     setTable1Rows(prev => {
       const updated = [...prev];
       if (!updated[index]) return prev;
+      const finalName = resolvedName || updated[index].name;
       updated[index] = {
         ...updated[index],
-        cId: focusedField === 'name' ? '' : (client.username || client.id || ''),
-        name: client.name || '',
+        cId: '',
+        name: finalName,
         amount: amount,
         originalAmount: amount,
         clientId: client.id || '',
@@ -3713,9 +3749,9 @@ export default function EntrySheet({
     
     setFocusedRowIndex(null);
     setFocusedField(null);
-    setSearchQuery('');
+    suggestionsDropdownRef.current?.setSearchState('', false);
     setActiveInputElement(null);
-  }, [activeRows, focusedField]);
+  }, [activeRows]);
 
   const handleSelectSuggestion = useCallback((index: number, client: any) => {
     if (isLocked) return;
@@ -3769,7 +3805,7 @@ export default function EntrySheet({
 
     proceedSelectSuggestion(index, client);
     logPerf('handleSelectSuggestion', start);
-  }, [isLocked, flushLiveSheetState, sheets, activeSheetIdx, sheetFolderMap, ledgerHistory, table1Rows, proceedSelectSuggestion, logPerf]);
+  }, [isLocked, flushLiveSheetState, sheets, activeSheetIdx, sheetFolderMap, ledgerHistory, table1Rows, proceedSelectSuggestion]);
 
   // Memoized search index for ultra-fast customer autocomplete
   const suggestionsIndex = useMemo(() => {
@@ -3821,40 +3857,100 @@ export default function EntrySheet({
     return sourceList;
   }, [clients, activeRows]);
 
-  const deferredSearchQuery = useDeferredValue(searchQuery);
-
-  const filteredSuggestions = useMemo(() => {
-    if (focusedRowIndex === null || focusedField === null) return [];
-    let q = deferredSearchQuery.trim().toLowerCase();
-    if (q.startsWith('@')) {
-      q = q.substring(1);
-    }
-    const isShowingCurrentValue = !hasTypedSinceFocus;
-    if (!q || isShowingCurrentValue) {
-      return suggestionsIndex.slice(0, 8);
-    }
-    const results: any[] = [];
-    for (let i = 0; i < suggestionsIndex.length; i++) {
-      const c = suggestionsIndex[i];
-      if (
-        (c._lowerName && c._lowerName.includes(q)) ||
-        (c._lowerUsername && c._lowerUsername.includes(q)) ||
-        (c._lowerId && c._lowerId.includes(q))
-      ) {
-        results.push(c);
-        if (results.length >= 8) break;
+  useLayoutEffect(() => {
+    if (activeInputElement && !activeInputElement.isConnected) {
+      const live = getLiveInputElement();
+      if (live) {
+        setActiveInputElement(live);
       }
     }
-    return results;
-  }, [suggestionsIndex, deferredSearchQuery, hasTypedSinceFocus, focusedRowIndex, focusedField]);
+    updateDropdownPosition();
+  }, [activeInputElement, focusedRowIndex, focusedField, updateDropdownPosition, getLiveInputElement]);
 
-  const getFilteredSuggestions = (_field: 'cId' | 'name' | 'amount' | null, _queryValue: string) => {
-    return filteredSuggestions;
-  };
-
-  const handlePrint = () => {
+  const handlePrint = useCallback(() => {
     window.print();
-  };
+  }, []);
+
+  const handleSelectZoom = useCallback((zOpt: 'fit' | '100%' | '85%' | '75%') => {
+    setZoomOption(zOpt);
+    debouncedSetStorageItem('gts_ledger_zoomOption', zOpt);
+    toast.success(`Zoom adjusted to ${zOpt.toUpperCase()}`);
+  }, []);
+
+  const handleToggleSizing = useCallback(() => {
+    setShowSizingPanel(prev => !prev);
+  }, []);
+
+  const handleToggleHistory = useCallback(() => {
+    setShowHistoryPanel(prev => !prev);
+  }, []);
+
+  const handleCloseHistoryPanel = useCallback(() => {
+    setShowHistoryPanel(false);
+  }, []);
+
+  const handleNavigateFolders = useCallback(() => {
+    if (openedFolderId) {
+      navigate(`${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${openedFolderId}`);
+    } else {
+      navigate(initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet');
+    }
+  }, [openedFolderId, initialShowUserLedger, navigate]);
+
+  const handleTriggerResync = useCallback(() => {
+    triggerResync('resync');
+  }, [triggerResync]);
+
+  const handleShowSaveWidthsBar = useCallback(() => {
+    setShowSaveWidthsBar(true);
+  }, []);
+
+  const handleCloseReceiptPanel = useCallback(() => {
+    setReceiptPanelReady(false);
+    setIsReceiptSwipeOpen(false);
+  }, []);
+
+  const handleHoldReceipt = useCallback(() => {
+    setReceiptPanelReady(false);
+    setIsReceiptSwipeOpen(false);
+    setIsPendingReceipt(true);
+    toast.info('Receipt placed on Hold. Click the floating pending badge to resume.');
+  }, []);
+
+  const handleRegenerateReceiptCode = useCallback(() => {
+    setCurrentReceiptCode(Math.random().toString(36).substring(2, 12).toUpperCase());
+  }, []);
+
+  const handleCancelTerminateMonth = useCallback(() => {
+    setShowTerminateMonthModal(false);
+  }, []);
+
+  const handleCloseFolderSettings = useCallback(() => {
+    setSettingsFolderId(null);
+  }, []);
+
+  const handleSaveFolderSettings = useCallback(() => {
+    const cleanName = editFolderName.trim();
+    if (!cleanName) {
+      toast.error("Folder name cannot be empty");
+      return;
+    }
+    const folderExists = folders.some(f => f.id !== settingsFolderId && f.name.toLowerCase() === cleanName.toLowerCase());
+    if (folderExists) {
+      toast.error("A folder with this name already exists");
+      return;
+    }
+    const newFolders = folders.map(f => f.id === settingsFolderId ? { ...f, name: cleanName, connectedMonthId: editConnectedMonthId } : f);
+    setFolders(newFolders);
+    saveFoldersToDb(newFolders);
+
+    const nextFolderMonthMap = { ...folderMonthMap, [settingsFolderId!]: editConnectedMonthId };
+    setFolderMonthMap(nextFolderMonthMap);
+    saveFolderMonthMapToDb(nextFolderMonthMap);
+
+    toast.success("Folder settings saved successfully!");
+    setSettingsFolderId(null);
+  }, [editFolderName, editConnectedMonthId, folders, settingsFolderId, folderMonthMap]);
 
   const exportUserLedgerToPDF = (resultsArray: any[]) => {
     if (resultsArray.length === 0) {
@@ -4440,15 +4536,8 @@ export default function EntrySheet({
         {!openedFolderId ? (
           /* ================= ROOT DIRECTORY (PC DESKTOP FOLDERS) ================= */
           <div className="flex flex-col gap-4 text-left">
-            {isLoadingFolders && folders.length === 0 ? (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-2.5 sm:gap-3">
-                {[1, 2, 3, 4, 5].map((idx) => (
-                  <div key={idx} className="animate-pulse p-3 flex flex-col items-center gap-2">
-                    <div className="w-20 h-14 bg-slate-200 dark:bg-slate-800 rounded-xl" />
-                    <div className="w-14 h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
-                  </div>
-                ))}
-              </div>
+            {showFoldersSkeleton ? (
+              <FoldersGridSkeleton />
             ) : (
               /* Folders grid styled as real PC drive folder icons */
               <div className="mt-1">
@@ -4661,11 +4750,10 @@ export default function EntrySheet({
 
 
           </div>
-        ) : (isLoadingFolders && folders.length === 0) ? (
-          /* Loading folder state or not found */
-          <div className="flex flex-col items-center justify-center p-12 text-center min-h-[300px] w-full bg-transparent">
-            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
-            <p className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Loading directory content...</p>
+        ) : showFoldersSkeleton ? (
+          /* Loading folder state */
+          <div className="w-full min-h-[300px]">
+            <SkTable rows={6} cols={5} className="min-h-[300px]" />
           </div>
         ) : !activeFolder ? (
           /* Folder not found */
@@ -4700,8 +4788,9 @@ export default function EntrySheet({
                 </div>
               </motion.div>
 
-              {/* List of Sheet Cards configured as folder-like details */}
-              {openedFolderSheets.length === 0 ? (
+              {showSheetListSkeleton ? (
+                <div className="col-span-full"><SheetListSkeleton /></div>
+              ) : openedFolderSheets.length === 0 ? (
                 <div className="col-span-full py-16 text-center flex flex-col items-center justify-center gap-2 bg-slate-50/50 dark:bg-slate-900/10 rounded-3xl border border-dashed border-slate-200 dark:border-white/10">
                   <FileText className="w-8 h-8 text-slate-300 dark:text-slate-700 stroke-[1.8] animate-bounce" />
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none mt-1">
@@ -4815,6 +4904,8 @@ export default function EntrySheet({
     );
   };
 
+  if (!isOpen) return null;
+
   return createPortal(
     <>
       <motion.div 
@@ -4827,180 +4918,27 @@ export default function EntrySheet({
           showUserLedger ? renderUserLedger() : renderDashboard()
         ) : (
           <>
-            {/* Full-Width Workspace Premium Navbar (Replaces the floating right toolbar) */}
-            <div className="w-full bg-[#fcfcfc] dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shadow-sm px-3 sm:px-6 py-1.5 sm:py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-4 z-[310] print:hidden shrink-0 select-none">
-              {/* Left Block */}
-              <div className="flex items-center justify-between sm:justify-start gap-2 w-full sm:w-auto shrink-0">
-                <button
-                  onClick={onClose}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 active:scale-95 border border-slate-200 dark:border-slate-700 cursor-pointer"
-                >
-                  <ChevronLeft size={14} className="text-blue-500" />
-                  Portal
-                </button>
-                <button
-                  onClick={() => {
-                    if (openedFolderId) {
-                      navigate(`${initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet'}/folder/${openedFolderId}`);
-                    } else {
-                      navigate(initialShowUserLedger ? '/billingmod/ledger' : '/billingmod/entrysheet');
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-455 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 active:scale-95 border border-blue-200 dark:border-blue-900/50 cursor-pointer"
-                >
-                  <Folder size={12} className="stroke-[2.5]" />
-                  Folders Dashboard
-                </button>
-                <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 hidden sm:block" />
-                <div>
-                  <h2 className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${isLocked ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                Ledger Workspace
-              </h2>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <p className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest hidden sm:block">A4 PRINT-READY INTEGRATION CONSOLE</p>
-                <div className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-700 hidden sm:block" />
-                {isLocked ? (
-                  <span className="inline-flex items-center gap-1 px-1 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[7.5px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                    <Shield size={8} />
-                    Locked
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-1 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[7.5px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-                    <Check size={8} />
-                    Unlocked
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Middle Block: Live statistics feedback */}
-          <div className="flex items-center gap-4 text-[10px] bg-slate-50/50 dark:bg-slate-950/40 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 hidden lg:flex">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[8px] font-bold text-slate-405 dark:text-slate-500 uppercase tracking-widest">ROWS FILLED</span>
-              <span className="font-extrabold text-[#0f172a] dark:text-slate-100">
-                {table1Rows.filter(r => r.cId || r.name || r.amount > 0).length} / 22
-              </span>
-            </div>
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800" />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[8px] font-bold text-slate-405 dark:text-slate-500 uppercase tracking-widest">COLLECTED TOTAL</span>
-              <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">
-                Rs. {totalAmount1.toLocaleString()}
-              </span>
-            </div>
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800" />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[8px] font-bold text-slate-405 dark:text-slate-500 uppercase tracking-widest">AUXILIARY AMNT</span>
-              <span className="font-mono font-black text-blue-600 dark:text-blue-400">
-                Rs. {totalAmount2.toLocaleString()}
-              </span>
-            </div>
-          </div>
-
-          {/* Right Block: Main controller actions */}
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end overflow-x-auto scrollbar-none pb-1 sm:pb-0 shrink-0">
-            {/* Viewport Scale Control */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-950 rounded-xl p-0.5 border border-slate-250 dark:border-white/10 text-[9px] font-black uppercase shrink-0">
-              <span className="text-slate-400 dark:text-slate-500 px-1.5 font-black text-[8px]">ZOOM</span>
-              {(['fit', '100%', '85%', '75%'] as const).map((zOpt) => (
-                <button
-                  key={zOpt}
-                  onClick={() => {
-                    setZoomOption(zOpt);
-                    localStorage.setItem('gts_ledger_zoomOption', zOpt);
-                    toast.success(`Zoom adjusted to ${zOpt.toUpperCase()}`);
-                  }}
-                  className={`px-2 py-1 rounded-lg font-extrabold cursor-pointer transition-all border-none ${
-                    zoomOption === zOpt 
-                      ? 'bg-brand-accent text-white shadow-sm' 
-                      : 'text-slate-600 dark:text-slate-350 hover:text-slate-900 dark:hover:text-white bg-transparent'
-                  }`}
-                >
-                  {zOpt === 'fit' ? 'Auto' : zOpt}
-                </button>
-              ))}
-            </div>
-
-            {/* Sizing Toggle */}
-            <button
-              onClick={() => setShowSizingPanel(!showSizingPanel)}
-              className={`p-2 rounded-xl border text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all flex items-center gap-1 ${
-                showSizingPanel 
-                  ? 'bg-brand-accent border-brand-accent text-white shadow-md shadow-brand-accent/20' 
-                  : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-705 border-slate-200 dark:border-slate-705 text-slate-700 dark:text-slate-300'
-              }`}
-              title="Toggle Sizing and Column Width Sliders"
-            >
-              <SlidersHorizontal size={12} />
-              <span className="hidden md:inline">Sizing</span>
-            </button>
-
-            {/* Auto Fill outstanding from Active Monthly accounts */}
-            <button
-              onClick={autoFillFromDb}
-              className="p-2 rounded-xl bg-brand-accent/10 dark:bg-brand-accent/20 hover:bg-brand-accent/20 text-brand-accent border border-brand-accent/20 text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all flex items-center gap-1 shrink-0"
-              title="Auto Fill Accounts needing Recovery"
-            >
-              <RefreshCw size={12} className="text-brand-accent" />
-              <span>Fill</span>
-            </button>
-
-            {/* Print */}
-            <button
-              onClick={handlePrint}
-              className="p-2 rounded-xl bg-brand-accent hover:opacity-90 text-white text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all shadow-md shadow-brand-accent/15 flex items-center gap-1 border-none"
-              title="Print to Paper or save PDF"
-            >
-              <Printer size={12} />
-              <span>Print</span>
-            </button>
-
-            {/* Registry History */}
-            <button
-              onClick={() => setShowHistoryPanel(!showHistoryPanel)}
-              className={`p-2 rounded-xl border text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all flex items-center gap-1 ${
-                showHistoryPanel 
-                  ? 'bg-brand-accent border-brand-accent text-white shadow-md shadow-brand-accent/20' 
-                  : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-705 border-slate-200 dark:border-slate-705 text-slate-700 dark:text-slate-300'
-              }`}
-              title="Toggle Historical Month Registry Logs"
-            >
-              <History size={12} />
-              <span>History</span>
-            </button>
-
-            {/* Syncing status label if not fresh */}
-            {!isDataFresh && (
-              <span className="text-[10px] text-amber-500 font-bold flex items-center gap-1 animate-pulse px-1" title="Syncing fresh data from cloud database...">
-                <RefreshCw size={10} className="animate-spin" />
-                Syncing latest data...
-              </span>
-            )}
-
-            {/* Save active sheet */}
-            <button
-              onClick={handleSaveSheet}
-              disabled={isSavingSheet || !isDataFresh}
-              className={`p-2 rounded-xl text-white text-[9px] font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-1 border-none ${isSavingSheet || !isDataFresh ? 'bg-emerald-600/50 cursor-not-allowed opacity-60' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer active:scale-95'}`}
-              title="Commit active sheet to historical database logs"
-            >
-              {isSavingSheet ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              <span>{isSavingSheet ? 'Saving...' : 'Save'}</span>
-            </button>
-
-            {/* Reset blank */}
-            <button
-              onClick={() => setShowConfirmResetModal(true)}
-              className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-750 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[9px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all flex items-center gap-1"
-              title="Reset fields of current sheet"
-            >
-              <Trash2 size={12} />
-              <span className="hidden sm:inline">Reset</span>
-            </button>
-          </div>
-        </div>
+            <EditorToolbar
+              onClose={onClose}
+              onNavigateFolders={handleNavigateFolders}
+              isLocked={isLocked}
+              rowsFilledCount={rowsFilledCount}
+              totalAmount1={totalAmount1}
+              totalAmount2={totalAmount2}
+              zoomOption={zoomOption}
+              onSelectZoom={handleSelectZoom}
+              showSizingPanel={showSizingPanel}
+              onToggleSizing={handleToggleSizing}
+              onPrint={handlePrint}
+              showHistoryPanel={showHistoryPanel}
+              onToggleHistory={handleToggleHistory}
+              isDataFresh={isDataFresh}
+              staleOk={staleOk}
+              isSyncSlow={isSyncSlow}
+              onTriggerResync={handleTriggerResync}
+              isSavingSheet={isSavingSheet}
+              onSaveSheet={handleSaveSheet}
+            />
 
         {/* CSS to overlay print and target only the A4 container physically */}
         <style dangerouslySetInnerHTML={{ __html: `
@@ -5151,233 +5089,63 @@ export default function EntrySheet({
           }
         `}} />
 
-        {isWorkspaceLoading && (!sheets || sheets.length === 0) ? (
-          <div className="flex-1 w-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-12 text-center min-h-[500px]">
-            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Loading ledger workspace details...</p>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-widest font-semibold">Synchronizing with secure cloud cluster</p>
-          </div>
+        {showWorkspaceSkeleton ? (
+          <A4SheetSkeleton
+            calculatedScale={calculatedScale}
+            paperPaddingX={paperPaddingX}
+            paperPaddingY={paperPaddingY}
+            headerFontSize={headerFontSize}
+            rowPadding={rowPadding}
+            tableFontSize={tableFontSize}
+            t1WidthSr={t1WidthSr}
+            t1WidthId={t1WidthId}
+            t1WidthName={t1WidthName}
+            t1WidthComments={t1WidthComments}
+            t1WidthAmount={t1WidthAmount}
+            t1WidthCh={t1WidthCh}
+            t2WidthSr={t2WidthSr}
+            t2WidthName={t2WidthName}
+            t2WidthAmount={t2WidthAmount}
+            t2WidthCh={t2WidthCh}
+          />
         ) : (
           <>
             {/* Main Integrated Workspace (No more double screen scrolling or nested popups!) */}
             <div className="flex-1 w-full flex flex-row items-stretch overflow-hidden print:block print:p-0 print:overflow-visible print:h-auto relative">
-          {/* Left Inline Sizing Designer Panel with custom enter animations */}
           <AnimatePresence mode="popLayout">
           {showSizingPanel && (
-            <motion.div 
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: window.innerWidth < 1024 ? (window.innerWidth - 32) : 280 }}
-              exit={{ opacity: 0, width: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className={`bg-[#fdfdfd] dark:bg-slate-900 border-r border-slate-205 dark:border-white/10 p-4 overflow-y-auto shrink-0 print:hidden h-full text-slate-850 dark:text-slate-100 select-none text-left scrollbar-thin flex flex-col gap-3 font-mono z-[400] ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 left-0 shadow-2xl max-w-full' : 'relative w-[280px]'}`}
-            >
-                
-                <div className="flex items-center justify-between pb-2.5 border-b border-slate-150 dark:border-white/10 mb-3">
-                  <div className="flex items-center gap-1.5">
-                    <Settings2 className="w-4 h-4 text-brand-accent animate-spin-slow" />
-                    <span className="text-[10px] font-black uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc]">Sizing Designer</span>
-                  </div>
-                  <button 
-                    onClick={resetSizingToDefault}
-                    className="flex items-center gap-0.5 text-[8px] font-black text-slate-400 hover:text-brand-accent transition-colors cursor-pointer border-none bg-transparent"
-                    title="Reset to default sizes"
-                  >
-                    <RotateCcw className="w-2.5 h-2.5" />
-                    RESET
-                  </button>
-                </div>
-
-                {/* Spacing & Scaling Slider Section */}
-                <div className="space-y-2.5">
-                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Row padding</span>
-                      <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{rowPadding}px</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="1" 
-                      max="14" 
-                      step="0.5"
-                      value={rowPadding} 
-                      onChange={(e) => setRowPadding(parseFloat(e.target.value))}
-                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent mt-1.5"
-                    />
-                    <span className="text-[7.5px] text-slate-450 leading-none block mt-1">Squeeze padding to fit lines on one page.</span>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Table Font Size</span>
-                      <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{tableFontSize}px</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="8" 
-                      max="15" 
-                      step="0.5"
-                      value={tableFontSize} 
-                      onChange={(e) => setTableFontSize(parseFloat(e.target.value))}
-                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent mt-1.5"
-                    />
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Header Font Size</span>
-                      <span className="font-mono text-brand-accent bg-brand-accent/10 dark:bg-brand-accent/20 px-1 py-0.5 rounded text-[9px] font-bold">{headerFontSize}px</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="10" 
-                      max="22" 
-                      step="0.5"
-                      value={headerFontSize} 
-                      onChange={(e) => setHeaderFontSize(parseFloat(e.target.value))}
-                      className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent mt-1.5"
-                    />
-                    <span className="text-[7.5px] text-slate-450 leading-none block mt-1">Scale top header fields (OFFICER, AREA, DATE).</span>
-                  </div>
-
-                  {/* Page Margins Controllers */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
-                      <span className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider block mb-1">Top Margin</span>
-                      <span className="text-[8px] font-mono text-brand-accent block mb-1">{paperPaddingY}mm</span>
-                      <input 
-                        type="range" 
-                        min="2" 
-                        max="22" 
-                        value={paperPaddingY} 
-                        onChange={(e) => setPaperPaddingY(parseInt(e.target.value))}
-                        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent"
-                      />
-                    </div>
-                    <div className="p-2 bg-slate-50/70 dark:bg-slate-900/40 rounded-xl border border-slate-100/80 dark:border-white/10 shadow-sm">
-                      <span className="text-[8.5px] font-black uppercase text-slate-500 tracking-wider block mb-1">Side Margin</span>
-                      <span className="text-[8px] font-mono text-brand-accent block mb-1">{paperPaddingX}mm</span>
-                      <input 
-                        type="range" 
-                        min="2" 
-                        max="22" 
-                        value={paperPaddingX} 
-                        onChange={(e) => setPaperPaddingX(parseInt(e.target.value))}
-                        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-accent"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Table 1 Grid lines */}
-                  <div className="border-t border-slate-150 dark:border-white/10 pt-2.5 mt-1">
-                    <span className="text-[9.5px] font-black uppercase tracking-wider text-[#0f172a] dark:text-[#f1f5f9] block mb-2">
-                      Table 1 Grid Lines (Col Width)
-                    </span>
-                    
-                    <div className="space-y-1.5 text-[8.5px] font-bold text-slate-500">
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
-                          <span>Sr column</span>
-                          <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthSr}px</span>
-                        </div>
-                        <input 
-                          type="range" min="20" max="80" value={t1WidthSr} 
-                          onChange={(e) => { setT1WidthSr(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
-                        />
-                      </div>
-
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
-                          <span>Customer ID col</span>
-                          <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthId}px</span>
-                        </div>
-                        <input 
-                          type="range" min="40" max="150" value={t1WidthId} 
-                          onChange={(e) => { setT1WidthId(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
-                        />
-                      </div>
-
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
-                          <span>Name col</span>
-                          <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthName}px</span>
-                        </div>
-                        <input 
-                          type="range" min="100" max="380" value={t1WidthName} 
-                          onChange={(e) => { setT1WidthName(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
-                        />
-                      </div>
-
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
-                          <span>Comments/Phone col</span>
-                          <span className="font-mono text-slate-650 dark:text-slate-400">{t1WidthComments}px</span>
-                        </div>
-                        <input 
-                          type="range" min="100" max="350" value={t1WidthComments} 
-                          onChange={(e) => { setT1WidthComments(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
-                        />
-                      </div>
-
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
-                          <span>Amount col</span>
-                          <span className="font-mono text-slate-655 dark:text-slate-400">{t1WidthAmount}px</span>
-                        </div>
-                        <input 
-                          type="range" min="50" max="180" value={t1WidthAmount} 
-                          onChange={(e) => { setT1WidthAmount(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Table 2 Grid lines */}
-                  <div className="border-t border-slate-150 dark:border-white/10 pt-2.5">
-                    <span className="text-[9.5px] font-black uppercase tracking-wider text-[#0f172a] dark:text-[#f1f5f9] block mb-2">
-                      Table 2 Grid Lines (Col Width)
-                    </span>
-                    
-                    <div className="space-y-1.5 text-[8.5px] font-bold text-slate-500">
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
-                          <span>Account Title col</span>
-                          <span className="font-mono text-slate-650 dark:text-slate-400">{t2WidthName}px</span>
-                        </div>
-                        <input 
-                          type="range" min="150" max="550" value={t2WidthName} 
-                          onChange={(e) => { setT2WidthName(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
-                        />
-                      </div>
-
-                      <div className="bg-slate-50/40 dark:bg-slate-850/20 p-1.5 rounded-lg border border-slate-100/50 dark:border-white/10">
-                        <div className="flex justify-between text-[8px] uppercase tracking-wider text-[#0f172a] dark:text-[#f8fafc] mb-0.5">
-                          <span>Amount col</span>
-                          <span className="font-mono text-slate-655 dark:text-slate-400">{t2WidthAmount}px</span>
-                        </div>
-                        <input 
-                          type="range" min="50" max="250" value={t2WidthAmount} 
-                          onChange={(e) => { setT2WidthAmount(parseInt(e.target.value)); setShowSaveWidthsBar(true); }}
-                          className="w-full h-1 bg-slate-200 dark:bg-slate-700 accent-brand-accent rounded appearance-none cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
-                <div className="mt-3 p-2 bg-brand-accent/10 dark:bg-brand-accent/20 rounded-lg border border-brand-accent/20 dark:border-brand-accent/10 text-[8.5px] text-brand-accent leading-normal">
-                  💡 <span className="font-extrabold uppercase">Grid Position:</span> Drag sliders to align columns perfectly.
-                </div>
-
-              </motion.div>
-            )}
-            </AnimatePresence>
+            <Suspense fallback={<SizingPanelSkeleton />}>
+              <SizingPanel
+                rowPadding={rowPadding}
+                setRowPadding={setRowPadding}
+                tableFontSize={tableFontSize}
+                setTableFontSize={setTableFontSize}
+                headerFontSize={headerFontSize}
+                setHeaderFontSize={setHeaderFontSize}
+                paperPaddingY={paperPaddingY}
+                setPaperPaddingY={setPaperPaddingY}
+                paperPaddingX={paperPaddingX}
+                setPaperPaddingX={setPaperPaddingX}
+                t1WidthSr={t1WidthSr}
+                setT1WidthSr={setT1WidthSr}
+                t1WidthId={t1WidthId}
+                setT1WidthId={setT1WidthId}
+                t1WidthName={t1WidthName}
+                setT1WidthName={setT1WidthName}
+                t1WidthComments={t1WidthComments}
+                setT1WidthComments={setT1WidthComments}
+                t1WidthAmount={t1WidthAmount}
+                setT1WidthAmount={setT1WidthAmount}
+                t2WidthName={t2WidthName}
+                setT2WidthName={setT2WidthName}
+                t2WidthAmount={t2WidthAmount}
+                setT2WidthAmount={setT2WidthAmount}
+                onShowSaveWidthsBar={() => setShowSaveWidthsBar(true)}
+                onResetSizingToDefault={resetSizingToDefault}
+              />
+            </Suspense>
+          )}
+          </AnimatePresence>
 
             {/* Center Area: Full Viewport Scale-to-Fit Workspace Area */}
             <div 
@@ -5790,7 +5558,7 @@ export default function EntrySheet({
                   </th>
                 </tr>
               </thead>
-              <tbody style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
+              <tbody style={{ contain: 'layout paint' }}>
                 {table1Rows.map((row, index) => {
                   const isSearchResultMatch = !!(historySearchQuery.trim() && (
                     (row.cId && row.cId.toLowerCase().includes(historySearchQuery.toLowerCase())) ||
@@ -5818,7 +5586,6 @@ export default function EntrySheet({
                       onFocusField={handleFocusField}
                       onBlurField={handleBlurField}
                       onSearchQueryChange={handleSearchQueryChange}
-                      logPerf={logPerf}
                     />
                   );
                 })}
@@ -5937,7 +5704,7 @@ export default function EntrySheet({
                   </th>
                 </tr>
               </thead>
-              <tbody style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
+              <tbody style={{ contain: 'layout paint' }}>
                 {table2Rows.map((row, index) => (
                   <Table2RowItem
                     key={`t2-${index}`}
@@ -5950,7 +5717,6 @@ export default function EntrySheet({
                     t2WidthAmount={t2WidthAmount}
                     isLocked={isLocked}
                     onCommitChange={handleT2Change}
-                    logPerf={logPerf}
                   />
                 ))}
  
@@ -6063,601 +5829,37 @@ export default function EntrySheet({
                 );
               })()}
             </div> {/* center scale workspace ends */}
+            </div> {/* Main Integrated Workspace ends */}
+          </>
+        )}
 
         {/* Receipt Swipe Left Panel on the right */}
         <AnimatePresence onExitComplete={() => setReceiptPanelReady(false)}>
           {isReceiptSwipeOpen && (
-            <motion.div
-              initial={{ x: 380 }}
-              animate={{ x: 0 }}
-              exit={{ x: 380 }}
-              transition={{ type: 'tween', ease: [0.22, 1, 0.36, 1], duration: 0.28 }}
-              style={{ willChange: 'transform' }}
-              onAnimationComplete={() => {
-                if (isReceiptSwipeOpen) {
-                  setReceiptPanelReady(true);
-                }
-              }}
-              drag={receiptPanelReady ? 'x' : false}
-              dragDirectionLock
-              dragConstraints={{ left: 0, right: 380 }}
-              dragElastic={{ left: 0.1, right: 0.6 }}
-              onDragEnd={(event, info) => {
-                if (info.offset.x > 120) {
-                  setReceiptPanelReady(false);
-                  setIsReceiptSwipeOpen(false);
-                }
-              }}
-              className="absolute right-0 top-0 h-full w-[380px] max-w-full z-[400] shadow-2xl bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left overflow-y-auto scrollbar-thin transform-gpu"
-            >
-              {/* Header / Title block */}
-              <div className="flex items-center justify-between pb-2 border-b border-slate-205 dark:border-white/10">
-                <div className="flex items-center gap-2">
-                  <Printer className="text-brand-accent h-5 w-5" />
-                  <div>
-                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100 font-mono">Receipt Panel</h3>
-                    <p className="text-[10px] text-slate-400">Live printer & pdf queue</p>
-                  </div>
-                </div>
-                
-                {/* Hold Action Button */}
-                <button
-                  onClick={() => {
-                    setReceiptPanelReady(false);
-                    setIsReceiptSwipeOpen(false);
-                    setIsPendingReceipt(true);
-                    toast.info('Receipt placed on Hold. Click the floating pending badge to resume.');
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-150 border border-amber-500/20 cursor-pointer"
-                  title="Hold the receipt and show floating pending button"
-                >
-                  <span>Hold</span>
-                </button>
-              </div>
-
-              {/* Receipt Preview */}
-              <div className="flex-1 flex flex-col items-center justify-center py-4 bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-white/10 overflow-y-auto">
-                {!receiptPanelReady ? (
-                  <div className="flex flex-col items-center justify-center gap-2 p-8 text-slate-400">
-                    <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-xs font-mono font-medium">Loading receipt preview...</span>
-                  </div>
-                ) : lastSavedEntry ? (() => {
-                  const now = new Date();
-                  const optionsDate: Intl.DateTimeFormatOptions = { month: 'long', day: '2-digit', year: 'numeric' };
-                  const formattedDate = now.toLocaleDateString('en-US', optionsDate);
-                  
-                  let hours = now.getHours();
-                  const minutes = String(now.getMinutes()).padStart(2, '0');
-                  const ampm = hours >= 12 ? 'pm' : 'am';
-                  hours = hours % 12;
-                  hours = hours ? hours : 12;
-                  const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
-                  const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
-                  const displayTimeStr = `${formattedTime} - ${shift}`;
-
-                  return (
-                    <div className="w-[320px] bg-white text-slate-950 p-6 shadow-xl rounded-md border border-slate-200 relative text-center font-sans">
-                      {/* Company header */}
-                      <h1 className="text-sm font-black tracking-wider uppercase mt-2 mb-1 text-slate-900 font-sans whitespace-nowrap overflow-hidden text-ellipsis w-full block text-center">
-                        {receiptConfig.title}
-                      </h1>
-                      
-                      <p className="text-[10px] leading-tight font-medium text-slate-500 mb-4">
-                        {receiptConfig.address1} {receiptConfig.address2}
-                      </p>
-
-                      {/* Header Box */}
-                      <div className="bg-slate-100 rounded-lg p-3 flex justify-between items-center mb-4 text-left">
-                        <div className="text-[13px] font-black uppercase tracking-wider text-slate-800">
-                          ONLINE RECEIPT
-                        </div>
-                        <div className="text-[9px] font-bold text-slate-600 text-right space-y-0.5 leading-tight">
-                          <div>Date : {formattedDate}</div>
-                          <div>Time : {displayTimeStr}</div>
-                        </div>
-                      </div>
-
-                      {/* Table */}
-                      <div className="w-full text-left mb-4">
-                        <div className="flex justify-between bg-[#137347] text-white px-3 py-2 text-[10px] font-bold uppercase tracking-wider mb-2 rounded-sm">
-                          <span>Description</span>
-                          <span>Amount (PKR)</span>
-                        </div>
-                        
-                        <div className="space-y-2.5 text-[11px] font-medium text-slate-700 px-3 min-h-[90px]">
-                          {previewItemsData.map(({ entry, client, actualCount }, index) => {
-                            const hasExtraDetails = actualCount <= 2 && client;
-                            return (
-                              <div key={index} className="flex justify-between items-start pb-1.5 border-b border-dashed border-slate-100 last:border-0 pt-1">
-                                <div className="flex flex-col text-left max-w-[170px] overflow-hidden">
-                                  <span className="truncate leading-tight font-semibold text-slate-800">
-                                    {entry?.name || '\u00A0'}
-                                  </span>
-                                  {hasExtraDetails && (
-                                    <div className="flex flex-col mt-0.5 space-y-0.5 text-[9px] text-slate-500 font-medium">
-                                      {client.username && (
-                                        <span className="truncate">ID: <span className="font-mono text-slate-700">{client.username}</span></span>
-                                      )}
-                                      {client.mobileNumber && (
-                                        <span className="truncate">Mob: <span className="font-mono text-slate-700">{client.mobileNumber}</span></span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                                <span className="font-mono font-bold text-slate-900 pt-0.5">
-                                  {entry?.amount !== undefined && entry?.amount !== null && entry?.amount !== '' && !isNaN(Number(entry?.amount)) ? Number(entry?.amount).toFixed(2) : '\u00A0'}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        
-                        {/* Totals Section */}
-                        {(() => {
-                          const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
-                          const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : (lastSavedEntry ? [lastSavedEntry] : []);
-                          
-                          const totalOutstanding = itemsToPrint.reduce((sum, item) => {
-                            return sum + (item?.name ? getOutstandingPaymentForEntry(item.name) : 0);
-                          }, 0);
-
-                          const totalPreviewAmt = isMulti
-                            ? multiSavedEntries.slice(0, 4).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0)
-                            : (lastSavedEntry ? Number(lastSavedEntry.amount) || 0 : 0);
-
-                          return (
-                            <div className="flex flex-col items-end gap-1 text-right mt-3 pr-3">
-                              <div className="flex items-center gap-2 text-[12px] font-extrabold text-slate-900">
-                                <span>Total:</span>
-                                <span className="font-mono text-emerald-600 font-black">
-                                  = {totalPreviewAmt.toFixed(2)}
-                                </span>
-                              </div>
-                              {totalOutstanding > 0 && (
-                                <div className="flex items-center gap-2 text-[11px] font-extrabold text-slate-900">
-                                  <span>Outstanding payment:</span>
-                                  <span className="font-mono text-rose-600 font-black">
-                                    = {totalOutstanding.toFixed(2)}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                        
-                        <div className="border-t-2 border-slate-950 mt-3 mb-2"></div>
-                      </div>
-
-                      {/* Footer message */}
-                      <p className="text-[10.5px] italic font-bold text-slate-500 leading-normal mb-1">
-                        Thank You For Using Our Services.
-                      </p>
-                      <p className="text-[13px] font-bold text-slate-700 mb-6 tracking-wide">
-                        Contact # 0300 1020757
-                      </p>
-
-                      {/* Signature & Stamp Watermark */}
-                      <div className="flex items-end justify-between relative min-h-[50px] mb-2">
-                        {/* STAMP Watermark */}
-                        <div className="absolute left-2 bottom-1 text-slate-200/50 text-2xl font-black uppercase tracking-wider transform -rotate-12 select-none pointer-events-none">
-                          STAMP
-                        </div>
-
-                        <div className="text-emerald-500 border-2 border-emerald-500 rounded px-2 py-0.5 text-xl font-black uppercase tracking-widest transform -rotate-12 opacity-90 select-none">
-                          PAID
-                        </div>
-                        
-                        <div className="flex flex-col items-center text-center relative z-10">
-                          <div className="w-28 border-b border-slate-900 mb-1 relative">
-                            <span className="absolute bottom-0.5 left-0 right-0 text-[18px] font-black text-slate-800/20 pointer-events-none" style={{ fontFamily: "'Brush Script MT', cursive" }}>Ahmad</span>
-                          </div>
-                          <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Authorized Sign</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })() : (
-                  <p className="text-xs text-slate-400 text-center px-4">
-                    No saved ledger entry found. Save the sheet first to see a receipt.
-                  </p>
-                )}
-              </div>
-
-              {/* Action Buttons for active receipt print */}
-              {lastSavedEntry && (() => {
-                const getOutstandingPaymentForEntry = (entryName: string) => {
-                  if (!activeRows || activeRows.length === 0) return 0;
-                  const match = activeRows.find(r => 
-                    r.name && entryName && r.name.trim().toLowerCase() === entryName.trim().toLowerCase()
-                  );
-                  if (match) {
-                    return parseFloat(match.cr) || 0;
-                  }
-                  return 0;
-                };
-
-                return (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      const now = new Date();
-                      const optionsDate: Intl.DateTimeFormatOptions = { month: 'long', day: '2-digit', year: 'numeric' };
-                      const formattedDate = now.toLocaleDateString('en-US', optionsDate);
-                      
-                      let hours = now.getHours();
-                      const minutes = String(now.getMinutes()).padStart(2, '0');
-                      const ampm = hours >= 12 ? 'pm' : 'am';
-                      hours = hours % 12;
-                      hours = hours ? hours : 12;
-                      const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
-                      const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
-                      const displayTimeStr = `${formattedTime} - ${shift}`;
-
-                      const printSection = document.createElement('div');
-                      printSection.id = 'print-section';
-                      printSection.style.position = 'absolute';
-                      printSection.style.left = '0';
-                      printSection.style.top = '0';
-                      printSection.style.width = '100%';
-                      printSection.style.background = 'white';
-                      printSection.style.color = 'black';
-                      printSection.style.padding = '0';
-                      printSection.style.margin = '0';
-                      
-                      const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
-                      const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : (lastSavedEntry ? [lastSavedEntry] : []);
-                      
-                      const totalOutstanding = itemsToPrint.reduce((sum, item) => {
-                        return sum + (item?.name ? getOutstandingPaymentForEntry(item.name) : 0);
-                      }, 0);
-
-                      const itemsHtml = previewItemsData.map(({ entry: item, client, actualCount }) => {
-                        const hasExtraDetails = actualCount <= 2 && client;
-                        const subDetailsHtml = hasExtraDetails ? `
-                          <div style="display: flex; flex-direction: column; font-size: 8pt; color: #64748b; margin-top: 3px; font-weight: 500; font-family: sans-serif; text-align: left;">
-                            ${client.username ? `<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">ID: <span style="font-family: monospace; font-weight: bold; color: #334155;">${client.username}</span></span>` : ''}
-                            ${client.mobileNumber ? `<span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Mob: <span style="font-family: monospace; font-weight: bold; color: #334155;">${client.mobileNumber}</span></span>` : ''}
-                          </div>
-                        ` : '';
-
-                        return `
-                          <div style="display: flex; justify-content: space-between; align-items: flex-start; font-size: 11pt; font-weight: normal; margin-bottom: 12px; border-bottom: 1px dashed #f1f5f9; padding-bottom: 5px; color: #334155;">
-                            <div style="display: flex; flex-direction: column; text-align: left; max-width: 170px; overflow: hidden;">
-                              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold;">${item?.name || '&nbsp;'}</span>
-                              ${subDetailsHtml}
-                            </div>
-                            <span style="font-family: monospace; font-weight: bold; padding-top: 2px;">${item?.amount !== undefined && item?.amount !== null && item?.amount !== '' && !isNaN(Number(item?.amount)) ? Number(item?.amount).toFixed(2) : '&nbsp;'}</span>
-                          </div>
-                        `;
-                      }).join('');
-                      const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0);
-
-                      printSection.innerHTML = `
-                        <style>
-                          @media print {
-                            @page {
-                              size: A5 portrait;
-                              margin: 0 !important;
-                            }
-                            html, body {
-                              background: white !important;
-                              color: black !important;
-                              margin: 0 !important;
-                              padding: 0 !important;
-                              width: 148mm !important;
-                              height: 210mm !important;
-                              -webkit-print-color-adjust: exact !important;
-                              print-color-adjust: exact !important;
-                            }
-                            #root, .print\\:hidden, .fixed, .absolute, [class*="fixed"], [class*="absolute"], #root > * {
-                              display: none !important;
-                            }
-                            #print-section {
-                              display: block !important;
-                              position: absolute !important;
-                              left: 0 !important;
-                              top: 0 !important;
-                              width: 148mm !important;
-                              height: 210mm !important;
-                              padding: 10mm 15mm 15mm 15mm !important;
-                              box-sizing: border-box !important;
-                              background: white !important;
-                            }
-                          }
-                        </style>
-                        <div style="width: 100%; max-width: 118mm; height: 178mm; margin: 0 auto; text-align: center; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; box-sizing: border-box; background: #fff; display: flex; flex-direction: column; justify-content: space-between; position: relative;">
-                          <div>
-                            <h1 style="font-size: 14pt; font-weight: 900; font-family: sans-serif; margin: 5px 0 2px 0; text-transform: uppercase; letter-spacing: 1px; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; width: 100%; display: block;">${receiptConfig.title}</h1>
-                            <p style="font-size: 10.5pt; margin: 0; color: #64748b; font-weight: 500; font-family: sans-serif;">${receiptConfig.address1} ${receiptConfig.address2}</p>
-                            
-                            <div style="background-color: #f1f5f9; border-radius: 6px; padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; margin: 18px 0 20px 0;">
-                              <div style="font-size: 14pt; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; color: #1e293b; font-family: sans-serif;">ONLINE RECEIPT</div>
-                              <div style="font-size: 9.5pt; font-weight: bold; color: #475569; text-align: left; line-height: 1.4; font-family: sans-serif;">
-                                <div><b>Date :</b> ${formattedDate}</div>
-                                <div><b>Time :</b> ${displayTimeStr}</div>
-                              </div>
-                            </div>
-
-                            <div style="text-align: left; margin-bottom: 20px;">
-                              <div style="display: flex; justify-content: space-between; background-color: #137347; color: white; padding: 8px 12px; font-size: 10.5pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; border-radius: 4px;">
-                                <span>Description</span>
-                                <span>Amount (PKR)</span>
-                              </div>
-                              <div style="padding: 0 5px; min-height: 100px;">
-                                ${itemsHtml}
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 0 5px;">
-                              <div style="color: #10b981; border: 3px solid #10b981; border-radius: 4px; padding: 4px 10px; font-size: 22pt; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; transform: rotate(-12deg); opacity: 0.9; font-family: sans-serif; user-select: none;">
-                                PAID
-                              </div>
-                              
-                              <div style="display: flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 4px;">
-                                <div style="font-size: 12pt; font-weight: bold; color: #000;">
-                                  Total: <span style="font-family: monospace; font-size: 13pt; color: #10b981; font-weight: 900; margin-left: 5px;">= ${computedTotal.toFixed(2)}</span>
-                                </div>
-                                ${totalOutstanding > 0 ? `
-                                <div style="font-size: 11pt; font-weight: bold; color: #000;">
-                                  Outstanding payment: <span style="font-family: monospace; font-size: 11.5pt; color: #ef4444; font-weight: 900; margin-left: 5px;">= ${totalOutstanding.toFixed(2)}</span>
-                                </div>
-                                ` : ''}
-                              </div>
-                            </div>
-
-                            <div style="border-top: 2.5px solid #000; margin: 15px 0 10px 0;"></div>
-
-                            <p style="font-size: 10.5pt; font-style: italic; font-weight: bold; margin: 0 0 5px 0; color: #64748b;">Thank You For Using Our Services.</p>
-                            <p style="font-size: 14pt; font-weight: bold; margin: 0 0 20px 0; color: #475569; letter-spacing: 0.5px;">Contact # 0300 1020757</p>
-
-                            <div style="display: flex; justify-content: space-between; align-items: flex-end; position: relative; min-height: 55px; margin-top: 15px;">
-                              <div style="color: #f1f5f9; font-size: 32pt; font-weight: 900; text-transform: uppercase; letter-spacing: 4px; transform: rotate(-12deg); position: absolute; left: 10px; bottom: 5px; opacity: 0.8; font-family: sans-serif; user-select: none; pointer-events: none;">
-                                STAMP
-                              </div>
-
-                              <div style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-left: auto; position: relative; width: 140px;">
-                                <div style="width: 100%; border-bottom: 1.5px solid #000; margin-bottom: 5px;"></div>
-                                <span style="font-size: 9pt; font-weight: bold; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Authorized Sign</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      `;
-                      document.body.appendChild(printSection);
-                      
-                      const printAndRegenerate = async () => {
-                        await saveReceiptCodeToDb(currentReceiptCode);
-                        window.print();
-                        
-                        if (rootEl) rootEl.style.display = 'block';
-                        document.body.removeChild(printSection);
-                        setCurrentReceiptCode(Math.random().toString(36).substring(2, 12).toUpperCase());
-                      };
-                      
-                      const rootEl = document.getElementById('root');
-                      if (rootEl) rootEl.style.display = 'none';
-                      printAndRegenerate();
-                    }}
-                    className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer border-none"
-                  >
-                    <Printer size={13} />
-                    Print Receipt
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      try {
-                        const now = new Date();
-                        const optionsDate: Intl.DateTimeFormatOptions = { month: 'long', day: '2-digit', year: 'numeric' };
-                        const formattedDate = now.toLocaleDateString('en-US', optionsDate);
-                        
-                        let hours = now.getHours();
-                        const minutes = String(now.getMinutes()).padStart(2, '0');
-                        const ampm = hours >= 12 ? 'pm' : 'am';
-                        hours = hours % 12;
-                        hours = hours ? hours : 12;
-                        const formattedTime = `${String(hours).padStart(2, '0')}:${minutes}${ampm}`;
-                        const shift = (now.getHours() >= 6 && now.getHours() < 18) ? 'Day' : 'Night';
-                        const displayTimeStr = `${formattedTime} - ${shift}`;
-                        
-                        const doc = new jsPDF({
-                          orientation: 'portrait',
-                          unit: 'mm',
-                          format: 'a5'
-                        });
-
-                        // Main Header
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(14);
-                        doc.text(receiptConfig.title, 74, 15, { align: 'center' });
-                        
-                        // Address
-                        doc.setFont('Helvetica', 'normal');
-                        doc.setFontSize(10);
-                        doc.setTextColor(100, 116, 139);
-                        doc.text(`${receiptConfig.address1} ${receiptConfig.address2}`, 74, 21, { align: 'center' });
-                        
-                        // Gray Online Receipt Box
-                        doc.setFillColor(241, 245, 249);
-                        doc.roundedRect(15, 26, 118, 16, 2, 2, 'F');
-
-                        doc.setTextColor(30, 41, 59);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(14);
-                        doc.text('ONLINE RECEIPT', 20, 36.5);
-                        
-                        doc.setFontSize(9);
-                        doc.setTextColor(71, 85, 105);
-                        doc.text(`Date : ${formattedDate}`, 130, 32, { align: 'right' });
-                        doc.text(`Time : ${displayTimeStr}`, 130, 37.5, { align: 'right' });
-
-                        // Green Table Header
-                        doc.setFillColor(19, 115, 71);
-                        doc.roundedRect(15, 48, 118, 10, 1, 1, 'F');
-                        
-                        doc.setTextColor(255, 255, 255);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(10.5);
-                        doc.text('Description', 18, 54.5);
-                        doc.text('Amount (PKR)', 130, 54.5, { align: 'right' });
-
-                        let y = 66;
-                        const isMulti = multiSavedEntries && multiSavedEntries.length > 0;
-                        const itemsToPrint = isMulti ? multiSavedEntries.slice(0, 4) : (lastSavedEntry ? [lastSavedEntry] : []);
-                        
-                        const totalOutstanding = itemsToPrint.reduce((sum, item) => {
-                          return sum + (item?.name ? getOutstandingPaymentForEntry(item.name) : 0);
-                        }, 0);
-
-                        doc.setTextColor(51, 65, 85);
-                        previewItemsData.forEach(({ entry: item, client, actualCount }) => {
-                          const hasExtraDetails = actualCount <= 2 && client;
-
-                          doc.setFont('Helvetica', 'bold');
-                          doc.setFontSize(11);
-                          doc.text(item?.name || '', 18, y);
-                          doc.setFont('Courier', 'bold');
-                          const amtText = item?.amount !== undefined && item?.amount !== null && item?.amount !== '' && !isNaN(Number(item?.amount)) ? Number(item?.amount).toFixed(2) : '';
-                          doc.text(amtText, 130, y, { align: 'right' });
-
-                          if (hasExtraDetails) {
-                            y += 4.5;
-                            doc.setFont('Helvetica', 'normal');
-                            doc.setFontSize(8.5);
-                            doc.setTextColor(100, 116, 139);
-                            let extraLine = '';
-                            if (client.username) extraLine += `ID: ${client.username}`;
-                            if (client.mobileNumber) {
-                              if (extraLine) extraLine += '   |   ';
-                              extraLine += `Mob: ${client.mobileNumber}`;
-                            }
-                            doc.text(extraLine, 18, y);
-                            doc.setTextColor(51, 65, 85); // Restore color
-                          }
-                          
-                          y += 4;
-                          doc.setDrawColor(241, 245, 249);
-                          doc.setLineWidth(0.3);
-                          doc.line(15, y, 133, y);
-                          y += 6;
-                        });
-
-                        // Totals section
-                        y = 115;
-                        
-                        // PAID Stamp
-                        doc.saveGraphicsState();
-                        doc.setDrawColor(16, 185, 129);
-                        doc.setLineWidth(1.0);
-                        doc.setTextColor(16, 185, 129);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(22);
-                        doc.setCurrentTransformationMatrix(doc.Matrix(0.9781, -0.2079, 0.2079, 0.9781, 18, y + 10));
-                        doc.roundedRect(0, -8, 28, 12, 1, 1, 'D');
-                        doc.text('PAID', 14, 0, { align: 'center' });
-                        doc.restoreGraphicsState();
-
-                        // Total
-                        doc.setTextColor(0, 0, 0);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(12);
-                        doc.text('Total:', 85, y + 4);
-                        
-                        doc.setFont('Courier', 'bold');
-                        doc.setFontSize(13);
-                        doc.setTextColor(16, 185, 129);
-                        const computedTotal = itemsToPrint.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-                        doc.text(`= ${computedTotal.toFixed(2)}`, 130, y + 4, { align: 'right' });
-                        
-                        if (totalOutstanding > 0) {
-                          doc.setTextColor(0, 0, 0);
-                          doc.setFont('Helvetica', 'bold');
-                          doc.setFontSize(11);
-                          doc.text('Outstanding payment:', 72, y + 10);
-                          doc.setFont('Courier', 'bold');
-                          doc.setFontSize(11.5);
-                          doc.setTextColor(239, 68, 68);
-                          doc.text(`= ${totalOutstanding.toFixed(2)}`, 130, y + 10, { align: 'right' });
-                        }
-
-                        // Separator Line
-                        doc.setLineWidth(0.8);
-                        doc.setDrawColor(0, 0, 0);
-                        doc.line(15, y + 18, 133, y + 18);
-                        
-                        // Footer lines
-                        doc.setFont('Helvetica', 'italic');
-                        doc.setFontSize(10.5);
-                        doc.setTextColor(100, 116, 139);
-                        doc.text('Thank You For Using Our Services.', 74, y + 25, { align: 'center' });
-                        
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(14);
-                        doc.setTextColor(71, 85, 105);
-                        doc.text('Contact # 0300 1020757', 74, y + 32, { align: 'center' });
-
-                        // Stamp Watermark
-                        doc.setTextColor(241, 245, 249);
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(32);
-                        doc.saveGraphicsState();
-                        doc.setCurrentTransformationMatrix(doc.Matrix(0.9781, -0.2079, 0.2079, 0.9781, 22, y + 45));
-                        doc.text('STAMP', 0, 0);
-                        doc.restoreGraphicsState();
-
-                        // Authorized Sign
-                        doc.setLineWidth(0.4);
-                        doc.setDrawColor(0, 0, 0);
-                        doc.line(90, y + 46, 130, y + 46);
-                        
-                        doc.setFont('Helvetica', 'bold');
-                        doc.setFontSize(9);
-                        doc.setTextColor(100, 116, 139);
-                        doc.text('Authorized Sign', 110, y + 51, { align: 'center' });
-
-                        const saveAndRegen = async () => {
-                          await saveReceiptCodeToDb(currentReceiptCode);
-                          doc.save('Receipt.pdf');
-                          toast.success('Receipt PDF saved!');
-                          setCurrentReceiptCode(Math.random().toString(36).substring(2, 12).toUpperCase());
-                        };
-                        saveAndRegen();
-                      } catch (err) {
-                        console.error(err);
-                        toast.error('Could not save PDF');
-                      }
-                    }}
-                    className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer border-none"
-                  >
-                    <Download size={13} />
-                    Save PDF
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setReceiptPanelReady(false);
-                      setIsReceiptSwipeOpen(false);
-                    }}
-                    className="py-2 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-              );
-              })()}
-            </motion.div>
+            <Suspense fallback={<ReceiptPreviewPanelSkeleton />}>
+              <ReceiptPreviewPanel
+                receiptPanelReady={receiptPanelReady}
+                setReceiptPanelReady={setReceiptPanelReady}
+                onClose={handleCloseReceiptPanel}
+                onHold={handleHoldReceipt}
+                lastSavedEntry={lastSavedEntry}
+                multiSavedEntries={multiSavedEntries}
+                previewItemsData={previewItemsData}
+                receiptConfig={receiptConfig}
+                getOutstandingPaymentForEntry={getOutstandingPaymentForEntry}
+                currentReceiptCode={currentReceiptCode}
+                onRegenerateReceiptCode={handleRegenerateReceiptCode}
+                onSaveReceiptCode={saveReceiptCodeToDb}
+              />
+            </Suspense>
           )}
         </AnimatePresence>
 
       {/* Floating Manual Receipt Button (Left Side) */}
       <AnimatePresence>
         <motion.div
-          initial={{ scale: 0.5, opacity: 0, y: 30 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          className="fixed bottom-6 left-6 z-[300] print:hidden text-left"
+          {...dialogMotion}
+          className="transform-gpu will-change-transform fixed bottom-6 left-6 z-[300] print:hidden text-left"
         >
           <button
             onClick={() => {
@@ -6676,11 +5878,8 @@ export default function EntrySheet({
       <AnimatePresence>
         {isPendingReceipt && (
           <motion.div
-            initial={{ scale: 0.5, opacity: 0, y: 30 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.5, opacity: 0, y: 30 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-            className="fixed bottom-6 right-6 z-[300] print:hidden text-left"
+            {...dialogMotion}
+            className="transform-gpu will-change-transform fixed bottom-6 right-6 z-[300] print:hidden text-left"
           >
             <button
               onClick={() => {
@@ -6701,238 +5900,47 @@ export default function EntrySheet({
       </AnimatePresence>
 
         {/* Financial Ledger Sheets Registry & Backup Sidebar Panel on the right */}
-        {showHistoryPanel && (
-          <motion.div
-            initial={{ opacity: 0, x: 30 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 25 }}
-            className={`w-[380px] shrink-0 bg-[#fafafa] dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 p-4 flex flex-col gap-4 font-sans text-slate-900 dark:text-slate-100 print:hidden text-left h-full overflow-y-auto scrollbar-thin z-[400] max-w-full ${window.innerWidth < 1024 ? 'absolute top-0 bottom-0 right-0 shadow-2xl' : 'relative'}`}
-          >
-            {/* Title */}
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <History className="text-brand-accent h-5 w-5" />
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-100 font-mono">Ledger Registry</h3>
-                  <p className="text-[10px] text-slate-400">Monthly recovery historical cards</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowHistoryPanel(false)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors cursor-pointer border-none bg-transparent"
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            {/* Advanced Search Input */}
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-                <Search size={14} />
-              </span>
-              <input
-                type="text"
-                placeholder="Advanced Search Client ID or Name..."
-                value={historySearchQuery}
-                onChange={(e) => setHistorySearchQuery(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 focus:border-brand-accent rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none transition-colors"
+        <AnimatePresence>
+          {showHistoryPanel && (
+            <Suspense fallback={<HistoryPanelSkeleton />}>
+              <HistoryPanel
+                onClose={handleCloseHistoryPanel}
+                historySearchQuery={historySearchQuery}
+                setHistorySearchQuery={setHistorySearchQuery}
+                backupTokens={backupTokens}
+                setBackupTokens={setBackupTokens}
+                backupSpreadsheetId={backupSpreadsheetId}
+                setBackupSpreadsheetId={setBackupSpreadsheetId}
+                isBackingUp={isBackingUp}
+                onConnectBackupAccount={handleConnectBackupAccount}
+                onCreateBackupSheet={handleCreateBackupSheet}
+                onBackupLedgerHistory={handleBackupLedgerHistory}
+                onTerminateMonth={handleTerminateMonth}
+                ledgerHistory={ledgerHistory}
+                loadedSheetId={loadedSheetId}
+                onLoadHistorySheet={handleLoadHistorySheet}
+                onDeleteHistorySheet={handleDeleteHistorySheet}
               />
-              {historySearchQuery && (
-                <button
-                  onClick={() => setHistorySearchQuery('')}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300 text-[10px] bg-transparent border-none"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            {/* Financial Backup & Terminate Control Center */}
-            <div className="bg-slate-950/50 rounded-xl border border-slate-800/60 p-3.5 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black tracking-wider uppercase text-slate-400 font-mono flex items-center gap-1">
-                  <Database size={10} className="text-brand-accent" />
-                  Backup & Monthly Resets
-                </span>
-                {backupTokens ? (
-                  <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full font-black uppercase border border-emerald-500/10">
-                    🟢 Ready
-                  </span>
-                ) : (
-                  <span className="text-[9px] bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded-full font-black uppercase border border-rose-500/10">
-                    ⚠️ Off-line
-                  </span>
-                )}
-              </div>
-
-              {/* 2nd Account Logins status */}
-              {!backupTokens ? (
-                <button
-                  onClick={handleConnectBackupAccount}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-brand-accent hover:opacity-95 text-white text-[10px] uppercase font-black tracking-widest transition-all cursor-pointer shadow-md border-none"
-                >
-                  <LogIn size={11} />
-                  Authorize Backup Google Account
-                </button>
-              ) : (
-                <div className="flex flex-col gap-1.5 text-left">
-                  {/* Input target Spreadsheet ID */}
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      placeholder="Paste Backup Spreadsheet ID"
-                      value={backupSpreadsheetId}
-                      onChange={(e) => {
-                        const val = e.target.value.trim();
-                        setBackupSpreadsheetId(val);
-                        googleSheetsService.saveBackupSpreadsheetId(val);
-                      }}
-                      className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[10.5px] text-slate-300 outline-none"
-                    />
-                    <button
-                      onClick={handleCreateBackupSheet}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9px] font-black uppercase shrink-0 border border-slate-700 cursor-pointer"
-                      title="Create a fresh workbook in target secondary drive"
-                    >
-                      <FolderPlus size={11} />
-                    </button>
-                  </div>
-
-                  {/* Account toggle and action row */}
-                  <div className="flex gap-2 mt-1">
-                    <button
-                      onClick={handleBackupLedgerHistory}
-                      disabled={isBackingUp}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-brand-accent hover:opacity-90 disabled:opacity-50 text-white text-[10px] font-black tracking-wider uppercase rounded-lg shadow-md transition-all cursor-pointer border-none"
-                      title="Google spreadsheet ledger backup with date sections integration"
-                    >
-                      <FileSpreadsheet size={11} />
-                      {isBackingUp ? "Backing up..." : "Backup Grid"}
-                    </button>
-
-                    <button
-                      onClick={handleTerminateMonth}
-                      className="flex items-center justify-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 hover:text-white text-white text-[10px] font-black tracking-wider uppercase rounded-lg shadow-md transition-all cursor-pointer border-none"
-                      title="Trigger month-end reset, archiving and purging cards"
-                    >
-                      <Trash2 size={11} />
-                      Terminate
-                    </button>
-                  </div>
-                  
-                  <button
-                     onClick={() => {
-                       localStorage.removeItem('gts_ledger_backup_google_tokens');
-                       setBackupTokens(null);
-                       toast.success("Disconnected secondary backup google account!");
-                     }}
-                     className="text-right text-[8.5px] text-slate-500 hover:text-slate-400 hover:underline mt-1 bg-transparent border-none cursor-pointer"
-                  >
-                     Disconnect Backup Account
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Cards List Scroller */}
-            <div className="flex-1 flex flex-col gap-2 overflow-y-auto max-h-[440px] scrollbar-thin scrollbar-thumb-slate-800 pr-1">
-              <div className="text-[9.5px] uppercase font-black font-mono tracking-wider text-slate-500 px-1">
-                Registered Sheets ({getFilteredHistory().length})
-              </div>
-
-              {getFilteredHistory().length === 0 ? (
-                <div className="py-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-1 border border-dashed border-slate-800 rounded-xl">
-                  <AlertCircle size={16} className="text-slate-600" />
-                  <span>No historical cards match.</span>
-                </div>
-              ) : (
-                getFilteredHistory().map((sheet, idx) => {
-                  const isLoaded = loadedSheetId === sheet.id;
-                  const t1Valid = (Array.isArray(sheet.table1Rows) ? sheet.table1Rows : []).filter((r: any) => r.cId || r.name || r.amount > 0);
-                  const sumT1 = t1Valid.reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
-                  
-                  return (
-                    <div
-                      key={`sheet-hist-${sheet.id}-${idx}`}
-                      onClick={() => handleLoadHistorySheet(sheet)}
-                      className={`group relative p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-1.5 ${
-                        isLoaded
-                          ? 'bg-brand-accent/10 border-brand-accent/60 shadow-md shadow-brand-accent/10'
-                          : 'bg-slate-950/45 hover:bg-slate-900/60 border-slate-850 hover:border-slate-700'
-                      }`}
-                    >
-                      {/* Delete button card */}
-                      <button
-                        onClick={(e) => handleDeleteHistorySheet(sheet.id, e)}
-                        className="absolute top-2 right-2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-all cursor-pointer border-none bg-transparent"
-                        title="Delete this ledger card"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-
-                      <div className="flex items-center gap-2">
-                        <div className="h-7 w-7 rounded-lg bg-brand-accent/20 border border-brand-accent/35 flex items-center justify-center text-xs font-black text-brand-accent font-mono">
-                          {sheet.recOfficer?.substring(0, 2).toUpperCase() || 'RO'}
-                        </div>
-                        <div>
-                          <div className="text-xs font-black uppercase text-slate-200 line-clamp-1 pr-4">
-                            {sheet.recOfficer || 'Unnamed Roll'}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            {sheet.sheetDate}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-between items-center text-[10px] border-t border-slate-800/60 pt-2 font-mono">
-                        <span className="text-slate-400">
-                          Area: <span className="text-slate-200 font-bold uppercase">{sheet.area || 'MAIN'}</span>
-                        </span>
-                        <span className="text-slate-400">
-                          Sum: <span className="text-emerald-400 font-bold">Rs. {sumT1}</span>
-                        </span>
-                      </div>
-                      
-                      {isLoaded && (
-                        <div className="absolute bottom-1 right-2 text-[8px] uppercase tracking-widest font-black text-brand-accent">
-                          Active Panel
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="bg-slate-950/20 rounded-lg p-2.5 text-[9px] text-slate-500 leading-normal border border-slate-900">
-              ⚡ <span className="font-extrabold uppercase">Interactive Hub:</span> Select historic cards to restore state into live printable sheet paper. Re-run advanced queries directly above.
-            </div>
-          </motion.div>
-        )}
-            </div> {/* Main Integrated Workspace ends */}
-          </>
-        )}
-          </>
-        )}
-      </motion.div> {/* print-overlay-wrapper ends */}
+            </Suspense>
+          )}
+        </AnimatePresence>
 
       {/* Beautiful Reset & Purge Confirmation Modal */}
       <AnimatePresence>
         {/* Duplicate Entry Warning Modal */}
         {duplicateWarning && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...overlayMotion}
             className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
           >
             <motion.div
-              initial={{ scale: 0.95, y: 15, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.95, y: 15, opacity: 0 }}
-              className="bg-white border-2 border-rose-500 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl relative overflow-hidden flex flex-col"
+              {...dialogMotion}
+              className="transform-gpu will-change-transform bg-white border-2 border-rose-500 rounded-3xl p-6 sm:p-8 w-full max-w-lg shadow-2xl relative overflow-hidden flex flex-col"
             >
-              <div className="absolute top-0 right-0 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+              <div
+                className="absolute top-0 right-0 w-64 h-64 rounded-full -mr-20 -mt-20 pointer-events-none"
+                style={{ background: 'radial-gradient(circle, rgba(244,63,94,0.14) 0%, transparent 70%)' }}
+              />
               
               <div className="flex items-center gap-4 mb-6 relative z-10">
                 <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center shrink-0 border-2 border-rose-200">
@@ -6944,29 +5952,29 @@ export default function EntrySheet({
                 </div>
               </div>
 
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-8 relative z-10">
-                <p className="text-sm font-semibold text-slate-700 leading-relaxed text-center">
-                  {duplicateWarning.message}
-                </p>
-              </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-8 relative z-10">
+                  <p className="text-sm font-semibold text-slate-700 leading-relaxed text-center">
+                    {duplicateWarning.message}
+                  </p>
+                </div>
 
-              <div className="flex items-center justify-end gap-3 mt-auto relative z-10">
-                <button
-                  onClick={() => setDuplicateWarning(null)}
-                  className="px-6 py-3 rounded-xl bg-white border-2 border-slate-200 text-slate-600 font-black text-sm uppercase tracking-wider hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    proceedSelectSuggestion(duplicateWarning.index, duplicateWarning.client);
-                    setDuplicateWarning(null);
-                  }}
-                  className="px-6 py-3 rounded-xl bg-rose-500 text-white font-black text-sm uppercase tracking-wider hover:bg-rose-600 shadow-lg shadow-rose-500/20 transition-all active:scale-95 border-2 border-rose-500"
-                >
-                  Okay, Add Anyway
-                </button>
-              </div>
+                <div className="flex items-center justify-end gap-3 mt-auto relative z-10">
+                  <button
+                    onClick={() => setDuplicateWarning(null)}
+                    className="px-6 py-3 rounded-xl bg-white border-2 border-slate-200 text-slate-600 font-black text-sm uppercase tracking-wider hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      proceedSelectSuggestion(duplicateWarning.index, duplicateWarning.client);
+                      setDuplicateWarning(null);
+                    }}
+                    className="px-6 py-3 rounded-xl bg-rose-500 text-white font-black text-sm uppercase tracking-wider hover:bg-rose-600 shadow-lg shadow-rose-500/20 transition-all active:scale-95 border-2 border-rose-500"
+                  >
+                    Okay, Add Anyway
+                  </button>
+                </div>
             </motion.div>
           </motion.div>
         )}
@@ -6974,17 +5982,12 @@ export default function EntrySheet({
         {/* User Search Entry Locator Popup Screen */}
         {showUserSearchPopup && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...overlayMotion}
             className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
           >
             <motion.div
-              initial={{ scale: 0.95, y: 15, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.95, y: 15, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-white/10 rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden text-left"
+              {...dialogMotion}
+              className="transform-gpu will-change-transform bg-white dark:bg-slate-900 border border-slate-205 dark:border-white/10 rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden text-left"
             >
               <div className="p-6 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/40 shrink-0">
                 <div className="flex items-center gap-3">
@@ -7010,6 +6013,7 @@ export default function EntrySheet({
               </div>
 
               <div className="p-6 overflow-y-auto flex-1 space-y-6 scrollbar-thin">
+                <DeferredBody fallback={<SkTable rows={4} cols={4} className="min-h-[280px]" />}>
                 <p className="text-[11px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
                   FOUND {userSearchResults.length} LEDGER {userSearchResults.length === 1 ? 'SHEET' : 'SHEETS'} CONTAINER IN SYSTEM MEMORY:
                 </p>
@@ -7111,6 +6115,7 @@ export default function EntrySheet({
                     })}
                   </div>
                 )}
+                </DeferredBody>
               </div>
 
               <div className="p-5 border-t border-slate-100 dark:border-white/10 flex justify-end gap-2 bg-slate-100/10 dark:bg-slate-900/20 shrink-0">
@@ -7128,17 +6133,12 @@ export default function EntrySheet({
 
         {showConfirmResetModal && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...overlayMotion}
             className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
           >
             <motion.div
-              initial={{ scale: 0.95, y: 15, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.95, y: 15, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+              {...dialogMotion}
+              className="transform-gpu will-change-transform bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
             >
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
@@ -7199,17 +6199,12 @@ export default function EntrySheet({
 
         {sheetToDeleteId && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...overlayMotion}
             className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
           >
             <motion.div
-              initial={{ scale: 0.95, y: 15, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.95, y: 15, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+              {...dialogMotion}
+              className="transform-gpu will-change-transform bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
             >
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
@@ -7271,178 +6266,36 @@ export default function EntrySheet({
         )}
 
         {showTerminateMonthModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 15, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.95, y: 15, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
-            >
-              <div className="p-5 flex flex-col gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center text-amber-500 shrink-0">
-                    <AlertCircle size={20} className="text-amber-500" />
-                  </div>
-                  <div className="space-y-0.5">
-                    <h4 className="text-[10px] font-black tracking-[0.2em] uppercase text-amber-500 font-mono">
-                      TERMINATE ACTIVE MONTH
-                    </h4>
-                    <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                      Are you absolutely sure?
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="text-xs font-medium text-slate-600 dark:text-slate-300 space-y-2 leading-relaxed">
-                  <p className="uppercase text-[9px] font-bold text-slate-400">
-                    This is a critical reset operation:
-                  </p>
-                  <p className="text-[10px] text-slate-500 font-bold leading-normal uppercase">
-                    This will permanently clear and move <span className="text-rose-500 font-black">{ledgerHistory.length} sheets</span> of your current month's active records to the recycle bin. Please verify you have exported or backed up first.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2 pt-1">
-                  <button
-                    onClick={confirmTerminateMonth}
-                    className="w-full py-2 px-4 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-md shadow-amber-550/15 border-none text-center"
-                  >
-                    ☢️ Terminate & Archive Month
-                  </button>
-
-                  <button
-                    onClick={() => setShowTerminateMonthModal(false)}
-                    className="w-full py-1.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-extrabold uppercase tracking-widest transition-all cursor-pointer border border-slate-200 dark:border-slate-700 text-center"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
+          <TerminateMonthModal
+            sheetCount={ledgerHistory.length}
+            onConfirm={confirmTerminateMonth}
+            onCancel={handleCancelTerminateMonth}
+          />
         )}
 
         {/* Folder Settings Popup */}
         {settingsFolderId && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
-            onClick={() => setSettingsFolderId(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 15 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 15 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-2xl max-w-sm w-full border border-slate-200 dark:border-white/10"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">Folder Settings</h3>
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Manage Recovery Connection</p>
-                </div>
-                <button
-                  onClick={() => setSettingsFolderId(null)}
-                  className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 rounded-full transition-colors"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[10px] uppercase font-black tracking-widest text-slate-500 mb-2">
-                    Folder Name
-                  </label>
-                  <input
-                    type="text"
-                    value={editFolderName}
-                    onChange={(e) => setEditFolderName(e.target.value)}
-                    placeholder="Enter folder name..."
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500 mb-2"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] uppercase font-black tracking-widest text-slate-500 mb-2">
-                    Connected Recovery Sheet (Billing Month)
-                  </label>
-                  <select
-                    value={editConnectedMonthId}
-                    onChange={(e) => setEditConnectedMonthId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200 text-xs font-bold p-3 rounded-xl focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">-- Not Connected --</option>
-                    {(effectiveMonthsList && effectiveMonthsList.length > 0 ? effectiveMonthsList : billingMonths).map((m, mIdx) => {
-                      const totalTarget = (m as any).rows?.reduce((acc: number, r: any) => acc + (parseFloat(r.totalAmount) || 0), 0) || 0;
-                      return (
-                        <option key={`m-${m.id}-${mIdx}`} value={m.id}>
-                          {m.id}{totalTarget > 0 ? ` (Target: ${totalTarget.toLocaleString()})` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <p className="text-[10px] text-slate-450 dark:text-slate-400 font-bold uppercase mt-2 leading-relaxed">
-                    When connected, any entry activity inside this folder will automatically update the selected Recovery Sheet. If not connected, updates will remain local.
-                  </p>
-                </div>
-
-                <div className="pt-4 border-t border-slate-200/60 dark:border-white/10">
-                  <button
-                    onClick={() => {
-                      const cleanName = editFolderName.trim();
-                      if (!cleanName) {
-                        toast.error("Folder name cannot be empty");
-                        return;
-                      }
-                      const folderExists = folders.some(f => f.id !== settingsFolderId && f.name.toLowerCase() === cleanName.toLowerCase());
-                      if (folderExists) {
-                        toast.error("A folder with this name already exists");
-                        return;
-                      }
-                      const newFolders = folders.map(f => f.id === settingsFolderId ? { ...f, name: cleanName, connectedMonthId: editConnectedMonthId } : f);
-                      setFolders(newFolders);
-                      saveFoldersToDb(newFolders);
-
-                      const nextFolderMonthMap = { ...folderMonthMap, [settingsFolderId!]: editConnectedMonthId };
-                      setFolderMonthMap(nextFolderMonthMap);
-                      saveFolderMonthMapToDb(nextFolderMonthMap);
-
-                      toast.success("Folder settings saved successfully!");
-                      setSettingsFolderId(null);
-                    }}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-colors shadow-md"
-                  >
-                    Save & Close
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
+          <FolderSettingsModal
+            editFolderName={editFolderName}
+            setEditFolderName={setEditFolderName}
+            editConnectedMonthId={editConnectedMonthId}
+            setEditConnectedMonthId={setEditConnectedMonthId}
+            monthsList={effectiveMonthsList && effectiveMonthsList.length > 0 ? effectiveMonthsList : billingMonths}
+            onClose={handleCloseFolderSettings}
+            onSave={handleSaveFolderSettings}
+          />
         )}
 
         {folderToDeleteId && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...overlayMotion}
             className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4 z-[99999]"
             onClick={() => setFolderToDeleteId(null)}
           >
             <motion.div
-              initial={{ scale: 0.95, y: 15 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 15 }}
+              {...dialogMotion}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-white/10 space-y-6"
+              className="transform-gpu will-change-transform w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-white/10 space-y-6"
             >
               <div className="flex items-center gap-4 text-rose-500 dark:text-rose-450">
                 <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center shrink-0">
@@ -7495,17 +6348,12 @@ export default function EntrySheet({
 
         {showMultiSlipConfirm && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...overlayMotion}
             className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
           >
             <motion.div
-              initial={{ scale: 0.95, y: 15, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.95, y: 15, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
+              {...dialogMotion}
+              className="transform-gpu will-change-transform bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left"
             >
               <div className="p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-3">
@@ -7557,17 +6405,12 @@ export default function EntrySheet({
 
         {showReceiptSelectionPopup && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            {...overlayMotion}
             className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 font-sans select-none"
           >
             <motion.div
-              initial={{ scale: 0.95, y: 15, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.95, y: 15, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left flex flex-col max-h-[80vh]"
+              {...dialogMotion}
+              className="transform-gpu will-change-transform bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-white/10 rounded-2.5xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.5)] max-w-sm w-full overflow-hidden text-left flex flex-col max-h-[80vh]"
             >
               <div className="p-5 pb-3 border-b border-slate-100 dark:border-white/10 flex items-start gap-3">
                 <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center text-emerald-500 shrink-0">
@@ -7676,127 +6519,16 @@ export default function EntrySheet({
         )}
       </AnimatePresence>
 
-      {focusedRowIndex !== null && focusedField !== null && activeInputElement && (
-        <div 
-          ref={dropdownContainerRef}
-          style={getDropdownStyle()}
-          className="fixed bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-[0_12px_40px_-15px_rgba(0,0,0,0.15)] dark:shadow-[0_12px_40px_-15px_rgba(0,0,0,0.5)] rounded-2xl p-2 max-h-72 overflow-y-auto print:hidden font-sans pointer-events-auto text-slate-900 dark:text-slate-100 scrollbar-thin z-[1000000]"
-        >
-          <div className="flex items-center justify-between text-[8.5px] font-black tracking-wider uppercase text-slate-400 dark:text-slate-555 px-3 py-2 mb-1.5 border-b border-slate-100 dark:border-slate-800/80">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
-              Select Customer Entry
-            </span>
-            <span className="text-indigo-500 font-mono font-bold bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded-md">
-              {filteredSuggestions.length} Found
-            </span>
-          </div>
-          {filteredSuggestions.length === 0 ? (
-            <div className="text-[11px] text-slate-400 dark:text-slate-500 py-6 text-center font-medium">No matching accounts found</div>
-          ) : (
-            <div className="space-y-1">
-              {filteredSuggestions.map((cObj, idx) => {
-                const matchingActiveRow = activeRows?.find(r => 
-                  (r.username && r.username.toLowerCase() === cObj.username?.toLowerCase()) || 
-                  (r.clientId && r.clientId.toLowerCase() === cObj.id?.toLowerCase())
-                );
-                
-                let userTotalAmt = 0;
-                if (matchingActiveRow) {
-                  userTotalAmt = Number(matchingActiveRow.totalAmount) || ((Number(matchingActiveRow.baseAmount) || 0) + (Number(matchingActiveRow.cr) || 0));
-                }
-                if (!userTotalAmt && (cObj.totalAmount || cObj.baseAmount)) {
-                  userTotalAmt = Number(cObj.totalAmount) || ((Number(cObj.baseAmount) || 0) + (Number(cObj.cr) || 0));
-                }
-                if (!userTotalAmt && cObj.pkgDetails) {
-                  const match = String(cObj.pkgDetails).match(/\b(1000|1200|1500|2000|2500|3000|3500|4000|5000|150|200|250|300|350|400|450|500|600|700|800|900)\b/) || String(cObj.pkgDetails).match(/\b\d{3,4}\b/);
-                  userTotalAmt = match ? parseInt(match[0], 10) : 0;
-                }
-                
-                const getStatusBadge = (statusKey: string | undefined) => {
-                  const s = (statusKey || 'active').toLowerCase();
-                  switch (s) {
-                    case 'paid':
-                      return {
-                        label: 'Paid',
-                        class: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60'
-                      };
-                    case 'partial':
-                      return {
-                        label: 'Partial',
-                        class: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 border-blue-200 dark:border-blue-800/60'
-                      };
-                    case 'unpaid':
-                      return {
-                        label: 'Unpaid',
-                        class: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60'
-                      };
-                    case 'dc':
-                      return {
-                        label: 'DC',
-                        class: 'bg-slate-100 text-slate-700 dark:bg-slate-850 dark:text-slate-400 border-slate-200 dark:border-white/10'
-                      };
-                    case 'tdc':
-                      return {
-                        label: 'TDC',
-                        class: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
-                      };
-                    case 'next':
-                      return {
-                        label: 'Next',
-                        class: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400 border-purple-200 dark:border-purple-800/60'
-                      };
-                    default:
-                      return {
-                        label: 'Active',
-                        class: 'bg-slate-50 text-slate-700 dark:bg-slate-900/50 dark:text-slate-350 border-slate-150 dark:border-white/10'
-                      };
-                  }
-                };
-                const statusObj = getStatusBadge(matchingActiveRow?.paymentStatus);
-                return (
-                  <button
-                    key={`cobj-${cObj.id || cObj.username || idx}-${idx}`}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onClick={() => handleSelectSuggestion(focusedRowIndex, cObj)}
-                    className="w-full flex items-center justify-between gap-3 text-left px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700/60 transition-all duration-200 ease-out group cursor-pointer select-none"
-                  >
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-[12px] font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
-                        {cObj.name}
-                      </span>
-                      <div className="flex items-center gap-1.5 text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate mt-0.5">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1 rounded-sm">@{cObj.username || cObj.id}</span>
-                        {cObj.area && <span>• {cObj.area}</span>}
-                        {cObj.pkgDetails && <span className="text-slate-400 dark:text-slate-500 truncate">({cObj.pkgDetails})</span>}
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="flex flex-col items-end">
-                        <span className="text-[7.5px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 leading-none mb-0.5">
-                          T. Amount
-                        </span>
-                        <span className="text-[12px] font-mono font-black text-emerald-600 dark:text-emerald-400 group-hover:text-emerald-500 group-hover:scale-105 transition-transform origin-right leading-none">
-                          <span className="text-[9px] text-emerald-500/70 mr-0.5">Rs.</span>{userTotalAmt.toLocaleString()}
-                        </span>
-                      </div>
-                      
-                      <div className={`flex items-center justify-center min-w-[50px] h-6 text-[9px] font-black px-2 rounded-lg border uppercase tracking-wider ${statusObj.class} shadow-sm group-hover:shadow transition-all`}>
-                        {statusObj.label}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+      <SuggestionsDropdown
+        ref={suggestionsDropdownRef}
+        focusedRowIndex={focusedRowIndex}
+        focusedField={focusedField}
+        hasActiveInput={Boolean(activeInputElement)}
+        suggestionsIndex={suggestionsIndex}
+        activeRows={activeRows}
+        dropdownContainerRef={dropdownContainerRef}
+        onSelectSuggestion={handleSelectSuggestion}
+      />
       
       {showSaveWidthsBar && (
         <div className="fixed bottom-6 right-6 z-[350] bg-white dark:bg-slate-800 shadow-xl border-2 border-brand-accent rounded-lg p-3 flex items-center gap-4 animate-in slide-in-from-bottom-5 print:hidden">
@@ -7811,7 +6543,9 @@ export default function EntrySheet({
           </button>
         </div>
       )}
-
+          </>
+        )}
+      </motion.div>
     </>,
     document.body
   );

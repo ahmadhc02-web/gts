@@ -158,10 +158,67 @@ if (typeof window !== 'undefined') {
       window.close();
     } catch (e) {}
   }
+  if (urlParams.get('touchdebug') === '1' || safeLocalStorage.getItem('gp_touchdebug') === '1') {
+    import('./lib/touchDebug').then((mod) => {
+      mod.initTouchDebug();
+    }).catch(() => {});
+  }
 }
 
 import { BrowserRouter } from 'react-router-dom';
 import { LoadingProvider } from './contexts/LoadingContext.tsx';
+
+if (typeof window !== 'undefined' && !(window as any).__gtsPerfLogged) {
+  let fcp = 0;
+  let domLoadedTime = 0;
+  let perfLogged = false;
+
+  const logPerfOnce = () => {
+    if (perfLogged) return;
+    perfLogged = true;
+    (window as any).__gtsPerfLogged = true;
+    const navEntry = performance.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
+    const dcl = domLoadedTime || Math.round(navEntry?.domContentLoadedEventEnd || performance.now());
+    const firstTabRenderedTime = Math.round(performance.now());
+    console.log(`[Perf] DOMContentLoaded: ${dcl}ms | FCP: ${fcp}ms | First Tab Content Rendered: ${firstTabRenderedTime}ms`);
+  };
+
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.name === 'first-contentful-paint') {
+          fcp = Math.round(entry.startTime);
+        }
+      }
+    });
+    observer.observe({ type: 'paint', buffered: true });
+  } catch (e) {}
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', () => {
+      domLoadedTime = Math.round(performance.now());
+    }, { once: true });
+  } else {
+    const navEntry = performance.getEntriesByType?.('navigation')?.[0] as PerformanceNavigationTiming | undefined;
+    domLoadedTime = Math.round(navEntry?.domContentLoadedEventEnd || performance.now());
+  }
+
+  requestAnimationFrame(() => {
+    const rootEl = document.getElementById('root');
+    if (!rootEl) return;
+    const mo = new MutationObserver(() => {
+      if (rootEl.querySelector('main, form, #operations-registry, #vertix-users-table')) {
+        mo.disconnect();
+        requestAnimationFrame(logPerfOnce);
+      }
+    });
+    mo.observe(rootEl, { childList: true, subtree: true });
+    setTimeout(() => {
+      mo.disconnect();
+      logPerfOnce();
+    }, 5000);
+  });
+}
 
 if (shouldRender) {
   createRoot(document.getElementById('root')!).render(

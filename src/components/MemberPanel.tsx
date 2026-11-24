@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { dialogMotion } from '../lib/motionPresets';
 import { Layers, ShieldAlert, CheckCircle, Shield, Key, User, Bell, Zap, Contact, MapPinned, Volume2, VolumeX, LogOut, Clock, TrendingUp, ClipboardList, BarChart3, Mic, Activity, Flame, MessageSquare } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig, ComplaintReview } from '../types';
 import ComplaintForm from './ComplaintForm';
@@ -13,6 +14,9 @@ import { AppConfig } from '../constants';
 import MicVisualizer from './MicVisualizer';
 import { getCardStyle } from '../lib/styleUtils';
 import FiberLoading from './FiberLoading';
+import ModernChartAnalyticsDashboard from './ModernChartAnalyticsDashboard';
+import { SkStatTile, SkChartCard, SkSubmitView, SkRegistry } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
 
 interface MemberPanelProps {
   complaints: Complaint[];
@@ -91,6 +95,9 @@ export default function MemberPanel({
   
   const [localActiveTab, setLocalActiveTab] = useState<'ops' | 'submit' | 'clients' | 'profile' | 'monitor' | 'nodes'>('ops');
   
+  const isComplaintsLoading = (!isComplaintsInitialLoaded && complaints.length === 0);
+  const showComplaintsSkeleton = useSkeletonGate(isComplaintsLoading) && complaints.length === 0;
+  
   // Resolve activeTab from either prop or local state
   const activeTab = activeTabProp !== undefined
     ? (activeTabProp === 'complaints' ? 'ops' : activeTabProp === 'settings' ? 'profile' : activeTabProp) as any
@@ -154,16 +161,16 @@ export default function MemberPanel({
     return lower === 'complete' || lower === 'finalized' || lower === 'resolved' || lower === 'hold';
   };
 
-  const stats = [
+  const stats = useMemo(() => [
     { label: 'Total Registry', value: complaints.length, tooltip: 'Global volume of operational records currently stored in the central database.', color: 'border-slate-900 dark:border-brand-accent', textColor: 'text-slate-900 dark:text-white', icon: <Layers size={18} />, filter: { status: 'all', priority: 'all', category: 'all' } },
     { label: 'Pending Requests', value: complaints.filter(c => isPendingStatus(c.status)).length, tooltip: 'Global operations currently in the queue awaiting technician dispatch.', color: 'border-amber-500', textColor: 'text-amber-500', icon: <Clock size={18} />, filter: { status: 'pending', priority: 'all', category: 'all' } },
     { label: 'New Connection', value: complaints.filter(c => isNewConnectionCat(c.category) && isPendingStatus(c.status)).length, tooltip: 'Newly registered connection requests awaiting initial infrastructure deployment.', color: 'border-brand-accent', textColor: 'text-brand-accent', icon: <Zap size={18} />, filter: { status: 'pending', priority: 'all', category: 'New Connection' } },
     { label: 'In Operation', value: complaints.filter(c => (c.status || '').toString().trim().toLowerCase() === 'in process' || (c.status || '').toString().trim().toLowerCase() === 'in_process').length, tooltip: 'Tasks currently under execution by on-site field technicians.', color: 'border-blue-600', textColor: 'text-blue-600', icon: <TrendingUp size={18} />, filter: { status: 'in process', priority: 'all', category: 'all' } },
     { label: branding?.tabNames?.customer_review || branding?.tabNames?.costumer_review || 'Costumer review', value: complaints.filter(c => isCustomerReviewStatus(c.status)).length, tooltip: 'Operations currently under customer review and service verification.', color: 'border-indigo-500', textColor: 'text-indigo-500', icon: <MessageSquare size={18} />, filter: { status: 'customer review', priority: 'all', category: 'all' } },
     { label: 'Finalized', value: complaints.filter(c => isFinalizedStatus(c.status)).length, tooltip: 'Service successfully restored and verified from the enterprise logs (including hold/finalized records).', color: 'border-emerald-500', textColor: 'text-emerald-500', icon: <CheckCircle size={18} />, filter: { status: 'complete', priority: 'all', category: 'all' } },
-  ];
+  ], [complaints, branding?.tabNames]);
 
-  const handleTileClick = (filter: any) => {
+  const handleTileClick = useCallback((filter: any) => {
     setForcedStatus(filter.status || 'all');
     setForcedPriority(filter.priority || 'all');
     setForcedCategory(filter.category || 'all');
@@ -174,7 +181,7 @@ export default function MemberPanel({
     if (listElement) {
       listElement.scrollIntoView({ behavior: 'smooth' });
     }
-  };
+  }, []);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,157 +207,38 @@ export default function MemberPanel({
 
   return (
     <div className="space-y-12">
-      {!isComplaintsInitialLoaded && complaints.length === 0 ? (
-        <div className="py-24 flex flex-col items-center justify-center space-y-4">
-          <FiberLoading text="Synchronizing Live Operations..." size="md" />
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 animate-pulse">
-            Connecting to Network Telemetry & Live Register
-          </span>
+      {showComplaintsSkeleton ? (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 lg:gap-3">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <SkStatTile key={`member-sk-stat-${idx}`} className="w-full min-h-[128.25px] rounded-[18px]" />
+            ))}
+          </div>
+          <div className="space-y-2.5">
+            <div className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-slate-50 leading-tight">
+              Chart Analytics
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <SkChartCard type="donut" className="h-[340px] sm:h-[365px]" />
+              <SkChartCard type="area" className="h-[340px] sm:h-[365px]" />
+              <SkChartCard type="donut" className="h-[340px] sm:h-[365px]" />
+            </div>
+          </div>
+          <SkSubmitView />
+          <SkRegistry />
         </div>
       ) : (
         <>
-          {/* Member Statistics Summary */}
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-6">
-        {stats.map((stat, idx) => {
-          const isTileActive = (
-            forcedStatus === stat.filter.status &&
-            forcedPriority === stat.filter.priority &&
-            forcedCategory === stat.filter.category &&
-            stat.label !== 'Total Registry'
-          );
-
-          return (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, scale: 0.95, y: 30 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ delay: idx * 0.06, type: "spring", stiffness: 280, damping: 20 }}
-              whileHover={{ y: -8, scale: 1.03 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={() => handleTileClick(stat.filter)}
-              title={stat.tooltip}
-              className={cn(
-                "p-3 sm:p-6 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md rounded-xl sm:rounded-2xl border-l-4 shadow-[var(--neu-shadow-raised-lg)] shadow-black/5 dark:shadow-black/50 hover:shadow-[var(--neu-shadow-raised-lg)] hover:shadow-black/10 dark:hover:shadow-black/60 border-slate-200/60 dark:border-slate-800/60 flex flex-col justify-between transition-all group cursor-pointer relative active:scale-95",
-                stat.color,
-                isTileActive ? "ring-2 ring-brand-accent scale-[1.04] z-10 shadow-[var(--neu-shadow-raised-lg)] shadow-brand-accent/20 dark:shadow-brand-accent/30" : ""
-              )}
-            >
-            <div className="flex justify-between items-start mb-2 sm:mb-4">
-              <span className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors leading-tight">
-                {stat.label}
-              </span>
-                <motion.div 
-                  className={cn("p-1.5 sm:p-2 rounded-lg transition-colors shrink-0", 
-                    stat.textColor === 'text-rose-500' ? "bg-rose-500/10" :
-                    stat.textColor === 'text-blue-600' ? "bg-blue-600/10" :
-                    stat.textColor === 'text-emerald-500' ? "bg-emerald-500/10" :
-                    "bg-[var(--neu-surface)]"
-                  )}
-                  animate={stat.label === 'Finalized' && typeof stat.value === 'number' && stat.value > 0 ? {
-                    scale: [1, 1.2, 1],
-                    rotate: [0, 10, -10, 0]
-                  } : {}}
-                  transition={{ duration: 0.5 }}
-                >
-                  {React.cloneElement(stat.icon as React.ReactElement, { size: window.innerWidth < 640 ? 14 : 18 })}
-                </motion.div>
-            </div>
-            <div className="flex items-end justify-between gap-2">
-              <div className={cn("text-2xl sm:text-3xl xl:text-4xl font-black tracking-tight leading-none", stat.textColor)}>
-                {stat.value.toString().padStart(2, '0')}
-              </div>
-              {/* Micro Sparklines matching the uploaded mockup dashboard design perfectly */}
-              {(stat.label === 'New Connection' || stat.label === branding?.tabNames?.new_connection_pending) && (
-                <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
-                  <svg viewBox="0 0 80 30" width="100%" height="100%" className="overflow-visible">
-                    <path
-                      d="M 0,22 Q 15,4 32,18 T 64,8 T 80,12"
-                      fill="none"
-                      stroke="#3b82f6"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                    />
-                    <circle cx="80" cy="12" r="3" fill="#3b82f6" className="animate-pulse" />
-                  </svg>
-                </div>
-              )}
-              {(stat.label === 'In Operation' || stat.label === branding?.tabNames?.in_operation) && (
-                <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
-                  <svg viewBox="0 0 80 30" width="100%" height="100%" className="overflow-visible">
-                    <path
-                      d="M 0,20 Q 12,28 28,10 T 56,18 T 80,4"
-                      fill="none"
-                      stroke="#1d4ed8"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                    />
-                    <circle cx="80" cy="4" r="3" fill="#1d4ed8" className="animate-pulse" />
-                  </svg>
-                </div>
-              )}
-              {(stat.label === 'Costumer review' || stat.label === 'Customer Review' || stat.label === branding?.tabNames?.customer_review || stat.label === branding?.tabNames?.costumer_review) && (
-                <div className="w-[60px] sm:w-[80px] h-6 pb-0.5 opacity-80 shrink-0">
-                  <svg viewBox="0 0 80 30" width="100%" height="100%" className="overflow-visible">
-                    <path
-                      d="M 0,16 Q 20,4 40,20 T 65,10 T 80,18"
-                      fill="none"
-                      stroke="#6366f1"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                    />
-                    <circle cx="80" cy="18" r="3" fill="#6366f1" className="animate-pulse" />
-                  </svg>
-                </div>
-              )}
-            </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* Analytics Dashboards - Below Stat Boxes */}
-      <div className="space-y-4 mb-4">
-        <div 
-          className="text-center mb-4 cursor-pointer select-none group"
-          onDoubleClick={() => setIsChartsVisible(!isChartsVisible)}
-          title="Double-click to toggle analytics"
-        >
-          <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 group-hover:scale-105 transition-transform duration-500">Chart Analytics</h2>
-        </div>
-
-        <AnimatePresence mode="wait">
-          {isChartsVisible && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, filter: 'blur(10px)', y: 20 }}
-              animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', y: 0 }}
-              exit={{ 
-                opacity: 0, 
-                scale: 0.9, 
-                y: -20, 
-                filter: 'blur(10px)',
-                transition: { duration: 0.3, ease: 'easeIn' }
-              }}
-              transition={{ 
-                type: 'spring',
-                stiffness: 260,
-                damping: 25,
-                mass: 0.8
-              }}
-              className="grid grid-cols-1 lg:grid-cols-3 gap-6 origin-top"
-            >
-              <div className="h-[350px] sm:h-[380px] shadow-[var(--neu-shadow-raised-sm)] rounded-2xl">
-                <DistributionList complaints={complaints} chartType="area" />
-              </div>
-              <div className="h-[350px] sm:h-[380px] shadow-[var(--neu-shadow-raised-sm)] rounded-2xl">
-                <RealTimeMonitor complaints={complaints} />
-              </div>
-              <div className="h-[350px] sm:h-[380px] shadow-[var(--neu-shadow-raised-sm)] rounded-2xl">
-                <DistributionList complaints={complaints} chartType="category" />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          {/* Modern Chart Analytics & Quick Summary matching image */}
+          <ModernChartAnalyticsDashboard
+            complaints={complaints}
+            stats={stats}
+            onTileClick={handleTileClick}
+            forcedStatus={forcedStatus}
+            forcedPriority={forcedPriority}
+            forcedCategory={forcedCategory}
+            branding={branding}
+          />
 
       <motion.div
         key={activeTab}
@@ -367,28 +255,15 @@ export default function MemberPanel({
                 onDoubleClick={() => setIsFormVisible(!isFormVisible)}
                 title="Double-click to toggle form"
               >
-                <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50 group-hover:scale-105 transition-transform duration-500">Field Operations</h2>
+                <h2 className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-slate-50">Field Operations</h2>
                 <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-slate-400 dark:text-slate-500">Capture and process enterprise support requests</p>
               </div>
               
               <AnimatePresence mode="wait">
                 {isFormVisible && (
                   <motion.div 
-                    initial={{ opacity: 0, scale: 0.95, filter: 'blur(10px)', y: 20 }}
-                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', y: 0 }}
-                    exit={{ 
-                      opacity: 0, 
-                      scale: 0.95, 
-                      y: -20, 
-                      filter: 'blur(10px)',
-                      transition: { duration: 0.3, ease: 'easeIn' }
-                    }}
-                    transition={{ 
-                      type: 'spring',
-                      stiffness: 280,
-                      damping: 25
-                    }}
-                    className="origin-top"
+                    {...dialogMotion}
+                    className="origin-top transform-gpu will-change-transform"
                   >
                     <div className="max-w-4xl mx-auto pt-2 pb-8 relative">
                       {isSuspended && (
@@ -609,7 +484,7 @@ export default function MemberPanel({
             <section className="mt-12 pt-12 border-t border-slate-100 dark:border-white/10 pb-12">
               <button
                 onClick={onLogout}
-                className="w-full max-w-sm mx-auto py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
+                className="w-full max-w-sm mx-auto py-4 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase tracking-widest text-[11px] shadow-[var(--neu-shadow-raised-lg)] flex items-center justify-center gap-3 transition-all"
               >
                 <LogOut size={16} />
                 Sign Out

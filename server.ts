@@ -11,6 +11,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import cors from "cors";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import dns from "dns";
+import net from "net";
+import crypto from "crypto";
 import { Agent, fetch as undiciFetch, setGlobalDispatcher } from "undici";
 
 function maskUserOrEmail(val: string): string {
@@ -110,6 +112,29 @@ if (process.env.ALLOW_INSECURE_TLS !== '0') {
 const DEFAULT_SUPABASE_URL = "https://167.233.41.7.sslip.io";
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
 
+function resolveServerSupabaseKey(supabaseUrl: string, ...candidates: Array<string | undefined>): string {
+  const isDefaultHost = supabaseUrl.includes("167.233.41.7.sslip.io");
+  for (const raw of candidates) {
+    const cleaned = raw ? raw.trim().replace(/^['"]|['"]$/g, "") : "";
+    if (!cleaned) continue;
+    if (isDefaultHost) {
+      try {
+        const parts = cleaned.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
+          if (payload?.iss === "supabase-demo") {
+            continue;
+          }
+        }
+      } catch {
+        // ignore JWT parse errors
+      }
+    }
+    return cleaned;
+  }
+  return DEFAULT_SUPABASE_KEY;
+}
+
 // Handle socket reset and aborted request errors globally to prevent Node server crashes
 process.on("uncaughtException", (err: any) => {
   const code = err?.code || "";
@@ -170,7 +195,10 @@ async function startServer() {
   const app = express();
   // In this Cloud Run container environment, Nginx listens on 8080 and reverse-proxies to port 3000.
   // The Node application must always bind to port 3000 (never 8080, which is owned by Nginx).
-  const PORT = Number(process.env.PORT || process.env.APP_PORT || process.env.NODE_PORT || 3000);
+  const portArgIdx = process.argv.indexOf("--port");
+  const cliPort = portArgIdx !== -1 && process.argv[portArgIdx + 1] ? Number(process.argv[portArgIdx + 1]) : null;
+  const rawPort = process.env.APP_PORT || process.env.NODE_PORT || process.env.PORT;
+  const PORT = cliPort || (rawPort ? Number(rawPort) : 3000);
   const httpServer = http.createServer(app);
 
   // Cloud Run & load-balancer health check routes
@@ -241,6 +269,214 @@ async function startServer() {
           }
         },
       },
+    })
+  );
+
+  // --- Green Radius Backend Service Proxy (/api/radius/* -> http://127.0.0.1:3002/*) ---
+  const RADIUS_BACKEND_PORT = Number(process.env.RADIUS_PORT || 3002);
+  let radiusBackendProcess: any = null;
+  let lastRadiusBackendError: string | null = null;
+  let radiusStartPromise: Promise<boolean> | null = null;
+
+  const isRadiusAlive = async (): Promise<boolean> => {
+    try {
+      const testRes = await fetch(`http://127.0.0.1:${RADIUS_BACKEND_PORT}/health`, {
+        signal: AbortSignal.timeout(800)
+      });
+      return testRes.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const startRadiusBackendIfDown = async (): Promise<boolean> => {
+    if (await isRadiusAlive()) return true;
+    if (radiusStartPromise) return radiusStartPromise;
+
+    radiusStartPromise = (async () => {
+      try {
+        if (await isRadiusAlive()) return true;
+
+        const backendDir = path.join(process.cwd(), "radius_data", "backend");
+        const fullScriptPath = path.join(backendDir, "server.cjs");
+        if (!fs.existsSync(fullScriptPath)) {
+          lastRadiusBackendError = "radius_data/backend/server.cjs not found";
+          return false;
+        }
+
+        if (!radiusBackendProcess) {
+          console.log(`[Radius Service] Starting local Green Radius backend service (server.cjs) on port ${RADIUS_BACKEND_PORT}...`);
+          const { spawn } = await import("child_process");
+          const rootNodeModules = path.join(process.cwd(), "node_modules");
+          const backendNodeModules = path.join(backendDir, "node_modules");
+          const nodePath = [backendNodeModules, rootNodeModules, process.env.NODE_PATH || ""].filter(Boolean).join(":");
+
+          const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+          const supabaseKey = resolveServerSupabaseKey(
+            supabaseUrl,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            process.env.SUPABASE_ANON_KEY,
+            process.env.VITE_SUPABASE_ANON_KEY
+          );
+
+          const childEnv = { ...process.env };
+          if (process.env.ALLOW_INSECURE_TLS !== '0') {
+            childEnv.ALLOW_INSECURE_TLS = "1";
+            childEnv.RADIUS_SUPABASE_INSECURE_TLS = "1";
+          }
+
+          const EXAMPLE_JWT_SECRET = "super_secret_jwt_key_must_be_at_least_32_chars_long";
+          const EXAMPLE_ENC_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+          const isValidJwtSecret = (v?: string) => Boolean(v && v.length >= 32 && v !== EXAMPLE_JWT_SECRET);
+          const isValidEncKey = (v?: string) => {
+            if (!v || !/^[0-9a-fA-F]{64}$/.test(v)) return false;
+            const lower = v.toLowerCase();
+            return lower !== EXAMPLE_ENC_KEY && !/^(.)\1{63}$/.test(lower);
+          };
+
+          const backendEnvPath = path.join(backendDir, ".env");
+          let fileEnv: Record<string, string> = {};
+          try {
+            if (fs.existsSync(backendEnvPath)) {
+              fileEnv = dotenv.parse(fs.readFileSync(backendEnvPath, "utf8"));
+            }
+          } catch {}
+
+          let resolvedJwtSecret = isValidJwtSecret(process.env.RADIUS_JWT_SECRET)
+            ? process.env.RADIUS_JWT_SECRET!
+            : isValidJwtSecret(fileEnv.RADIUS_JWT_SECRET)
+              ? fileEnv.RADIUS_JWT_SECRET
+              : "";
+          let resolvedEncKey = isValidEncKey(process.env.RADIUS_ENC_KEY)
+            ? process.env.RADIUS_ENC_KEY!
+            : isValidEncKey(fileEnv.RADIUS_ENC_KEY)
+              ? fileEnv.RADIUS_ENC_KEY
+              : "";
+
+          const generatedEntries: string[] = [];
+          if (!resolvedJwtSecret) {
+            resolvedJwtSecret = crypto.randomBytes(32).toString("hex");
+            generatedEntries.push(`RADIUS_JWT_SECRET=${resolvedJwtSecret}`);
+          }
+          if (!resolvedEncKey) {
+            resolvedEncKey = crypto.randomBytes(32).toString("hex");
+            generatedEntries.push(`RADIUS_ENC_KEY=${resolvedEncKey}`);
+          }
+          if (generatedEntries.length > 0) {
+            try {
+              const existingContent = fs.existsSync(backendEnvPath) ? fs.readFileSync(backendEnvPath, "utf8") : "";
+              const prefix = existingContent && !existingContent.endsWith("\n") ? "\n" : "";
+              fs.appendFileSync(backendEnvPath, `${prefix}${generatedEntries.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+            } catch {}
+          }
+
+          radiusBackendProcess = spawn("node", ["server.cjs"], {
+            cwd: backendDir,
+            env: {
+              ...childEnv,
+              PORT: String(RADIUS_BACKEND_PORT),
+              RADIUS_PORT: String(RADIUS_BACKEND_PORT),
+              NODE_PATH: nodePath,
+              SUPABASE_URL: supabaseUrl,
+              SUPABASE_SERVICE_ROLE_KEY: supabaseKey,
+              RADIUS_JWT_SECRET: resolvedJwtSecret,
+              RADIUS_ENC_KEY: resolvedEncKey,
+            },
+            stdio: "pipe"
+          });
+          radiusBackendProcess.stdout?.on("data", (data: any) => {
+            const str = data.toString().trim();
+            if (str) console.log(`[Radius Backend] ${str}`);
+          });
+          radiusBackendProcess.stderr?.on("data", (data: any) => {
+            const str = data.toString().trim();
+            if (str) {
+              if (
+                str.includes("EADDRINUSE") ||
+                str.includes("ReferenceError") ||
+                str.includes("SyntaxError") ||
+                str.includes("Cannot find module") ||
+                str.includes("FATAL")
+              ) {
+                console.warn(`[Radius Backend Fatal Error] ${str}`);
+                lastRadiusBackendError = str;
+              } else {
+                console.log(`[Radius Backend Notice] ${str}`);
+              }
+            }
+          });
+          radiusBackendProcess.on("exit", (code: any) => {
+            console.log(`[Radius Backend] Process exited with code ${code}`);
+            if (code !== 0) {
+              lastRadiusBackendError = `Process exited with code ${code}. ${lastRadiusBackendError || ""}`.trim();
+            }
+            radiusBackendProcess = null;
+          });
+        }
+
+        // Wait up to 5 seconds for port to accept connections
+        for (let i = 0; i < 33; i++) {
+          if (await isRadiusAlive()) {
+            lastRadiusBackendError = null;
+            return true;
+          }
+          if (!radiusBackendProcess) break;
+          await new Promise((r) => setTimeout(r, 150));
+        }
+        return await isRadiusAlive();
+      } catch (spawnErr: any) {
+        lastRadiusBackendError = spawnErr?.message || String(spawnErr);
+        console.warn("[Radius Service] Failed to auto-spawn local Radius service:", spawnErr);
+        return false;
+      } finally {
+        radiusStartPromise = null;
+      }
+    })();
+
+    return radiusStartPromise;
+  };
+
+  startRadiusBackendIfDown();
+
+  app.use("/api/radius", async (_req, res, next) => {
+    const ready = await startRadiusBackendIfDown();
+    if (!ready) {
+      return res.status(503).json({
+        error: "Radius service starting or unavailable",
+        message: lastRadiusBackendError || "Service did not respond in time",
+      });
+    }
+    next();
+  });
+
+  app.use(
+    ["/api/radius"],
+    createProxyMiddleware({
+      target: `http://127.0.0.1:${RADIUS_BACKEND_PORT}`,
+      changeOrigin: true,
+      secure: false,
+      ws: true,
+      proxyTimeout: 30000,
+      timeout: 30000,
+      pathRewrite: {
+        "^/api/radius": "",
+      },
+      on: {
+        proxyRes: (proxyRes: any) => {
+          // Nginx on port 8080 intercepts HTTP 403 and replaces JSON with /forbidden.html.
+          // Remap 403 -> 400 and carry the true status in X-Radius-Http-Status for radiusApi.ts.
+          if (proxyRes.statusCode === 403) {
+            proxyRes.headers['x-radius-http-status'] = '403';
+            proxyRes.statusCode = 400;
+          }
+        },
+        error: (err: any, req: any, res: any) => {
+          console.warn("[Radius Service Proxy Error]:", err?.message);
+          if (res && !res.headersSent) {
+            try { res.status(502).json({ error: 'Radius service unavailable', message: err?.message }); } catch (_) {}
+          }
+        }
+      }
     })
   );
 
@@ -598,100 +834,492 @@ async function startServer() {
     res.status(204).end();
   });
 
-  // --- Real Native Network Ping Proxy Engine (Hetzner Cloud POP) ---
-  app.get("/api/network-ping", async (req, res) => {
-    let host = (req.query.host as string) || "8.8.8.8";
+  // --- Real Native Network Ping Engine (Multi-Packet ICMP + TCP Fallback) ---
+  const networkPingIpRateMap = new Map<string, number[]>();
+  function checkNetworkPingRateLimit(ip: string): boolean {
+    const now = Date.now();
+    const recent = (networkPingIpRateMap.get(ip) || []).filter(t => now - t < 60000);
+    if (recent.length >= 180) {
+      networkPingIpRateMap.set(ip, recent);
+      return false;
+    }
+    recent.push(now);
+    networkPingIpRateMap.set(ip, recent);
+    return true;
+  }
 
-    // Clean target url to secure arguments against injections
-    host = host
-      .replace(/^https?:\/\//i, "")
-      .split("/")[0]
-      .split(":")[0]
-      .trim();
+  function extractPingHostTarget(rawInput: string): { host: string; requestedCount: number | null } {
+    let raw = String(rawInput || "").trim();
+    if (!raw) return { host: "", requestedCount: null };
 
-    // Strict validation: host must strictly match a valid hostname or IP address
-    if (!host || !/^[a-zA-Z0-9.-]+$/.test(host) || host.startsWith("-")) {
-      return res.status(400).json({ error: "Invalid Host Matrix Protocol" });
+    let requestedCount: number | null = null;
+    // Support commands like "ping facebook.com" or "ping -c 4 facebook.com"
+    if (/^ping\s+/i.test(raw)) {
+      const tokens = raw.split(/\s+/).slice(1);
+      let candidate = "";
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        if ((tok === "-c" || tok === "-n") && i + 1 < tokens.length) {
+          const parsed = parseInt(tokens[i + 1], 10);
+          if (!isNaN(parsed) && parsed >= 1 && parsed <= 10) {
+            requestedCount = parsed;
+          }
+          i++;
+          continue;
+        }
+        if ((tok === "-W" || tok === "-w" || tok === "-i" || tok === "-s" || tok === "-t") && i + 1 < tokens.length && /^\d+$/.test(tokens[i + 1])) {
+          i++;
+          continue;
+        }
+        if (tok.startsWith("-")) continue;
+        candidate = tok;
+      }
+      raw = candidate;
     }
 
-    const isWin = process.platform === "win32";
-    const pingCmd = "ping";
-    const pingArgs = isWin ? ["-n", "1", "-w", "1200", host] : ["-c", "1", "-W", "1", host];
+    const cleaned = raw
+      .replace(/^[a-zA-Z]+:\/\//i, "")
+      .split("/")[0]
+      .split("?")[0]
+      .split("#")[0]
+      .split(":")[0]
+      .trim()
+      .toLowerCase()
+      .replace(/\.+$/, "");
 
-    exec.execFile(pingCmd, pingArgs, { timeout: 2000 }, (err, stdout) => {
-      let measuredMs: number | null = null;
+    return { host: cleaned, requestedCount };
+  }
 
-      if (!err && stdout) {
-        if (isWin) {
-          const avgMatch = stdout.match(/Average\s*=\s*([\d.]+)\s*ms/i) || stdout.match(/time[=<]([\d.]+)\s*ms/i);
-          if (avgMatch) measuredMs = Math.round(parseFloat(avgMatch[1]));
-        } else {
-          const rttMatch = stdout.match(/rtt\s+min\/avg\/max\/mdev\s*=\s*[\d.]+\/([\d.]+)\//i) || stdout.match(/time=([\d.]+)\s*ms/i);
-          if (rttMatch) measuredMs = Math.round(parseFloat(rttMatch[1]));
+  function roundMs(val: number): number {
+    return Math.round(val * 100) / 100;
+  }
+
+  interface ProbePacketDetail {
+    seq: number;
+    bytes: number | null;
+    ip: string | null;
+    ttl: number | null;
+    timeMs: number | null;
+    status: "ok" | "timeout" | "error";
+    error?: string;
+  }
+
+  function computeRttStats(packets: ProbePacketDetail[]) {
+    const okTimes = packets
+      .filter((p): p is ProbePacketDetail & { timeMs: number } => p.status === "ok" && typeof p.timeMs === "number" && p.timeMs >= 0)
+      .map(p => p.timeMs);
+
+    const packetsSent = packets.length;
+    const packetsReceived = okTimes.length;
+    const packetsLost = packetsSent - packetsReceived;
+    const packetLoss = packetsSent > 0 ? Math.round((packetsLost / packetsSent) * 1000) / 10 : 100;
+
+    if (okTimes.length === 0) {
+      return {
+        packetsSent,
+        packetsReceived,
+        packetsLost,
+        packetLoss,
+        minMs: null as number | null,
+        avgMs: null as number | null,
+        maxMs: null as number | null,
+        mdevMs: null as number | null,
+        jitterMs: null as number | null,
+        ttl: null as number | null
+      };
+    }
+
+    const minMs = roundMs(Math.min(...okTimes));
+    const maxMs = roundMs(Math.max(...okTimes));
+    const avgRaw = okTimes.reduce((a, b) => a + b, 0) / okTimes.length;
+    const avgMs = roundMs(avgRaw);
+
+    const variance = okTimes.reduce((acc, t) => acc + Math.pow(t - avgRaw, 2), 0) / okTimes.length;
+    const mdevMs = roundMs(Math.sqrt(variance));
+
+    let jitterMs = 0;
+    if (okTimes.length >= 2) {
+      let deltaSum = 0;
+      for (let i = 1; i < okTimes.length; i++) {
+        deltaSum += Math.abs(okTimes[i] - okTimes[i - 1]);
+      }
+      jitterMs = roundMs(deltaSum / (okTimes.length - 1));
+    }
+
+    const ttls = packets.map(p => p.ttl).filter((t): t is number => typeof t === "number" && t > 0);
+    const ttl = ttls.length > 0 ? Math.round(ttls.reduce((a, b) => a + b, 0) / ttls.length) : null;
+
+    return {
+      packetsSent,
+      packetsReceived,
+      packetsLost,
+      packetLoss,
+      minMs,
+      avgMs,
+      maxMs,
+      mdevMs,
+      jitterMs,
+      ttl
+    };
+  }
+
+  function runIcmpPing(targetIp: string, count: number): Promise<{
+    supported: boolean;
+    packets: ProbePacketDetail[];
+    stats: ReturnType<typeof computeRttStats>;
+  }> {
+    return new Promise((resolve) => {
+      const isWin = process.platform === "win32";
+      const isV6 = net.isIPv6(targetIp);
+      const pingArgs = isWin
+        ? ["-n", String(count), "-w", "1500", targetIp]
+        : [...(isV6 ? ["-6"] : []), "-n", "-c", String(count), "-W", "2", "-i", "0.2", targetIp];
+
+      const timeoutMs = Math.min(12000, count * 2200 + 1500);
+      exec.execFile("ping", pingArgs, { timeout: timeoutMs }, (err, stdout, stderr) => {
+        const out = `${stdout || ""}\n${stderr || ""}`;
+
+        // Detect container permission / missing binary / unprivileged raw socket failure
+        if (err && /Operation not permitted|socket:|EPERM|ENOENT|cap_net_raw/i.test(out + " " + (err.message || ""))) {
+          return resolve({ supported: false, packets: [], stats: computeRttStats([]) });
         }
-      }
 
-      if (measuredMs !== null && !isNaN(measuredMs) && measuredMs > 0) {
-        return res.json({
-          ms: measuredMs,
-          status: "online",
-          host,
-          method: "icmp",
-          pop: "Hetzner Cloud Edge"
-        });
-      }
+        const packetsBySeq = new Map<number, ProbePacketDetail>();
+        const lines = out.split(/\r?\n/);
 
-      // Real TCP connect timing fallback if ICMP raw socket is filtered
-      const net = require("net");
-      const socket = new net.Socket();
-      socket.setTimeout(1500);
-      const socketStart = performance.now();
+        for (const line of lines) {
+          if (!isWin) {
+            // Linux iputils: "64 bytes from 157.240.229.35: icmp_seq=1 ttl=56 time=12.4 ms"
+            const m = line.match(/(\d+)\s+bytes\s+from\s+([^\s:]+).*?icmp_seq=(\d+)\s+ttl=(\d+)\s+time=([\d.]+)\s*ms/i);
+            if (m) {
+              const seq = parseInt(m[3], 10);
+              packetsBySeq.set(seq, {
+                seq,
+                bytes: parseInt(m[1], 10),
+                ip: m[2],
+                ttl: parseInt(m[4], 10),
+                timeMs: roundMs(parseFloat(m[5])),
+                status: "ok"
+              });
+            }
+          } else {
+            // Windows: "Reply from 157.240.229.35: bytes=32 time=12ms TTL=56"
+            const m = line.match(/Reply\s+from\s+([^\s:]+).*?bytes=(\d+)\s+time[=<]([\d.]+)\s*ms\s+TTL=(\d+)/i);
+            if (m) {
+              const seq = packetsBySeq.size + 1;
+              packetsBySeq.set(seq, {
+                seq,
+                bytes: parseInt(m[2], 10),
+                ip: m[1],
+                ttl: parseInt(m[4], 10),
+                timeMs: roundMs(parseFloat(m[3])),
+                status: "ok"
+              });
+            }
+          }
+        }
 
-      socket.connect(443, host, () => {
-        const socketElapsed = Math.max(1, Math.round(performance.now() - socketStart));
-        socket.destroy();
-        return res.json({
-          ms: socketElapsed,
-          status: "online",
-          host,
-          method: "tcp-443",
-          pop: "Hetzner Cloud Edge"
-        });
+        const packets: ProbePacketDetail[] = [];
+        for (let seq = 1; seq <= count; seq++) {
+          const found = packetsBySeq.get(seq);
+          if (found) {
+            packets.push(found);
+          } else {
+            packets.push({
+              seq,
+              bytes: null,
+              ip: targetIp,
+              ttl: null,
+              timeMs: null,
+              status: "timeout",
+              error: "Request timed out"
+            });
+          }
+        }
+
+        const stats = computeRttStats(packets);
+        // If 0 packets received via ICMP in a sandboxed container, allow TCP probe to verify if host is actually reachable
+        if (stats.packetsReceived === 0) {
+          return resolve({ supported: false, packets, stats });
+        }
+
+        return resolve({ supported: true, packets, stats });
       });
+    });
+  }
 
-      socket.on("error", () => {
-        socket.destroy();
-        const socket80 = new net.Socket();
-        socket80.setTimeout(1500);
-        const start80 = performance.now();
+  function probeSingleTcpPacket(targetIp: string, port: number, seq: number, timeoutMs = 2000): Promise<ProbePacketDetail> {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      let settled = false;
+      const start = performance.now();
 
-        socket80.connect(80, host, () => {
-          const elapsed80 = Math.max(1, Math.round(performance.now() - start80));
-          socket80.destroy();
-          return res.json({
-            ms: elapsed80,
-            status: "online",
-            host,
-            method: "tcp-80",
-            pop: "Hetzner Cloud Edge"
-          });
-        });
+      const finish = (detail: ProbePacketDetail) => {
+        if (settled) return;
+        settled = true;
+        try {
+          socket.destroy();
+        } catch {}
+        resolve(detail);
+      };
 
-        socket80.on("error", () => {
-          socket80.destroy();
-          return res.json({ ms: "Error", status: "offline", host, pop: "Hetzner Cloud Edge" });
-        });
+      socket.setTimeout(timeoutMs);
 
-        socket80.on("timeout", () => {
-          socket80.destroy();
-          return res.json({ ms: "Error", status: "offline", host, pop: "Hetzner Cloud Edge" });
+      socket.connect(port, targetIp, () => {
+        const elapsed = roundMs(Math.max(0.05, performance.now() - start));
+        finish({
+          seq,
+          bytes: null,
+          ip: targetIp,
+          ttl: null,
+          timeMs: elapsed,
+          status: "ok"
         });
       });
 
       socket.on("timeout", () => {
-        socket.destroy();
-        return res.json({ ms: "Error", status: "offline", host, pop: "Hetzner Cloud Edge" });
+        finish({
+          seq,
+          bytes: null,
+          ip: targetIp,
+          ttl: null,
+          timeMs: null,
+          status: "timeout",
+          error: `TCP:${port} timeout`
+        });
       });
+
+      socket.on("error", (err: any) => {
+        finish({
+          seq,
+          bytes: null,
+          ip: targetIp,
+          ttl: null,
+          timeMs: null,
+          status: "error",
+          error: err?.code || "Connection failed"
+        });
+      });
+    });
+  }
+
+  async function runTcpMultiProbe(targetIp: string, count: number): Promise<{
+    port: number;
+    packets: ProbePacketDetail[];
+    stats: ReturnType<typeof computeRttStats>;
+  }> {
+    let activePort = 443;
+    const first = await probeSingleTcpPacket(targetIp, 443, 1, 1800);
+    const packets: ProbePacketDetail[] = [];
+
+    if (first.status !== "ok") {
+      const first80 = await probeSingleTcpPacket(targetIp, 80, 1, 1800);
+      if (first80.status === "ok") {
+        activePort = 80;
+        packets.push(first80);
+      } else {
+        packets.push(first);
+      }
+    } else {
+      packets.push(first);
+    }
+
+    for (let seq = 2; seq <= count; seq++) {
+      // Short spacing between packets for genuine jitter measurement without slowing UI
+      await new Promise(r => setTimeout(r, 80));
+      const p = await probeSingleTcpPacket(targetIp, activePort, seq, 1800);
+      packets.push(p);
+    }
+
+    return {
+      port: activePort,
+      packets,
+      stats: computeRttStats(packets)
+    };
+  }
+
+  app.get("/api/dns-resolve", async (req, res) => {
+    const rawHost = String(req.query.host || "").trim();
+    const { host } = extractPingHostTarget(rawHost);
+
+    if (!host || host.length > 253 || !/^[a-zA-Z0-9.-]+$/.test(host) || host.startsWith("-") || host.includes("..")) {
+      return res.status(400).json({ error: "Invalid domain or IP address format." });
+    }
+
+    if (net.isIP(host)) {
+      if (isPrivateOrRestrictedIP(host)) {
+        return res.status(403).json({ error: "Private or reserved network addresses cannot be queried." });
+      }
+      return res.json({
+        host,
+        ip: host,
+        family: net.isIP(host),
+        dnsMs: 0.1,
+        source: "direct-ip",
+        resolvedAt: Date.now()
+      });
+    }
+
+    try {
+      const dnsStart = performance.now();
+      const records = await dns.promises.lookup(host, { all: true });
+      const dnsMs = roundMs(Math.max(0.05, performance.now() - dnsStart));
+
+      if (!records || records.length === 0) {
+        return res.status(404).json({ error: "No DNS records found", host });
+      }
+
+      const v4 = records.find(r => r.family === 4);
+      const chosen = v4 || records[0];
+
+      if (isPrivateOrRestrictedIP(chosen.address)) {
+        return res.status(403).json({ error: "Target resolves to a private or reserved network address." });
+      }
+
+      return res.json({
+        host,
+        ip: chosen.address,
+        family: chosen.family,
+        allIps: records.map(r => r.address),
+        dnsMs,
+        source: "system-dns",
+        resolvedAt: Date.now()
+      });
+    } catch (err: any) {
+      return res.status(404).json({
+        host,
+        error: err?.code === "ENOTFOUND" ? `Host "${host}" could not be resolved (NXDOMAIN)` : "DNS lookup failed",
+        dnsMs: null
+      });
+    }
+  });
+
+  app.get("/api/network-ping", async (req, res) => {
+    const clientIp = String(req.ip || req.socket?.remoteAddress || "unknown");
+    if (!checkNetworkPingRateLimit(clientIp)) {
+      return res.status(429).json({ error: "Too many ping requests. Please slow down briefly." });
+    }
+
+    const rawHost = String(req.query.host || "8.8.8.8");
+    const { host, requestedCount } = extractPingHostTarget(rawHost);
+
+    // Strict validation: host must match a valid hostname or IPv4 address
+    if (!host || host.length > 253 || !/^[a-zA-Z0-9.-]+$/.test(host) || host.startsWith("-") || host.includes("..")) {
+      return res.status(400).json({ error: "Invalid domain or IP address format." });
+    }
+
+    const queryCount = parseInt(String(req.query.count || ""), 10);
+    const packetCount = Math.min(10, Math.max(1, !isNaN(queryCount) ? queryCount : (requestedCount || 4)));
+
+    // Resolve DNS and measure lookup latency
+    let resolvedIp = host;
+    let dnsMs = 0;
+
+    try {
+      if (net.isIP(host)) {
+        if (isPrivateOrRestrictedIP(host)) {
+          return res.status(403).json({ error: "Private or reserved network addresses cannot be probed." });
+        }
+        resolvedIp = host;
+      } else {
+        const dnsStart = performance.now();
+        const records = await dns.promises.lookup(host, { all: true });
+        dnsMs = roundMs(Math.max(0.05, performance.now() - dnsStart));
+
+        if (!records || records.length === 0) {
+          return res.status(404).json({
+            host,
+            resolvedIp: null,
+            dnsMs,
+            status: "offline",
+            method: "failed",
+            ms: "Error",
+            error: "DNS resolution returned no addresses"
+          });
+        }
+
+        if (records.some(r => isPrivateOrRestrictedIP(r.address))) {
+          return res.status(403).json({ error: "Target resolves to a private or reserved network address and cannot be probed." });
+        }
+
+        const v4 = records.find(r => r.family === 4);
+        resolvedIp = (v4 || records[0]).address;
+      }
+    } catch (dnsErr: any) {
+      return res.json({
+        host,
+        resolvedIp: null,
+        dnsMs: null,
+        status: "offline",
+        method: "failed",
+        ms: "Error",
+        minMs: null,
+        avgMs: null,
+        maxMs: null,
+        mdevMs: null,
+        jitterMs: null,
+        packetsSent: packetCount,
+        packetsReceived: 0,
+        packetsLost: packetCount,
+        packetLoss: 100,
+        ttl: null,
+        packets: [],
+        error: dnsErr?.code === "ENOTFOUND" ? `Host "${host}" could not be resolved (NXDOMAIN)` : "DNS lookup failed",
+        pop: "Server Probe",
+        timestamp: Date.now()
+      });
+    }
+
+    // 1. Primary ICMP multi-packet probe
+    const icmp = await runIcmpPing(resolvedIp, packetCount);
+    if (icmp.supported && icmp.stats.packetsReceived > 0) {
+      return res.json({
+        host,
+        resolvedIp,
+        dnsMs,
+        status: "online",
+        method: "icmp",
+        ms: icmp.stats.avgMs,
+        minMs: icmp.stats.minMs,
+        avgMs: icmp.stats.avgMs,
+        maxMs: icmp.stats.maxMs,
+        mdevMs: icmp.stats.mdevMs,
+        jitterMs: icmp.stats.jitterMs,
+        packetsSent: icmp.stats.packetsSent,
+        packetsReceived: icmp.stats.packetsReceived,
+        packetsLost: icmp.stats.packetsLost,
+        packetLoss: icmp.stats.packetLoss,
+        ttl: icmp.stats.ttl,
+        packets: icmp.packets,
+        pop: "Server ICMP",
+        timestamp: Date.now()
+      });
+    }
+
+    // 2. Fallback to real TCP SYN-ACK multi-packet probe (443 -> 80) when container restricts raw ICMP sockets
+    const tcp = await runTcpMultiProbe(resolvedIp, packetCount);
+    const isOnline = tcp.stats.packetsReceived > 0;
+
+    return res.json({
+      host,
+      resolvedIp,
+      dnsMs,
+      status: isOnline ? "online" : "offline",
+      method: isOnline ? `tcp-${tcp.port}` : "failed",
+      ms: isOnline ? tcp.stats.avgMs : "Error",
+      minMs: tcp.stats.minMs,
+      avgMs: tcp.stats.avgMs,
+      maxMs: tcp.stats.maxMs,
+      mdevMs: tcp.stats.mdevMs,
+      jitterMs: tcp.stats.jitterMs,
+      packetsSent: tcp.stats.packetsSent,
+      packetsReceived: tcp.stats.packetsReceived,
+      packetsLost: tcp.stats.packetsLost,
+      packetLoss: tcp.stats.packetLoss,
+      ttl: null,
+      packets: tcp.packets,
+      pop: isOnline ? `Server TCP:${tcp.port}` : "Server Probe",
+      timestamp: Date.now()
     });
   });
   // --- End Network Ping Proxy Engine ---
@@ -742,87 +1370,116 @@ async function startServer() {
   // Auto-start local WhatsApp Baileys service if port 3001 is not running
   let whatsappBackendProcess: any = null;
   let lastWhatsAppBackendError: string | null = null;
+  let whatsappStartPromise: Promise<void> | null = null;
   const startWhatsAppBackendIfDown = async () => {
     if (process.env.WHATSAPP_AUTOSTART === 'false') return;
-    try {
-      const testRes = await fetch("http://127.0.0.1:3001/status", {
-        headers: { "x-internal-key": process.env.WA_INTERNAL_KEY || "" },
-        signal: AbortSignal.timeout(1000)
-      });
-      if (testRes.ok) return; // already active on port 3001
-    } catch (_) {
-      const backendDir = path.join(process.cwd(), "whatsapp_data", "backend");
-      const backendScript = fs.existsSync(path.join(backendDir, "server.cjs")) ? "server.cjs" : "server.js";
-      const fullScriptPath = path.join(backendDir, backendScript);
-      if (fs.existsSync(fullScriptPath) && !whatsappBackendProcess) {
-        try {
-          console.log(`[WhatsApp Bridge] Starting local WhatsApp Baileys service (${backendScript}) on port 3001...`);
-          const { spawn } = await import("child_process");
-          const rootNodeModules = path.join(process.cwd(), "node_modules");
-          const backendNodeModules = path.join(backendDir, "node_modules");
-          const nodePath = [backendNodeModules, rootNodeModules, process.env.NODE_PATH || ""].filter(Boolean).join(":");
+    if (whatsappStartPromise) return whatsappStartPromise;
 
-          const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://167.233.41.7.sslip.io";
-          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
+    whatsappStartPromise = (async () => {
+      try {
+        const testRes = await fetch("http://127.0.0.1:3001/status", {
+          headers: { "x-internal-key": process.env.WA_INTERNAL_KEY || "" },
+          signal: AbortSignal.timeout(1000)
+        });
+        if (testRes.ok) return; // already active on port 3001
+      } catch (_) {
+        const backendDir = path.join(process.cwd(), "whatsapp_data", "backend");
+        const backendScript = fs.existsSync(path.join(backendDir, "server.cjs")) ? "server.cjs" : "server.js";
+        const fullScriptPath = path.join(backendDir, backendScript);
+        if (fs.existsSync(fullScriptPath) && !whatsappBackendProcess) {
+          try {
+            const { spawn, exec: cpExec } = await import("child_process");
+            const { promisify } = await import("util");
+            const execAsync = promisify(cpExec);
+            const rootNodeModules = path.join(process.cwd(), "node_modules");
+            const backendNodeModules = path.join(backendDir, "node_modules");
 
-          const childEnv = { ...process.env };
-          if (process.env.ALLOW_INSECURE_TLS !== '0') {
-            childEnv.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-            childEnv.ALLOW_INSECURE_TLS = "1";
-          } else {
-            delete childEnv.NODE_TLS_REJECT_UNAUTHORIZED;
-          }
+            if (
+              !fs.existsSync(path.join(backendNodeModules, "@whiskeysockets", "baileys")) &&
+              !fs.existsSync(path.join(rootNodeModules, "@whiskeysockets", "baileys"))
+            ) {
+              console.log("[WhatsApp Bridge] Installing missing whatsapp_data/backend dependencies...");
+              await execAsync("npm install --no-audit --no-fund", { cwd: backendDir, timeout: 60000 });
+            }
 
-          whatsappBackendProcess = spawn("node", [backendScript], {
-            cwd: backendDir,
-            env: {
-              ...childEnv,
-              PORT: "3001",
-              NODE_PATH: nodePath,
-              SUPABASE_URL: supabaseUrl,
-              VITE_SUPABASE_URL: supabaseUrl,
-              SUPABASE_ANON_KEY: supabaseKey,
-              VITE_SUPABASE_ANON_KEY: supabaseKey,
-              WA_INTERNAL_KEY: process.env.WA_INTERNAL_KEY || "",
-            },
-            stdio: "pipe"
-          });
-          whatsappBackendProcess.stdout?.on("data", (data: any) => {
-            const str = data.toString().trim();
-            if (str) console.log(`[WhatsApp Backend] ${str}`);
-          });
-          whatsappBackendProcess.stderr?.on("data", (data: any) => {
-            const str = data.toString().trim();
-            if (str) {
-              if (
-                str.includes("EADDRINUSE") ||
-                str.includes("ReferenceError") ||
-                str.includes("SyntaxError")
-              ) {
-                console.warn(`[WhatsApp Backend Fatal Error] ${str}`);
-                lastWhatsAppBackendError = str;
-              } else {
-                console.log(`[WhatsApp Backend Notice] ${str}`);
+            console.log(`[WhatsApp Bridge] Starting local WhatsApp Baileys service (${backendScript}) on port 3001...`);
+            const nodePath = [backendNodeModules, rootNodeModules, process.env.NODE_PATH || ""].filter(Boolean).join(":");
+
+            const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+            const supabaseKey = resolveServerSupabaseKey(
+              supabaseUrl,
+              process.env.SUPABASE_SERVICE_ROLE_KEY,
+              process.env.SUPABASE_ANON_KEY,
+              process.env.VITE_SUPABASE_ANON_KEY
+            );
+
+            const childEnv = { ...process.env };
+            if (process.env.ALLOW_INSECURE_TLS !== '0') {
+              childEnv.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+              childEnv.ALLOW_INSECURE_TLS = "1";
+            } else {
+              delete childEnv.NODE_TLS_REJECT_UNAUTHORIZED;
+            }
+
+            whatsappBackendProcess = spawn("node", [backendScript], {
+              cwd: backendDir,
+              env: {
+                ...childEnv,
+                PORT: "3001",
+                NODE_PATH: nodePath,
+                SUPABASE_URL: supabaseUrl,
+                VITE_SUPABASE_URL: supabaseUrl,
+                SUPABASE_ANON_KEY: supabaseKey,
+                VITE_SUPABASE_ANON_KEY: supabaseKey,
+                WA_INTERNAL_KEY: process.env.WA_INTERNAL_KEY || "",
+              },
+              stdio: "pipe"
+            });
+            whatsappBackendProcess.stdout?.on("data", (data: any) => {
+              const str = data.toString().trim();
+              if (str) console.log(`[WhatsApp Backend] ${str}`);
+            });
+            whatsappBackendProcess.stderr?.on("data", (data: any) => {
+              const str = data.toString().trim();
+              if (str) {
+                if (
+                  str.includes("EADDRINUSE") ||
+                  str.includes("ReferenceError") ||
+                  str.includes("SyntaxError") ||
+                  str.includes("Cannot find module") ||
+                  str.includes("MODULE_NOT_FOUND")
+                ) {
+                  console.warn(`[WhatsApp Backend Fatal Error] ${str}`);
+                  lastWhatsAppBackendError = str;
+                } else {
+                  console.log(`[WhatsApp Backend Notice] ${str}`);
+                }
               }
-            }
-          });
-          whatsappBackendProcess.on("exit", (code: any) => {
-            console.log(`[WhatsApp Backend] Process exited with code ${code}`);
-            if (code !== 0) {
-              lastWhatsAppBackendError = `Process exited with code ${code}. ${lastWhatsAppBackendError || ""}`.trim();
-            }
-            whatsappBackendProcess = null;
-          });
-        } catch (spawnErr: any) {
-          lastWhatsAppBackendError = spawnErr?.message || String(spawnErr);
-          console.warn("[WhatsApp Bridge] Failed to auto-spawn local WhatsApp service:", spawnErr);
+            });
+            whatsappBackendProcess.on("exit", (code: any) => {
+              console.log(`[WhatsApp Backend] Process exited with code ${code}`);
+              if (code !== 0) {
+                lastWhatsAppBackendError = `Process exited with code ${code}. ${lastWhatsAppBackendError || ""}`.trim();
+              }
+              whatsappBackendProcess = null;
+            });
+          } catch (spawnErr: any) {
+            lastWhatsAppBackendError = spawnErr?.message || String(spawnErr);
+            console.warn("[WhatsApp Bridge] Failed to auto-spawn local WhatsApp service:", spawnErr);
+          }
         }
+      } finally {
+        whatsappStartPromise = null;
       }
-    }
+    })();
+
+    return whatsappStartPromise;
   };
 
   // Trigger check on server start
   startWhatsAppBackendIfDown();
+
+
 
   const SESSION_KEY_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
   const isValidSessionKey = (key: any): boolean => typeof key === "string" && SESSION_KEY_REGEX.test(key);
@@ -1074,9 +1731,13 @@ async function startServer() {
 
     // 3. Supabase row candidate
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
     const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_URL;
-    const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_KEY;
+    const SUPABASE_KEY = resolveServerSupabaseKey(
+      SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.SUPABASE_ANON_KEY,
+      process.env.VITE_SUPABASE_ANON_KEY
+    );
 
     if (SUPABASE_URL && SUPABASE_KEY) {
       try {
@@ -1173,9 +1834,13 @@ async function startServer() {
     writeServerTemplatesBackup(inMemoryWhatsAppSettings);
 
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
     const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_URL;
-    const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_KEY;
+    const SUPABASE_KEY = resolveServerSupabaseKey(
+      SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.SUPABASE_ANON_KEY,
+      process.env.VITE_SUPABASE_ANON_KEY
+    );
 
     let savedInDatabase = false;
     let dbErrorMessage = "";
@@ -1354,9 +2019,13 @@ async function startServer() {
 
       // Direct REST fallback with Service Role or Anon key
       const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-      const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
       const SUPABASE_URL = rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_URL;
-      const SUPABASE_KEY = rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : DEFAULT_SUPABASE_KEY;
+      const SUPABASE_KEY = resolveServerSupabaseKey(
+        SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        process.env.SUPABASE_ANON_KEY,
+        process.env.VITE_SUPABASE_ANON_KEY
+      );
 
       const leadRes = await fetch(`${SUPABASE_URL}/rest/v1/reminder_leads`, {
         method: "POST",
@@ -1466,7 +2135,14 @@ async function startServer() {
       // 1. Direct database delete for resilience and speed
       try {
         const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-        const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+        const rawKey = rawUrl
+          ? resolveServerSupabaseKey(
+              rawUrl.trim().replace(/^['"]|['"]$/g, ""),
+              process.env.SUPABASE_SERVICE_ROLE_KEY,
+              process.env.SUPABASE_ANON_KEY,
+              process.env.VITE_SUPABASE_ANON_KEY
+            )
+          : "";
         if (rawUrl && rawKey) {
           await fetch(`${rawUrl}/rest/v1/reminder_lead_items?lead_id=eq.${encodeURIComponent(leadId)}`, {
             method: "DELETE",
@@ -1982,13 +2658,14 @@ async function startServer() {
       let foundUser: any = null;
       let patchedInSupabase = false;
       const rawUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-      const rawKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
       const SUPABASE_URL =
         (rawUrl ? rawUrl.trim().replace(/^['"]|['"]$/g, "") : "") ||
-        "https://167.233.41.7.sslip.io";
-      const SUPABASE_ANON_KEY =
-        (rawKey ? rawKey.trim().replace(/^['"]|['"]$/g, "") : "") ||
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzg1NDk5NzQ3LCJleHAiOjIxMDA4NTk3NDd9.lX7sriVJBtEBVeE5LDiBl6OZgpjAw4ZRBNkegBH7uFo";
+        DEFAULT_SUPABASE_URL;
+      const SUPABASE_ANON_KEY = resolveServerSupabaseKey(
+        SUPABASE_URL,
+        process.env.VITE_SUPABASE_ANON_KEY,
+        process.env.SUPABASE_ANON_KEY
+      );
 
       const cleanUser = username.trim();
       try {
@@ -4241,15 +4918,24 @@ System instructions:
     });
   }
 
+  let activePort = PORT;
   const server = httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log(`Server mode: ${isProd ? "Production (Static)" : "Development (Vite with HMR)"}`);
   });
 
   server.on("error", (err: any) => {
     if (err?.code === "EADDRINUSE") {
-      console.error(`Port ${PORT} is in use. Exiting process so it can restart cleanly.`);
-      process.exit(1);
+      if (activePort !== 3000) {
+        console.warn(`Port ${activePort} is in use (e.g. Nginx). Falling back to port 3000...`);
+        activePort = 3000;
+        httpServer.listen(3000, "0.0.0.0", () => {
+          console.log("Fallback server running on http://0.0.0.0:3000");
+        });
+      } else {
+        console.error(`Port ${activePort} is in use. Exiting process so it can restart cleanly.`);
+        process.exit(1);
+      }
     } else {
       console.error("Server listener error:", err);
     }
@@ -4257,6 +4943,14 @@ System instructions:
 
   const handleGracefulShutdown = () => {
     console.log("Shutting down HTTP server gracefully...");
+    if (radiusBackendProcess) {
+      try { radiusBackendProcess.kill(); } catch (_) {}
+      radiusBackendProcess = null;
+    }
+    if (whatsappBackendProcess) {
+      try { whatsappBackendProcess.kill(); } catch (_) {}
+      whatsappBackendProcess = null;
+    }
     server.close(() => {
       process.exit(0);
     });

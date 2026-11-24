@@ -550,6 +550,8 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
                 <img
                   src={brandingLogo}
                   alt="GTS Logo"
+                  width={36}
+                  height={36}
                   className="w-full h-full object-contain rounded-xl"
                   referrerPolicy="no-referrer"
                 />
@@ -1006,6 +1008,8 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
                           <img
                             src={getUserAvatar(recoverUser)!}
                             alt={recoverUser?.fullName || recoverUser?.username || "User"}
+                            width={56}
+                            height={56}
                             className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-emerald-500/40 shadow-md"
                             referrerPolicy="no-referrer"
                           />
@@ -1312,6 +1316,8 @@ export default function LoginForm({ onLogin, isLoading, error }: LoginFormProps)
                 <img
                   src={brandingLogo}
                   alt="GTS Logo"
+                  width={44}
+                  height={44}
                   className="w-full h-full object-contain rounded-xl"
                   referrerPolicy="no-referrer"
                 />

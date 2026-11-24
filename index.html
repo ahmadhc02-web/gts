@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -12,7 +12,11 @@
     <meta name="theme-color" content="#2563eb" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" media="print" onload="this.media='all'" />
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lexend:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" />
+    </noscript>
     <title>Green Tech Services ISP Management</title>
     <meta name="description" content="ISP Service Management Dashboard with real-time network latency monitoring, ISP diagnostics, and customer complaint tracking." />
     <meta property="og:title" content="Green Tech Services ISP Management" />
@@ -20,6 +24,30 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
+    <script>
+      (function() {
+        // Suppress benign Vite WebSocket/HMR runner transport errors (disabled by design in cloud iframe preview)
+        window.addEventListener('error', function(event) {
+          if (event && (
+            (event.message && (event.message.indexOf('WebSocket') !== -1 || event.message.indexOf('createWebSocketModuleRunnerTransport') !== -1)) ||
+            (event.filename && event.filename.indexOf('@vite/client') !== -1)
+          )) {
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+            return true;
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function(event) {
+          if (event && event.reason && (
+            (event.reason.message && (event.reason.message.indexOf('WebSocket') !== -1 || event.reason.message.indexOf('createWebSocketModuleRunnerTransport') !== -1)) ||
+            (event.reason.stack && event.reason.stack.indexOf('@vite/client') !== -1)
+          )) {
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+          }
+        }, true);
+      })();
+    </script>
     <script>
       (function() {
         // Enforce clean cache and prevent service worker issues in development

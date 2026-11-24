@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
 import { UserPlus, Search, Trash2, MapPin, Phone, User, Smartphone, Hash, Terminal, Edit3, X, Check, Package, MapPinned, Info, ChevronLeft, ChevronRight, Layers, Shield, Tag, DollarSign, Calendar } from 'lucide-react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { Client, UserProfile } from '../types';
@@ -8,6 +9,11 @@ import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
 import { AppConfig } from '../constants';
+import { SkBar, SkFrame } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
+import { DeferredBody } from './ui/DeferredBody';
+import { useProgressiveCount } from '../lib/useProgressiveCount';
+import { usePopupTiming } from '../lib/usePopupTiming';
 
 interface ClientManagementProps {
   appConfig: AppConfig;
@@ -17,7 +23,7 @@ interface ClientManagementProps {
   isBillingUnlocked?: boolean;
 }
 
-export default function ClientManagement({ appConfig, isAdmin, currentUser, currentUserName, isBillingUnlocked }: ClientManagementProps) {
+const ClientManagement = React.memo(function ClientManagement({ appConfig, isAdmin, currentUser, currentUserName, isBillingUnlocked }: ClientManagementProps) {
   const [dealersList, setDealersList] = useState<UserProfile[]>([]);
   useEffect(() => {
     pocketbaseService.getUsers('all').then(uList => {
@@ -45,6 +51,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     } catch (_) {}
     return true;
   });
+  const showSkeleton = useSkeletonGate(Boolean(isLoading), { minShow: 100 }) && clients.length === 0;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArea, setSelectedArea] = useState<string>('all');
   const [selectedLineFilter, setSelectedLineFilter] = useState<string>('all');
@@ -52,6 +59,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
   
   // View/Detail state
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
+  usePopupTiming('ClientDetailsModal', Boolean(viewingClient));
   
   // Form state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -513,6 +521,12 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+  const visibleClientCount = useProgressiveCount(paginatedClients.length, {
+    initial: 20,
+    chunk: 80,
+    stepMode: 'frame',
+    resetKey: `${searchQuery}|${selectedArea}|${selectedLineFilter}|${currentPage}|${itemsPerPage}|${paginatedClients.length}`,
+  });
 
   const inputClasses = "w-full pl-10 pr-4 py-2.5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] text-slate-950 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-brand-accent/30 transition-all font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600 uppercase placeholder:normal-case";
   const labelClasses = "block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-[0.15em] ml-1 mb-1.5";
@@ -522,7 +536,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       {/* Form Section - ONLY FOR ADMINS */}
       {isAdmin && (
         <div className="w-full">
-          <div className="rounded-3xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-raised)] p-6 relative overflow-hidden group">
+          <div className="rounded-3xl border border-slate-200/80 dark:border-white/10 !bg-white dark:!bg-[#2c3038] !shadow-[0_8px_24px_rgba(15,23,42,0.11),6px_0_18px_-3px_rgba(15,23,42,0.10),-6px_0_18px_-3px_rgba(15,23,42,0.10)] dark:!shadow-[0_8px_24px_rgba(0,0,0,0.50),6px_0_18px_-2px_rgba(0,0,0,0.44),-6px_0_18px_-2px_rgba(0,0,0,0.44)] p-6 relative overflow-hidden group">
             {isLocked && (
               <div className="absolute inset-0 z-20 bg-slate-50/70 dark:bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
                 <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 mb-4 shadow-lg shadow-amber-500/5 animate-pulse">
@@ -556,7 +570,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
               </div>
             )}
 
-            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none transition-transform group-hover:scale-110">
+            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
               {editingId ? <Edit3 size={120} /> : <Terminal size={120} />}
             </div>
             
@@ -902,7 +916,16 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full table-fixed min-w-[980px] text-left">
+              <colgroup>
+                <col className="w-[170px]" />
+                <col className="w-[155px]" />
+                <col className="w-[165px]" />
+                <col className="w-[135px]" />
+                <col className="w-[175px]" />
+                <col className="w-[85px]" />
+                <col style={{ width: '200.883px' }} className="w-[200.883px]" />
+              </colgroup>
               <thead className="bg-[var(--neu-surface)]/50">
                 <tr className="border-b border-[var(--neu-border)]">
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Identity</th>
@@ -911,29 +934,69 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Details Pannal</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">Navigation / Nearby</th>
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500">S/N</th>
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Operations</th>
+                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right" style={{ width: '200.883px' }}>Operations</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--neu-border)] text-[11px]">
-                {isLoading ? (
-                  Array(5).fill(0).map((_, i) => (
-                    <tr key={'skel-'+i} className="animate-pulse">
-                      <td colSpan={7} className="px-6 py-6 h-12 bg-slate-50/50 dark:bg-slate-900/10"></td>
+                {showSkeleton ? (
+                  Array(6).fill(0).map((_, i) => (
+                    <tr key={'skel-' + i}>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1.5">
+                          <SkBar w="w-28" h="h-3.5" />
+                          <SkBar w="w-20" h="h-2.5" />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1.5">
+                          <SkBar w="w-24" h="h-3" />
+                          <SkBar w="w-24" h="h-3" />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1.5">
+                          <SkBar w="w-24" h="h-5" rounded="rounded-lg" />
+                          <div className="flex items-center gap-1.5">
+                            <SkBar w="w-12" h="h-4" rounded="rounded" />
+                            <SkBar w="w-14" h="h-4" rounded="rounded" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <SkBar w="w-20" h="h-3" />
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1.5">
+                          <SkBar w="w-20" h="h-5" rounded="rounded" />
+                          <SkBar w="w-28" h="h-2.5" />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <SkBar w="w-12" h="h-3" />
+                      </td>
+                      <td className="px-6 py-4 text-right" style={{ width: '200.883px' }}>
+                        <div className="flex items-center justify-end gap-2">
+                          <SkBar w="w-8" h="h-8" rounded="rounded-lg" />
+                          <SkBar w="w-8" h="h-8" rounded="rounded-lg" />
+                          <SkBar w="w-8" h="h-8" rounded="rounded-lg" />
+                        </div>
+                      </td>
                     </tr>
                   ))
                 ) : paginatedClients.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">No client records found matching search parameters</td>
                   </tr>
-                ) : paginatedClients.map((client, idx) => (
-                  <tr key={`${client.id}-${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
-                    <td className="px-6 py-4">
+                ) : (() => {
+                  const renderClientRow = (client: Client, idx: number) => (
+                    <tr key={`${client.id}-${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
+                    <td className="px-6 py-4" style={{ fontSize: '15px' }}>
                       <div className="flex flex-col">
                         <span className="font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">{client.name}</span>
-                        <span className="text-[10px] font-black text-brand-accent/70 uppercase">@{client.username}</span>
+                        <span className="text-[10px] font-black text-brand-accent/70 uppercase" style={{ fontSize: '12px' }}>@{client.username}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" style={{ fontSize: '14px' }}>
                       <div className="flex flex-col gap-1">
                         <span className="flex items-center gap-1.5 font-bold text-slate-600 dark:text-slate-400">
                           <Smartphone size={10} className="text-sky-500" />
@@ -971,14 +1034,14 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
                         <Layers size={10} className="text-brand-accent/60" />
-                        <span className="text-[10px] font-bold uppercase tracking-widest">{client.panelDetails || '---'}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ fontSize: '12px', width: '97.9167px' }}>{client.panelDetails || '---'}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" style={{ fontSize: '16px' }}>
                       <div className="flex flex-col gap-1">
                         <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-black text-slate-700 dark:text-slate-300 w-fit">{client.area}</span>
                         {client.userNearby && (
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1" style={{ fontSize: '12px' }}>
                             <MapPinned size={8} className="text-rose-500" /> {client.userNearby}
                           </span>
                         )}
@@ -987,7 +1050,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     <td className="px-6 py-4">
                        <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 tracking-[0.2em]">{client.seriesNumber || '---'}</span>
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right" style={{ width: '200.883px' }}>
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
@@ -1063,7 +1126,30 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+
+                  return (
+                    <>
+                      {paginatedClients.slice(0, visibleClientCount).map((client, idx) => renderClientRow(client, idx))}
+                      {visibleClientCount < paginatedClients.length &&
+                        Array.from({ length: 3 }).map((_, i) => (
+                          <tr key={`lazy-skel-${i}`}>
+                            <td colSpan={7} className="px-6 py-4">
+                              <div className="grid grid-cols-7 gap-4 items-center">
+                                <SkBar w="w-28" h="h-3" />
+                                <SkBar w="w-24" h="h-3" />
+                                <SkBar w="w-32" h="h-3" />
+                                <SkBar w="w-20" h="h-3" />
+                                <SkBar w="w-28" h="h-3" />
+                                <SkBar w="w-12" h="h-3" />
+                                <SkBar w="w-16" h="h-3" className="ml-auto" />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </>
+                  );
+                })()}
               </tbody>
             </table>
           </div>
@@ -1149,17 +1235,13 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
         {viewingClient && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4">
             <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              {...overlayMotion}
               onClick={() => setViewingClient(null)}
               className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl max-h-[92vh] md:max-h-[85vh] overflow-y-auto bg-[var(--neu-surface)] rounded-[1.5rem] sm:rounded-[2rem] shadow-[var(--neu-shadow-raised)] border border-[var(--neu-border)] flex flex-col"
+              {...dialogMotion}
+              className="relative w-full max-w-2xl max-h-[92vh] md:max-h-[85vh] overflow-y-auto bg-[var(--neu-surface)] rounded-[1.5rem] sm:rounded-[2rem] shadow-[var(--neu-shadow-raised)] border border-[var(--neu-border)] flex flex-col transform-gpu will-change-transform"
             >
             <div className="h-24 sm:h-32 bg-[var(--neu-surface)] border-b border-[var(--neu-border)] relative overflow-hidden shrink-0">
                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,var(--tw-gradient-stops))] from-slate-400 via-transparent to-transparent" />
@@ -1182,6 +1264,10 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                  <div className="absolute -bottom-1 -right-1 bg-emerald-500 w-5 h-5 sm:w-6 sm:h-6 rounded-full border-4 border-[var(--neu-surface)] shadow-[var(--neu-shadow-btn)]" />
                </div>
 
+               <DeferredBody
+                 frames={1}
+                 fallback={<SkFrame className="min-h-[380px] p-6" />}
+               >
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
                   {/* section 1: Identity */}
                   <div className="space-y-4 sm:space-y-6">
@@ -1302,6 +1388,7 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
                     )}
                   </div>
                </div>
+               </DeferredBody>
             </div>
           </motion.div>
         </div>
@@ -1329,4 +1416,6 @@ export default function ClientManagement({ appConfig, isAdmin, currentUser, curr
       />
     </div>
   );
-}
+});
+
+export default ClientManagement;

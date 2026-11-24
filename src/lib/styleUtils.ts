@@ -2,8 +2,8 @@ import { BrandingConfig } from "../types";
 import { cn } from "./utils";
 
 export const getCardStyle = (style?: string) => {
-  // Enforce global Neumorphic style system for all panels
-  return "!bg-[var(--neu-surface)] !border-[var(--neu-border)] !shadow-[var(--neu-shadow-raised)] rounded-3xl";
+  // Enforce clean white card style system with robust side and bottom shadows across all panels
+  return "!bg-white dark:!bg-[#2c3038] border border-slate-200/80 dark:border-white/10 !shadow-[0_8px_24px_rgba(15,23,42,0.11),6px_0_18px_-3px_rgba(15,23,42,0.10),-6px_0_18px_-3px_rgba(15,23,42,0.10)] dark:!shadow-[0_8px_24px_rgba(0,0,0,0.50),6px_0_18px_-2px_rgba(0,0,0,0.44),-6px_0_18px_-2px_rgba(0,0,0,0.44)] rounded-3xl";
 };
 
 export const getCleanErrorMessage = (error: any): string => {

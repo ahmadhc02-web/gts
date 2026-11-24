@@ -28,9 +28,10 @@ interface ComplaintFormProps {
   currentUser: UserProfile;
   branding: BrandingConfig;
   compact?: boolean;
+  cardClassName?: string;
 }
 
-export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentUser, branding, compact = false }: ComplaintFormProps) {
+const ComplaintForm = React.memo(function ComplaintForm({ onSubmit, isLoading, appConfig, currentUser, branding, compact = false, cardClassName }: ComplaintFormProps) {
   const customNames = branding.customNames || {};
   const getDefaultZone = (zones?: string[]) => {
     if (!zones || zones.length === 0) return 'TB';
@@ -555,11 +556,14 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
   }
 
   return (
-    <motion.div layout className="relative group max-w-5xl mx-auto w-full">
+    <motion.div className="relative group max-w-5xl mx-auto w-full">
       {/* Decorative background element */}
-      <div className="absolute -inset-2 bg-gradient-to-r from-brand-accent/10 via-blue-500/10 to-brand-accent/10 rounded-[2.5rem] blur-2xl opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-500 pointer-events-none"></div>
+      <div
+        className="absolute -inset-2 rounded-[2.5rem] opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-500 pointer-events-none"
+        style={{ background: 'radial-gradient(circle, rgba(16,185,129,0.14) 0%, rgba(59,130,246,0.10) 45%, transparent 75%)' }}
+      />
       
-      <motion.div layout className="relative p-4 sm:p-6 md:p-8 neu-card rounded-2xl md:rounded-[2rem] overflow-hidden border border-white/50 dark:border-white/5">
+      <motion.div className={cn("relative p-4 sm:p-6 md:p-8 neu-card rounded-2xl md:rounded-[2rem] overflow-hidden border border-white/50 dark:border-white/5 bg-[#f5f5f5] dark:bg-[#2c3038]", cardClassName)}>
         {/* Offline / Online Status Indicator - Only show if offline or has pending syncs */}
         {(isOffline || pendingCount > 0) && (
           <div className="flex items-center justify-between px-3.5 py-2 mb-4 rounded-xl bg-slate-500/5 border border-slate-200/40 dark:border-white/5 text-[9px] font-black uppercase tracking-wider">
@@ -586,15 +590,15 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
 
         <form onSubmit={handleSubmit} className="flex flex-col md:flex-row landscape:flex-row gap-5 md:gap-8 items-stretch w-full">
           {/* Section 1: Client Information */}
-          <motion.div layout className="space-y-4 w-full md:w-1/2 landscape:w-1/2">
+          <motion.div className="space-y-4 w-full md:w-1/2 landscape:w-1/2">
             <div className="flex items-center gap-3 justify-center">
               <div className="h-px w-6 bg-gradient-to-r from-transparent to-slate-200 dark:to-slate-800" />
               <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em]">Col 01 / Identity</span>
               <div className="h-px w-6 bg-gradient-to-l from-transparent to-slate-200 dark:to-slate-800" />
             </div>
 
-            <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <motion.div layout className="space-y-1 group/field">
+            <motion.div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <motion.div className="space-y-1 group/field">
                 <label className={labelClasses}>{customNames.client || 'Full Legal Name'}</label>
                 <div className="relative">
                   <input
@@ -608,7 +612,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1 group/field">
+              <motion.div className="space-y-1 group/field">
                 <label className={labelClasses}>{customNames.username || 'System Username'}</label>
                 <div className="relative" ref={clientListRef}>
                   <input
@@ -657,7 +661,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 </div>
               </motion.div>
               
-              <motion.div layout className="space-y-1 group/field">
+              <motion.div className="space-y-1 group/field">
                 <label className={labelClasses}>{customNames.number || 'Contact Number'}</label>
                 <div className="relative">
                   <input
@@ -671,7 +675,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1 group/field">
+              <motion.div className="space-y-1 group/field">
                 <label className={labelClasses}>{customNames.zone || 'Deployment Zone'}</label>
                 <div className="relative">
                   <select
@@ -694,7 +698,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1 group/field sm:col-span-2">
+              <motion.div className="space-y-1 group/field sm:col-span-2">
                 <label className={labelClasses}>{customNames.panel || 'Distribution Node / Panel'}</label>
                 <div className="relative">
                   <input
@@ -707,7 +711,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 </div>
               </motion.div>
               
-              <motion.div layout className="space-y-1 group/field">
+              <motion.div className="space-y-1 group/field">
                 <label className={labelClasses}>{customNames.pkg || 'Profile (Package)'}</label>
                 <div className="relative">
                   <input
@@ -720,7 +724,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1 group/field">
+              <motion.div className="space-y-1 group/field">
                 <label className={labelClasses}>{customNames.nearby || 'Locality Landmark'}</label>
                 <div className="relative">
                   <input
@@ -736,15 +740,15 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
           </motion.div>
 
           {/* Section 2: Operations & Actions */}
-          <motion.div layout className="space-y-4 w-full md:w-1/2 landscape:w-1/2 md:border-l md:border-slate-100 dark:md:border-slate-800/80 landscape:border-l landscape:border-slate-100 dark:landscape:border-slate-800/80 md:pl-6 landscape:pl-6">
+          <motion.div className="space-y-4 w-full md:w-1/2 landscape:w-1/2 md:border-l md:border-slate-100 dark:md:border-slate-800/80 landscape:border-l landscape:border-slate-100 dark:landscape:border-slate-800/80 md:pl-6 landscape:pl-6">
             <div className="flex items-center gap-3 justify-center">
               <div className="h-px w-6 bg-gradient-to-r from-transparent to-slate-200 dark:to-slate-800" />
               <span className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-[0.3em]">Col 02 / Operations</span>
               <div className="h-px w-6 bg-gradient-to-l from-transparent to-slate-200 dark:to-slate-800" />
             </div>
 
-            <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <motion.div layout className="space-y-1 group/field">
+            <motion.div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <motion.div className="space-y-1 group/field">
                 <label className={labelClasses}>{customNames.category || 'Category'}</label>
                 <div className="relative">
                   <select
@@ -766,7 +770,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1 group/field">
+              <motion.div className="space-y-1 group/field">
                 <label className={labelClasses}>{customNames.priority || 'Security Priority'}</label>
                 <div className="relative">
                   <select
@@ -781,7 +785,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
                 </div>
               </motion.div>
 
-              <motion.div layout className="space-y-1 sm:col-span-2 group/field">
+              <motion.div className="space-y-1 sm:col-span-2 group/field">
                 <label className={labelClasses}>{customNames.status || 'Current Status'}</label>
                 <div className="relative">
                   <select
@@ -798,7 +802,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
             </motion.div>
 
             {/* Schedule block */}
-            <motion.div layout className="p-3.5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] space-y-2.5">
+            <motion.div className="p-3.5 rounded-xl border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 tracking-wider">Schedule Operation</span>
                 <label className="relative inline-flex items-center cursor-pointer select-none">
@@ -828,7 +832,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               )}
             </motion.div>
 
-            <motion.div layout className="space-y-1 group/field">
+            <motion.div className="space-y-1 group/field">
               <label className={compactLabelClasses}>{customNames.description || 'Mission Objectives / Details'}</label>
               <div className="relative">
                 <textarea
@@ -842,7 +846,7 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
               </div>
             </motion.div>
 
-            <motion.div layout className="pt-2">
+            <motion.div className="pt-2 overflow-visible">
               <button
                 type="submit"
                 disabled={isLoading || isSyncing}
@@ -875,4 +879,6 @@ export default function ComplaintForm({ onSubmit, isLoading, appConfig, currentU
       </motion.div>
     </motion.div>
   );
-}
+});
+
+export default ComplaintForm;

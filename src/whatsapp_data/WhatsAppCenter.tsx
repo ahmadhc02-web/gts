@@ -20,6 +20,8 @@ import { sendMessage, getStatus } from './whatsappApi';
 import { cn } from '../lib/utils';
 import { useTheme } from '../hooks/useTheme';
 import { toast } from 'sonner';
+import { SkChatList, SkChatThread } from '../components/skeleton/Skeleton';
+import { useSkeletonGate } from '../components/skeleton/useSkeletonGate';
 
 export const ALLOWED_KINDS = ['reminder', 'campaign', 'manual'] as const;
 export type AllowedKind = typeof ALLOWED_KINDS[number];
@@ -131,6 +133,7 @@ export default function WhatsAppCenter({
   // Messages state
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const showChatListSkeleton = useSkeletonGate(loading) && messages.length === 0;
   const [loadError, setLoadError] = useState<{ message: string; code?: string } | null>(null);
   const [pageLimit, setPageLimit] = useState(300);
   const [hasMore, setHasMore] = useState(true);
@@ -681,11 +684,8 @@ export default function WhatsAppCenter({
 
           {/* Thread List */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
-            {loading && messages.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
-                <RefreshCw size={20} className="animate-spin text-emerald-500" />
-                <span>Loading conversations...</span>
-              </div>
+            {showChatListSkeleton ? (
+              <SkChatList className="p-2 border-0 shadow-none bg-transparent" />
             ) : filteredThreads.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-xs flex flex-col items-center gap-2">
                 <MessageCircle size={32} className="text-slate-300 dark:text-slate-700" />
@@ -978,8 +978,11 @@ export default function WhatsAppCenter({
                 )}
               </div>
             </>
+          ) : showChatListSkeleton ? (
+            <div className="p-4 flex-1">
+              <SkChatThread className="h-full border-0 shadow-none bg-transparent" />
+            </div>
           ) : (
-            /* Empty State when no conversation selected */
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
               <div className="w-16 h-16 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-emerald-500 shadow-md mb-4">
                 <MessageCircle size={32} />

@@ -10,6 +10,8 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import VoiceRecorder from './VoiceRecorder';
 import VoiceMsgPlayer from './VoiceMsgPlayer';
 import { toast } from 'sonner';
+import { SkChatThread } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
 
 interface ChatProps {
   currentUser: UserProfile;
@@ -25,6 +27,8 @@ type ViewState = 'list' | 'chat' | 'create-group' | 'new-chat';
 export default function Chat({ currentUser, users = [], onClose, isAudioMuted = false, isMicMuted = false, selectedId }: ChatProps) {
   const [viewState, setViewState] = useState<ViewState>('list');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isMessagesLoading, setIsMessagesLoading] = useState(true);
+  const showMessagesSkeleton = useSkeletonGate(isMessagesLoading) && messages.length === 0;
   const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -90,9 +94,11 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
   // Subscription for messages, groups and typing status
   useEffect(() => {
     const tenantId = pocketbaseService.getReadTenantId(currentUser);
+    setIsMessagesLoading(true);
 
     const unsubMessages = pocketbaseService.subscribeMessages((msgs) => {
       setMessages(msgs);
+      setIsMessagesLoading(false);
     }, tenantId);
 
     const unsubTyping = pocketbaseService.subscribeTypingStatus((typing) => {
@@ -450,15 +456,17 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
 
         <motion.button
           drag="x"
+          dragDirectionLock
           dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={showDeleteAction ? 0.8 : 0.2}
+          dragElastic={0.2}
           onDragEnd={handleDragEnd}
           onClick={() => {
             setSelectedScope(id);
             setIsGroupChat(!!isGroup);
             setViewState('chat');
           }}
-          className="relative w-full p-4 flex items-center gap-3 bg-white dark:bg-slate-950 transition-colors group cursor-pointer z-10 touch-pan-y"
+          style={{ touchAction: 'pan-y' }}
+          className="relative w-full p-4 flex items-center gap-3 bg-white dark:bg-slate-950 transition-colors group cursor-pointer z-10"
         >
           <div className="relative shrink-0">
             <div className={cn(
@@ -931,6 +939,10 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
                        (msg.senderId === selectedScope && msg.recipientId === currentUser.uid);
               });
 
+              if (showMessagesSkeleton) {
+                return <SkChatThread className="h-full min-h-[420px]" />;
+              }
+
               if (displayedMessages.length === 0) {
                 return (
                   <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
@@ -968,7 +980,6 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
 
                 return (
                   <motion.div 
-                    layout
                     initial={{ opacity: 0, x: isMe ? 40 : -40, scale: 0.9, y: 10 }}
                     animate={{ opacity: 1, x: 0, scale: 1, y: 0 }}
                     transition={{ 
@@ -995,8 +1006,11 @@ export default function Chat({ currentUser, users = [], onClose, isAudioMuted = 
 
                     <motion.div
                       drag="x"
+                      dragDirectionLock
                       dragConstraints={{ left: 0, right: 0 }}
+                      dragElastic={0.2}
                       onDragEnd={handleDragEnd}
+                      style={{ touchAction: 'pan-y' }}
                       className={cn(
                         "relative px-4 py-2.5 rounded-2xl shadow-sm border transition-all cursor-grab active:cursor-grabbing",
                         isMe 

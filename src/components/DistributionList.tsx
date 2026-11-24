@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Tag, ChevronDown, BarChart2, X, Info, User, Calendar, Clock, PieChart as PieChartIcon, Activity, WifiOff, Users, Settings, Wifi, HelpCircle, Phone } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
@@ -6,6 +7,8 @@ import { Complaint } from '../types';
 import { cn } from '../lib/utils';
 import { calculateProtocolProgress } from '../utils/protocolProgress';
 import { useTheme } from '../hooks/useTheme';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
+import { usePopupTiming } from '../lib/usePopupTiming';
 
 interface DistributionListProps {
   complaints: Complaint[];
@@ -147,12 +150,13 @@ const getCategoryIcon = (categoryName: string, color: string) => {
   return <HelpCircle size={12} style={{ color }} className="shrink-0" />;
 };
 
-export default function DistributionList({ complaints, chartType = 'area' }: DistributionListProps) {
+const DistributionList = React.memo(function DistributionList({ complaints, chartType = 'area' }: DistributionListProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [reportType, setReportType] = useState<'weekly' | 'monthly' | 'yearly'>('yearly');
   const [viewBy, setViewBy] = useState<'area' | 'category'>('area');
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  usePopupTiming('DistributionDetailModal', Boolean(selectedItem));
 
   // Filter complaints based on chosen timeframe and complete status
   const filteredComplaints = useMemo(() => {
@@ -223,63 +227,64 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
   const total = filteredComplaints.length;
   
   return (
-    <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 pb-0">
-      <div className="flex-1 neu-card rounded-2xl border-2 border-slate-300/80 dark:border-white/10 flex flex-col relative overflow-hidden transition-all duration-300 shadow-[var(--neu-shadow-raised)]">
+    <div className="h-full flex flex-col text-slate-900 dark:text-slate-100 font-lexend pb-0 relative z-10">
+      {/* Top Corners Above Chart Frame: Matching ACTIVITY MONITOR header */}
+      <div className="px-1 pb-2 flex items-center justify-between gap-2 shrink-0 relative z-10 w-full">
+        <div className="flex items-center gap-1.5 shrink-0 bg-transparent">
+          {chartType === 'area' ? (
+            <MapPin size={12} className="stroke-[2.5] text-blue-600 dark:text-blue-400" />
+          ) : (
+            <Tag size={12} className="stroke-[2.5] text-blue-600 dark:text-blue-400" />
+          )}
+          <span className="text-[11px] font-black tracking-widest uppercase text-slate-900 dark:text-slate-100">
+            {chartType === 'area' ? 'ZONES' : 'CATEGORIES'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 sm:gap-2 bg-transparent shrink-0">
+          {(['weekly', 'monthly', 'yearly'] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => setReportType(type)}
+              className={`px-1.5 py-0.5 text-[10px] font-black tracking-wider uppercase transition-all duration-100 cursor-pointer bg-transparent border-b-2 ${
+                reportType === type
+                  ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white border-transparent font-extrabold'
+              }`}
+            >
+              {type === 'weekly' ? 'Week' : type === 'monthly' ? 'Month' : 'Year'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className={cn(
+        "flex-1 min-h-0 neu-card rounded-2xl border-2 border-slate-300/80 dark:border-white/10 flex flex-col relative overflow-hidden transition-all duration-150 !shadow-[0_6px_20px_rgba(15,23,42,0.11),6px_0_16px_-3px_rgba(15,23,42,0.11),-6px_0_16px_-3px_rgba(15,23,42,0.11)] hover:!shadow-[0_10px_26px_rgba(15,23,42,0.15),8px_0_20px_-3px_rgba(15,23,42,0.13),-8px_0_20px_-3px_rgba(15,23,42,0.13)] dark:!shadow-[0_8px_22px_rgba(0,0,0,0.48),6px_0_18px_-2px_rgba(0,0,0,0.42),-6px_0_18px_-2px_rgba(0,0,0,0.42)] dark:hover:!shadow-[0_12px_28px_rgba(0,0,0,0.58),8px_0_22px_-2px_rgba(0,0,0,0.5),-8px_0_22px_-2px_rgba(0,0,0,0.5)]",
+        chartType === 'area' ? "!bg-[#efefef] dark:!bg-[#2c3038]" : "!bg-[#f5f4f4] dark:!bg-[#2c3038]"
+      )}>
         {/* Soft decorative ambient glow */}
         {chartType === 'area' ? (
-          <div className="absolute top-4 -right-16 w-48 h-48 bg-blue-500/10 dark:bg-blue-400/15 blur-[48px] rounded-full pointer-events-none z-0" />
+          <div
+            className="absolute top-4 -right-16 w-48 h-48 rounded-full pointer-events-none z-0"
+            style={{ background: 'radial-gradient(circle, rgba(59,130,246,0.14) 0%, transparent 70%)' }}
+          />
         ) : (
-          <div className="absolute top-4 -right-16 w-48 h-48 bg-purple-500/10 dark:bg-purple-400/15 blur-[48px] rounded-full pointer-events-none z-0" />
+          <div
+            className="absolute top-4 -right-16 w-48 h-48 rounded-full pointer-events-none z-0"
+            style={{ background: 'radial-gradient(circle, rgba(168,85,247,0.14) 0%, transparent 70%)' }}
+          />
         )}
-
-        {/* Top Header: Controls & High-Contrast Badge with Week / Month / Year selector */}
-        <div className="px-5 pt-4 pb-3 flex items-center justify-between gap-2 border-b border-slate-200/80 dark:border-white/10 relative z-10">
-          <div className="flex items-center gap-2 shrink-0">
-            <span 
-              className={cn(
-                "text-[10px] font-black tracking-widest px-2.5 py-1 rounded-lg uppercase flex items-center gap-1.5 shadow-sm border",
-                chartType === 'area'
-                  ? "text-blue-700 dark:text-white bg-blue-500/15 dark:bg-[#101010] border-blue-500/30 dark:border-[#898989]"
-                  : "text-purple-700 dark:text-white bg-purple-500/15 dark:bg-[#1d1d1d] border-purple-500/30 dark:border-[#727070]"
-              )}
-              style={
-                chartType === 'area'
-                  ? (isDark ? { backgroundColor: '#3e4149', color: '#ffffff', borderColor: '#757575' } : { backgroundColor: '#f2f4f7', color: '#000000', borderColor: '#f2f4f7' })
-                  : (isDark ? { backgroundColor: '#3e4149', borderColor: '#757575', color: '#ffffff' } : { backgroundColor: '#f2f4f7', borderColor: '#f2f4f7', color: '#000000' })
-              }
-            >
-              {chartType === 'area' ? <MapPin size={11} className="stroke-[2.5]" /> : <Tag size={11} className="stroke-[2.5]" />}
-              {chartType === 'area' ? 'ZONES' : 'CATEGORIES'}
-            </span>
-          </div>
-
-          {/* Timeframe selection: Week, Month, Year matching RealTimeMonitor */}
-          <div className="flex items-center bg-slate-200/70 dark:bg-slate-900/90 p-0.5 rounded-lg border border-slate-300 dark:border-white/10 shadow-xs">
-            {(['weekly', 'monthly', 'yearly'] as const).map((type) => (
-              <button
-                key={type}
-                onClick={() => setReportType(type)}
-                className={`px-2.5 sm:px-3 py-1 text-[9px] font-black tracking-wider rounded-md uppercase transition-all duration-200 ${
-                  reportType === type 
-                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-[var(--neu-shadow-raised-sm)] border border-slate-200/80 dark:border-white/10' 
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white font-extrabold'
-                }`}
-              >
-                {type === 'weekly' ? 'Week' : type === 'monthly' ? 'Month' : 'Year'}
-              </button>
-            ))}
-          </div>
-        </div>
         
-        <div className="flex-1 flex w-full h-full relative z-10">
-           <div className="w-full flex items-center relative h-full rounded-2xl overflow-hidden px-4 py-2">
+        <div className="flex-1 flex w-full min-h-0 relative z-10">
+           <div className="w-full h-full flex items-center justify-center relative rounded-2xl overflow-hidden p-1.5 sm:p-2 bg-[#f5f5f5] dark:bg-transparent">
                 {data.length > 0 ? (
-                  <div className="flex flex-col w-full h-full justify-between">
-                    <div key={`piechart-wrapper-${isDark ? 'dark' : 'light'}`} style={{ width: '100%', height: '300px' }} className="flex-1 w-full min-h-[210px] min-w-0 relative flex items-center justify-center">
+                  <div className="flex flex-col w-full h-full items-center justify-center">
+                    <div key={`piechart-wrapper-${isDark ? 'dark' : 'light'}`} style={{ width: '100%', height: '100%' }} className="flex-1 w-full h-full min-h-[220px] min-w-0 relative flex items-center justify-center">
                       
                       {/* Realistic 3D Raised Neumorphic Center Dial (Outward Embossed Button) */}
                       <div className={cn(
-                        "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[86px] h-[86px] rounded-full flex flex-col items-center justify-center pointer-events-none z-20 transition-all duration-300",
+                        "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[86px] h-[86px] rounded-full flex flex-col items-center justify-center pointer-events-none z-20 transition-all duration-150",
                         isDark
                           ? "bg-[#33363d] border border-[#757575]/40"
                           : "bg-gradient-to-br from-[#ffffff] to-[#e6e8ee] shadow-[5px_5px_12px_rgba(0,0,0,0.18),-5px_-5px_12px_rgba(255,255,255,0.95),inset_1px_1px_3px_rgba(255,255,255,0.9),inset_-1px_-1px_3px_rgba(0,0,0,0.08)] border border-slate-200/80"
@@ -299,8 +304,8 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                         </div>
                       </div>
   
-                      <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150} initialDimension={{ width: 400, height: 250 }} debounce={100}>
-                        <PieChart margin={{ top: 0, right: 32, left: 32, bottom: 0 }}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={150} initialDimension={{ width: 400, height: 250 }} debounce={0}>
+                        <PieChart margin={{ top: 6, right: 10, left: 10, bottom: 6 }}>
                           <defs>
                             {/* Neumorphic 3D Raised Extrusion Filter for Light Mode */}
                             <filter id="neuDonutRaisedLight" x="-20%" y="-20%" width="140%" height="140%">
@@ -324,7 +329,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                               key="trench-light"
                               data={[{ value: 1 }]}
                               cx="50%" cy="50%"
-                              innerRadius={50} outerRadius={96}
+                              innerRadius={48} outerRadius={92}
                               dataKey="value"
                               isAnimationActive={false}
                               fill="#e2e6ee"
@@ -339,7 +344,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                             key={`pie-${chartType}-${isDark ? 'dark' : 'light'}`}
                             data={chartData} 
                             cx="50%" cy="50%" 
-                            innerRadius={54} outerRadius={94} 
+                            innerRadius={52} outerRadius={90} 
                             paddingAngle={6}
                             cornerRadius={7}
                             dataKey="count"
@@ -350,7 +355,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                             label={(props) => {
                               const { cx, cy, midAngle, outerRadius, name, percent, index } = props;
                               const RADIAN = Math.PI / 180;
-                              const radiusMid = outerRadius * 1.25;
+                              const radiusMid = outerRadius * 1.24;
                               
                               const x = cx + radiusMid * Math.cos(-midAngle * RADIAN);
                               const y = cy + radiusMid * Math.sin(-midAngle * RADIAN);
@@ -361,7 +366,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                               const itemColor = getItemColor(name, index, chartType === 'category', isDark);
                               
                               const xDir = Math.cos(-midAngle * RADIAN) >= 0 ? 1 : -1;
-                              const ex = x + (xDir * 14);
+                              const ex = x + (xDir * 12);
                               const textX = xDir > 0 ? ex + 4 : ex - 4;
  
                               if (percent === 0) return null;
@@ -406,8 +411,8 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                               setSelectedItem(entry.name);
                             }}
                             className="cursor-pointer focus:outline-none"
-                            animationBegin={chartType === 'category' ? 150 : 0}
-                            animationDuration={1100}
+                            animationBegin={0}
+                            animationDuration={120}
                             animationEasing="ease-out"
                           >
                             {chartData.map((entry, index) => {
@@ -416,7 +421,7 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                                 <Cell 
                                   key={`cell-${chartType}-${isDark ? 'dark' : 'light'}-${index}`} 
                                   fill={itemColor} 
-                                  className="hover:opacity-100 hover:scale-[1.05] transition-all duration-300 origin-center cursor-pointer" 
+                                  className="hover:opacity-100 hover:scale-[1.05] transition-all duration-150 origin-center cursor-pointer" 
                                   style={{ 
                                     filter: isDark ? undefined : 'url(#neuDonutRaisedLight)'
                                   }}
@@ -453,23 +458,20 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
          </div>
        </div>
 
-       {/* Full Details Modal for Distribution Analysis */}
-       <AnimatePresence>
-         {selectedItem && (
-           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-             <motion.div
-               initial={{ opacity: 0 }}
-               animate={{ opacity: 1 }}
-               exit={{ opacity: 0 }}
-               onClick={() => setSelectedItem(null)}
-               className="absolute inset-0 bg-slate-950/70 backdrop-blur-md"
-             />
-             <motion.div
-               initial={{ opacity: 0, scale: 0.95, y: 20 }}
-               animate={{ opacity: 1, scale: 1, y: 0 }}
-               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-               className="relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-[var(--neu-surface)] rounded-3xl border-2 border-slate-300 dark:border-white/15 shadow-[var(--neu-shadow-raised-lg)] overflow-hidden z-10"
-             >
+       {/* Full Details Modal for Distribution Analysis (portaled above adjacent grid frames) */}
+       {typeof document !== 'undefined' && createPortal(
+         <AnimatePresence>
+           {selectedItem && (
+             <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+               <motion.div
+                 {...overlayMotion}
+                 onClick={() => setSelectedItem(null)}
+                 className="absolute inset-0 bg-slate-950/70 backdrop-blur-md"
+               />
+               <motion.div
+                 {...dialogMotion}
+                 className="transform-gpu will-change-transform relative w-full max-w-2xl max-h-[85vh] flex flex-col bg-[var(--neu-surface)] rounded-3xl border-2 border-slate-300 dark:border-white/15 shadow-[var(--neu-shadow-raised-lg)] overflow-hidden z-10"
+               >
                <div className="p-6 border-b border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0">
                  <div className="flex items-center gap-3">
                    <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center text-blue-600 dark:text-blue-400 shadow-sm border border-blue-500/20">
@@ -588,10 +590,14 @@ export default function DistributionList({ complaints, chartType = 'area' }: Dis
                      </div>
                  ))}
                </div>
-             </motion.div>
-           </div>
-         )}
-       </AnimatePresence>
+               </motion.div>
+             </div>
+           )}
+         </AnimatePresence>,
+         document.body
+       )}
     </div>
   );
-}
+});
+
+export default DistributionList;

@@ -42,6 +42,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { SkBar, SkList, SkTable } from './skeleton/Skeleton';
+import { useSkeletonGate } from './skeleton/useSkeletonGate';
+import { LazySection } from './ui/LazySection';
+import { useProgressiveCount } from '../lib/useProgressiveCount';
 import { ReminderLead, ReminderLeadItem, UserProfile } from '../types';
 import {
   subscribeReminderLeads,
@@ -150,11 +154,17 @@ function LeadItemsList({
     };
   }, [leadId]);
 
-  if (isLoading && items.length === 0) {
+  const showSkeleton = useSkeletonGate(isLoading) && items.length === 0;
+  const visibleLeadItemCount = useProgressiveCount(items.length, {
+    initial: 20,
+    chunk: 40,
+    resetKey: `${leadId}|${items.length}`,
+  });
+
+  if (showSkeleton) {
     return (
-      <div className="py-6 flex items-center justify-center gap-2 text-xs text-slate-400">
-        <Loader2 size={16} className="animate-spin text-blue-500" />
-        <span>Loading lead recipient items...</span>
+      <div className="py-2">
+        <SkList rows={4} />
       </div>
     );
   }
@@ -193,7 +203,8 @@ function LeadItemsList({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200/60 dark:divide-white/5">
-          {items.map((item, idx) => {
+          {(() => {
+            const renderLeadItem = (item: ReminderLeadItem, idx: number) => {
             const isSent = item.status === 'sent';
             const isFailed = item.status === 'failed';
             const isPending = item.status === 'pending';
@@ -304,7 +315,29 @@ function LeadItemsList({
                 </td>
               </tr>
             );
-          })}
+            };
+            return (
+              <>
+                {items.slice(0, visibleLeadItemCount).map((item, idx) => renderLeadItem(item, idx))}
+                {visibleLeadItemCount < items.length &&
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <tr key={`lead-item-lazy-skel-${i}`} className="border-b border-slate-200/60 dark:border-white/5">
+                      <td colSpan={7} className="py-2 px-3">
+                        <div className="grid grid-cols-7 gap-3 items-center">
+                          <SkBar w="w-6" h="h-3" />
+                          <SkBar w="w-28" h="h-3" />
+                          <SkBar w="w-20" h="h-3" />
+                          <SkBar w="w-24" h="h-3" />
+                          <SkBar w="w-16" h="h-4" rounded="rounded-full" />
+                          <SkBar w="w-20" h="h-3" />
+                          <SkBar w="w-24" h="h-3" />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </>
+            );
+          })()}
         </tbody>
       </table>
     </div>
@@ -324,6 +357,8 @@ export default function ConversationTab({
 }: ConversationTabProps) {
   const navigate = useNavigate();
   const [leads, setLeads] = useState<ReminderLead[]>([]);
+  const [isLeadsInitialLoading, setIsLeadsInitialLoading] = useState(true);
+  const showLeadsSkeleton = useSkeletonGate(isLeadsInitialLoading) && leads.length === 0;
   const [expandedLeadIds, setExpandedLeadIds] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -472,13 +507,17 @@ export default function ConversationTab({
         if (fresh && fresh.length >= 0) {
           setLeads(fresh);
         }
-      } catch (_) {}
+        setIsLeadsInitialLoading(false);
+      } catch (_) {
+        setIsLeadsInitialLoading(false);
+      }
     };
 
     fetchFreshLeads();
 
     const unsub = subscribeReminderLeads((data) => {
       setLeads(data || []);
+      setIsLeadsInitialLoading(false);
     }, dealerId);
 
     // Active polling interval while tab is open to reflect background server progress
@@ -1167,7 +1206,7 @@ export default function ConversationTab({
   return (
     <div
       data-font-lexend="true"
-      className="fixed inset-0 z-[10000] w-screen h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col overflow-y-auto font-lexend antialiased"
+      className="fixed inset-0 z-[10000] w-screen h-[100dvh] h-dvh-fallback bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col overflow-y-auto font-lexend antialiased"
       style={{ fontFamily: "'Lexend', ui-sans-serif, system-ui, sans-serif" }}
     >
       {/* Top Navigation Bar */}
@@ -1459,7 +1498,10 @@ export default function ConversationTab({
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
+      <main
+        className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6"
+        style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         {/* Sub-Dealer / Sub-Account WhatsApp Connection & Lease Banner */}
         {(isSubDealerUser || isSubAccount) && (
           <div className="flex flex-col gap-4">
@@ -1654,7 +1696,11 @@ export default function ConversationTab({
             </div>
           </div>
 
-          {scopedLeads.length === 0 ? (
+          {showLeadsSkeleton ? (
+            <div className="p-4">
+              <SkTable rows={6} cols={6} />
+            </div>
+          ) : scopedLeads.length === 0 ? (
             <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
               <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400">
                 <MessageSquare size={32} />
@@ -1667,6 +1713,7 @@ export default function ConversationTab({
               </p>
             </div>
           ) : (
+            <LazySection mode="visible" minHeight={240} fallback={<SkTable rows={6} cols={6} />}>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-lexend">
                 <thead>
@@ -1902,6 +1949,7 @@ export default function ConversationTab({
                 </tbody>
               </table>
             </div>
+            </LazySection>
           )}
         </section>
       </main>

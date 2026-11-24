@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '../lib/utils';
+import { SkFrame, SkBar, SkCircle, TabSkeleton } from './skeleton/Skeleton';
 
 export interface PreloaderProps {
   className?: string;
@@ -11,42 +12,43 @@ export interface PreloaderProps {
 export const Preloader: React.FC<PreloaderProps> = ({
   className,
   fullScreen = false,
-  text = "Loading",
+  text: _text = "Loading",
   size = 'md'
 }) => {
+  if (fullScreen) {
+    return (
+      <div
+        className={cn(
+          "fixed inset-0 z-[10000] w-screen h-[100dvh] max-h-[100dvh] h-dvh-fallback overflow-hidden bg-[#f4f7f5] dark:bg-[#1a1d21] p-3 sm:p-5 flex flex-col gap-4 select-none",
+          className
+        )}
+      >
+        <SkFrame className="h-14 flex items-center justify-between px-4 py-2 shrink-0 rounded-2xl">
+          <div className="flex items-center gap-3">
+            <SkCircle size="w-8 h-8" />
+            <SkBar w="w-32" h="h-4" />
+          </div>
+          <div className="flex items-center gap-2">
+            <SkBar w="w-20" h="h-7" rounded="rounded-xl" />
+            <SkCircle size="w-8 h-8" />
+          </div>
+        </SkFrame>
+        <div className="flex-1 overflow-hidden">
+          <TabSkeleton variant="dashboard" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
-        "preloader-container select-none flex flex-col items-center justify-center",
-        fullScreen
-          ? "fixed inset-0 z-[10000] w-screen h-screen bg-gradient-to-br from-[#f2f4f8] to-[#e2e6f0] dark:from-[#353840] dark:via-[#2b2d33] dark:to-[#222428]"
-          : "relative w-full py-8 bg-transparent",
+        "relative w-full select-none",
+        size === 'xs' || size === 'sm' ? 'py-2' : 'py-4',
         className
       )}
     >
-      <main
-        className={cn(
-          "m-auto flex flex-col items-center justify-center",
-          size === 'xs' ? 'text-[9px]' :
-          size === 'sm' ? 'text-[11px]' :
-          size === 'md' ? 'text-[14px]' :
-          size === 'lg' ? 'text-[18px]' :
-          'text-[calc(14px+(24-14)*(100vw-320px)/(2560-320))]'
-        )}
-      >
-        <div className="preloader" id="neu-preloader-core">
-          <div className="preloader__square"></div>
-          <div className="preloader__square"></div>
-          <div className="preloader__square"></div>
-          <div className="preloader__square"></div>
-        </div>
-        <div className="status" id="neu-preloader-status">
-          {text}
-          <span className="status__dot">.</span>
-          <span className="status__dot">.</span>
-          <span className="status__dot">.</span>
-        </div>
-      </main>
+      <TabSkeleton variant="default" />
     </div>
   );
 };

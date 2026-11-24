@@ -3,7 +3,6 @@ import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-
 import { getTabFromPathname, getPathnameFromTab } from './lib/routingUtils';
 import { safeLocalStorage } from './lib/safeLocalStorage';
 import Layout from './components/Layout';
-import WelcomeOverlay from './components/WelcomeOverlay';
 import { Complaint, UserProfile, ComplaintStatus, ChatGroup, Notification as AppNotification, BrandingConfig, ComplaintReview } from './types';
 import { pocketbaseService, supabaseService, fromDb } from './lib/supabaseService';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
@@ -14,19 +13,23 @@ import { DEFAULT_CATEGORIES, DEFAULT_STATUSES, DEFAULT_PRIORITIES, DEFAULT_ZONES
 import { AnimatePresence, motion } from 'motion/react';
 import { safeStringify, processScheduledComplaints } from './lib/utils';
 import RouteLoadingFallback from './components/RouteLoadingFallback';
-import ServiceMonitor from './components/ServiceMonitor';
+import { getVariantForTab, SkVariantProvider } from './components/skeleton/Skeleton';
 import GlobalProgressLoader from './components/GlobalProgressLoader';
-import { Clock } from 'lucide-react';
+import { Clock, ChevronRight, ArrowLeft } from 'lucide-react';
 
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { lazyWithRetry } from './lib/lazyWithRetry';
+import { radiusApi, clearRadiusSession, getRadiusToken } from './components/vertix/radiusApi';
+import { resetRadiusStore } from './components/vertix/radiusStore';
 
 const LoginForm = lazyWithRetry(() => import('./components/LoginForm'));
 const AdminPanel = lazyWithRetry(() => import('./components/AdminPanel'));
 const MemberPanel = lazyWithRetry(() => import('./components/MemberPanel'));
 const WhatsAppCenter = lazyWithRetry(() => import('./whatsapp_data/WhatsAppCenter'));
+const VertixDashboard = lazyWithRetry(() => import('./components/VertixDashboard'));
+const WelcomeOverlay = lazyWithRetry(() => import('./components/WelcomeOverlay'));
 
 export default function App() {
   const isOnline = useOnlineStatus();
@@ -50,6 +53,29 @@ export default function App() {
       });
     }
   }, [isOnline]);
+
+  useEffect(() => {
+    const connection = (navigator as any).connection;
+    if (connection && (connection.saveData || connection.effectiveType === '2g' || connection.effectiveType === 'slow-2g')) {
+      return;
+    }
+    const prefetchTabs = () => {
+      import('./components/VertixDashboard').catch(() => {});
+      import('./components/AdminPanel').catch(() => {});
+      import('./components/LoginForm').catch(() => {});
+      import('./components/BillingTab').catch(() => {});
+      import('./components/ClientManagement').catch(() => {});
+      import('./components/ConversationTab').catch(() => {});
+      import('./components/EntrySheet').catch(() => {});
+    };
+    if (typeof window !== 'undefined') {
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(prefetchTabs, { timeout: 2000 });
+      } else {
+        setTimeout(prefetchTabs, 1200);
+      }
+    }
+  }, []);
 
   const syncOfflineComplaints = async () => {
     const queue = JSON.parse(safeLocalStorage.getItem('offline_complaints') || '[]');
@@ -165,6 +191,77 @@ export default function App() {
   }, [user?.uid]);
   const location = useLocation();
   const navigate = useNavigate();
+
+  const isGreenRadius = location.pathname === '/greenradius' || location.pathname.startsWith('/greenradius');
+  const showVertixDashboard = isGreenRadius;
+
+  const [isResolvingRadiusLanding, setIsResolvingRadiusLanding] = useState<boolean>(() => {
+    try {
+      const savedUserStr = safeLocalStorage.getItem('complaint_app_user');
+      if (!savedUserStr) return false;
+      const parsed = JSON.parse(savedUserStr);
+      if (!parsed || parsed.status === 'pending' || parsed.status === 'blocked') return false;
+      if (sessionStorage.getItem('gp_stay_in_gts') === '1') return false;
+      const p = typeof window !== 'undefined' ? window.location.pathname : '/';
+      return (p === '/' || p === '/login' || p === '/dashboard') && Boolean(getRadiusToken());
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (isResolvingRadiusLanding || isGreenRadius) {
+      void import('./components/VertixDashboard').catch(() => {});
+    }
+  }, [isResolvingRadiusLanding, isGreenRadius]);
+
+  const loginInProgressRef = useRef(false);
+  const landingAttemptedUidRef = useRef<string | null>(null);
+
+  const tryLandOnGreenRadius = useCallback(async (
+    uid: string,
+    opts?: { password?: string; accessToken?: string }
+  ) => {
+    setIsResolvingRadiusLanding(true);
+    try {
+      if (opts?.password) {
+        await radiusApi.auth.session({ uid, password: opts.password }, 3000);
+      } else if (opts?.accessToken) {
+        await radiusApi.auth.sessionGoogle({ uid, accessToken: opts.accessToken }, 3000);
+      } else {
+        if (!getRadiusToken()) {
+          navigate('/dashboard', { replace: true });
+          return;
+        }
+        await radiusApi.auth.me({ timeoutMs: 3000 });
+      }
+      navigate('/greenradius', { replace: true });
+    } catch {
+      navigate('/dashboard', { replace: true });
+    } finally {
+      setIsResolvingRadiusLanding(false);
+    }
+  }, [navigate]);
+
+  const toggleVertixDashboard = useCallback((show: boolean) => {
+    if (show) {
+      try {
+        sessionStorage.removeItem('gp_stay_in_gts');
+      } catch (e) {}
+      if (location.pathname !== '/greenradius') {
+        navigate('/greenradius');
+      }
+    } else {
+      try {
+        sessionStorage.setItem('gp_stay_in_gts', '1');
+      } catch (e) {}
+      if (user) {
+        navigate('/dashboard');
+      } else {
+        navigate('/login');
+      }
+    }
+  }, [location.pathname, navigate, user]);
 
   const activeTab = useMemo(() => {
     return getTabFromPathname(location.pathname, location.search);
@@ -369,6 +466,13 @@ export default function App() {
         } catch (e) {}
       });
     } catch (e) {}
+    clearRadiusSession();
+    resetRadiusStore();
+    landingAttemptedUidRef.current = null;
+    setIsResolvingRadiusLanding(false);
+    try {
+      sessionStorage.removeItem('gp_stay_in_gts');
+    } catch (e) {}
     setUser(null);
     toast.info('You were logged out due to 8 hours of inactivity. Please log in again.');
     navigate('/login');
@@ -525,16 +629,44 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [isSuspended, isAudioMuted]);
 
-  // Route Guard: Redirect unauthenticated users to /login, and logged in users away from /login
+  // Route Guard: Redirect unauthenticated users to /login, and land authorized users on /greenradius first
   useEffect(() => {
     if (!pbAuthReady) return;
     const currentPath = location.pathname;
-    if (!user && currentPath !== '/login') {
-      navigate('/login', { replace: true });
-    } else if (user && (currentPath === '/login' || currentPath === '/')) {
-      navigate('/dashboard', { replace: true });
+    if (!user) {
+      setIsResolvingRadiusLanding(false);
+      if (currentPath !== '/login') {
+        navigate('/login', { replace: true });
+      }
+      return;
     }
-  }, [user?.uid, pbAuthReady, location.pathname, navigate]);
+    if (user.status === 'pending' || user.status === 'blocked') {
+      setIsResolvingRadiusLanding(false);
+      return;
+    }
+    if (currentPath === '/login' || currentPath === '/' || currentPath === '/dashboard') {
+      if (loginInProgressRef.current) return;
+      let stayInGts = false;
+      try {
+        stayInGts = sessionStorage.getItem('gp_stay_in_gts') === '1';
+      } catch (e) {}
+      if (stayInGts) {
+        setIsResolvingRadiusLanding(false);
+        if (currentPath === '/login' || currentPath === '/') {
+          navigate('/dashboard', { replace: true });
+        }
+        return;
+      }
+      if (landingAttemptedUidRef.current !== user.uid || currentPath === '/login' || currentPath === '/') {
+        landingAttemptedUidRef.current = user.uid;
+        void tryLandOnGreenRadius(user.uid);
+      } else {
+        setIsResolvingRadiusLanding(false);
+      }
+    } else {
+      setIsResolvingRadiusLanding(false);
+    }
+  }, [user?.uid, user?.status, pbAuthReady, location.pathname, navigate, tryLandOnGreenRadius]);
 
   useEffect(() => {
     notificationAudio.load();
@@ -1416,7 +1548,7 @@ export default function App() {
     setIsLoading(true);
     setError(null);
 
-    const loginUser = async (email: string, displayName: string, uid: string) => {
+    const loginUser = async (email: string, displayName: string, uid: string, accessToken?: string) => {
       let effectiveUsers = users;
       if (effectiveUsers.length === 0) {
         effectiveUsers = await pocketbaseService.getUsers();
@@ -1462,6 +1594,12 @@ export default function App() {
         return false;
       }
 
+      try {
+        sessionStorage.removeItem('gp_stay_in_gts');
+      } catch (e) {}
+      loginInProgressRef.current = true;
+      landingAttemptedUidRef.current = foundUser.uid;
+      setIsResolvingRadiusLanding(true);
       setUser(foundUser);
       safeLocalStorage.setItem('complaint_app_user', safeStringify(foundUser));
       updateLastActivity();
@@ -1472,6 +1610,12 @@ export default function App() {
       googleSheetsService.syncLogin(foundUser, 'Google Identity').catch((err) => {
         console.error("Failed background sheets login sync:", err);
       });
+
+      try {
+        await tryLandOnGreenRadius(foundUser.uid, accessToken ? { accessToken } : undefined);
+      } finally {
+        loginInProgressRef.current = false;
+      }
       return true;
     };
 
@@ -1493,7 +1637,7 @@ export default function App() {
         const email = userInfo.email;
         if (!email) throw new Error("No email associated with this Google account.");
 
-        await loginUser(email, userInfo.name || userInfo.given_name || email.split('@')[0], userInfo.sub);
+        await loginUser(email, userInfo.name || userInfo.given_name || email.split('@')[0], userInfo.sub, tokens.access_token);
       } catch (authErr: any) {
         console.error("Google Profile retrieval failed:", authErr);
         setError(`Google Authentication Failed: ${authErr.message || authErr}`);
@@ -1811,19 +1955,28 @@ export default function App() {
           foundUser.lineCode = enteredLineCode;
         }
 
+        try {
+          sessionStorage.removeItem('gp_stay_in_gts');
+        } catch (e) {}
+        loginInProgressRef.current = true;
+        landingAttemptedUidRef.current = foundUser.uid;
+        setIsResolvingRadiusLanding(true);
         setUser(foundUser);
         safeLocalStorage.setItem('complaint_app_user', safeStringify(foundUser));
         updateLastActivity();
         setShowWelcome(true);
         toast.success(`Access Granted: Welcome back, ${foundUser.username}`);
 
-        // Direct redirection to the GTS ISP Management dashboard
-        navigate('/dashboard');
-
         // Sync Login details to Google Sheet in background
         googleSheetsService.syncLogin(foundUser, 'Standard Credentials').catch((err) => {
           console.error("Failed background sheets login sync:", err);
         });
+
+        try {
+          await tryLandOnGreenRadius(foundUser.uid, { password: pass });
+        } finally {
+          loginInProgressRef.current = false;
+        }
         
         if (!alertAuthorized) {
           toast("Action Required: Enable Audio Notifications", {
@@ -1865,6 +2018,13 @@ export default function App() {
 
   const handleLogout = () => {
     pocketbaseService.clearAllLocalCaches();
+    clearRadiusSession();
+    resetRadiusStore();
+    landingAttemptedUidRef.current = null;
+    setIsResolvingRadiusLanding(false);
+    try {
+      sessionStorage.removeItem('gp_stay_in_gts');
+    } catch (e) {}
     setUser(null);
     navigate('/login');
     safeLocalStorage.removeItem('complaint_app_user');
@@ -2529,149 +2689,207 @@ export default function App() {
       <GlobalProgressLoader />
       <AnimatePresence>
         {showWelcome && user && (
-          <WelcomeOverlay 
-            username={user.username} 
-            fullName={user.fullName}
-            profilePicture={user.profilePicture}
-            onComplete={() => setShowWelcome(false)} 
-          />
+          <Suspense fallback={null}>
+            <WelcomeOverlay 
+              username={user.username} 
+              fullName={user.fullName}
+              profilePicture={user.profilePicture}
+              onComplete={() => setShowWelcome(false)} 
+            />
+          </Suspense>
         )}
       </AnimatePresence>
-      {user && (location.pathname === '/whatsappcenter' || location.pathname.startsWith('/whatsappcenter') || location.pathname === '/whatsapplogs' || location.pathname.startsWith('/whatsapplogs')) ? (
-        <Suspense fallback={<RouteLoadingFallback />}>
-          <WhatsAppCenter
-            standalone={true}
-            onClose={() => {
-              if (window.history.length > 1) {
-                navigate(-1);
-              } else {
-                navigate('/billingmod');
-              }
-            }}
-            currentUser={user}
-          />
-        </Suspense>
-      ) : (
-        <Layout 
-          user={user} 
-          users={users}
-          notifications={notifications}
-          onLogout={handleLogout} 
-          onRefresh={handleRefresh} 
-          isLoading={isLoading}
-          alertAuthorized={alertAuthorized}
-          isAudioMuted={isAudioMuted}
-          onToggleAudio={handleToggleAudio}
-          onResetBanner={handleResetBanner}
-          onUpdateUser={handleUpdateUser}
-          branding={branding}
-          onUpdateBranding={handleUpdateBranding}
-          activeTab={activeTab}
-          onNavigate={handleNavigate}
-          appConfig={appConfig}
-          onRegisterComplaint={handleRegisterComplaint}
+      {/* GREEN PRO / RADIUS OS DASHBOARD TRANSITION BUTTON (Right edge, center screen) */}
+      {!(showVertixDashboard || isResolvingRadiusLanding) && (
+        <motion.button
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          whileHover={{ scale: 1.08, x: -4 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => toggleVertixDashboard(true)}
+          className="fixed right-0 top-1/2 -translate-y-1/2 z-50 flex items-center gap-2 pr-3 pl-3.5 py-3.5 bg-gradient-to-l from-[#0b3d2e] via-[#14532d] to-[#1f6b4f] text-white rounded-l-2xl shadow-2xl hover:shadow-emerald-900/40 transition-all border-y border-l border-emerald-700/50 group cursor-pointer"
+          title="Open Green Radius OS Dashboard (/greenradius)"
         >
-          <Suspense fallback={<RouteLoadingFallback />}>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={!user ? 'login-view' : user.status === 'pending' ? 'pending-view' : `app-view-${user.uid || user.username || user.role}`}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18, ease: "easeOut" }}
-              >
-                {!user ? (
-                  <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
-                ) : user.status === 'pending' ? (
-                  <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-amber-500/5 dark:bg-amber-500/10" />
-                    <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-amber-200/50 dark:border-amber-800/50 shadow-2xl">
-                      <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <Clock size={40} className="animate-pulse" />
-                      </div>
-                      <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Registration Pending</h1>
-                      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                        Your network node registration is currently under review by the core administration team. Please wait for clearance.
-                      </p>
-                      <button 
-                        onClick={handleLogout} 
-                        className="mt-8 px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform uppercase text-xs tracking-widest shadow-xl cursor-pointer"
-                      >
-                        Logout
-                      </button>
-                    </div>
-                  </div>
-                ) : lineCodeReady ? (
-                  (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor' || user.role === 'liteadmin' || user.role === 'member' || user.role === 'field_agent') ? (
-                    <AdminPanel
-                      complaints={processedComplaints}
-                      users={users}
-                      currentUser={user}
-                      isSuspended={isSuspended}
-                      onDeleteComplaint={handleDeleteComplaint}
-                      onUpdateComplaintStatus={handleUpdateComplaintStatus}
-                      onUpdateRemarks={handleUpdateRemarks}
-                      onUpdateComplaint={handleUpdateComplaint}
-                      onCreateUser={handleCreateUser}
-                      onDeleteUser={handleDeleteUser}
-                      onUpdateUser={handleUpdateUser}
-                      onRegisterComplaint={handleRegisterComplaint}
-                      onChangeAdminPass={handleChangeAdminPass}
-                      appConfig={appConfig}
-                      onUpdateConfig={handleUpdateConfig}
-                      onUpdateUserStatus={handleUpdateUserStatus}
-                      isLoading={isLoading}
-                      isComplaintsInitialLoaded={isComplaintsInitialLoaded}
-                      alertAuthorized={alertAuthorized}
-                      onAuthorizeAlerts={handleAuthorizeAlerts}
-                      onSoundTest={handleSoundTest}
-                      isAudioMuted={isAudioMuted}
-                      onToggleAudio={handleToggleAudio}
-                      onLogout={handleLogout}
-                      micAuthorized={micAuthorized}
-                      onAuthorizeMic={handleAuthorizeMic}
-                      isMicMuted={isMicMuted}
-                      onToggleMic={handleToggleMic}
-                      branding={branding}
-                      onUpdateBranding={handleUpdateBranding}
-                      activeTab={activeTab}
-                      onNavigate={handleNavigate}
-                    />
-                  ) : (
-                    <MemberPanel
-                      complaints={processedComplaints}
-                      users={users}
-                      currentUser={user}
-                      isSuspended={isSuspended}
-                      onRegisterComplaint={handleRegisterComplaint}
-                      onUpdateComplaintStatus={handleUpdateComplaintStatus}
-                      onUpdateRemarks={handleUpdateRemarks}
-                      onUpdateComplaint={handleUpdateComplaint}
-                      onUpdateUser={handleUpdateUser}
-                      appConfig={appConfig}
-                      isLoading={isLoading}
-                      isComplaintsInitialLoaded={isComplaintsInitialLoaded}
-                      alertAuthorized={alertAuthorized}
-                      onAuthorizeAlerts={handleAuthorizeAlerts}
-                      onSoundTest={handleSoundTest}
-                      isAudioMuted={isAudioMuted}
-                      onToggleAudio={handleToggleAudio}
-                      onLogout={handleLogout}
-                      micAuthorized={micAuthorized}
-                      onAuthorizeMic={handleAuthorizeMic}
-                      isMicMuted={isMicMuted}
-                      onToggleMic={handleToggleMic}
-                      branding={branding}
-                      activeTab={activeTab}
-                      onNavigate={handleNavigate}
-                    />
-                  )
-                ) : null}
-              </motion.div>
-            </AnimatePresence>
-          </Suspense>
-        </Layout>
+          <span className="text-xs font-bold tracking-wider uppercase hidden sm:inline-block drop-shadow-sm">
+            Green Radius
+          </span>
+          <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform animate-pulse text-white" />
+        </motion.button>
       )}
+
+      {/* FULL WEBAPP SHIFT: ANIMATED TRANSITION BETWEEN GTS APP AND VERTIX DASHBOARD */}
+      <AnimatePresence mode="wait" initial={false}>
+        {(showVertixDashboard || isResolvingRadiusLanding) ? (
+          <motion.div
+            key="vertix-webapp-view"
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -50 }}
+            transition={{ duration: 0.35, ease: 'easeInOut' }}
+            className="relative w-full h-[100dvh] max-h-[100dvh] h-dvh-fallback overflow-hidden"
+          >
+            <SkVariantProvider variant="flat">
+              <Suspense fallback={<RouteLoadingFallback variant="greenradius" />}>
+                {showVertixDashboard ? (
+                  <VertixDashboard 
+                    onBackToMain={() => toggleVertixDashboard(false)} 
+                    complaints={processedComplaints}
+                    users={users}
+                    currentUser={user}
+                  />
+                ) : (
+                  <RouteLoadingFallback variant="greenradius" />
+                )}
+              </Suspense>
+            </SkVariantProvider>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="gts-webapp-view"
+            initial={{ opacity: 0, x: -50 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 50 }}
+            transition={{ duration: 0.35, ease: 'easeInOut' }}
+            className="w-full min-h-screen"
+          >
+            {user && (location.pathname === '/whatsappcenter' || location.pathname.startsWith('/whatsappcenter') || location.pathname === '/whatsapplogs' || location.pathname.startsWith('/whatsapplogs')) ? (
+              <Suspense fallback={<RouteLoadingFallback variant={getVariantForTab(activeTab)} />}>
+                <WhatsAppCenter
+                  standalone={true}
+                  onClose={() => {
+                    if (window.history.length > 1) {
+                      navigate(-1);
+                    } else {
+                      navigate('/billingmod');
+                    }
+                  }}
+                  currentUser={user}
+                />
+              </Suspense>
+            ) : (
+              <Layout 
+                user={user} 
+                users={users}
+                notifications={notifications}
+                onLogout={handleLogout} 
+                onRefresh={handleRefresh} 
+                isLoading={isLoading}
+                alertAuthorized={alertAuthorized}
+                isAudioMuted={isAudioMuted}
+                onToggleAudio={handleToggleAudio}
+                onResetBanner={handleResetBanner}
+                onUpdateUser={handleUpdateUser}
+                branding={branding}
+                onUpdateBranding={handleUpdateBranding}
+                activeTab={activeTab}
+                onNavigate={handleNavigate}
+                appConfig={appConfig}
+                onRegisterComplaint={handleRegisterComplaint}
+              >
+                <Suspense fallback={<RouteLoadingFallback variant={!user ? 'login' : getVariantForTab(activeTab)} />}>
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                      key={!user ? 'login-view' : user.status === 'pending' ? 'pending-view' : `app-view-${user.uid || user.username || user.role}`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                    >
+                      {!user ? (
+                        <LoginForm onLogin={handleLogin} onGoogleLogin={handleGoogleLogin} isLoading={isLoading} error={error} />
+                      ) : user.status === 'pending' ? (
+                        <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 dark:bg-slate-950 p-4 relative overflow-hidden">
+                          <div className="absolute inset-0 bg-amber-500/5 dark:bg-amber-500/10" />
+                          <div className="max-w-md w-full text-center space-y-6 relative z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-amber-200/50 dark:border-amber-800/50 shadow-2xl">
+                            <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                              <Clock size={40} className="animate-pulse" />
+                            </div>
+                            <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Registration Pending</h1>
+                            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                              Your network node registration is currently under review by the core administration team. Please wait for clearance.
+                            </p>
+                            <button 
+                              onClick={handleLogout} 
+                              className="mt-8 px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:scale-105 transition-transform uppercase text-xs tracking-widest shadow-xl cursor-pointer"
+                            >
+                              Logout
+                            </button>
+                          </div>
+                        </div>
+                      ) : lineCodeReady ? (
+                        (user.role === 'admin' || user.role === 'super_admin' || user.role === 'dealer' || user.role === 'editor' || user.role === 'liteadmin' || user.role === 'member' || user.role === 'field_agent') ? (
+                          <AdminPanel
+                            complaints={processedComplaints}
+                            users={users}
+                            currentUser={user}
+                            isSuspended={isSuspended}
+                            onDeleteComplaint={handleDeleteComplaint}
+                            onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                            onUpdateRemarks={handleUpdateRemarks}
+                            onUpdateComplaint={handleUpdateComplaint}
+                            onCreateUser={handleCreateUser}
+                            onDeleteUser={handleDeleteUser}
+                            onUpdateUser={handleUpdateUser}
+                            onRegisterComplaint={handleRegisterComplaint}
+                            onChangeAdminPass={handleChangeAdminPass}
+                            appConfig={appConfig}
+                            onUpdateConfig={handleUpdateConfig}
+                            onUpdateUserStatus={handleUpdateUserStatus}
+                            isLoading={isLoading}
+                            isComplaintsInitialLoaded={isComplaintsInitialLoaded}
+                            alertAuthorized={alertAuthorized}
+                            onAuthorizeAlerts={handleAuthorizeAlerts}
+                            onSoundTest={handleSoundTest}
+                            isAudioMuted={isAudioMuted}
+                            onToggleAudio={handleToggleAudio}
+                            onLogout={handleLogout}
+                            micAuthorized={micAuthorized}
+                            onAuthorizeMic={handleAuthorizeMic}
+                            isMicMuted={isMicMuted}
+                            onToggleMic={handleToggleMic}
+                            branding={branding}
+                            onUpdateBranding={handleUpdateBranding}
+                            activeTab={activeTab}
+                            onNavigate={handleNavigate}
+                          />
+                        ) : (
+                          <MemberPanel
+                            complaints={processedComplaints}
+                            users={users}
+                            currentUser={user}
+                            isSuspended={isSuspended}
+                            onRegisterComplaint={handleRegisterComplaint}
+                            onUpdateComplaintStatus={handleUpdateComplaintStatus}
+                            onUpdateRemarks={handleUpdateRemarks}
+                            onUpdateComplaint={handleUpdateComplaint}
+                            onUpdateUser={handleUpdateUser}
+                            appConfig={appConfig}
+                            isLoading={isLoading}
+                            isComplaintsInitialLoaded={isComplaintsInitialLoaded}
+                            alertAuthorized={alertAuthorized}
+                            onAuthorizeAlerts={handleAuthorizeAlerts}
+                            onSoundTest={handleSoundTest}
+                            isAudioMuted={isAudioMuted}
+                            onToggleAudio={handleToggleAudio}
+                            onLogout={handleLogout}
+                            micAuthorized={micAuthorized}
+                            onAuthorizeMic={handleAuthorizeMic}
+                            isMicMuted={isMicMuted}
+                            onToggleMic={handleToggleMic}
+                            branding={branding}
+                            activeTab={activeTab}
+                            onNavigate={handleNavigate}
+                          />
+                        )
+                      ) : null}
+                    </motion.div>
+                  </AnimatePresence>
+                </Suspense>
+              </Layout>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

@@ -5,7 +5,6 @@ import autoTable from 'jspdf-autotable';
 import { Trash2, Clock, CheckCircle, AlertCircle, PlayCircle, Printer, FileDown, Calendar, MapPin, Phone, User, X, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Download, Wifi, Pencil, Save, CloudUpload, Package, MapPinned, Send, Users, Activity, RotateCcw, FileSpreadsheet, Flag, UserPlus, Info, Sparkles, Search, CheckCheck, CornerDownRight } from 'lucide-react';
 import { Complaint, ComplaintStatus, ComplaintCategory, ComplaintPriority, UserProfile, BrandingConfig, ComplaintReview } from '../types';
 import { cn } from '../lib/utils';
-import { getCardStyle } from '../lib/styleUtils';
 import { Network, ShieldAlert, Zap, Layers, Mail, MessageSquare } from 'lucide-react';
 import { googleSheetsService } from '../services/googleSheetsService';
 import { toast } from 'sonner';
@@ -16,6 +15,10 @@ import { getAvatarUrl } from '../utils/avatar';
 import ReviewTimeline from './ReviewTimeline';
 import ComplaintPrintPreviewModal from './ComplaintPrintPreviewModal';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import { SkTable } from './skeleton/Skeleton';
+import { ComplaintRowSkeleton, ComplaintPopupSkeleton } from './skeleton/ComplaintSkeletons';
+import { useProgressiveCount } from '../lib/useProgressiveCount';
+import { overlayMotion, dialogMotion, dropdownMotion } from '../lib/motionPresets';
 
 interface ComplaintListProps {
   readOnly?: boolean;
@@ -46,7 +49,7 @@ const getEffectiveStatus = (c: Complaint, currentTime: number = Date.now()): Com
   return c.status || 'pending';
 };
 
-export default function ComplaintList({
+const ComplaintList = React.memo(function ComplaintList({
   readOnly = false, 
   complaints, 
   users = [],
@@ -64,6 +67,13 @@ export default function ComplaintList({
   branding
 }: ComplaintListProps) {
   const now = Date.now();
+  const usersById = React.useMemo(() => {
+    const map = new Map<string, UserProfile>();
+    for (let i = 0; i < users.length; i++) {
+      if (users[i]?.uid) map.set(users[i].uid, users[i]);
+    }
+    return map;
+  }, [users]);
   // Only Sub-Dealer and Super Admin can delete complaints; Admin profile clearance is not permitted to delete
   const isSubDealerUser = (currentUser.role === 'dealer' || Boolean(currentUser.dealerId && currentUser.dealerId !== 'main') || Boolean(currentUser.lineCode)) && currentUser.role !== 'admin';
   const allowedToDelete = currentUser.role === 'super_admin' || isSubDealerUser;
@@ -80,6 +90,7 @@ export default function ComplaintList({
   const [categoryFilter, setCategoryFilter] = React.useState<ComplaintCategory | 'all'>(forcedCategoryFilter);
   const [zoneFilter, setZoneFilter] = React.useState<string | 'all'>('all');
   const [searchQuery, setSearchQuery] = React.useState('');
+  const deferredSearchQuery = React.useDeferredValue(searchQuery);
   const [currentPage, setCurrentPage] = React.useState(1);
   const [itemsPerPage, setItemsPerPage] = React.useState(20);
   const [selectedComplaint, setSelectedComplaint] = React.useState<Complaint | null>(null);
@@ -267,6 +278,30 @@ export default function ComplaintList({
       }
     }
   }, [complaints]);
+
+  const isUpdatingComplaint = Boolean(selectedComplaint?.isUpdating);
+  const [showPopupSkeleton, setShowPopupSkeleton] = React.useState(false);
+  const [popupSkeletonFading, setPopupSkeletonFading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!selectedComplaint) {
+      setShowPopupSkeleton(false);
+      setPopupSkeletonFading(false);
+      return;
+    }
+    if (isUpdatingComplaint) {
+      setShowPopupSkeleton(true);
+      setPopupSkeletonFading(false);
+    } else if (showPopupSkeleton && !popupSkeletonFading) {
+      setPopupSkeletonFading(true);
+      const timer = setTimeout(() => {
+        setShowPopupSkeleton(false);
+        setPopupSkeletonFading(false);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [isUpdatingComplaint, selectedComplaint, showPopupSkeleton, popupSkeletonFading]);
+
   const [sortConfig, setSortConfig] = React.useState<{
     key: keyof Complaint | 'registry' | 'urgency' | 'client' | 'tactical' | 'category' | 'profile';
     direction: 'asc' | 'desc';
@@ -295,9 +330,9 @@ export default function ComplaintList({
   const getFilteredComplaints = () => {
     let filtered = [...complaints];
     
-    // Search filter
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
+    // Search filter (deferred for 60fps typing)
+    if (deferredSearchQuery) {
+      const q = deferredSearchQuery.toLowerCase();
       filtered = filtered.filter(c => 
         c.customerName.toLowerCase().includes(q) || 
         (c.customerUsername && c.customerUsername.toLowerCase().includes(q)) ||
@@ -468,7 +503,7 @@ export default function ComplaintList({
 
   const filteredComplaints = React.useMemo(() => {
     return getFilteredComplaints();
-  }, [complaints, searchQuery, statusFilter, priorityFilter, categoryFilter, zoneFilter, startDate, endDate, sortConfig]);
+  }, [complaints, deferredSearchQuery, statusFilter, priorityFilter, categoryFilter, zoneFilter, startDate, endDate, sortConfig]);
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredComplaints.length / itemsPerPage);
@@ -476,6 +511,12 @@ export default function ComplaintList({
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  const visibleComplaintCount = useProgressiveCount(paginatedComplaints.length, {
+    initial: 20,
+    chunk: 40,
+    resetKey: `${deferredSearchQuery}|${statusFilter}|${priorityFilter}|${categoryFilter}|${zoneFilter}|${startDate}|${endDate}|${sortConfig.key}|${sortConfig.direction}|${currentPage}|${itemsPerPage}|${paginatedComplaints.length}`,
+  });
 
   const getStatusColor = (status: ComplaintStatus) => {
     const s = (status || '').toString().trim().toLowerCase();
@@ -501,13 +542,9 @@ export default function ComplaintList({
     if (s === 'complete') {
       return (
         <motion.div
-          initial={{ scale: 0.5, opacity: 0 }}
+          initial={{ scale: 0.97, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          transition={{ 
-            type: "spring",
-            stiffness: 260,
-            damping: 20 
-          }}
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
         >
           <CheckCircle size={16} className="text-emerald-500" />
         </motion.div>
@@ -900,7 +937,7 @@ export default function ComplaintList({
       </div>
 
       {/* Search Bar, Time Range & Action Line */}
-      <div className="flex flex-col gap-4 neu-card p-4.5 rounded-2xl border border-white/50 dark:border-white/5 mb-3">
+      <div className="flex flex-col gap-4 neu-card !bg-white dark:!bg-[#2c3038] p-4.5 rounded-2xl border border-slate-200/80 dark:border-white/10 mb-3 !shadow-[0_6px_20px_rgba(15,23,42,0.10),6px_0_16px_-3px_rgba(15,23,42,0.09),-6px_0_16px_-3px_rgba(15,23,42,0.09)] dark:!shadow-[0_8px_22px_rgba(0,0,0,0.48),6px_0_18px_-2px_rgba(0,0,0,0.42),-6px_0_18px_-2px_rgba(0,0,0,0.42)]">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           
           {/* Leftside search field */}
@@ -913,7 +950,7 @@ export default function ComplaintList({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search registry (Name, Phone, Area)..."
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-white/80 dark:border-white/5 neu-inset text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-xs font-semibold focus:ring-2 focus:ring-brand-accent/20 outline-none transition-all"
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#23262d] shadow-[0_2px_8px_rgba(15,23,42,0.05),inset_0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-[var(--neu-shadow-inset)] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-xs font-semibold focus:ring-2 focus:ring-brand-accent/20 outline-none transition-all"
             />
           </div>
 
@@ -924,7 +961,7 @@ export default function ComplaintList({
             <div className="relative">
               <button
                 onClick={() => setTimeRangeOpen(!timeRangeOpen)}
-                className="flex items-center justify-between gap-2 px-4 py-2 neu-btn rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 min-w-[130px] hover:border-brand-accent transition-all cursor-pointer"
+                className="flex items-center justify-between gap-2 px-4 py-2 !bg-white dark:!bg-[#333741] border border-slate-200/90 dark:border-white/10 shadow-[0_2px_8px_rgba(15,23,42,0.07)] dark:shadow-[var(--neu-shadow-btn)] hover:shadow-[0_4px_12px_rgba(15,23,42,0.1)] rounded-xl text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 min-w-[130px] hover:border-brand-accent transition-all cursor-pointer"
               >
                 <span>{timeRange}</span>
                 <ChevronDown size={14} className={cn("text-slate-400 transition-transform duration-300", timeRangeOpen && "rotate-180")} />
@@ -933,10 +970,8 @@ export default function ComplaintList({
               <AnimatePresence>
                 {timeRangeOpen && (
                   <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 8 }}
-                    className="absolute right-0 mt-2 w-48 neu-raised-lg rounded-2xl border border-white/50 dark:border-white/10 overflow-hidden z-50 text-left"
+                    {...dropdownMotion}
+                    className="transform-gpu will-change-transform absolute right-0 mt-2 w-48 neu-raised-lg border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden z-50 text-left"
                   >
                     <div className="p-1.5 space-y-1">
                       {['Today', 'Yesterday', 'Last 7 Days', 'This Month', 'All Time'].map((r, rIdx) => (
@@ -970,14 +1005,14 @@ export default function ComplaintList({
                 setZoneFilter('all');
                 setTimeRange('All Time');
               }}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-brand-accent neu-btn rounded-xl cursor-pointer transition-all"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:text-brand-accent !bg-white dark:!bg-[#333741] border border-slate-200/90 dark:border-white/10 shadow-[0_2px_8px_rgba(15,23,42,0.07)] dark:shadow-[var(--neu-shadow-btn)] hover:shadow-[0_4px_12px_rgba(15,23,42,0.1)] rounded-xl cursor-pointer transition-all"
             >
               <RotateCcw size={13} />
               <span>Reset</span>
             </button>
 
             {/* Split status filters pill toggler */}
-            <div className="flex neu-inset p-1 rounded-xl border border-white/30 dark:border-white/5">
+            <div className="flex !bg-white dark:!bg-[#23262d] p-1 rounded-xl border border-slate-200/90 dark:border-white/10 shadow-[0_2px_8px_rgba(15,23,42,0.06)] dark:shadow-[var(--neu-shadow-inset)]">
               <button
                 onClick={() => setStatusFilter('all')}
                 className={cn(
@@ -1061,7 +1096,7 @@ export default function ComplaintList({
             <div className="relative">
               <button
                 onClick={() => setExportOpen(!exportOpen)}
-                className="flex items-center gap-1.5 px-4 py-2 neu-btn text-slate-800 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-2 !bg-white dark:!bg-[#333741] border border-slate-200/90 dark:border-white/10 shadow-[0_2px_8px_rgba(15,23,42,0.07)] dark:shadow-[var(--neu-shadow-btn)] hover:shadow-[0_4px_12px_rgba(15,23,42,0.1)] text-slate-800 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer"
               >
                 <Download size={13} />
                 <span>Export</span>
@@ -1071,10 +1106,8 @@ export default function ComplaintList({
               <AnimatePresence>
                 {exportOpen && (
                   <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 8 }}
-                    className="absolute right-0 mt-2 w-48 neu-raised-lg border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden z-50 text-left"
+                    {...dropdownMotion}
+                    className="transform-gpu will-change-transform absolute right-0 mt-2 w-48 neu-raised-lg border border-white/50 dark:border-white/10 rounded-2xl overflow-hidden z-50 text-left"
                   >
                     <div className="p-1.5 space-y-1">
                       <button
@@ -1127,12 +1160,12 @@ export default function ComplaintList({
         </div>
 
         {/* Dropdown filters grid line */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2.5 border-t border-slate-300/40 dark:border-white/5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2.5 border-t border-slate-200/80 dark:border-white/10">
           <div>
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as any)}
-              className="w-full px-3 py-2.5 rounded-xl border border-white/30 dark:border-white/5 neu-inset text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#23262d] shadow-[0_2px_8px_rgba(15,23,42,0.05)] dark:shadow-[var(--neu-shadow-inset)] text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1151,7 +1184,7 @@ export default function ComplaintList({
             <select
               value={zoneFilter}
               onChange={(e) => setZoneFilter(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-white/30 dark:border-white/5 neu-inset text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#23262d] shadow-[0_2px_8px_rgba(15,23,42,0.05)] dark:shadow-[var(--neu-shadow-inset)] text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1170,7 +1203,7 @@ export default function ComplaintList({
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value as any)}
-              className="w-full px-3 py-2.5 rounded-xl border border-white/30 dark:border-white/5 neu-inset text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200/90 dark:border-white/10 bg-white dark:bg-[#23262d] shadow-[0_2px_8px_rgba(15,23,42,0.05)] dark:shadow-[var(--neu-shadow-inset)] text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:ring-1 focus:ring-brand-accent/20 outline-none appearance-none cursor-pointer"
               style={{ 
                 backgroundPosition: 'right 0.75rem center', 
                 backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")', 
@@ -1187,15 +1220,25 @@ export default function ComplaintList({
         </div>
       </div>
 
-      {/* Row-based Grid (Table View) - High-Fidelity Neumorphic ISP Layout */}
+      {/* Row-based Grid (Table View) - White Card with Balanced Elevation Shadows */}
       <motion.div 
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className={cn("overflow-hidden neu-card border border-white/50 dark:border-white/5", getCardStyle(branding.cardStyle))}
+        className="overflow-hidden rounded-2xl !bg-white dark:!bg-[#2c3038] border border-slate-200/80 dark:border-white/10 !shadow-[0_8px_24px_rgba(15,23,42,0.11),6px_0_18px_-3px_rgba(15,23,42,0.10),-6px_0_18px_-3px_rgba(15,23,42,0.10)] dark:!shadow-[0_8px_24px_rgba(0,0,0,0.50),6px_0_18px_-2px_rgba(0,0,0,0.44),-6px_0_18px_-2px_rgba(0,0,0,0.44)]"
       >
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1250px]">
-            <thead className="neu-inset border-b border-slate-300/40 dark:border-white/5">
+          <table className="w-full table-fixed text-left border-collapse min-w-[1250px]">
+            <colgroup>
+              <col className="w-[290px]" />
+              <col className="w-[150px]" />
+              <col className="w-[175px]" />
+              <col className="w-[280px]" />
+              <col className="w-[105px]" />
+              <col className="w-[205px]" />
+              <col className="w-[135px]" />
+              <col className="w-[115px]" />
+            </colgroup>
+            <thead className="bg-white dark:bg-[#252830] border-b border-slate-200/80 dark:border-white/10">
               <tr>
                 <th 
                   className="px-6 py-4.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400 cursor-pointer hover:text-brand-accent transition-colors"
@@ -1285,48 +1328,27 @@ export default function ComplaintList({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-300/30 dark:divide-white/5">
-              <AnimatePresence mode="popLayout">
                 {paginatedComplaints.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="py-24 text-center">
-                      <Clock size={40} className="text-slate-400 mx-auto mb-4 animate-bounce" style={{ animationDuration: '3s' }} />
+                      <Clock size={40} className="text-slate-400 mx-auto mb-4" />
                       <p className="text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest text-[11px]">No operational records fit active criteria</p>
                     </td>
                   </tr>
-                ) : (
-                  paginatedComplaints.map((complaint, index) => (
-                    <motion.tr
-                      key={`${complaint.id || 'cmp'}-${index}`}
-                      layout="position"
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ 
-                        opacity: 1, 
-                        y: 0,
-                        transition: {
-                          type: "spring",
-                          stiffness: 140,
-                          damping: 15,
-                          delay: index * 0.02
-                        }
-                      }}
-                      exit={{ 
-                        opacity: 0, 
-                        scale: 0.98,
-                        transition: { duration: 0.15 }
-                      }}
-                      onClick={() => setSelectedComplaint(complaint)}
-                      className="group border-b border-slate-300/30 dark:border-white/5 hover:bg-black/[0.025] dark:hover:bg-white/[0.025] transition-all duration-200 cursor-pointer relative"
-                    >
-                      {/* CLIENT & CONTACT */}
-                      <td className="px-6 py-4.5 relative">
-                        {/* Optimistic Updating Spinner */}
-                        {complaint.isUpdating && (
-                          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/50 dark:bg-slate-900/50 backdrop-blur-[2px] rounded-l-xl">
-                            <span className="w-4 h-4 border-2 border-brand-accent border-t-transparent rounded-full animate-spin shadow-[0_0_8px_rgba(var(--brand-accent),0.5)]"></span>
-                            <span className="mt-1 text-[8px] font-black tracking-widest uppercase text-brand-accent">Syncing...</span>
-                          </div>
-                        )}
-                        {/* Interactive Status Indicator bar */}
+                ) : (() => {
+                  const renderComplaintRow = (complaint: Complaint, index: number) => {
+                    if (complaint.isUpdating) {
+                      return <ComplaintRowSkeleton key={complaint.id || `cmp-${index}`} />;
+                    }
+                    return (
+                      <tr
+                        key={complaint.id || `cmp-${index}`}
+                        onClick={() => setSelectedComplaint(complaint)}
+                        className="group border-b border-slate-300/30 dark:border-white/5 hover:bg-black/[0.025] dark:hover:bg-white/[0.025] transition-colors duration-150 cursor-pointer relative"
+                      >
+                        {/* CLIENT & CONTACT */}
+                        <td className="px-6 py-4.5 relative bg-white dark:bg-transparent">
+                          {/* Interactive Status Indicator bar */}
                         <div className={cn(
                           "absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-md transition-all duration-300 group-hover:w-1.5",
                           getEffectiveStatus(complaint, now).toLowerCase() === 'complete' ? 'bg-emerald-500 shadow-[2px_0_10px_rgba(16,185,129,0.4)]' :
@@ -1338,11 +1360,11 @@ export default function ComplaintList({
                         )} />
                         
                         <div className="flex items-center gap-3.5 pl-1.5">
-                          <div className="shrink-0 w-10 h-10 rounded-xl neu-inset border border-white/40 dark:border-white/5 flex items-center justify-center text-slate-600 dark:text-slate-400 group-hover:scale-110 group-hover:text-brand-accent transition-all duration-300">
+                          <div className="shrink-0 w-10 h-10 rounded-xl neu-inset border border-white/40 dark:border-white/5 flex items-center justify-center text-slate-600 dark:text-slate-400 group-hover:text-brand-accent transition-colors duration-300">
                             <Wifi size={17} className="shrink-0" />
                           </div>
                           <div className="flex flex-col">
-                            <span className="font-black text-slate-900 dark:text-white uppercase tracking-tight text-[16px] group-hover:text-brand-accent transition-colors duration-300 leading-tight">
+                            <span className="w-[180.033px] font-black text-slate-900 dark:text-white uppercase tracking-tight text-[16px] group-hover:text-brand-accent transition-colors duration-300 leading-tight">
                               {complaint.customerName}
                             </span>
                             {Boolean(complaint.scheduledAt) && complaint.scheduledAt! > 0 && (
@@ -1412,7 +1434,7 @@ export default function ComplaintList({
                         <div className="flex flex-col items-center justify-center gap-1 neu-raised p-1.5 rounded-xl border border-white/40 dark:border-white/5 w-max mx-auto">
                           <Flag size={14} className={cn(
                             "shrink-0",
-                            complaint.priority === 'Critical' || complaint.priority === 'High' ? 'text-rose-500 fill-rose-500 animate-pulse' :
+                            complaint.priority === 'Critical' || complaint.priority === 'High' ? 'text-rose-500 fill-rose-500' :
                             complaint.priority === 'Medium' ? 'text-amber-500 fill-amber-500' :
                             'text-slate-400 fill-slate-300 dark:fill-slate-700'
                           )} />
@@ -1459,7 +1481,7 @@ export default function ComplaintList({
                             
                             {/* Delegate staff avatar */}
                             {(() => {
-                              const authorUser = users.find(u => u.uid === complaint.memberId);
+                              const authorUser = complaint.memberId ? usersById.get(complaint.memberId) : undefined;
                               const handleClick = (e: React.MouseEvent) => {
                                 e.stopPropagation();
                                 setSelectedDelegate(authorUser || {
@@ -1476,7 +1498,10 @@ export default function ComplaintList({
                                   <img 
                                     src={getAvatarUrl(authorUser.profilePicture)} 
                                     alt={complaint.memberName} 
-                                    className="h-7 w-7 rounded-full object-cover neu-raised p-0.5 border border-white/60 dark:border-white/10 shrink-0 hover:scale-125 cursor-pointer transition-all active:scale-95 duration-200"
+                                    width={28}
+                                    height={28}
+                                    loading="lazy"
+                                    className="h-7 w-7 rounded-full object-cover neu-raised p-0.5 border border-white/60 dark:border-white/10 shrink-0 cursor-pointer transition-colors duration-150"
                                     title={`Click to view profile of ${complaint.memberName || 'Delegate'}`}
                                     onClick={handleClick}
                                   />
@@ -1486,7 +1511,10 @@ export default function ComplaintList({
                                 <img 
                                   src={getAvatarUrl('default:male')} 
                                   alt={complaint.memberName || 'System'}
-                                  className="h-7 w-7 rounded-full object-cover neu-raised p-0.5 border border-white/60 dark:border-white/10 shrink-0 opacity-80 hover:scale-125 cursor-pointer transition-all active:scale-95 duration-200"
+                                  width={28}
+                                  height={28}
+                                  loading="lazy"
+                                  className="h-7 w-7 rounded-full object-cover neu-raised p-0.5 border border-white/60 dark:border-white/10 shrink-0 opacity-80 cursor-pointer transition-colors duration-150"
                                   title={`Click to view profile of ${complaint.memberName || 'System'}`}
                                   onClick={handleClick}
                                 />
@@ -1500,14 +1528,12 @@ export default function ComplaintList({
                             return (
                               <div className="w-24 flex flex-col items-center gap-1" title={prog.stepText}>
                                 <div className="w-full neu-inset h-1.5 rounded-full overflow-hidden border border-white/30 dark:border-white/5">
-                                  <motion.div 
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${prog.percentage}%` }}
-                                    transition={{ duration: 0.6, ease: "easeOut" }}
-                                    className="bg-blue-600 dark:bg-blue-400 h-full rounded-full"
+                                  <div 
+                                    style={{ width: `${prog.percentage}%` }}
+                                    className="bg-blue-600 dark:bg-blue-400 h-full rounded-full transition-[width] duration-300 ease-out"
                                   />
                                 </div>
-                                <span className="text-[7.5px] font-lexend font-black text-blue-600 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0 animate-pulse">
+                                <span className="text-[7.5px] font-lexend font-black text-blue-600 dark:text-blue-400 uppercase tracking-tighter leading-none shrink-0">
                                   {prog.percentage}% Complete
                                 </span>
                               </div>
@@ -1560,16 +1586,26 @@ export default function ComplaintList({
                            )}
                         </div>
                       </td>
-                    </motion.tr>
-                  ))
-                )}
-              </AnimatePresence>
+                    </tr>
+                  );
+                };
+
+                return (
+                  <>
+                    {paginatedComplaints.slice(0, visibleComplaintCount).map((c, i) => renderComplaintRow(c, i))}
+                    {visibleComplaintCount < paginatedComplaints.length &&
+                      Array.from({ length: 3 }).map((_, i) => (
+                        <ComplaintRowSkeleton key={`lazy-skel-${i}`} />
+                      ))}
+                  </>
+                );
+              })()}
             </tbody>
           </table>
         </div>
 
         {filteredComplaints.length > 0 && (
-          <div className="px-6 py-4 neu-inset border-t border-slate-300/40 dark:border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="px-6 py-4 bg-white dark:bg-[#252830] border-t border-slate-200/80 dark:border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Display Limit:</span>
@@ -1579,7 +1615,7 @@ export default function ComplaintList({
                     setItemsPerPage(Number(e.target.value));
                     setCurrentPage(1);
                   }}
-                  className="neu-inset rounded-lg px-2.5 py-1 text-[10px] font-black text-slate-700 dark:text-slate-300 outline-none border border-white/30 dark:border-white/5 cursor-pointer"
+                  className="bg-white dark:bg-[#2c3038] shadow-[0_1px_4px_rgba(15,23,42,0.06)] rounded-lg px-2.5 py-1 text-[10px] font-black text-slate-700 dark:text-slate-300 outline-none border border-slate-200/90 dark:border-white/10 cursor-pointer"
                 >
                   <option value={20}>20 UNITS</option>
                   <option value={50}>50 UNITS</option>
@@ -1661,19 +1697,14 @@ export default function ComplaintList({
         {selectedDelegate && (
           <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 overflow-y-auto">
             <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              {...overlayMotion}
               onClick={() => setSelectedDelegate(null)}
               className="fixed inset-0 bg-slate-950/60 backdrop-blur-md"
             />
             
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 30 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 30 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="relative w-full max-w-sm bg-[var(--neu-surface)] rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/80 dark:border-white/10 z-10 animate-in fade-in zoom-in-95 duration-200"
+              {...dialogMotion}
+              className="transform-gpu will-change-transform relative w-full max-w-sm bg-[var(--neu-surface)] rounded-3xl shadow-[0_25px_60px_rgba(0,0,0,0.4)] overflow-hidden border border-slate-200/80 dark:border-white/10 z-10"
             >
               {/* Banner/Header Graphic background */}
               <div className="h-28 bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-500 relative flex items-end justify-center">
@@ -1694,6 +1725,8 @@ export default function ComplaintList({
                     <img 
                       src={getAvatarUrl(selectedDelegate.profilePicture || 'default:male')} 
                       alt={selectedDelegate.fullName || selectedDelegate.username}
+                      width={96}
+                      height={96}
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -1805,30 +1838,27 @@ export default function ComplaintList({
         {selectedComplaint && (
           <div className="fixed inset-0 z-[500] flex items-center justify-center p-2 sm:p-3 md:p-4 lg:p-6 overflow-y-auto custom-scrollbar">
             <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              {...overlayMotion}
               onClick={() => setSelectedComplaint(null)}
               className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm"
             />
             
             <motion.div
-              layoutId={selectedComplaint.id}
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-6xl neu-card rounded-[32px] overflow-hidden border border-white/50 dark:border-white/5 origin-center my-auto scale-100 transition-all duration-300 shrink-0"
+              {...dialogMotion}
+              className="transform-gpu will-change-transform relative w-full max-w-6xl neu-card rounded-[32px] overflow-hidden border border-white/50 dark:border-white/5 origin-center my-auto shrink-0"
             >
-              {/* Optimistic Updating Overlay */}
-              {selectedComplaint.isUpdating && (
-                <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/40 dark:bg-slate-900/40 backdrop-blur-sm rounded-[32px]">
-                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-3 border border-brand-accent/20">
-                    <span className="w-8 h-8 border-4 border-brand-accent border-t-transparent rounded-full animate-spin"></span>
-                    <span className="text-[10px] font-black tracking-widest uppercase text-brand-accent">Syncing with Server...</span>
-                  </div>
+              {showPopupSkeleton && (
+                <div className={cn(
+                  "absolute inset-0 z-50 pointer-events-none transition-opacity duration-150",
+                  popupSkeletonFading ? "opacity-0" : "opacity-100"
+                )}>
+                  <ComplaintPopupSkeleton />
                 </div>
               )}
-              <div className="p-5 sm:p-7 md:p-9 space-y-5 sm:space-y-6 max-h-[96vh] md:max-h-[90vh] overflow-y-auto custom-scrollbar">
+              <div className={cn(
+                "p-5 sm:p-7 md:p-9 space-y-5 sm:space-y-6 max-h-[96vh] md:max-h-[90vh] overflow-y-auto custom-scrollbar",
+                isUpdatingComplaint ? "invisible" : ""
+              )}>
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                   <div className="flex items-center gap-4 sm:gap-6">
                     <div className="space-y-1.5">
@@ -2179,7 +2209,9 @@ export default function ComplaintList({
                               <img 
                                 src={getAvatarUrl(authorUser.profilePicture)} 
                                 alt={selectedComplaint.memberName} 
-                                className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                                width={16}
+                                height={16}
+                                className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 hover:border-emerald-500 cursor-pointer transition-colors duration-200"
                                 title={`Click to view profile of ${selectedComplaint.memberName || 'Delegate'}`}
                                 onClick={handleClick}
                               />
@@ -2189,7 +2221,9 @@ export default function ComplaintList({
                             <img 
                               src={getAvatarUrl('default:male')} 
                               alt={selectedComplaint.memberName || 'System'}
-                              className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 opacity-80 hover:scale-125 hover:border-emerald-500 cursor-pointer transition-all active:scale-95 duration-200"
+                              width={16}
+                              height={16}
+                              className="h-4 w-4 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-[var(--neu-shadow-raised-sm)] shrink-0 opacity-80 hover:border-emerald-500 cursor-pointer transition-colors duration-200"
                               title={`Click to view profile of ${selectedComplaint.memberName || 'System'}`}
                               onClick={handleClick}
                             />
@@ -2212,22 +2246,22 @@ export default function ComplaintList({
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Tactical Protocol Command</p>
                         
                         <div className="space-y-3 relative">
-                          <AnimatePresence mode="wait">
+                          <AnimatePresence>
                             {selectedComplaint.status.toLowerCase() === 'complete' ? (
                               <motion.div
                                 key="thank-you-view"
-                                initial={{ scale: 0.9, opacity: 0, y: 15 }}
+                                initial={{ scale: 0.97, opacity: 0, y: 8 }}
                                 animate={{ scale: 1, opacity: 1, y: 0 }}
-                                exit={{ scale: 0.9, opacity: 0, y: -15 }}
-                                transition={{ type: "spring", stiffness: 200, damping: 20 }}
-                                className="p-5 border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] rounded-2xl text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[220px]"
+                                exit={{ scale: 0.98, opacity: 0, y: 4 }}
+                                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                                className="p-5 border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] rounded-2xl text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[220px] transform-gpu"
                               >
                                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(16,185,129,0.08)_0%,transparent_70%)] pointer-events-none" />
                                 
                                 <motion.div
-                                  initial={{ scale: 0, rotate: -45 }}
-                                  animate={{ scale: 1, rotate: 0 }}
-                                  transition={{ delay: 0.15, type: "spring", stiffness: 220, damping: 12 }}
+                                  initial={{ scale: 0.97, opacity: 0 }}
+                                  animate={{ scale: 1, opacity: 1 }}
+                                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                                   className="w-14 h-14 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center text-emerald-500 mb-3.5 shadow-[var(--neu-shadow-raised-lg)] shadow-emerald-500/10"
                                 >
                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -2236,9 +2270,9 @@ export default function ComplaintList({
                                 </motion.div>
 
                                 <motion.h3 
-                                  initial={{ opacity: 0, y: 5 }}
+                                  initial={{ opacity: 0, y: 4 }}
                                   animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: 0.25 }}
+                                  transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                                   className="text-[11px] font-black uppercase text-emerald-500 tracking-[0.25em] mb-1"
                                 >
                                   Thank You!
@@ -2247,7 +2281,7 @@ export default function ComplaintList({
                                 <motion.p 
                                   initial={{ opacity: 0 }}
                                   animate={{ opacity: 1 }}
-                                  transition={{ delay: 0.35 }}
+                                  transition={{ duration: 0.18 }}
                                   className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider mb-3.5"
                                 >
                                   Resolution & Review telemetry verified.
@@ -2413,7 +2447,7 @@ export default function ComplaintList({
                               initial={{ height: 0, opacity: 0, marginTop: 0 }}
                               animate={{ height: 'auto', opacity: 1, marginTop: 8 }}
                               exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                              transition={{ type: "spring", stiffness: 200, damping: 22 }}
+                              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                               className="overflow-hidden border border-[var(--neu-border)] bg-[var(--neu-surface)] shadow-[var(--neu-shadow-inset)] rounded-xl p-3.5 space-y-3 origin-top"
                             >
                               <div className="flex items-center gap-2">
@@ -2523,7 +2557,9 @@ export default function ComplaintList({
 
     </div>
   );
-}
+});
+
+export default ComplaintList;
 
 function EditModal({ 
   complaint, 
@@ -2562,18 +2598,14 @@ function EditModal({
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
       <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+        {...overlayMotion}
         onClick={onClose}
-        className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+        className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm"
       />
       
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative w-full max-w-2xl bg-[var(--neu-surface)] rounded-2xl shadow-[var(--neu-shadow-raised-lg)] overflow-hidden border border-slate-200 dark:border-white/10"
+        {...dialogMotion}
+        className="transform-gpu will-change-transform relative w-full max-w-2xl bg-[var(--neu-surface)] rounded-2xl shadow-[var(--neu-shadow-raised-lg)] overflow-hidden border border-slate-200 dark:border-white/10"
       >
         <form onSubmit={handleSave} className="p-8 space-y-6">
           <div className="flex justify-between items-center mb-4">

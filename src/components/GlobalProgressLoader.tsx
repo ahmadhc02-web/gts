@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLoading } from '../contexts/LoadingContext';
 import { motion, AnimatePresence } from 'motion/react';
+import { dialogMotion } from '../lib/motionPresets';
 import { Loader2, CheckCircle2, Activity, CloudUpload } from 'lucide-react';
 
 export const GlobalProgressLoader: React.FC = () => {
@@ -10,11 +11,8 @@ export const GlobalProgressLoader: React.FC = () => {
     <AnimatePresence>
       {isLoading && (
         <motion.div
-          initial={{ opacity: 0, y: 28, scale: 0.9 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.92, transition: { duration: 0.15 } }}
-          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-          className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none"
+          {...dialogMotion}
+          className="fixed bottom-4 left-4 z-[9999] pointer-events-none select-none transform-gpu will-change-transform"
         >
           <div className="flex flex-col gap-2.5 p-3.5 sm:p-4 rounded-2xl bg-slate-950/95 backdrop-blur-2xl border border-slate-700/90 shadow-[0_16px_40px_rgba(0,0,0,0.6)] shadow-cyan-950/30 text-slate-100 min-w-[280px] max-w-[340px] pointer-events-auto">
             {/* Header row with icon, label, and percentage */}
@@ -22,7 +20,7 @@ export const GlobalProgressLoader: React.FC = () => {
               <div className="flex items-center gap-3 min-w-0">
                 <div className="relative flex items-center justify-center shrink-0 w-9 h-9 rounded-xl bg-cyan-950/90 border border-cyan-500/40 text-cyan-400 shadow-inner">
                   {progress === 100 ? (
-                    <motion.div initial={{ scale: 0.4 }} animate={{ scale: 1.1 }} transition={{ type: 'spring' }}>
+                    <motion.div initial={{ scale: 0.97, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}>
                       <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                     </motion.div>
                   ) : (

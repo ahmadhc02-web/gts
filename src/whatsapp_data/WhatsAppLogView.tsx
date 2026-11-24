@@ -438,7 +438,10 @@ export default function WhatsAppLogView({
       </header>
 
       {/* Main Screen Content - Width Fits Across the Entire Screen */}
-      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-5 flex flex-col gap-5 overflow-y-auto">
+      <main
+        className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-5 flex flex-col gap-5 overflow-y-auto"
+        style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))' }}
+      >
         {/* Header Stats Chips - Full Width */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 w-full">
           <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center gap-3.5 shadow-xs">

@@ -158,6 +158,8 @@ async function processReminderLead(leadId) {
       const rawPhone = (item.mobile_number || '').trim();
       const messageText = item.message || 'Dear Customer, this is a reminder regarding your internet service bill due date. Thank you.';
 
+      let skipWait = false;
+
       try {
         if (!rawPhone) {
           throw new Error('No mobile number available for customer');
@@ -218,6 +220,9 @@ async function processReminderLead(leadId) {
         console.error(`[Lead Processor] Failed item ${item.id} (${rawPhone}) on lead ${leadId}:`, err.message);
         currentFailedCount++;
 
+        const isTimeout = /timed out/i.test(err.message || '');
+        skipWait = !isTimeout;
+
         let errorMsg = 'Send failed';
         if (err.message) {
           if (err.message.includes('not registered') || err.message.includes('not on WhatsApp')) {
@@ -254,6 +259,20 @@ async function processReminderLead(leadId) {
       }
 
       // Wait between messages only if NOT the last item
+      if (!isLastItem && skipWait) {
+        console.log(`[Lead Processor] Item ${i + 1}/${items.length} failed, skipping wait.`);
+        const { error: waitErr } = await supabase
+          .from('reminder_lead_items')
+          .update({
+            wait_seconds_after: 0
+          })
+          .eq('id', item.id);
+        if (waitErr) {
+          console.error(`[Lead Processor] Error updating wait_seconds_after for item ${item.id}:`, waitErr.message);
+        }
+        continue;
+      }
+
       if (!isLastItem) {
         console.log(`[Lead Processor] Waiting ${waitSeconds}s before next item...`);
         for (let s = 0; s < waitSeconds; s++) {

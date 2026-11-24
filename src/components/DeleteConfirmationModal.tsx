@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
 import { Trash2, AlertTriangle, ShieldAlert, RotateCcw, X, Flame } from 'lucide-react';
 
 export interface DeleteConfirmationModalProps {
@@ -24,8 +25,6 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
   isProcessing = false,
 }) => {
   const [loadingType, setLoadingType] = React.useState<'trash' | 'permanent' | null>(null);
-
-  if (!isOpen) return null;
 
   const handleTrashClick = async () => {
     try {
@@ -53,24 +52,19 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
 
   return (
     <AnimatePresence>
+      {isOpen && (
       <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
         {/* Backdrop */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
+          {...overlayMotion}
           onClick={loadingType ? undefined : onClose}
           className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
         />
 
         {/* Modal Window */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800/80 overflow-hidden z-10"
+          {...dialogMotion}
+          className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800/80 overflow-hidden z-10 transform-gpu will-change-transform"
         >
           {/* Top Decorative Header Accent */}
           <div className="h-2 w-full bg-gradient-to-r from-amber-500 via-rose-500 to-red-600" />
@@ -175,6 +169,7 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
           </div>
         </motion.div>
       </div>
+      )}
     </AnimatePresence>
   );
 };

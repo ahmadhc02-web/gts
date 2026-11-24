@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
 import { FileText, Printer, Save, X, Edit3, Download, RefreshCw, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { UserProfile, BrandingConfig } from '../types';
 import { getCardStyle } from '../lib/styleUtils';
 import { cn } from '../lib/utils';
+import { SkBar } from './skeleton/Skeleton';
+import { DeferredBody } from './ui/DeferredBody';
+import { usePopupTiming } from '../lib/usePopupTiming';
 
 interface ReceiptTemplate {
   title: string;
@@ -30,6 +34,7 @@ interface ReceiptManagerProps {
 
 export default function ReceiptManager({ currentUser, branding }: ReceiptManagerProps) {
   const [showEditor, setShowEditor] = useState(false);
+  usePopupTiming('ReceiptTemplateModal', showEditor);
   const [template, setTemplate] = useState<ReceiptTemplate>({
     title: 'GREEN TECH SERVICES',
     address1: 'Jinnah Complax Road',
@@ -294,7 +299,6 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
       {/* Receipts Virtual Directory Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         <motion.div
-          whileHover={{ y: -4, scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => setShowEditor(true)}
           className={cn(
@@ -320,16 +324,61 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
       {/* Editor & Mockup Modal Popup */}
       <AnimatePresence>
         {showEditor && (
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4 overflow-y-auto">
+          <motion.div
+            {...overlayMotion}
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4 overflow-y-auto"
+          >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+              {...dialogMotion}
               className={cn(
-                "w-full max-w-4xl border overflow-hidden shadow-2xl flex flex-col lg:flex-row text-left",
+                "w-full max-w-4xl border overflow-hidden shadow-2xl flex flex-col lg:flex-row text-left transform-gpu will-change-transform",
                 getCardStyle(branding.cardStyle)
               )}
             >
+              <DeferredBody
+                fallback={
+                  <>
+                    <div className="flex-1 p-6 sm:p-8 space-y-5 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-white/10">
+                      <div className="flex items-center justify-between">
+                        <SkBar w="w-52" h="h-4" />
+                        <SkBar w="w-6" h="h-6" rounded="rounded-lg" />
+                      </div>
+                      <div className="space-y-4">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <div key={`rm-sk-field-${i}`} className="space-y-2">
+                            <SkBar w="w-28" h="h-2.5" />
+                            <SkBar w="w-full" h="h-9" rounded="rounded-xl" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-3 pt-2">
+                        <SkBar w="flex-1" h="h-10" rounded="rounded-xl" />
+                        <SkBar w="w-36" h="h-10" rounded="rounded-xl" />
+                      </div>
+                    </div>
+                    <div className="w-full lg:w-[360px] bg-slate-50 dark:bg-slate-950 p-6 flex flex-col items-center justify-center min-h-[400px]">
+                      <div className="w-full max-w-[300px] bg-white p-6 shadow-xl rounded-md border border-slate-200 space-y-4">
+                        <div className="space-y-1.5 flex flex-col items-center">
+                          <SkBar w="w-40" h="h-4" />
+                          <SkBar w="w-44" h="h-2.5" />
+                        </div>
+                        <SkBar w="w-full" h="h-12" rounded="rounded-lg" />
+                        <SkBar w="w-full" h="h-7" rounded="rounded-sm" />
+                        <div className="space-y-2.5">
+                          <SkBar w="w-full" h="h-3" />
+                          <SkBar w="w-full" h="h-3" />
+                          <SkBar w="w-full" h="h-3" />
+                          <SkBar w="w-full" h="h-3" />
+                        </div>
+                        <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
+                          <SkBar w="w-16" h="h-6" />
+                          <SkBar w="w-24" h="h-4" />
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                }
+              >
               {/* Left Side: Controls */}
               <div className="flex-1 p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[85vh] border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between">
@@ -619,8 +668,9 @@ export default function ReceiptManager({ currentUser, branding }: ReceiptManager
                   </div>
                 </div>
               </div>
+              </DeferredBody>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

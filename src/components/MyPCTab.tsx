@@ -728,7 +728,10 @@ export default function MyPCTab(props: MyPCTabProps) {
         </aside>
 
         {/* Right Content Area */}
-        <main className="flex-1 min-w-0 overflow-y-auto p-3 sm:p-5 md:p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-950">
+        <main
+          className="flex-1 min-w-0 overflow-y-auto p-3 sm:p-5 md:p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-950"
+          style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}
+        >
           <div className="w-full max-w-full xl:max-w-7xl mx-auto space-y-6">
             {/* Active Section Header */}
             <div className="space-y-1 pb-4 border-b border-slate-200 dark:border-slate-800">
@@ -786,6 +789,8 @@ export default function MyPCTab(props: MyPCTabProps) {
                                 <img 
                                   src={getAvatarUrl(currentUser.profilePicture)} 
                                   alt={currentUser.username} 
+                                  width={40}
+                                  height={40}
                                   className="w-full h-full object-cover" 
                                   referrerPolicy="no-referrer"
                                 />
@@ -1047,6 +1052,8 @@ export default function MyPCTab(props: MyPCTabProps) {
                                             <img 
                                               src={getAvatarUrl(user.profilePicture)} 
                                               alt={user.username} 
+                                              width={32}
+                                              height={32}
                                               className="w-full h-full object-cover" 
                                               referrerPolicy="no-referrer"
                                             />

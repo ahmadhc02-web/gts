@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { motion } from 'motion/react';
+import { overlayMotion, dialogMotion } from '../lib/motionPresets';
 import { X, Send, Check, CheckCheck, Clock, AlertCircle, RefreshCw, Smartphone } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { sendMessage, getStatus } from './whatsappApi';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { SkChatThread } from '../components/skeleton/Skeleton';
+import { useSkeletonGate } from '../components/skeleton/useSkeletonGate';
 
 interface MessageRow {
   id: string;
@@ -42,6 +46,7 @@ export default function WhatsAppChatModal({
 }: WhatsAppChatModalProps) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const showMessagesSkeleton = useSkeletonGate(loading) && messages.length === 0;
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
@@ -211,12 +216,14 @@ export default function WhatsAppChatModal({
     .toUpperCase();
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 animate-[fadeIn_0.2s_ease-out]"
+    <motion.div
+      {...overlayMotion}
+      className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4"
       onClick={onClose}
     >
-      <div
-        className="w-full sm:max-w-2xl h-full sm:h-[85vh] bg-white dark:bg-slate-900 sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden text-slate-900 dark:text-slate-100"
+      <motion.div
+        {...dialogMotion}
+        className="w-full sm:max-w-2xl h-full sm:h-[85vh] bg-white dark:bg-slate-900 sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden text-slate-900 dark:text-slate-100 transform-gpu will-change-transform"
         onClick={e => e.stopPropagation()}
       >
         {/* Chat Header */}
@@ -254,11 +261,8 @@ export default function WhatsAppChatModal({
 
         {/* Message Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-100/60 dark:bg-slate-950/60">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400">
-              <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-              <p className="text-xs font-bold">Loading conversation...</p>
-            </div>
+          {showMessagesSkeleton ? (
+            <SkChatThread className="h-full min-h-[380px]" />
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-400">
               <Smartphone size={36} className="opacity-40" />
@@ -354,8 +358,8 @@ export default function WhatsAppChatModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>,
+      </motion.div>
+    </motion.div>,
     document.body
   );
 }
